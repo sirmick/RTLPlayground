@@ -286,13 +286,14 @@ void send_vlan(uint16_t vlan)
 	vlan_get(vlan);
 	str_code_to_html("{" JSONQUOTE("untagged_members") ":[");
 
-	uint32_t m = ((uint32_t)sfr_data[0] << 24) |
+	// in xdata, as #305 did for the old send_vlan(): internal RAM is full
+	__xdata uint32_t m = ((uint32_t)sfr_data[0] << 24) |
 				((uint32_t)sfr_data[1] << 16) |
 				((uint32_t)sfr_data[2] <<  8) |
 				((uint32_t)sfr_data[3]);
 
-	uint16_t members = (uint16_t)(m & 0x3FF);
-	uint16_t untagged = (uint16_t)(((m >> 10) & 0x3FF) & members);
+	__xdata uint16_t members = (uint16_t)(m & 0x3FF);
+	__xdata uint16_t untagged = (uint16_t)(((m >> 10) & 0x3FF) & members);
 
 	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
 		if(members & (1<<i)) {
