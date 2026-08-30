@@ -363,7 +363,8 @@
 #ifdef REGDBG
 
 #define REG_SET(r, v) do { \
-	SFR_DATA_U32 = v; \
+	SFR_DATA_U16_UPPER = (uint16_t)(v >> 16); \
+	SFR_DATA_U16 = (uint16_t)(v); \
 	reg_write(r); \
 	write_char('R'); print_byte(((uint16_t)(r)) >> 8); print_byte(((uint16_t)(r)) & 0xff); write_char('-'); \
 	print_byte((((uint32_t)v) >> 24) & 0xff); print_byte((((uint32_t)v) >> 16) & 0xff); print_byte((((uint16_t)v) >> 8) & 0xff); print_byte((v) & 0xff); write_char(' '); \
@@ -379,7 +380,8 @@
 } while (0)
 #else
 #define REG_SET(r, v) do { \
-	SFR_DATA_U32 = v; \
+	SFR_DATA_U16_UPPER = (uint16_t)(v >> 16); \
+	SFR_DATA_U16 = (uint16_t)(v); \
 	reg_write(r); \
 } while (0)
 
