@@ -115,6 +115,10 @@ all: create_build_dir $(VERSION_HEADER) $(MACHINE_SRC) $(CONFIG) $(SUBDIRS) $(OU
 bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
 
+# Fail if any direct call crosses a code bank (needs a prior build of $MACHINE).
+check-banks:
+	python3 tools/check_cross_bank.py $(BUILDDIR)
+
 create_build_dir: $(SDCC)
 	mkdir -p "$(BUILDDIR)"
 	mkdir -p "$(BUILDDIR)/uip"
