@@ -15,13 +15,18 @@ the resident home/CSEG region as bank 0); the map gives the target symbol's
 bank. A direct call is flagged when the target is in a nonzero bank different
 from the caller's. The fix for a flag is to declare the target __banked.
 
-Usage: check_cross_bank.py <build-output-dir>   # e.g. output/SWGT024_V2_0_UNMANAGED
+With --placement FILE (a file->bank JSON from pack_banks.py) it instead checks
+that proposed packing, using each listing's own file as the caller's bank and
+the map's module column for each target's - so a repack can be proven call-safe
+before any relink.
+
+Usage: check_cross_bank.py <build-output-dir> [--placement placement.json]
 Exit status is nonzero if any violation is found.
 """
-import sys, os, re, bisect
+import sys, os, re, bisect, json, argparse
 
 TRAMPOLINE = {"__sdcc_banked_call", "__sdcc_banked_ret"}
-MAP_SYM = re.compile(r"^C:\s+([0-9A-Fa-f]{8})\s+(\S+)")
+MAP_SYM = re.compile(r"^C:\s+([0-9A-Fa-f]{8})\s+(\S+)\s+(\S+)?")
 # a listing instruction line: leading hex address ... <mnemonic> <operand>
 INSN = re.compile(r"^\s+([0-9A-Fa-f]{4,6})\s.*\b(lcall|ljmp)\s+(\S+)\s*$")
 
@@ -34,7 +39,7 @@ def bank_of(addr):
 
 
 def load_map(path):
-    syms = {}
+    syms = {}                       # name -> (addr, module)
     with open(path) as f:
         for line in f:
             m = MAP_SYM.match(line)
@@ -44,9 +49,9 @@ def load_map(path):
             name = m.group(2)
             if name.startswith("l_") or addr == 0:
                 continue            # area-length labels / unplaced
-            syms[name] = addr
+            syms[name] = (addr, m.group(3) or "")
     # sorted function table for naming the caller of a flagged call
-    funcs = sorted((a, n) for n, a in syms.items())
+    funcs = sorted((a, n) for n, (a, _) in syms.items())
     return syms, funcs
 
 
@@ -56,13 +61,19 @@ def caller_name(funcs, addr):
 
 
 def main(argv):
-    if len(argv) != 2:
-        sys.exit(__doc__)
-    outdir = argv[1]
+    ap = argparse.ArgumentParser(usage=__doc__)
+    ap.add_argument("outdir")
+    ap.add_argument("--placement", help="file->bank JSON to check instead of the linked addresses")
+    args = ap.parse_args(argv[1:])
+    outdir = args.outdir
     mappath = os.path.join(outdir, "rtlplayground.map")
     if not os.path.exists(mappath):
         sys.exit(f"no map at {mappath}")
     syms, funcs = load_map(mappath)
+
+    placement = None
+    if args.placement:
+        placement = json.load(open(args.placement))
 
     rsts = []
     for root, _, files in os.walk(outdir):
@@ -72,6 +83,7 @@ def main(argv):
     violations = []
     unresolved = set()
     for rst in rsts:
+        caller_mod = os.path.basename(rst)[:-4]     # the listing's own file
         with open(rst) as f:
             for line in f:
                 m = INSN.match(line)
@@ -85,11 +97,16 @@ def main(argv):
                     unresolved.add(target)
                     continue
                 edges += 1
-                cb, tb = bank_of(addr), bank_of(syms[target])
+                taddr, tmod = syms[target]
+                if placement is None:
+                    cb, tb = bank_of(addr), bank_of(taddr)
+                else:
+                    cb, tb = placement.get(caller_mod, 0), placement.get(tmod, 0)
                 if tb != 0 and tb != cb:
                     violations.append((cb, tb, caller_name(funcs, addr), target, addr))
 
-    print(f"checked {edges} direct call/jump edges across {len(rsts)} listings")
+    how = f"proposed placement {args.placement}" if placement else "linked addresses"
+    print(f"checked {edges} direct call/jump edges across {len(rsts)} listings ({how})")
     if unresolved:
         print(f"note: {len(unresolved)} call target(s) not in the map (library/runtime), skipped")
     if not violations:
