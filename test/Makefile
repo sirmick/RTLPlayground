@@ -36,7 +36,8 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_nic_rx \
         $(BUILDDIR)/test_lacp \
         $(BUILDDIR)/test_flash_dev \
-        $(BUILDDIR)/test_update_apply
+        $(BUILDDIR)/test_update_apply \
+        $(BUILDDIR)/test_update_apply_compact
 
 # The table tests link the register mock and one environment file; stub/
 # stands in for the two headers a firmware build generates.
@@ -94,8 +95,9 @@ $(BUILDDIR)/test_flash_dev: test_flash_dev.c flash_dev.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # The real boot-time apply (update_apply.c, UNMODIFIED from the firmware tree)
-# run against the modelled flash device.
-$(BUILDDIR)/test_update_apply: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
+# run against the modelled flash device - built for both flash layouts.
+$(BUILDDIR)/test_update_apply_compact: CFLAGS += -DLAYOUT_COMPACT
+$(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 run: $(TESTS)
