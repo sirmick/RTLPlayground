@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
+import os
 import sys
 
-DATA = 0x3a000
-DATA_END = 0x40000
-ALIAS_FLASH = 0x3800
-ALIAS_CODE = 0xb800
-ALIAS_RAM = ALIAS_FLASH - 2
-LOADER_LEN = 0x4000
-BOOTCNT = 0x3a000
-META = 0x3b000
-SLOT = 0x3c000
-HOME_LEN = 0x3ffe
-APP = ((0x04000, 0x3a000), (0x40000, 0x70000))
-IMAGE_LEN = 0x80000
-LAYOUT = 1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import layout
+
+L = layout.read()               # the one flash layout, from layout.h
+DATA = L["LDR_DATA"]
+DATA_END = L["LDR_DATA_END"]
+ALIAS_FLASH = L["LDR_ALIAS_FLASH"]
+ALIAS_CODE = 0x8000 + ALIAS_FLASH   # the loader's ALIAS area link address
+ALIAS_RAM = L["LDR_ALIAS_RAM"]
+LOADER_LEN = L["LDR_LOADER_LEN"]
+BOOTCNT = L["LDR_BOOTCNT"]
+META = L["LDR_META"]
+SLOT = L["LDR_SLOT"]
+HOME_LEN = L["LDR_HOME_LEN"]
+APP = ((L["LDR_APP_A"], L["LDR_APP_A_END"]), (L["LDR_APP_B"], L["LDR_APP_B_END"]))
+IMAGE_LEN = L["LDR_IMAGE_LEN"]
+LAYOUT = L["LDR_LAYOUT"]
+CHIP = 0x80000                  # a boot image is a whole 512 KiB chip
 
 
 def crc16(data, crc=0):
@@ -59,6 +65,10 @@ def main():
     if crc16(img) != 0xb001:
         sys.exit("application image checksum is wrong")
 
+    # a compact image ends at the loader's data area: the rest of the chip is
+    # erased flash (no staged upload, blank saved config)
+    full_image = len(img) == CHIP
+    img += b'\xff' * (CHIP - len(img))
     img[SLOT:SLOT + HOME_LEN] = img[2:2 + HOME_LEN]
     img[0:LOADER_LEN] = bytes(LOADER_LEN)
     img[0] = 0x00
@@ -94,11 +104,12 @@ def main():
     img[META:META + 0x1000] = b'\xff' * 0x1000
     img[META:META + 7] = b'RTLB' + bytes((crc & 0xff, crc >> 8, LAYOUT))
 
-    c = crc16(img[:-2]) ^ 0xffff
-    img[-2] = c & 0xff
-    img[-1] = c >> 8
-    if crc16(img) != 0xb001:
-        sys.exit("image checksum failed")
+    if full_image:              # its own trailing CRC; a compact one has none there
+        c = crc16(img[:-2]) ^ 0xffff
+        img[-2] = c & 0xff
+        img[-1] = c >> 8
+        if crc16(img) != 0xb001:
+            sys.exit("image checksum failed")
 
     open(sys.argv[3], 'wb').write(img)
     print("loader HOME %d B, alias %d B, application CRC 0x%04x" % (home, alias, crc))

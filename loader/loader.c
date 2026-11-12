@@ -341,7 +341,9 @@ static void handle_upload(void)
 			return;
 		}
 		install(LDR_UPLOAD + LDR_SLOT);
-	} else if (is_all(LDR_UPLOAD + LDR_DATA, LDR_UPLOAD + LDR_DATA_END, 0)) {
+	} else if (LDR_IMAGE_LEN <= LDR_DATA ||
+		   is_all(LDR_UPLOAD + LDR_DATA, LDR_UPLOAD + LDR_DATA_END, 0)) {
+		/* a compact image ends where the data area begins, so cannot use it */
 		install(LDR_UPLOAD + 2);
 	} else {
 		print_string("Image uses the loader data area, dropped\n");

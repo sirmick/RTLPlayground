@@ -518,8 +518,8 @@ uint8_t stream_upload(void)
 				flash_buf[write_len++] = upload_settings.p[upload_settings.bptr++];
 			}
 			if (write_len >= FLASH_PAGE_SIZE) {
-				/* The staged image spans FIRMWARE_UPLOAD_START to twice that,
-				 * the span check_and_flash_update_image() reads back. Nothing
+				/* The staged image spans FIRMWARE_UPLOAD_START to _END (or the
+				 * loader stage), the span that is read back. Nothing
 				 * else bounds uptr: a body whose closing boundary never arrives
 				 * keeps writing, and on a flash exactly this size the address
 				 * wraps onto the running image at zero. */
@@ -792,7 +792,7 @@ void handle_post(uint16_t body_off)
 				send_unauthorized();
 				return;
 			}
-			if (flash_size < FIRMWARE_UPLOAD_START*2)
+			if (flash_size < FLASH_NEEDED_FOR_UPDATE)
 			{
 				print_string("Flash too small for firmware upload!\n");
 				send_bad_request();
@@ -802,7 +802,7 @@ void handle_post(uint16_t body_off)
 			config_upload = 0;
 			upload_loader = 0;
 			uptr = FIRMWARE_UPLOAD_START;
-			upload_end = (uint32_t)FIRMWARE_UPLOAD_START * 2;
+			upload_end = FIRMWARE_UPLOAD_END;
 			verify_crc = 1;
 			max_upload = 1024576;
 			pre_acc = 0;

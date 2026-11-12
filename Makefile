@@ -348,7 +348,7 @@ endif
 
 LOADER_OBJS = $(BUILDDIR)/loader/loader.rel $(BUILDDIR)/loader/net.rel $(BUILDDIR)/loader/loader_alias.rel $(BUILDDIR)/loader/rtl837x_flash.rel
 
-LOADER_HDRS = loader/layout.h loader/loader.h rtl837x_sfr.h rtl837x_regs.h rtl837x_common.h rtl837x_flash.h
+LOADER_HDRS = layout.h loader/layout.h loader/loader.h rtl837x_sfr.h rtl837x_regs.h rtl837x_common.h rtl837x_flash.h
 
 $(BUILDDIR)/loader/%.rel: loader/%.c $(LOADER_HDRS) $(CCFLAGS_STAMP) | create_build_dir
 	mkdir -p "$(BUILDDIR)/loader"
@@ -362,8 +362,8 @@ $(BUILDDIR)/loader/loader.ihx: $(LOADER_OBJS)
 	@if grep -E '^ +[0-9A-F]{6} ' $(BUILDDIR)/loader/loader_alias.lst | grep -E '(ljmp|lcall|ajmp|acall)' | grep -vq 'ljmp 0x0000'; then echo "app_start must only use relative jumps"; exit 1; fi
 	$(CC) -mmcs51 --xram-size 49151 -Wl-bHOME=0x00000 -Wl-bALIAS=0xb800 -Wl-r -o $@ $^
 
-$(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin tools/bootpack.py
-	python3 tools/bootpack.py $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin $@ $(BUILDDIR)/rtlplayground-loader-$(FILENAME_EXTENSION).bin
+$(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin tools/bootpack.py tools/layout.py layout.h
+	LAYOUT_DEFS="$(LAYOUT_DEFS)" HOSTCC="$(HOSTCC)" python3 tools/bootpack.py $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin $@ $(BUILDDIR)/rtlplayground-loader-$(FILENAME_EXTENSION).bin
 
 .PHONY: clean distclean all $(SUBDIRS) $(SUBDIRSCLEAN) create_build_dir
 
