@@ -90,14 +90,23 @@ def affinity_groups(outdir, banked):
     return list(groups.values())
 
 
-def ffd(sizes, cap=BANK_USABLE):
-    """First-fit-decreasing: name->size into bins of cap. Returns name->bank(1..)."""
-    bins = []                   # list of [used, [names]]
+def ffd(sizes, cap=BANK_USABLE, pinned=None):
+    """First-fit-decreasing: name->size into bins of cap. `pinned` (name->bank)
+    seeds those names into their bank first (e.g. hand-asm that self-banks).
+    Returns name->bank(1..)."""
+    pinned = pinned or {}
+    bins = []                   # list of [used, [names]]; index i -> bank i+1
     placement = {}
-    for name, size in sorted(sizes.items(), key=lambda kv: -kv[1]):
-        for b in bins:
+    def ensure(b):
+        while len(bins) < b:
+            bins.append([0, []])
+    for name, bank in pinned.items():
+        ensure(bank)
+        bins[bank - 1][0] += sizes[name]; bins[bank - 1][1].append(name); placement[name] = bank
+    for name, size in sorted((kv for kv in sizes.items() if kv[0] not in pinned), key=lambda kv: -kv[1]):
+        for i, b in enumerate(bins):
             if b[0] + size <= cap:
-                b[0] += size; b[1].append(name); placement[name] = bins.index(b) + 1
+                b[0] += size; b[1].append(name); placement[name] = i + 1
                 break
         else:
             bins.append([size, [name]]); placement[name] = len(bins)
@@ -121,10 +130,20 @@ def show(title, banks):
 
 
 def main(argv):
+    global BANK_USABLE
     ap = argparse.ArgumentParser()
     ap.add_argument("outdir")
     ap.add_argument("-o", "--out", help="write placement JSON (file -> bank)")
+    ap.add_argument("--pin", action="append", default=[], metavar="FILE=BANK",
+                    help="pin a file (and its group) to a bank, e.g. self-banking asm")
+    ap.add_argument("--cap", type=lambda s: int(s, 0), default=BANK_USABLE,
+                    help="usable bytes per bank; set below 0xC000 for headroom "
+                         "(a file's size shifts a little when it changes bank)")
     args = ap.parse_args(argv[1:])
+    BANK_USABLE = args.cap
+    pins = {}
+    for p in args.pin:
+        f, b = p.split("="); pins[f] = int(b)
 
     items = measure(args.outdir)
     if not items:
@@ -144,7 +163,12 @@ def main(argv):
         print("  " + ", ".join(sorted(members)))
         print("  -> some of its cross-file calls must be made __banked to split it.\n")
 
-    gplace, gbins = ffd(group_sizes)
+    group_pin = {}
+    for g in groups:
+        for f in g:
+            if f in pins:
+                group_pin[min(g)] = pins[f]
+    gplace, gbins = ffd(group_sizes, cap=BANK_USABLE, pinned=group_pin)
     placement = {f: gplace[min(g)] for g in groups for f in g}
     show("packed (direct-call groups kept together)", {i + 1: b[0] for i, b in enumerate(gbins)})
 
