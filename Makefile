@@ -1,8 +1,22 @@
 VERSION=0.1.0
+
+# Flash layout, matching rtl837x_common.h. standard: a 512 KiB image (web
+# updates stage a second copy, so need >=1 MiB flash). LAYOUT=compact: a
+# 252 KiB image (code <=3 banks, web UI right after it) that a 512 KiB flash can
+# web-update; its saved config lives outside the image at 0x7f000.
+LAYOUT ?= standard
+ifeq ($(LAYOUT),compact)
+IMAGESIZE = 258048
+DEFAULT_CONFIG_LOCATION = 253952
+HTML_LOCATION = 163840
+else ifeq ($(LAYOUT),standard)
 IMAGESIZE = 524288
 DEFAULT_CONFIG_LOCATION = 454656
 CONFIG_LOCATION = 458752
 HTML_LOCATION = 262144
+else
+$(error LAYOUT must be standard or compact)
+endif
 
 # Startup configuration embedded in the image. Override it to build a specific
 # machine with its own configuration: make MACHINE=<name> CONFIG=<file>
@@ -59,6 +73,9 @@ endif
 ifeq ($(CI),1)
 	CC_FLAGS += --Werror
 endif
+ifeq ($(LAYOUT),compact)
+	CC_FLAGS += -DLAYOUT_COMPACT
+endif
 
 # The board definition being built: one file per MACHINE_* symbol in machine.h.
 MACHINE_SRC = machine/$(MACHINE).c
@@ -70,7 +87,7 @@ ifeq ($(MACHINE_INIT_SRC),)
 endif
 
 ifndef BUILDDIR
-	BUILDDIR = output/$(MACHINE)
+	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
 endif
 
 CONFIG_STAMP := $(BUILDDIR)/.config
@@ -83,7 +100,7 @@ else
 endif
 
 VERSION_EXTENSION = v$(VERSION)-$(GIT_VERSION)
-FILENAME_EXTENSION = $(VERSION_EXTENSION)-$(MACHINE)
+FILENAME_EXTENSION = $(VERSION_EXTENSION)-$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
 
 # Path and file name of the final image. BUILDDIR still holds the intermediate
 # objects and tools. OUTPUT_DIR is the destination directory. OUTPUT_PREFIX is
@@ -230,7 +247,13 @@ $(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rj
 		python3 tools/rjsmin.py < $(BUILDDIR)/_langs/app.js > $(HTML_MIN)/app.js || exit 1
 	@touch $@
 
-html_data.c html_data.h &: $(HTML_MIN_STAMP) | tools
+# html_data.c is generated in the source tree with the web UI's addresses, so
+# it must be regenerated whenever the layout changes, even across BUILDDIRs.
+LAYOUT_STAMP := .layout
+$(LAYOUT_STAMP): FORCE
+	@echo '$(HTML_LOCATION) $(IMAGESIZE)' | cmp -s - $@ 2>/dev/null || echo '$(HTML_LOCATION) $(IMAGESIZE)' > $@
+
+html_data.c html_data.h &: $(HTML_MIN_STAMP) $(LAYOUT_STAMP) | tools
 	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -b BANK1 -z -d $(HTML_MIN) -p html_data
 
 $(VERSION_HEADER): FORCE
@@ -249,11 +272,11 @@ $(SUBDIRS):
 	$(MAKE) -C $@ BUILDDIR=$(BUILDDIR)
 
 clean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP)
+	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
 	-if [ -d $(BUILDDIR) ]; then find $(BUILDDIR) -type f ! -name "*.bin" -delete; fi
 
 distclean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP)
+	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
 	-rm -rf $(BUILDDIR)
 	-rm -rf toolchain
 
@@ -298,10 +321,19 @@ $(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
 	@mkdir -p "$(dir $@)"
 	if [ -e "$@" ]; then rm "$@"; fi
 	tools/$(BUILDDIR)/imagebuilder -i $(BUILDDIR)/rtlplayground.img "$@"
+	python3 tools/check_layout.py --code "$@" --html-defs html_data.h --html $(HTML_LOCATION) \
+		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
 	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@"
-	tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@"
+	$(if $(CONFIG_LOCATION),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@")
 	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
+	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
+		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
+ifeq ($(LAYOUT),compact)
+	# Whole-chip copy for a programmer: the image, then erased (0xff) flash up
+	# to 512 KiB - empty staging area and a blank saved config, seeded at boot.
+	{ cat "$@"; head -c $$((524288 - $(IMAGESIZE))) /dev/zero | tr '\000' '\377'; } > "$(basename $@)-flash512k.bin"
+endif
 	if [ "$(OUTPUT)" = "$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin" ]; then \
 		ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin "$(BUILDDIR)/../rtlplayground.bin"; \
 	fi

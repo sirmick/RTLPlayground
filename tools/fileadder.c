@@ -331,6 +331,8 @@ int main(int argc, char **argv)
 	ibuf_p += snprintf(&ibuf[ibuf_p], INDEX_SIZE - ibuf_p, "__code const struct f_data f_data[] = {\n");
 	// fbuf_p += snprintf(&fbuf[fbuf_p], DEF_SIZE - fbuf_p, "\n__code fcall_ptr f_calls[] = {\n");
 
+	size_t data_end = 0;
+
 	// Now that the beginning of the buffer is filled with out image, optionally resize the image
 	if (filesize)
 		filesize = arguments.size? arguments.size : filesize;
@@ -385,6 +387,7 @@ int main(int argc, char **argv)
 			addidx(in_file->d_name, addr, data_read);
 			addr += data_read;
 		}
+		data_end = addr;
 		for (int e = 0; e < n_entries; e++)
 			free(entries[e]);
 		free(entries);
@@ -398,6 +401,13 @@ int main(int argc, char **argv)
 			}
 			printf("Data inserted at 0x%x, size: %ld\n", arguments.address, data_read);
 		}
+		data_end = arguments.address + data_read;
+	}
+
+	if (arguments.size && data_end > (size_t)arguments.size) {
+		fprintf(stderr, "Error: data ends at 0x%zx, past the image size 0x%x\n",
+			data_end, arguments.size);
+		return 5;
 	}
 
 	ibuf_p += snprintf(&ibuf[ibuf_p], INDEX_SIZE - ibuf_p, "  {0, 0, 0}\n};\n");
