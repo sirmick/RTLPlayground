@@ -220,6 +220,9 @@ void isr_timer2(void) __interrupt(5)
 
 
 __data uint8_t serial_last_rx;
+// Set once the main loop runs; until then a ^R ^R is only remembered
+__data uint8_t serial_reset_ok;
+__data uint8_t serial_reset_pending;
 
 void isr_serial(void) __interrupt(4)
 {
@@ -227,8 +230,11 @@ void isr_serial(void) __interrupt(4)
 		uint8_t c = SBUF;
 		RI = 0;
 		// ^R ^R resets at once, even if the main loop is stuck
-		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR)
-			CHIP_RESET_NOW();
+		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR) {
+			if (serial_reset_ok)
+				CHIP_RESET_NOW();
+			serial_reset_pending = 1;
+		}
 		serial_last_rx = c;
 		sbuf[sbuf_ptr] = c;
 		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
@@ -1684,6 +1690,10 @@ void main(void)
 	cmd_editor_init();
 
 	health_stack_paint();
+	/* Booted: ^R ^R may now reset at once; one sent during the boot runs now */
+	serial_reset_ok = 1;
+	if (serial_reset_pending)
+		CHIP_RESET_NOW();
 	while (1) {
 		cmd_edit();
 		idle(); // Enter Idle mode until interrupt occurs

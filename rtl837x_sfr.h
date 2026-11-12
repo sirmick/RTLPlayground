@@ -124,18 +124,17 @@ __sfr16 __at(0xcbca) RCAP2_U16;
  * an XMODEM transfer. Two in a row, so line noise on the console doesn't.
  *
  * CHIP_RESET_NOW() needs nothing but SFRs, so an interrupt can use it without a
- * call. A reset restarts the SoC but not the flash chip. A reset landing
- * mid-boot (during the PHY set-up, which streams patches from flash) hung a
- * SWTG024AS until its power was cycled; the suspicion is a flash transfer cut
- * off with the chip still mid-command, so the boot ROM reads garbage. So it
- * first lets a flash transfer the main code may have in flight finish, then
- * any register access,
+ * call: it lets a register access the main code may have in flight finish,
  * then writes 1 to the reset register (RTL837X_REG_RESET, 0x0024) the way
  * reg_write() does (start, poll the status) and waits for the reset.
+ *
+ * Only reset from a safe point: a reset landing mid-boot (during the PHY
+ * set-up) has hung a SWTG024AS until its power was cycled, while resets once
+ * the main loop runs never have. The app defers a ^R ^R that arrives while it
+ * boots until its main loop starts.
  */
 #define RESET_CHAR 0x12
 #define CHIP_RESET_NOW() do { \
-	while (SFR_FLASH_EXEC_BUSY); \
 	while (SFR_EXEC_STATUS != 0); \
 	SFR_DATA_24 = 0; SFR_DATA_16 = 0; SFR_DATA_8 = 0; SFR_DATA_0 = 1; \
 	SFR_REG_ADDR_U16 = 0x0024; \

@@ -285,8 +285,9 @@ When you power up the switch, the device will perform some examples and provide 
 (if wired to a serial interface), the documentation of which can be found in the source code rtlplayground.c`.
 
 To restart the switch from the console, type `reset`, or send two Ctrl-R (`^R ^R`, 0x12 0x12)
-bytes in a row: those reset it at once from the UART interrupt, even when the console is busy or
-stuck, and also work at any prompt of the optional loader (not inside an XMODEM transfer).
+bytes in a row: once the switch has booted, those reset it at once from the UART interrupt, even
+when the console is busy or stuck (sent during the boot, they take effect as soon as it
+completes). They also work at any prompt of the optional loader (not inside an XMODEM transfer).
 
 ## (8) The web-interface
 
