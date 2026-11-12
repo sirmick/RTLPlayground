@@ -5,6 +5,7 @@
 // #define DEBUG
 // #define REGDBG 1
 
+#include "update_apply.h"
 #include <8051.h>
 #include "cmd_parser.h"
 #include "rtl837x_common.h"
@@ -2162,15 +2163,22 @@ void execute_config(void) __banked
 	strtox(passwd, PASSWORD);
 	save_cmd = 0;
 
-	// A blank saved-config sector (0xff) means the switch was flashed with an
-	// image that carries no saved config - e.g. a compact image, whose saved
-	// config lies outside it. Seed it from the default config so first boot
-	// applies the intended settings instead of parsing erased flash.
-	flash_region.addr = CONFIG_START;
-	flash_region.len = FLASH_READ_BURST_SIZE;
-	flash_read_bulk(flash_buf);
-	if (flash_buf[0] == 0xff)
-		flash_default_config();
+	// Coming from the standard layout, the saved config is moved to its
+	// compact place once. If the copy didn't take, keep the old one for the
+	// next try and boot on the default config, without seeding it.
+	if (config_migrate() == CONFIG_MOVE_FAILED) {
+		pos = DEFAULT_CONFIG_START;
+	} else {
+		// A blank saved-config sector (0xff) means the switch was flashed with an
+		// image that carries no saved config - e.g. a compact image, whose saved
+		// config lies outside it. Seed it from the default config so first boot
+		// applies the intended settings instead of parsing erased flash.
+		flash_region.addr = CONFIG_START;
+		flash_region.len = FLASH_READ_BURST_SIZE;
+		flash_read_bulk(flash_buf);
+		if (flash_buf[0] == 0xff)
+			flash_default_config();
+	}
 
 	uint8_t cmd_idx = 0;
 	uint8_t skipping = 0;

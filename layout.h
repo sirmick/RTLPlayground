@@ -44,6 +44,9 @@
 #define LDR_LAYOUT           1
 #endif
 #define CONFIG_LEN 0x1000
+/* Where the saved config lived in the standard layout. A compact firmware
+ * moves a config found there to CONFIG_START once, at its first boot. */
+#define LEGACY_CONFIG_START  0x70000
 #define CODE0_SIZE 0x4000
 #define CODE_BANK_SIZE 0xc000
 
@@ -102,6 +105,9 @@
 #endif
 #if !(LDR_STAGE + LDR_LOADER_LEN <= UPLOAD_START || LDR_STAGE >= FIRMWARE_UPLOAD_END)
 #error "flash layout: the loader update must not lie in the upload staging area"
+#endif
+#if defined(LAYOUT_COMPACT) && CONFIG_START != 0x7f000
+#error "flash layout: the saved config stays at 0x7f000 - switches moved there once must never move again"
 #endif
 #if LDR_STAGE < CONFIG_START + CONFIG_LEN && LDR_STAGE + LDR_LOADER_LEN > CONFIG_START
 #error "flash layout: the loader update must not overlap the saved config"

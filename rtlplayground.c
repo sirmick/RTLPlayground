@@ -219,10 +219,10 @@ void isr_timer2(void) __interrupt(5)
 }
 
 
-__data uint8_t serial_last_rx;
+__xdata uint8_t serial_last_rx;
 // Set once the main loop runs; until then a ^R ^R is only remembered
-__data uint8_t serial_reset_ok;
-__data uint8_t serial_reset_pending;
+__xdata uint8_t serial_reset_ok;
+__xdata uint8_t serial_reset_pending;
 
 void isr_serial(void) __interrupt(4)
 {

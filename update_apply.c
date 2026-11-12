@@ -129,3 +129,72 @@ uint16_t flash_crc16(uint32_t a, uint32_t end)
 	}
 	return crc_value;
 }
+
+#if CONFIG_START != LEGACY_CONFIG_START
+/* Is the old config sector saved-config text: printable lines starting with
+ * a letter and ending in NUL or erased flash? Staging leftovers (a gzipped web
+ * UI, code) at the old address are binary, so they are not mistaken for one.
+ * (No parameters and xdata locals: internal RAM is full.) */
+static uint8_t legacy_is_config_text(void)
+{
+	__xdata uint16_t off, i;
+	__xdata uint8_t c;
+
+	for (off = 0; off < CONFIG_LEN; off += FLASH_BUF_SIZE) {
+		flash_region.addr = LEGACY_CONFIG_START + off;
+		flash_region.len = FLASH_BUF_SIZE;
+		flash_read_bulk(flash_buf);
+		for (i = 0; i < FLASH_BUF_SIZE; i++) {
+			c = flash_buf[i];
+			if (!off && !i && !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
+				return 0;
+			if (c == 0x00 || c == 0xff)
+				return 1;
+			if ((c < ' ' || c > '~') && c != '\n' && c != '\r' && c != '\t')
+				return 0;
+		}
+	}
+	return 0;		/* no end within the sector */
+}
+
+uint8_t config_migrate(void)
+{
+	__xdata uint32_t off;
+
+	/* The move erases the old sector last, so config text still there means
+	 * the move isn't finished (or a standard firmware ran again since): the
+	 * old sector is the truth. Copy it over, unless that already happened. */
+	if (!legacy_is_config_text())
+		return CONFIG_STAYED;
+	if (flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN)
+	    != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
+		print_string("Moving the saved config to its new place... ");
+		flash_region.addr = CONFIG_START;
+		flash_sector_erase();
+		for (off = 0; off < CONFIG_LEN; off += FLASH_BUF_SIZE) {
+			flash_region.addr = LEGACY_CONFIG_START + off;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_read_bulk(flash_buf);
+			flash_region.addr = CONFIG_START + off;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_write_bytes(flash_buf);
+		}
+		if (flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN)
+		    != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
+			flash_region.addr = CONFIG_START;	/* blank again: retried next boot */
+			flash_sector_erase();
+			print_string("failed\n");
+			return CONFIG_MOVE_FAILED;
+		}
+		print_string("done\n");
+	}
+	flash_region.addr = LEGACY_CONFIG_START;
+	flash_sector_erase();
+	return CONFIG_MOVED;
+}
+#else
+uint8_t config_migrate(void)
+{
+	return CONFIG_STAYED;
+}
+#endif

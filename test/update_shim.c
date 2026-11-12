@@ -63,3 +63,10 @@ int update_run(void)
 	check_and_flash_update_image();
 	return 0;			/* returned normally -> no reset */
 }
+
+int migrate_run(void)
+{
+	if (setjmp(reset_jmp))
+		return -1;		/* power cut mid-op */
+	return config_migrate();
+}
