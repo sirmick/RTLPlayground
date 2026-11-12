@@ -8,6 +8,10 @@ HTML_LOCATION = 262144
 # machine with its own configuration: make MACHINE=<name> CONFIG=<file>
 CONFIG ?= config.txt
 
+# Web UI languages to keep (space/comma list, e.g. LANGS="en de"); empty = all
+# six. English is always kept as the fallback. Trims the image; see the web UI.
+LANGS ?=
+
 SDCC_TOOLCHAIN = sdcc-$(shell cat sdcc/* | cksum | cut -d' ' -f1)
 SDCC_PREFIX = toolchain/$(SDCC_TOOLCHAIN)
 ifeq ($(origin CC),default)
@@ -215,11 +219,15 @@ $(HTML_MIN_LIST): FORCE
 	@echo $(sort $(HTML)) > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 
-$(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py $(if $(wildcard $(HTML_MIN)),,FORCE)
+$(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py tools/filter_langs.py $(if $(wildcard $(HTML_MIN)),,FORCE)
 	rm -rf $(HTML_MIN)
-	mkdir -p $(HTML_MIN)
-	@for f in $(HTML); do python3 tools/minify.py $$f $(HTML_MIN)/$$(basename $$f) || exit 1; done
-	python3 tools/rjsmin.py < html/app.js > $(HTML_MIN)/app.js || exit 1
+	mkdir -p $(HTML_MIN) $(BUILDDIR)/_langs
+	@for f in $(HTML); do \
+		python3 tools/filter_langs.py "$(LANGS)" $$f $(BUILDDIR)/_langs/$$(basename $$f) && \
+		python3 tools/minify.py $(BUILDDIR)/_langs/$$(basename $$f) $(HTML_MIN)/$$(basename $$f) || exit 1; \
+	done
+	python3 tools/filter_langs.py "$(LANGS)" html/app.js $(BUILDDIR)/_langs/app.js && \
+		python3 tools/rjsmin.py < $(BUILDDIR)/_langs/app.js > $(HTML_MIN)/app.js || exit 1
 	@touch $@
 
 html_data.c html_data.h &: $(HTML_MIN_STAMP) | tools
