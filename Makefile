@@ -237,7 +237,7 @@ html_min: $(HTML_MIN_STAMP)
 
 $(HTML_MIN_LIST): FORCE
 	@mkdir -p $(BUILDDIR)
-	@echo $(sort $(HTML)) > $@.tmp
+	@echo $(sort $(HTML)) LANGS=$(LANGS) > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 
 $(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py tools/filter_langs.py $(if $(wildcard $(HTML_MIN)),,FORCE)
