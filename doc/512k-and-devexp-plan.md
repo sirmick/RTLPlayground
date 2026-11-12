@@ -84,5 +84,10 @@ With the web UI trimmed, the banks packed, and the web UI placed right after the
   calls on the linked result. (The placement is applied via regenerated
   codeseg banks; emitting it straight into the link, so the banks need no hand
   pragmas at all, is a follow-up.)
-- **Next: (c) the web-UI trims** (the `LANGS=` option and the `fileadder`
-  fix), then the compact layout and safe copy on top of (a).
+- **(c) web-UI trims: done.** A `LANGS=` build option prunes the UI's
+  languages (English-only ~24 KiB smaller compressed), and `fileadder` no
+  longer leaves each file's uncompressed tail in the image. Together the web
+  region goes from 188 KiB to 61.5 KiB (all languages) or 37.3 KiB (English).
+- **Next:** the compact layout and the safe, resumable copy on top of (a) -
+  with the code a bank shorter and the web UI ~150 KiB smaller, the image now
+  fits a 512 KiB web update with room to spare.
