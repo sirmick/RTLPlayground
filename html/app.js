@@ -363,10 +363,10 @@ var LANG = {
         t_rejected: "command rejected: {c}",
         t_failed: "failed: {c}",
         fw_title: "Firmware update",
-        fw_intro: "Upload an RTLPlayground image (512 KiB .bin). The image is staged to flash and CRC-checked; on success the switch reboots itself, re-verifies the image and applies it. The startup configuration is preserved.",
+        fw_intro: "Upload an RTLPlayground image (.bin) built for this switch. The image is staged to flash and CRC-checked; on success the switch reboots itself, re-verifies the image and applies it. The startup configuration is preserved.",
         fw_upload: "Upload",
         fw_checking: "{f}: {n} bytes. Checking...",
-        fw_size_err: "size is {n}, expected 524288 (512 KiB)",
+        fw_size_err: "size is {n}, expected {w}",
         fw_magic_err: "missing bank header / LJMP magic: not a firmware image",
         fw_crc_err: "CRC16 check failed: corrupt image",
         fw_valid: "valid RTLPlayground image (size, magic and CRC16 OK)",
@@ -674,7 +674,7 @@ var LANG = {
         fw_intro: "RTLPlayground イメージ (512 KiB の .bin) をアップロードします。イメージはフラッシュに書き込まれ CRC を検証され、成功するとスイッチが自動的に再起動して再検証のうえ適用します。起動設定は保持されます。",
         fw_upload: "アップロード",
         fw_checking: "{f}: {n} バイト。確認中...",
-        fw_size_err: "サイズが {n} です。524288 (512 KiB) が必要です",
+        fw_size_err: "サイズが {n} です。{w} が必要です",
         fw_magic_err: "バンクヘッダ / LJMP マジックがありません: ファームウェアイメージではありません",
         fw_crc_err: "CRC16 検証に失敗しました: イメージが破損しています",
         fw_valid: "有効な RTLPlayground イメージです (サイズ、マジック、CRC16 OK)",
@@ -1058,7 +1058,7 @@ var LANG = {
         fw_intro: "上传 RTLPlayground 镜像 (512 KiB 的 .bin)。镜像会写入 Flash 并进行 CRC 校验；成功后交换机自动重启，再次校验并应用镜像。启动配置将被保留。",
         fw_upload: "上传",
         fw_checking: "{f}: {n} 字节。正在检查...",
-        fw_size_err: "大小为 {n}，应为 524288 (512 KiB)",
+        fw_size_err: "大小为 {n}，应为 {w}",
         fw_magic_err: "缺少 bank 头 / LJMP 魔数: 不是固件镜像",
         fw_crc_err: "CRC16 校验失败: 镜像已损坏",
         fw_valid: "有效的 RTLPlayground 镜像 (大小、魔数和 CRC16 正确)",
@@ -1364,7 +1364,7 @@ var LANG = {
         fw_intro: "Sube una imagen de RTLPlayground (512 KiB .bin). La imagen se almacena provisionalmente en flash y se comprueba con CRC; si es correcta, el switch se reinicia, vuelve a verificar la imagen y la aplica. La configuración de inicio se conserva.",
         fw_upload: "Subir",
         fw_checking: "{f}: {n} bytes. Comprobando...",
-        fw_size_err: "el tamaño es {n}, se esperaban 524288 (512 KiB)",
+        fw_size_err: "el tamaño es {n}, se esperaban {w}",
         fw_magic_err: "falta la cabecera de banco / magia LJMP: no es una imagen de firmware",
         fw_crc_err: "comprobación CRC16 fallida: imagen corrupta",
         fw_valid: "imagen de RTLPlayground válida (tamaño, magia y CRC16 correctos)",
@@ -1794,7 +1794,7 @@ var LANG = {
         fw_intro: "Charge une image RTLPlayground (512 KiB .bin). L'image est envoée en mémoire flash, analysée et sa somme de contrôle est vérifiée; en cas de succès le commutateur va redémarrer, re-verifiez l'image et appliquez-là. LA configuration de démarrage est conservée.",
         fw_upload: "Charger",
         fw_checking: "{f}: {n} bytes. Vérification...",
-        fw_size_err: "la taille est {n} alors que nous attendons 524288 (512 KiB)",
+        fw_size_err: "la taille est {n} alors que nous attendons {w}",
         fw_magic_err: "Entête de banque de donnée manquant / contrôle LJMP: ce n'est pas une image de firmware",
         fw_crc_err: "Somme de contrôle erronée: image corrompue",
         fw_valid: "Image RTLPlayground valide (taille, LJMP et somme de contrôle OK)",
@@ -2181,7 +2181,7 @@ var LANG = {
         fw_intro: "Ein RTLPlayground-Image hochladen (.bin, 512 KiB). Das Image wird im Flash abgelegt und per CRC geprüft; ist es in Ordnung, startet der Switch neu, prüft das Image erneut und übernimmt es. Die Startkonfiguration bleibt erhalten.",
         fw_upload: "Hochladen",
         fw_checking: "{f}: {n} Bytes. Wird geprüft...",
-        fw_size_err: "Grösse ist {n}, erwartet 524288 (512 KiB)",
+        fw_size_err: "Grösse ist {n}, erwartet {w}",
         fw_magic_err: "Bank-Header / LJMP-Kennung fehlt: kein Firmware-Image",
         fw_crc_err: "CRC16-Prüfung fehlgeschlagen: Image beschädigt",
         fw_valid: "gültiges RTLPlayground-Image (Grösse, Kennung und CRC16 in Ordnung)",
@@ -5275,8 +5275,12 @@ $("fwfile").addEventListener("change", function() {
     f.arrayBuffer().then(function(buf) {
         var u = new Uint8Array(buf),
             msg = null;
-        if (u.length !== 524288) msg = t("fw_size_err", {
-            n: u.length
+        // The running firmware reports the image size its flash layout
+        // takes (compact builds are smaller); older firmware is 512 KiB.
+        var want = Number(S.info.img_size) || 524288;
+        if (u.length !== want) msg = t("fw_size_err", {
+            n: u.length,
+            w: want
         });
         else if (u[0] !== 0x00 || u[1] !== 0x40 || u[2] !== 0x02) msg = t("fw_magic_err");
         else {

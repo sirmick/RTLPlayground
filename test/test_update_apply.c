@@ -106,15 +106,17 @@ int main(int argc, char **argv)
 	      "re-run after power cut completes from the intact staged image");
 	fd_free(&g_flash);
 
-	/* a real built .bin is a standard-layout image */
-	if (argc > 1 && IMAGE_SIZE == 0x80000) {
+	/* a real built .bin of this layout: standard on 2 MiB, compact on the
+	 * 512 KiB it is meant for */
+	if (argc > 1) {
 		FILE *f = fopen(argv[1], "rb");
 		if (!f) { perror(argv[1]); return 2; }
-		static uint8_t real[0x80000];
+		static uint8_t real[IMAGE_SIZE + 1];
 		size_t n = fread(real, 1, sizeof real, f); fclose(f);
-		if (n != sizeof real) { fprintf(stderr, "%s: short read\n", argv[1]); return 2; }
-		CHECK(crc16_host_buf(real, 0x80000) == 0xB001, "real image: CRC == 0xB001 (matches crc_calculator)");
-		run_valid_cycle(0x200000, "2M real image", real);
+		if (n != IMAGE_SIZE) { fprintf(stderr, "%s: %zu bytes, not 0x%x\n", argv[1], n, IMAGE_SIZE); return 2; }
+		CHECK(crc16_host_buf(real, IMAGE_SIZE) == 0xB001, "real image: CRC == 0xB001 (matches crc_calculator)");
+		run_valid_cycle(IMAGE_SIZE == 0x80000 ? 0x200000 : need,
+				IMAGE_SIZE == 0x80000 ? "2M real image" : "512K real image", real);
 	}
 
 	printf(failures ? "\ntest_update_apply: %d FAILURE(S)\n" : "\ntest_update_apply: ALL PASS\n", failures);

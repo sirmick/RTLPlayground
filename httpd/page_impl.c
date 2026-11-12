@@ -264,6 +264,8 @@ void send_basic_info(void)
 	temp_to_html();
 	str_code_to_html("\"," JSONQUOTE("flash_size") ":\"");
 	str_code_to_html(get_flash_size_str());
+	/* The size a firmware upload must have for this build's flash layout. */
+	str_code_to_html("\"," JSONQUOTE("img_size") ":\"" STR(IMAGE_SIZE));
 
 	if (machine.n_sfp) {
 		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");
