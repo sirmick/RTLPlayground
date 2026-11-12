@@ -129,6 +129,9 @@ void flash_write_bytes(uint8_t *ptr)
 }
 const char *get_flash_size_str(void) { return "512 kB"; }
 void crc16_bank1(uint8_t *v) { (void)v; }
+/* The flash read-back of a finished upload comes to readback_crc. */
+static uint16_t readback_crc = 0xb001;
+uint16_t flash_crc16(uint32_t a, uint32_t end) { (void)a; (void)end; return readback_crc; }
 static unsigned reset_calls;
 void reset_chip(void) { reset_calls++; }
 static bool loader_update_ok = true;
@@ -754,6 +757,16 @@ static void scenario_upload_reset_owner(void)
 	uip_flags = UIP_ACKDATA;
 	httpd_appcall();
 	CHECK(reset_calls == 0, "failed CRC verdict ACK does not reset");
+
+	/* a good stream whose flash read-back doesn't match is refused too */
+	crc_final = 0xb001;
+	readback_crc = 0x1234;
+	bindex = 0;
+	stream_upload();
+	readback_crc = 0xb001;
+	CHECK(uip_conn->appstate.fw_reset_pending == 0
+	      && strstr((char *)outbuf, "HTTP/1.1 400 Bad Request") != NULL,
+	      "an upload whose flash read-back fails is refused, no reset");
 
 }
 

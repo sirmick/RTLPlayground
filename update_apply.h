@@ -12,4 +12,8 @@
  */
 void check_and_flash_update_image(void);
 
+/* CRC-16 (the firmware's, as crc16_bank1) of the flash range [a, end). An
+ * image with its CRC appended comes to 0xb001. Resident; uses flash_buf. */
+uint16_t flash_crc16(uint32_t a, uint32_t end);
+
 #endif

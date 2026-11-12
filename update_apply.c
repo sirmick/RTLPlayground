@@ -112,3 +112,20 @@ void check_and_flash_update_image(void)
 		print_string("no update image found.\n");
 	}
 }
+
+uint16_t flash_crc16(uint32_t a, uint32_t end)
+{
+	__xdata uint16_t i, n;
+
+	crc_value = 0;
+	while (a < end) {
+		n = end - a > FLASH_BUF_SIZE ? FLASH_BUF_SIZE : end - a;
+		flash_region.addr = a;
+		flash_region.len = n;
+		flash_read_bulk(flash_buf);
+		for (i = 0; i < n; i++)
+			crc16_bank1(flash_buf + i);
+		a += n;
+	}
+	return crc_value;
+}

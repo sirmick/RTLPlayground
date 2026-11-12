@@ -11,6 +11,7 @@
 #include "html_data.h"
 #include "boot.h"
 #include "loader/layout.h"
+#include "update_apply.h"
 
 // #define DEBUG
 #include "debug.h"
@@ -95,6 +96,7 @@ __xdata uint32_t now;
 extern __xdata uint16_t crc_value;
 __xdata uint16_t crc_final;
 void crc16_bank1(__xdata uint8_t *v) __naked;
+
 
 
 inline uint8_t is_separator(uint8_t c)
@@ -465,12 +467,20 @@ uint8_t stream_upload(void)
 			s->tstate = TSTATE_NONE;
 			dbg_string("len 2: "); dbg_short(write_len); dbg_char(' ');
 			flash_region.addr = uptr;
+			if (write_len && !(uptr % FLASH_SECTOR_SIZE))
+				flash_sector_erase();	/* a last partial page opening a sector */
+			flash_region.addr = uptr;
 			flash_region.len = write_len;
 			flash_write_bytes(flash_buf);
 			uptr += write_len;
 			write_len = 0;
 			if (verify_crc) {
 				dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
+				/* the stream CRC alone doesn't catch a write that went wrong */
+				if (crc_final == 0xb001 && flash_crc16(upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START, uptr) != 0xb001) {
+					print_string("Flash read-back does not match the upload\n");
+					crc_final = 0;		/* refused below as a bad checksum */
+				}
 				// Both bodies are 33 bytes; Content-Length lets the
 				// browser complete the response without waiting for
 				// the connection close (which a reset would swallow)
