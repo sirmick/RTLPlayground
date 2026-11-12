@@ -34,6 +34,7 @@
 #include "timer.h"
 #include "httpd/page_impl.h"
 #include "boot.h"
+#include "loader/layout.h"
 #include "sfp.h"
 #include "update_apply.h"
 
@@ -98,6 +99,7 @@ extern __xdata struct dhcp_state dhcp_state;
 #define STP_CATCH_UP 8
 #define SFP_TICK_STEP 10
 static __xdata struct timer second;
+static __xdata bool loader_confirmed;
 static __xdata struct timer sfp_poll;
 static __xdata struct timer delay_timer;
 
@@ -1153,6 +1155,10 @@ static void handle_tick(void)
 {
 	if (timer_expired(&second)) {
 		timer_reset(&second);
+		if (!loader_confirmed && ticks > (uint32_t)LDR_CONFIRM_S * SYS_TICK_HZ) {
+			loader_confirmed = true;
+			loader_confirm();
+		}
 		reg_read_m(RTL837X_REG_SEC_COUNTER);
 		uint8_t v = sfr_data[3];
 #ifdef DEBUG

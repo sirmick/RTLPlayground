@@ -10,6 +10,7 @@
 #include "rtl837x_flash.h"
 #include "rtl837x_regs.h"
 #include "update_apply.h"
+#include "loader/layout.h"
 
 extern __xdata uint32_t flash_size;
 extern __xdata uint16_t crc_value;
@@ -24,6 +25,14 @@ void check_and_flash_update_image(void)
 	print_string(get_flash_size_str()); print_string(" flash size detected.\n");
 	if (flash_size < FLASH_NEEDED_FOR_UPDATE) {
 		print_string("Flash too small for updating; skipping update check\n");
+		return;
+	}
+
+	flash_region.addr = LDR_META;
+	flash_region.len = 4;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] == 'R' && flash_buf[1] == 'T' && flash_buf[2] == 'L' && flash_buf[3] == 'B') {
+		print_string("Updates are installed by the loader\n");
 		return;
 	}
 
