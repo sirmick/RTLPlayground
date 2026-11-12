@@ -71,5 +71,18 @@ With the web UI trimmed, the banks packed, and the web UI placed right after the
 
 ## Status
 
-- Flash device model and its self-test: done.
-- Next: wire the real upload and boot-copy to the model, add a bit-exact host CRC, and the update-cycle test; then the cross-bank checker and the packer; then the web-UI trims.
+- **(a) flash testing: done.** A flash device model and its self-test; the real
+  boot-copy (`update_apply.c`, lifted out of `rtlplayground.c`) run against it
+  with a bit-exact host CRC (checked against the 0xB001 residual on real
+  images): the 512 KiB refusal, copy-with-config-preserved, and power-cut
+  resume, all in `make -C test`.
+- **(b) bin-pack: done.** A static cross-bank checker (`check_cross_bank.py`,
+  zero violations on the current build), and a packer (`pack_banks.py`) that
+  keeps direct-call groups together, pins self-banking asm, and packs to
+  headroom. Applied, the build goes from four code banks to three - a freed
+  bank - and two machines build with the checker confirming zero cross-bank
+  calls on the linked result. (The placement is applied via regenerated
+  codeseg banks; emitting it straight into the link, so the banks need no hand
+  pragmas at all, is a follow-up.)
+- **Next: (c) the web-UI trims** (the `LANGS=` option and the `fileadder`
+  fix), then the compact layout and safe copy on top of (a).
