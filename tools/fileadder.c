@@ -373,8 +373,15 @@ int main(int argc, char **argv)
 			data_read = replaceCalls(addr, file_len);
 			if (old_len > data_read)
 				memset(buffer + addr + data_read, 0, old_len - data_read);
-			if (arguments.gzip)
-				data_read = gzipBuffer(addr, data_read);
+			if (arguments.gzip) {
+				/* Compression shrinks the data in place; clear the raw tail
+				 * it leaves behind, or the uncompressed remainder stays in
+				 * the image and bloats the web region. */
+				int raw_len = data_read;
+				data_read = gzipBuffer(addr, raw_len);
+				if (data_read < raw_len)
+					memset(buffer + addr + data_read, 0, raw_len - data_read);
+			}
 			addidx(in_file->d_name, addr, data_read);
 			addr += data_read;
 		}
