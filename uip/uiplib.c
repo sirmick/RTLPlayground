@@ -37,8 +37,8 @@
 #include "uip.h"
 #include "uiplib.h"
 
-#pragma codeseg BANK1
-#pragma constseg BANK1
+#pragma codeseg BANK2
+#pragma constseg BANK2
 
 /*-----------------------------------------------------------------------------------*/
 unsigned char

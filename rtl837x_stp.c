@@ -22,8 +22,8 @@ extern __xdata uint8_t err_status;
 
 // All entry points are __banked and nothing here runs from an interrupt,
 // so the module does not need to stay in the resident bank
-#pragma codeseg BANK4
-#pragma constseg BANK4
+#pragma codeseg BANK2
+#pragma constseg BANK2
 
 extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
