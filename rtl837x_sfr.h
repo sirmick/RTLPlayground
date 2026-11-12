@@ -116,3 +116,24 @@ __sfr __at(0xc8) T2CON;
 __sfr __at(0xca) RCAP2L;
 __sfr __at(0xcb) RCAP2H;
 __sfr16 __at(0xcbca) RCAP2_U16;
+
+/*
+ * Console reset: two RESET_CHAR (^R) bytes in a row reset the chip at once.
+ * The app checks for them in the UART interrupt, so a reset works whatever the
+ * main loop is doing; the loader checks wherever it reads a byte, except inside
+ * an XMODEM transfer. Two in a row, so line noise on the console doesn't.
+ *
+ * CHIP_RESET_NOW() needs nothing but SFRs, so an interrupt can use it without a
+ * call: it lets a register access the main code may have in flight finish,
+ * then writes 1 to the reset register (RTL837X_REG_RESET, 0x0024) the way
+ * reg_write() does (start, poll the status) and waits for the reset.
+ */
+#define RESET_CHAR 0x12
+#define CHIP_RESET_NOW() do { \
+	while (SFR_EXEC_STATUS != 0); \
+	SFR_DATA_24 = 0; SFR_DATA_16 = 0; SFR_DATA_8 = 0; SFR_DATA_0 = 1; \
+	SFR_REG_ADDR_U16 = 0x0024; \
+	SFR_EXEC_GO = SFR_EXEC_WRITE_REG; \
+	while (SFR_EXEC_STATUS != 0); \
+	while (1); \
+} while (0)

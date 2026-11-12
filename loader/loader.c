@@ -146,13 +146,29 @@ bool tick(void)
 	return t;
 }
 
+static bool xm_busy;		/* in an XMODEM transfer: bytes are data */
+static uint8_t rx_last;
+
+/* Take the received byte; ^R ^R outside a transfer resets the chip. */
+static uint8_t rx_byte(void)
+{
+	uint8_t c;
+
+	RI = 0;
+	c = SBUF;
+	if (!xm_busy) {
+		if (c == RESET_CHAR && rx_last == RESET_CHAR)
+			CHIP_RESET_NOW();
+		rx_last = c;
+	}
+	return c;
+}
+
 static int16_t get_timeout(uint16_t ticks)
 {
 	while (1) {
-		if (RI) {
-			RI = 0;
-			return SBUF;
-		}
+		if (RI)
+			return rx_byte();
 		if (tick()) {
 			if (!ticks--)
 				return -1;
@@ -167,8 +183,7 @@ static uint8_t wait_key(uint16_t ticks)
 	timer0_start();
 	while (ticks) {
 		if (RI) {
-			RI = 0;
-			k = SBUF;
+			k = rx_byte();
 			if (k == 'x' || k == 'c')
 				return k;
 		}
@@ -510,6 +525,7 @@ static bool xmodem(void)
 		if (c != XM_SOH)
 			continue;
 		started = true;
+		xm_busy = true;
 
 		c = get_timeout(TICKS_1S);
 		b = c;
@@ -615,8 +631,12 @@ static void start_app(void)
 
 static void recover(void)
 {
+	bool ok;
+
 	print_string("XMODEM upload of a firmware image, 115200 8N1, Enter opens the console\n");
-	if (xmodem()) {
+	ok = xmodem();
+	xm_busy = false;
+	if (ok) {
 		get_timeout(TICKS_1S);
 		print_string("\nReceived\n");
 		if (small)
@@ -765,13 +785,8 @@ static void info(void)
 
 static void reset(void)
 {
-	while (!TI);
-	SFR_DATA_24 = 0;
-	SFR_DATA_16 = 0;
-	SFR_DATA_8 = 0;
-	SFR_DATA_0 = 1;
-	reg_wr(RTL837X_REG_RESET);
-	while (1);
+	while (!TI);		/* let the last character out */
+	CHIP_RESET_NOW();
 }
 
 static void console(void)

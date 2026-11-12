@@ -219,11 +219,18 @@ void isr_timer2(void) __interrupt(5)
 }
 
 
+__data uint8_t serial_last_rx;
+
 void isr_serial(void) __interrupt(4)
 {
 	if (RI == 1) {
+		uint8_t c = SBUF;
 		RI = 0;
-		sbuf[sbuf_ptr] = SBUF;
+		// ^R ^R resets at once, even if the main loop is stuck
+		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR)
+			CHIP_RESET_NOW();
+		serial_last_rx = c;
+		sbuf[sbuf_ptr] = c;
 		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
 	}
 	if (TI == 1) {

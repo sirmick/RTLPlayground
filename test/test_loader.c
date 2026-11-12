@@ -892,6 +892,17 @@ int main(void)
 	check(unconfirmed() == 4 && loader_intact(), "the console writes nothing to the flash");
 	confirm();
 
+	/* ^R ^R resets the chip at once; a single ^R is an ordinary byte */
+	for (int i = 0; i < 3; i++)
+		boot();
+	xm_arm(NULL, 0, 0);
+	type("c");
+	type("\x12");
+	type("info\r");
+	type("\x12\x12");
+	check(boot() == 4 && strstr(out, "Loader CRC"), "^R ^R at the loader console resets the chip, a single ^R does not");
+	confirm();
+
 	flash[LDR_APP_A + 0x10] ^= 0x01;
 	xm_arm(a2, 0, 0);
 	xm_skip = 1;
