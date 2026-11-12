@@ -2156,6 +2156,16 @@ void execute_config(void) __banked
 	strtox(passwd, PASSWORD);
 	save_cmd = 0;
 
+	// A blank saved-config sector (0xff) means the switch was flashed with an
+	// image that carries no saved config - e.g. a compact image, whose saved
+	// config lies outside it. Seed it from the default config so first boot
+	// applies the intended settings instead of parsing erased flash.
+	flash_region.addr = CONFIG_START;
+	flash_region.len = FLASH_READ_BURST_SIZE;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] == 0xff)
+		flash_default_config();
+
 	uint8_t cmd_idx = 0;
 	uint8_t skipping = 0;
 	do {
