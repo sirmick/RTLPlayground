@@ -19,6 +19,12 @@ same bank, or those calls break - so the packer keeps such files together: it
 groups files joined by a direct call and packs the groups, not loose files.
 check_cross_bank.py --placement proves the result call-safe.
 
+When applying a placement, move a file's `#pragma constseg` together with its
+`#pragma codeseg`: its strings and __code consts are read through the bank
+window of whichever bank is running, so they must sit in the code's own bank.
+The sizes here count the CODE area only; consts add to a bank on top. A plain
+check_cross_bank.py run on the relinked build checks the const placement.
+
 Usage: pack_banks.py <build-output-dir> [-o placement.json]
 """
 import sys, os, re, json, argparse
