@@ -1,22 +1,28 @@
 VERSION=0.1.0
 
-# Flash layout, matching rtl837x_common.h. standard: a 512 KiB image (web
-# updates stage a second copy, so need >=1 MiB flash). LAYOUT=compact: a
-# 252 KiB image (code <=3 banks, web UI right after it) that a 512 KiB flash can
-# web-update; its saved config lives outside the image at 0x7f000.
+# Flash layout: standard, a 512 KiB image (web updates stage a second copy, so
+# need >=1 MiB flash), or LAYOUT=compact, a 252 KiB image that a 512 KiB flash
+# can web-update. The addresses are defined once, in layout.h, and read from it
+# here through the host C preprocessor.
 LAYOUT ?= standard
 ifeq ($(LAYOUT),compact)
-IMAGESIZE = 258048
-DEFAULT_CONFIG_LOCATION = 253952
-HTML_LOCATION = 163840
-else ifeq ($(LAYOUT),standard)
-IMAGESIZE = 524288
-DEFAULT_CONFIG_LOCATION = 454656
-CONFIG_LOCATION = 458752
-HTML_LOCATION = 262144
-else
+LAYOUT_DEFS = -DLAYOUT_COMPACT
+else ifneq ($(LAYOUT),standard)
 $(error LAYOUT must be standard or compact)
 endif
+HOSTCC ?= gcc
+# $(call layout_val,NAME): the value of NAME in layout.h, as a decimal number
+layout_val = $(shell echo 'v=$(1)' | $(HOSTCC) -E -P -x c $(LAYOUT_DEFS) -include layout.h - | \
+	sed -n 's/^v=//p' | { read x; echo $$((x)); })
+IMAGESIZE := $(call layout_val,IMAGE_SIZE)
+HTML_LOCATION := $(call layout_val,HTML_START)
+DEFAULT_CONFIG_LOCATION := $(call layout_val,DEFAULT_CONFIG_START)
+CONFIG_LOCATION := $(call layout_val,CONFIG_START)
+ifeq ($(filter-out 0,$(IMAGESIZE)),)
+$(error could not read the flash layout from layout.h with $(HOSTCC))
+endif
+# The standard image carries the saved config; a compact one keeps it outside.
+CONFIG_IN_IMAGE := $(shell [ $(CONFIG_LOCATION) -lt $(IMAGESIZE) ] && echo 1)
 
 # Startup configuration embedded in the image. Override it to build a specific
 # machine with its own configuration: make MACHINE=<name> CONFIG=<file>
@@ -73,9 +79,7 @@ endif
 ifeq ($(CI),1)
 	CC_FLAGS += --Werror
 endif
-ifeq ($(LAYOUT),compact)
-	CC_FLAGS += -DLAYOUT_COMPACT
-endif
+CC_FLAGS += $(LAYOUT_DEFS)
 
 # The board definition being built: one file per MACHINE_* symbol in machine.h.
 MACHINE_SRC = machine/$(MACHINE).c
@@ -324,7 +328,7 @@ $(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
 	python3 tools/check_layout.py --code "$@" --html-defs html_data.h --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
 	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@"
-	$(if $(CONFIG_LOCATION),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@")
+	$(if $(CONFIG_IN_IMAGE),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@")
 	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
 	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
