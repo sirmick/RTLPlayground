@@ -812,7 +812,7 @@ static void console(void)
 				"xmodem            receive a firmware image\n"
 				"net [IP]          ports 4-7 up, answer ARP and ping\n"
 				"boot              leave the console\n"
-				"reset             restart the switch\n"
+				"reset             restart the switch (^R ^R works at any prompt)\n"
 				"Numbers are hex\n");
 		} else if (cmd("info")) {
 			info();

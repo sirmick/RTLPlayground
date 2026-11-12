@@ -284,6 +284,10 @@ You can connect a serial cable to the UART port found on all the devices, set 8N
 When you power up the switch, the device will perform some examples and provide a minimal console
 (if wired to a serial interface), the documentation of which can be found in the source code rtlplayground.c`.
 
+To restart the switch from the console, type `reset`, or send two Ctrl-R (`^R ^R`, 0x12 0x12)
+bytes in a row: those reset it at once from the UART interrupt, even when the console is busy or
+stuck, and also work at any prompt of the optional loader (not inside an XMODEM transfer).
+
 ## (8) The web-interface
 
 The web-interface can be reached under the [default 192.168.10.247](http://192.168.10.247) unless you
