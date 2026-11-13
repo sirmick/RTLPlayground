@@ -1,6 +1,40 @@
 # RTLPlayground
 A Playground for Firmware development for advanced user of RTL8372/RTL8373 based 2.5GBit Switches.
 
+> **This is an experimental branch** (`dev` of the [sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground)
+> fork of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground)). It changes the flash
+> layout and the update path; use it on switches you can recover with a flash programmer. The
+> intent is to merge the pieces back upstream once they have proven themselves.
+>
+> What it adds:
+> - **Compact flash layout** (`make LAYOUT=compact`): a 232 KiB image, defined once in `layout.h`,
+>   so that **512 KiB devices can be updated through the web UI**. The saved config moves once,
+>   at first boot, to its fixed place at `0x7f000`; `tools/bridge_image.py` lets a switch running
+>   standard-layout firmware install a compact image over the web.
+> - **XMODEM flashing and recovery** with DrDoof's optional loader
+>   ([#852](https://github.com/logicog/RTLPlayground/pull/852)), which on the compact layout stages
+>   every install - web or XMODEM - and verifies it before copying. `^R ^R` on the console resets
+>   the switch from the UART interrupt (deferred until the boot completes).
+> - **Machine data region** at `0x80000` (1 MiB flash and more) for a board's own blobs, such as
+>   the PoE controller firmware of the MokerLink POE-2G040210GSM: written once, never by an update.
+>   The firmware page recognises application, loader and machine data files by their header.
+> - **Code placement and checks**: the code banks packed from four to three
+>   (`tools/pack_banks.py`), `tools/check_cross_bank.py` for calls and `__code` data reads that
+>   cross a bank, `tools/check_layout.py` for region overlaps, a smaller web UI (`LANGS=`).
+> - **Tests without hardware**: a model of the SPI flash chip running the real boot-time update,
+>   config and machine data moves (with power cuts at every flash operation), upload read-back
+>   checks; `make -C test -j8 quick` runs them in seconds. `tools/docker-make.sh` builds in parallel.
+> - **Low-hanging upstream PRs pulled in**: [#747](https://github.com/logicog/RTLPlayground/pull/747)
+>   (MokerLink POE-2G040210GSM), [#370](https://github.com/logicog/RTLPlayground/pull/370) and parts
+>   of [#305](https://github.com/logicog/RTLPlayground/pull/305) (code and internal RAM),
+>   [#839](https://github.com/logicog/RTLPlayground/pull/839) (`flash r`),
+>   [#843](https://github.com/logicog/RTLPlayground/pull/843) (installer checksum),
+>   [#876](https://github.com/logicog/RTLPlayground/pull/876) (upgrade check against the PCB).
+>
+> Proven on a 512 KiB SWTG024AS so far: compact web updates, the loader's web and XMODEM installs
+> and self-update, config kept across updates, bad uploads refused. Not yet on hardware: the
+> config and machine data moves from the standard layout, and the PoE board on the compact layout.
+
 For each hardware configuration of these devices, there is usually a managed and an
 unmanaged version sold, with mostly identical hardware. The aim is to provide management
 features also for unmanaged devices with additional features such as Management VLAN,
