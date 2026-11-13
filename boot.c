@@ -507,9 +507,17 @@ bool loader_recovery(void) __banked
 	return loader_boots - 2 > LDR_RECOVERY_BOOTS;
 }
 
+/* Runs from handle_tick(), LDR_CONFIRM_S after the boot: possibly while a
+ * firmware upload is in flight, whose next page waits in flash_buf between
+ * packets. So it reads the mark into a buffer of its own. */
+static __xdata uint8_t bootcnt_mark[2];
+
 void loader_confirm(void) __banked
 {
-	if (!loader_read_bootcnt())
+	flash_region.addr = LDR_BOOTCNT;
+	flash_region.len = sizeof(bootcnt_mark);
+	flash_read_bulk(bootcnt_mark);
+	if (bootcnt_mark[0] != 'B' || bootcnt_mark[1] != 'C')
 		return;
 	flash_region.addr = LDR_BOOTCNT;
 	flash_sector_erase();
