@@ -27,20 +27,29 @@
  *    firmware does. The lines are driven open drain: the output latches stay 0
  *    and only the direction bits change.
  *
- *    Image region, PSE_IMAGE_START: "PSE1", the lengths of image 0 and image 1
- *    (uint32, little endian), image 0, image 1. It sits right after the last
- *    code bank and below the web UI, inside the span a web update rewrites
- *    (0x00000 up to CONFIG_START).
+ *    Image block, PSE_IMAGE_START: "PSE1", the lengths of image 0 and image 1
+ *    (uint32, little endian), image 0, image 1. Standard layout: inside the
+ *    firmware image, after the last code bank and below the web UI, so every
+ *    web update rewrites it. Compact layout: the payload of the machine data
+ *    region (layout.h), which no update touches - written once, separately.
  */
 #include "machine_init_defs.h"
 #include "rtl837x_flash.h"
+#include "update_apply.h"
 
 extern __xdata uint8_t sfr_data[4];
 extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 
+#ifdef LAYOUT_COMPACT
+/* compact layout: the block is the payload of the machine data region, which
+ * no update writes (layout.h); it is checked as a whole (CRC) before use */
+#define PSE_IMAGE_START	(MDATA_START + MDATA_HDR_LEN)
+#define PSE_IMAGE_MAX	(MDATA_LEN - MDATA_HDR_LEN - 2)
+#else
 #define PSE_IMAGE_START	0x34000
 #define PSE_IMAGE_MAX	0xc000
+#endif
 #define PSE_HDR_LEN	12
 #define PSE_ADDR	0x20
 
@@ -192,13 +201,11 @@ static bool pse_begin(uint8_t reg)
 	return false;
 }
 
-static void pse_set(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
-{
-	pse_buf[0] = a;
-	pse_buf[1] = b;
-	pse_buf[2] = c;
-	pse_buf[3] = d;
-}
+// Fill pse_buf for pse_write(). A macro, not a function: the 8051's internal
+// RAM has no room left for its parameters.
+#define pse_set(a, b, c, d) do { \
+	pse_buf[0] = (a); pse_buf[1] = (b); pse_buf[2] = (c); pse_buf[3] = (d); \
+} while (0)
 
 // Write the 4 bytes in pse_buf to a register, in that order
 static bool pse_write(uint8_t reg)
@@ -253,25 +260,40 @@ static uint32_t le32(__xdata uint8_t *p)
 
 static bool pse_image_header(void)
 {
+	__xdata uint32_t total;
+
+#ifdef LAYOUT_COMPACT
+	if (!mdata_len(MDATA_START))
+		return false;
+#endif
 	flash_region.addr = PSE_IMAGE_START;
 	flash_region.len = PSE_HDR_LEN;
 	flash_read_bulk(flash_buf);
 	if (flash_buf[0] != 'P' || flash_buf[1] != 'S' || flash_buf[2] != 'E' || flash_buf[3] != '1')
 		return false;
+	// The region is under 64 KiB, so a length with its upper bytes set can't
+	// fit; checking the bytes avoids 32-bit compares, which SDCC spills to
+	// internal RAM (full) - as it does a sum in one expression.
+	if (flash_buf[6] || flash_buf[7] || flash_buf[10] || flash_buf[11])
+		return false;
 	img_len[0] = le32(flash_buf + 4);
 	img_len[1] = le32(flash_buf + 8);
-	if (img_len[0] > PSE_IMAGE_MAX || img_len[1] > PSE_IMAGE_MAX
-	    || PSE_HDR_LEN + img_len[0] + img_len[1] > PSE_IMAGE_MAX)
+	total = img_len[0];
+	total += img_len[1];
+	total += PSE_HDR_LEN;
+	if (total > PSE_IMAGE_MAX)
 		return false;
 	return img_len[0] || img_len[1];
 }
 
 // Send an image from flash to register 0xf4 as one transfer. Like the stock
 // firmware, a data byte without an acknowledge doesn't stop the transfer.
-static bool pse_write_image(uint32_t addr, uint32_t len)
+// Image img's place and length come from the header (img_len, in xdata) -
+// no 32-bit parameters, for the same reason as pse_set.
+static bool pse_write_image(uint8_t img)
 {
-	__xdata uint32_t a = addr;
-	__xdata uint32_t left = len;
+	__xdata uint32_t a = PSE_IMAGE_START + PSE_HDR_LEN + (img ? img_len[0] : 0);
+	__xdata uint32_t left = img_len[img];
 	__xdata uint16_t n, i;
 
 	if (!pse_begin(0xf4))
@@ -293,10 +315,9 @@ static bool pse_write_image(uint32_t addr, uint32_t len)
 static void pse_load(void)
 {
 	__xdata uint8_t img;
-	__xdata uint32_t addr;
 
 	if (!pse_image_header()) {
-		print_string("PSE: no RTL8238B image in this firmware, PoE stays off\n");
+		print_string("PSE: no RTL8238B image, PoE stays off\n");
 		return;
 	}
 	i2c_setup();
@@ -325,12 +346,8 @@ static void pse_load(void)
 		print_string("PSE: no image for this chip type\n");
 		return;
 	}
-	addr = PSE_IMAGE_START + PSE_HDR_LEN;
-	if (img)
-		addr += img_len[0];
-
 	print_string("PSE: loading image "); write_char('0' + img); write_char('\n');
-	if (!pse_write_image(addr, img_len[img])) {
+	if (!pse_write_image(img)) {
 		print_string("PSE: load failed, no answer\n");
 		return;
 	}

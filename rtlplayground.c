@@ -1610,6 +1610,7 @@ void main(void)
 	rtl8373_revision();
 
 	leds_setup();
+	mdata_migrate();	// before the machine init reads it
 	machine_custom_init();
 
 	set_sys_led_state(SYS_LED_SLOW);

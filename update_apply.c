@@ -113,13 +113,16 @@ void check_and_flash_update_image(void)
 	}
 }
 
-uint16_t flash_crc16(uint32_t a, uint32_t end)
+__xdata uint32_t flash_crc16_from, flash_crc16_to;
+
+uint16_t flash_crc16_range(void)
 {
+	__xdata uint32_t a = flash_crc16_from;
 	__xdata uint16_t i, n;
 
 	crc_value = 0;
-	while (a < end) {
-		n = end - a > FLASH_BUF_SIZE ? FLASH_BUF_SIZE : end - a;
+	while (a < flash_crc16_to) {
+		n = flash_crc16_to - a > FLASH_BUF_SIZE ? FLASH_BUF_SIZE : flash_crc16_to - a;
 		flash_region.addr = a;
 		flash_region.len = n;
 		flash_read_bulk(flash_buf);
@@ -160,14 +163,15 @@ static uint8_t legacy_is_config_text(void)
 uint8_t config_migrate(void)
 {
 	__xdata uint32_t off;
+	__xdata uint16_t c;	/* one CRC at a time: flash_crc16() passes its range in globals */
 
 	/* The move erases the old sector last, so config text still there means
 	 * the move isn't finished (or a standard firmware ran again since): the
 	 * old sector is the truth. Copy it over, unless that already happened. */
 	if (!legacy_is_config_text())
 		return CONFIG_STAYED;
-	if (flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN)
-	    != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
+	c = flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN);
+	if (c != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
 		print_string("Moving the saved config to its new place... ");
 		flash_region.addr = CONFIG_START;
 		flash_sector_erase();
@@ -179,8 +183,8 @@ uint8_t config_migrate(void)
 			flash_region.len = FLASH_BUF_SIZE;
 			flash_write_bytes(flash_buf);
 		}
-		if (flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN)
-		    != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
+		c = flash_crc16(LEGACY_CONFIG_START, LEGACY_CONFIG_START + CONFIG_LEN);
+		if (c != flash_crc16(CONFIG_START, CONFIG_START + CONFIG_LEN)) {
 			flash_region.addr = CONFIG_START;	/* blank again: retried next boot */
 			flash_sector_erase();
 			print_string("failed\n");
@@ -194,6 +198,86 @@ uint8_t config_migrate(void)
 }
 #else
 uint8_t config_migrate(void)
+{
+	return CONFIG_STAYED;
+}
+#endif
+
+#ifdef LAYOUT_COMPACT
+static uint8_t mdata_chip_ok(void)
+{
+	if (!flash_size)
+		flash_read_jedecid();
+	return flash_size >= MDATA_START + MDATA_LEN;
+}
+
+__xdata uint32_t mdata_at;
+
+uint32_t mdata_len_at(void)
+{
+	__xdata uint32_t a = mdata_at;
+	__xdata uint32_t len;
+
+	if (!mdata_chip_ok())
+		return 0;
+	flash_region.addr = a;
+	flash_region.len = MDATA_HDR_LEN;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] != 'M' || flash_buf[1] != 'D' || flash_buf[2] != 'T' || flash_buf[3] != '1')
+		return 0;
+	len = flash_buf[4] | ((uint32_t)flash_buf[5] << 8) | ((uint32_t)flash_buf[6] << 16) | ((uint32_t)flash_buf[7] << 24);
+	if (len > MDATA_LEN - MDATA_HDR_LEN - 2)
+		return 0;
+	len += MDATA_HDR_LEN + 2;
+	return flash_crc16(a, a + len) == 0xb001 ? len : 0;
+}
+
+uint8_t mdata_migrate(void)
+{
+	__xdata uint32_t len, off;
+	__xdata uint16_t c;	/* one CRC at a time: flash_crc16() passes its range in globals */
+	__xdata uint8_t same = 0;
+
+	len = mdata_len(MDATA_XFER_START);
+	if (!len)
+		return CONFIG_STAYED;
+	if (mdata_len(MDATA_START) == len) {
+		c = flash_crc16(MDATA_START, MDATA_START + len);
+		same = c == flash_crc16(MDATA_XFER_START, MDATA_XFER_START + len);
+	}
+	if (!same) {
+		print_string("Moving the machine data to its own region... ");
+		for (off = 0; off < len; off += 0x1000) {
+			flash_region.addr = MDATA_START + off;
+			flash_sector_erase();
+		}
+		for (off = 0; off < len; off += FLASH_BUF_SIZE) {
+			flash_region.addr = MDATA_XFER_START + off;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_read_bulk(flash_buf);
+			flash_region.addr = MDATA_START + off;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_write_bytes(flash_buf);
+		}
+		if (mdata_len(MDATA_START) != len) {
+			print_string("failed\n");
+			return CONFIG_MOVE_FAILED;	/* transfer copy kept: retried next boot */
+		}
+		print_string("done\n");
+	}
+	flash_region.addr = MDATA_XFER_START;	/* its header gone: done, for good */
+	flash_sector_erase();
+	return CONFIG_MOVED;
+}
+#else
+__xdata uint32_t mdata_at;
+
+uint32_t mdata_len_at(void)
+{
+	return 0;
+}
+
+uint8_t mdata_migrate(void)
 {
 	return CONFIG_STAYED;
 }

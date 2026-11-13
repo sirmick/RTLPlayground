@@ -26,7 +26,7 @@ def read(defs=None):
         return eval(expr, {})
 
     ours = ("LDR_", "IMAGE_", "UPLOAD_", "CONFIG_", "HTML_", "DEFAULT_CONFIG_",
-            "FIRMWARE_UPLOAD_", "CODE")
+            "FIRMWARE_UPLOAD_", "CODE", "MDATA_", "LEGACY_")
     return {k: value(k) for k in raw if k.startswith(ours)}
 
 

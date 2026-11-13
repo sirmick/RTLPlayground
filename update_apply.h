@@ -15,8 +15,12 @@
 void check_and_flash_update_image(void);
 
 /* CRC-16 (the firmware's, as crc16_bank1) of the flash range [a, end). An
- * image with its CRC appended comes to 0xb001. Resident; uses flash_buf. */
-uint16_t flash_crc16(uint32_t a, uint32_t end);
+ * image with its CRC appended comes to 0xb001. Resident; uses flash_buf.
+ * The range is passed in xdata (the macro): internal RAM is full, and 32-bit
+ * parameters would take it. */
+extern __xdata uint32_t flash_crc16_from, flash_crc16_to;
+uint16_t flash_crc16_range(void);
+#define flash_crc16(a, end) (flash_crc16_from = (a), flash_crc16_to = (end), flash_crc16_range())
 
 /*
  * Move a saved config from the standard layout's sector (LEGACY_CONFIG_START)
@@ -31,5 +35,15 @@ uint16_t flash_crc16(uint32_t a, uint32_t end);
 #define CONFIG_MOVED       1
 #define CONFIG_MOVE_FAILED 2
 uint8_t config_migrate(void);
+
+/* Machine data (layout.h, MDATA_*). mdata_len(a): the total length (header,
+ * payload, CRC) of a valid region at a, else 0. mdata_migrate(): at boot,
+ * before the machine init reads it, move a transfer copy left by a bridge
+ * image to MDATA_START, once (same rules as config_migrate). Both do nothing
+ * on a chip too small to have the region. Returns as config_migrate. */
+extern __xdata uint32_t mdata_at;
+uint32_t mdata_len_at(void);
+#define mdata_len(a) (mdata_at = (a), mdata_len_at())
+uint8_t mdata_migrate(void);
 
 #endif

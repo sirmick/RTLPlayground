@@ -70,3 +70,10 @@ int migrate_run(void)
 		return -1;		/* power cut mid-op */
 	return config_migrate();
 }
+
+int migrate_mdata_run(void)
+{
+	if (setjmp(reset_jmp))
+		return -1;
+	return mdata_migrate();
+}

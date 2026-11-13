@@ -44,6 +44,19 @@
 #define LDR_LAYOUT           1
 #endif
 #define CONFIG_LEN 0x1000
+/* Machine data (compact layout, chips of 1 MiB or more): a region no update
+ * ever writes, for a board's own blobs - the POE-2G040210GSM's PoE controller
+ * firmware. "MDT1", the payload length (uint32, little endian), the payload,
+ * and a CRC-16 that makes the whole come to 0xb001. Written once, separately;
+ * a bridge image from the standard layout carries a copy at MDATA_XFER_START
+ * (inside what the old firmware copies, and inside the new staging area),
+ * which the first boot moves here. On a 512 KiB chip there is no region: its
+ * address would wrap onto the start of the flash. */
+#define MDATA_START          0x80000
+#define MDATA_LEN            0xc000
+#define MDATA_XFER_START     0x60000
+#define MDATA_HDR_LEN        8
+
 /* Where the saved config lived in the standard layout. A compact firmware
  * moves a config found there to CONFIG_START once, at its first boot. */
 #define LEGACY_CONFIG_START  0x70000
@@ -108,6 +121,12 @@
 #endif
 #if defined(LAYOUT_COMPACT) && CONFIG_START != 0x7f000
 #error "flash layout: the saved config stays at 0x7f000 - switches moved there once must never move again"
+#endif
+#if defined(LAYOUT_COMPACT) && (MDATA_XFER_START < UPLOAD_START || MDATA_XFER_START + MDATA_LEN > LEGACY_CONFIG_START)
+#error "flash layout: the machine data transfer copy must lie in the staging area and below the old config"
+#endif
+#if defined(LAYOUT_COMPACT) && (MDATA_START % 0x1000 || MDATA_START < 0x80000)
+#error "flash layout: machine data lies past the first 512 KiB, sector aligned"
 #endif
 #if LDR_STAGE < CONFIG_START + CONFIG_LEN && LDR_STAGE + LDR_LOADER_LEN > CONFIG_START
 #error "flash layout: the loader update must not overlap the saved config"

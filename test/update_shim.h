@@ -18,6 +18,8 @@ int update_run(void);
 /* Run config_migrate() against g_flash. Returns its result, or -1 if a
  * modelled power cut stopped it part-way (g_flash.powercut set). */
 int migrate_run(void);
+/* The same for mdata_migrate(). */
+int migrate_mdata_run(void);
 
 /* crc16_host.c */
 uint16_t crc16_host_step(uint16_t crc, uint8_t b);

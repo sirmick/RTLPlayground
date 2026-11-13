@@ -131,7 +131,8 @@ const char *get_flash_size_str(void) { return "512 kB"; }
 void crc16_bank1(uint8_t *v) { (void)v; }
 /* The flash read-back of a finished upload comes to readback_crc. */
 static uint16_t readback_crc = 0xb001;
-uint16_t flash_crc16(uint32_t a, uint32_t end) { (void)a; (void)end; return readback_crc; }
+uint32_t flash_crc16_from, flash_crc16_to;
+uint16_t flash_crc16_range(void) { return readback_crc; }
 static unsigned reset_calls;
 void reset_chip(void) { reset_calls++; }
 static bool loader_update_ok = true;

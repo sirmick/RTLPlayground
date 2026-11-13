@@ -39,6 +39,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_update_apply \
         $(BUILDDIR)/test_update_apply_compact \
         $(BUILDDIR)/test_config_migrate \
+        $(BUILDDIR)/test_mdata_migrate \
         $(BUILDDIR)/test_loader
 
 # The table tests link the register mock and one environment file; stub/
@@ -104,7 +105,9 @@ $(BUILDDIR)/test_flash_dev: test_flash_dev.c flash_dev.c | $(BUILDDIR)
 $(BUILDDIR)/test_update_apply_compact: CFLAGS += -DLAYOUT_COMPACT
 
 # The one-time config move (compact layout) against the modelled flash.
-$(BUILDDIR)/test_config_migrate: CFLAGS += -DLAYOUT_COMPACT
+$(BUILDDIR)/test_config_migrate $(BUILDDIR)/test_mdata_migrate: CFLAGS += -DLAYOUT_COMPACT
+$(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 $(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
