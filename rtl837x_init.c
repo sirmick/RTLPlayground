@@ -12,8 +12,6 @@ extern __xdata uint8_t sfr_data[4];
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
 
 /*
  * Configure the PHY-Side of the SDS-SDS link between SoC and PHY

@@ -1,8 +1,6 @@
 #include "rtl837x_common.h"
 #include "chacha.h"
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
 
 void chacha_20(void);
 void chacha_update(void);

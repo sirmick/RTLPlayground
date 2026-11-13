@@ -7,8 +7,6 @@
 #include "rtl837x_bandwidth.h"
 #include "machine.h"
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
 
 extern __xdata uint8_t sfr_data[4];
 

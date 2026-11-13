@@ -224,6 +224,16 @@ SRCS += \
 
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
+
+# Code banks: banks.txt gives each banked file its bank, passed to the compiler
+# as --codeseg/--constseg (no bank pragmas in the sources). `make repack`
+# rewrites it from a build's sizes (tools/pack_banks.py).
+BANKS_FILE := banks.txt
+BANK_LINES := $(shell sed -e 's/\#.*//' -e '/^[[:space:]]*$$/d' $(BANKS_FILE) | tr -s ' \t' ':')
+bank_src = $(subst MACHINE_INIT,$(MACHINE_INIT_SRC),$(word 1,$(subst :, ,$(1))))
+bank_flags = --codeseg BANK$(word 2,$(subst :, ,$(1))) --constseg BANK$(word 2,$(subst :, ,$(1)))
+$(foreach l,$(BANK_LINES),$(eval $(BUILDDIR)/$(basename $(call bank_src,$(l))).rel: BANK_FLAGS = $(call bank_flags,$(l))))
+MACHINE_INIT_BANK_FLAGS := $(foreach l,$(filter MACHINE_INIT:%,$(BANK_LINES)),$(call bank_flags,$(l)))
 HTML := $(shell find html -name '*.html' -or -name '*.svg' -or -name '*.css' -or -name '*.ico')
 
 # Minified copy of the web UI sources, used as the fileadder input.
@@ -308,8 +318,8 @@ $(CCFLAGS_STAMP): FORCE | create_build_dir
 $(CONFIG_STAMP): FORCE | create_build_dir
 	@echo '$(CONFIG)' | cmp -s - $@ 2>/dev/null || echo '$(CONFIG)' > $@
 
-$(BUILDDIR)/%.rel: %.c $(CCFLAGS_STAMP) | create_build_dir html_data.h
-	$(CC) -MMD $(CC_FLAGS) -o $@ -c $<
+$(BUILDDIR)/%.rel: %.c $(CCFLAGS_STAMP) $(BANKS_FILE) | create_build_dir html_data.h
+	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 
 $(BUILDDIR)/%.rel: %.asm $(CCFLAGS_STAMP) | create_build_dir
 	${ASM} ${AFLAGS} -o $@ $<
@@ -391,7 +401,7 @@ machine_check: $(SDCC)
 	$(CC) $(MACHINE_LESS_CC_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c machine/$${MACHINE}.c; \
 	INIT=machine/$${MACHINE}_init.c; \
 	if [ ! -e $$INIT ] && [ ! -L $$INIT ]; then INIT=$(MACHINE_INIT_DEFAULT); fi; \
-	$(CC) $(MACHINE_LESS_CC_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c $$INIT; \
+	$(CC) $(MACHINE_LESS_CC_FLAGS) $(MACHINE_INIT_BANK_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c $$INIT; \
 	done
 	@rm -rf $(BUILDDIR)/tmp
 

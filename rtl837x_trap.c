@@ -3,8 +3,6 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_trap.h"
 
-#pragma codeseg BANK1
-#pragma constseg BANK1
 
 extern __xdata uint8_t sfr_data[4];
 

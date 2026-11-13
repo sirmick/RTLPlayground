@@ -1,0 +1,44 @@
+# The code bank (1-3) of each banked source file: its code and its __code
+# constants go there (--codeseg/--constseg). A file not listed stays in the
+# home bank. MACHINE_INIT stands for the board's init file (MACHINE_INIT_SRC).
+#
+# Files that call each other directly (not __banked) must share a bank;
+# check_cross_bank.py fails the build if they don't. When a bank fills up,
+# rebalance with `make repack` (tools/pack_banks.py), which rewrites this file.
+boot.c 3
+cmd_editor.c 3
+cmd_parser.c 2
+crypto/chacha20.c 3
+dhcp.c 1
+dns.c 3
+dns_cli.c 2
+httpd/httpd.c 1
+httpd/page_impl.c 1
+httpd/page_stp.c 1
+MACHINE_INIT 3
+ntp.c 3
+ntp_cli.c 2
+rtl837x_bandwidth.c 3
+rtl837x_cabletest.c 3
+rtl837x_igmp.c 3
+rtl837x_init.c 3
+rtl837x_lacp.c 3
+rtl837x_leds.c 2
+rtl837x_leds_dump.c 3
+rtl837x_lldp.c 3
+rtl837x_phy.c 2
+rtl837x_pins.c 3
+rtl837x_port.c 1
+rtl837x_storm.c 3
+rtl837x_stp.c 2
+rtl837x_stp_cli.c 2
+rtl837x_trap.c 1
+sessions.c 3
+sfp.c 3
+syslog.c 3
+uip/uip_arp.c 3
+uip/uip.c 1
+uip/uip-fw.c 1
+uip/uiplib.c 2
+uip/uip-neighbor.c 1
+uip/uip-split.c 1

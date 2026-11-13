@@ -10,8 +10,6 @@
 #include "page_impl.h"
 #include "debug.h"
 
-#pragma codeseg BANK1
-#pragma constseg BANK1
 
 extern __code const struct machine machine;
 extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];

@@ -4,10 +4,8 @@
 
 #include "machine_defs.h"
 
-// Board init code (machine_custom_init(), called __banked). In bank 3, which has
-// the most room: bank 2 overflowed on the POE-2G040210GSM, whose init is large.
+// Board init code (machine_custom_init(), called __banked). Its bank is the
+// MACHINE_INIT line of banks.txt.
 
-#pragma codeseg BANK3
-#pragma constseg BANK3
 
 #endif
