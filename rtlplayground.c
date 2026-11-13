@@ -146,11 +146,13 @@ __code const uint16_t bit_mask[16] = {
 __xdata uint8_t linkbits_last[4];
 __xdata uint16_t link_changed;
 __xdata uint8_t linkbits_last_p89;
-__data __at(0x20) volatile uint8_t evflags;
-volatile __bit __at(0x00) link_irq;
-volatile __bit __at(0x01) rx_irq;
-volatile __bit __at(0x02) tick_pending;
-__bit __at(0x03) cmd_available;
+// The main loop's events. Plain relocatable bits: the linker doesn't reserve
+// absolute (__at) bits, so pinning them into one byte put other modules' bits
+// on top of them, and the byte was never zero (idle() never slept).
+volatile __bit link_irq;
+volatile __bit rx_irq;
+volatile __bit tick_pending;
+__bit cmd_available;
 // Last known state of the SFP detection/Loss of Signal pins
 __xdata bool button_last;
 __xdata uint8_t button_sec_counter_last;
@@ -1238,7 +1240,7 @@ static void handle_tick(void)
 
 void idle(void)
 {
-	if (!evflags)
+	if (!(link_irq || rx_irq || tick_pending || cmd_available))
 		PCON |= 1;
 	health_loop_start();
 	if (tick_pending) {
