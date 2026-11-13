@@ -887,7 +887,11 @@ uip_process(u8_t flag) __banked
   if(BUF->vhl != 0x45)  { /* IP version and header length. */
     UIP_STAT(++uip_stat.ip.drop);
     UIP_STAT(++uip_stat.ip.vhlerr);
-    UIP_LOG("ip: invalid version or header length.");
+    /* IPv4 with options - IGMP's router alert, for one - is normal on a
+       LAN, and uIP doesn't handle options: drop it without a word, or the
+       console fills up. */
+    if((BUF->vhl & 0xf0) != 0x40)
+      UIP_LOG("ip: invalid version or header length.");
     goto drop;
   }
 #endif /* UIP_CONF_IPV6 */
