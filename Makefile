@@ -317,6 +317,8 @@ $(BUILDDIR)/%.rel: %.asm $(CCFLAGS_STAMP) | create_build_dir
 
 $(BUILDDIR)/rtlplayground.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel $(BUILDDIR)/crypto/chacha_8051.rel
 	$(CC) $(CC_FLAGS) --xram-size 49151 -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ $^
+	python3 tools/check_linked.py $(BUILDDIR) $(BUILDDIR)/rtlplayground.map || { rm -f $@; exit 1; }
+	python3 tools/check_cross_bank.py $(BUILDDIR) || { rm -f $@; exit 1; }
 
 $(BUILDDIR)/rtlplayground.img: $(BUILDDIR)/rtlplayground.ihx
 	objcopy --input-target=ihex -O binary $< $@
@@ -361,6 +363,7 @@ $(BUILDDIR)/loader/rtl837x_flash.rel: rtl837x_flash.c $(LOADER_HDRS) $(CCFLAGS_S
 $(BUILDDIR)/loader/loader.ihx: $(LOADER_OBJS)
 	@if grep -E '^ +[0-9A-F]{6} ' $(BUILDDIR)/loader/loader_alias.lst | grep -E '(ljmp|lcall|ajmp|acall)' | grep -vq 'ljmp 0x0000'; then echo "app_start must only use relative jumps"; exit 1; fi
 	$(CC) -mmcs51 --xram-size 49151 -Wl-bHOME=0x00000 -Wl-bALIAS=0xb800 -Wl-r -o $@ $^
+	python3 tools/check_linked.py $(BUILDDIR) $(BUILDDIR)/loader/loader.map || { rm -f $@; exit 1; }
 
 $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin tools/bootpack.py tools/layout.py layout.h
 	LAYOUT_DEFS="$(LAYOUT_DEFS)" HOSTCC="$(HOSTCC)" python3 tools/bootpack.py $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin $@ $(BUILDDIR)/rtlplayground-loader-$(FILENAME_EXTENSION).bin
