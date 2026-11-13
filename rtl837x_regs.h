@@ -380,11 +380,24 @@
 } while (0)
 #else
 
+#ifdef RTLP_HOST_TEST
+/* The host test bench models each SFR as its own variable, so the 16-bit
+ * names don't alias the bytes as on the chip: write the bytes there. */
+#define REG_SET(r, v) do { \
+	SFR_DATA_24 = (((uint32_t)v) >> 24) & 0xff; \
+	SFR_DATA_16 = (((uint32_t)v) >> 16) & 0xff; \
+	SFR_DATA_8 = (((uint16_t)v) >> 8 & 0xff); \
+	SFR_DATA_0 = (v) & 0xff; \
+	reg_write(r); \
+} while (0)
+#else
+/* Two 16-bit SFR writes (vDorst, #370): smaller code than four byte writes. */
 #define REG_SET(r, v) do { \
 	SFR_DATA_U16_UPPER = (uint16_t)((uint32_t)(v) >> 16); \
 	SFR_DATA_U16 = (uint16_t)(v); \
 	reg_write(r); \
 } while (0)
+#endif
 
 #define	REG_WRITE(r, v24, v16, v8, v0) do { \
 	SFR_DATA_24 = (v24); \
