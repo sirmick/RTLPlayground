@@ -71,6 +71,7 @@ __xdata uint8_t verify_crc;
 __xdata uint32_t max_upload;
 __xdata uint32_t upload_end;
 __xdata uint8_t upload_loader;
+__xdata uint8_t upload_mdata;	// a machine data region, written in place
 __xdata uint16_t short_parsed;
 
 #define POSTBODY_CMD	1
@@ -477,14 +478,28 @@ uint8_t stream_upload(void)
 			if (verify_crc) {
 				dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
 				/* the stream CRC alone doesn't catch a write that went wrong */
-				if (crc_final == 0xb001 && flash_crc16(upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START, uptr) != 0xb001) {
+				if (crc_final == 0xb001 && flash_crc16(upload_mdata ? MDATA_START : upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START, uptr) != 0xb001) {
 					print_string("Flash read-back does not match the upload\n");
 					crc_final = 0;		/* refused below as a bad checksum */
 				}
 				// Both bodies are 33 bytes; Content-Length lets the
 				// browser complete the response without waiting for
 				// the connection close (which a reset would swallow)
-				if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_present()) {
+				if (upload_mdata) {
+					/* in place, not needed to boot: no reset, and a bad
+					 * region only leaves the board's extra (PoE) off */
+					if (crc_final == 0xb001 && mdata_len(MDATA_START) == uptr - MDATA_START) {
+						print_string("Machine data written, applies at the next boot\n");
+						slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 36\r\n"
+							"Content-Type: text/plain\r\n\r\n"
+							"OK: machine data written, next boot\n");
+					} else {
+						print_string("Machine data not valid\n");
+						slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 27\r\n"
+							"Content-Type: text/plain\r\n\r\n"
+							"NO: not valid machine data\n");
+					}
+				} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_present()) {
 					print_string("No loader to update\n");
 					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 29\r\n"
 						"Content-Type: text/plain\r\n\r\n"
@@ -811,6 +826,7 @@ void handle_post(uint16_t body_off)
 			print_string("Firmware upload started.");
 			config_upload = 0;
 			upload_loader = 0;
+			upload_mdata = 0;
 			uptr = FIRMWARE_UPLOAD_START;
 			upload_end = FIRMWARE_UPLOAD_END;
 			verify_crc = 1;
@@ -824,10 +840,35 @@ void handle_post(uint16_t body_off)
 			print_string("Loader upload started.");
 			config_upload = 0;
 			upload_loader = 1;
+			upload_mdata = 0;
 			uptr = LDR_STAGE;
 			upload_end = LDR_STAGE + LDR_LOADER_LEN;
 			verify_crc = 1;
 			max_upload = LDR_LOADER_LEN + 0x1000;
+			pre_acc = 0;
+		} else if (is_word(request_path, "mdata")) {
+			if (!authenticated) {
+				send_unauthorized();
+				return;
+			}
+#ifdef LAYOUT_COMPACT
+			if (!flash_size)
+				flash_read_jedecid();
+			if (flash_size < MDATA_START + MDATA_LEN)
+#endif
+			{
+				print_string("No machine data region on this switch\n");
+				send_bad_request();
+				return;
+			}
+			print_string("Machine data upload started.");
+			config_upload = 0;
+			upload_loader = 0;
+			upload_mdata = 1;
+			uptr = MDATA_START;
+			upload_end = MDATA_START + MDATA_LEN;
+			verify_crc = 1;
+			max_upload = MDATA_LEN + 0x1000;
 			pre_acc = 0;
 		} else if (is_word(request_path, "config")) {
 			if (!authenticated) {
@@ -848,6 +889,7 @@ void handle_post(uint16_t body_off)
 	}
 
 	if (s->tstate == TSTATE_MULTIPART || is_word(request_path, "upload") || is_word(request_path, "loader")
+	    || is_word(request_path, "mdata")
 	    || is_word(request_path, "config")) {
 		dbg_string("POST upload/config request\n");
 		if (!authenticated) {

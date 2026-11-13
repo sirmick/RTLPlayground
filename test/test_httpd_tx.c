@@ -133,6 +133,9 @@ void crc16_bank1(uint8_t *v) { (void)v; }
 static uint16_t readback_crc = 0xb001;
 uint32_t flash_crc16_from, flash_crc16_to;
 uint16_t flash_crc16_range(void) { return readback_crc; }
+/* machine data: none in this (standard-layout) build */
+uint32_t mdata_at;
+uint32_t mdata_len_at(void) { return 0; }
 static unsigned reset_calls;
 void reset_chip(void) { reset_calls++; }
 static bool loader_update_ok = true;

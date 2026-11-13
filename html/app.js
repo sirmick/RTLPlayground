@@ -371,6 +371,9 @@ var LANG = {
         fw_crc_err: "CRC16 check failed: corrupt image",
         fw_valid: "valid RTLPlayground image (size, magic and CRC16 OK)",
         fw_ldr_valid: "valid loader image (size, magic and CRC16 OK)",
+        fw_md_valid: "valid machine data (this switch's PoE firmware, CRC16 OK)",
+        fw_md_d: "It is written in place and used from the next boot; nothing else on the switch changes.",
+        fw_md_done: "machine data written, used from the next boot ✓",
         fw_ldr_d: "The running firmware rewrites the loader and then resets the switch. Do not power it off until it comes back: a loader cut off mid-write needs a flash programmer.",
         fw_ldr_failed: "no reboot detected: writing the loader failed. Do not power off the switch, upload the loader again or check the serial console.",
         fw_q: "Upload firmware?",
@@ -682,6 +685,9 @@ var LANG = {
         fw_crc_err: "CRC16 検証に失敗しました: イメージが破損しています",
         fw_valid: "有効な RTLPlayground イメージです (サイズ、マジック、CRC16 OK)",
         fw_ldr_valid: "有効なローダーイメージです (サイズ、マジック、CRC16 OK)",
+        fw_md_valid: "有効なマシンデータです (このスイッチの PoE ファームウェア、CRC16 OK)",
+        fw_md_d: "その場で書き込まれ、次回の起動から使われます。スイッチの他の部分は変わりません。",
+        fw_md_done: "マシンデータを書き込みました。次回の起動から使われます ✓",
         fw_ldr_d: "動作中のファームウェアがローダーを書き換え、その後スイッチをリセットします。復帰するまで電源を切らないでください。書き込み途中で止まったローダーはフラッシュライターが必要になります。",
         fw_ldr_failed: "再起動が検出されませんでした: ローダーの書き込みに失敗しました。電源を切らずに、ローダーを再度アップロードするかシリアルコンソールを確認してください。",
         fw_q: "ファームウェアをアップロードしますか?",
@@ -1069,6 +1075,9 @@ var LANG = {
         fw_crc_err: "CRC16 校验失败: 镜像已损坏",
         fw_valid: "有效的 RTLPlayground 镜像 (大小、魔数和 CRC16 正确)",
         fw_ldr_valid: "有效的加载程序镜像 (大小、魔数和 CRC16 正确)",
+        fw_md_valid: "有效的机器数据 (本交换机的 PoE 固件，CRC16 正确)",
+        fw_md_d: "它将被直接写入，并从下次启动起生效；交换机的其他部分不变。",
+        fw_md_done: "机器数据已写入，下次启动起生效 ✓",
         fw_ldr_d: "正在运行的固件会重写加载程序，然后复位交换机。在其恢复前请勿断电：写入中断的加载程序需要用编程器修复。",
         fw_ldr_failed: "未检测到重启: 加载程序写入失败。请勿断电，重新上传加载程序或检查串口控制台。",
         fw_q: "上传固件?",
@@ -1378,6 +1387,9 @@ var LANG = {
         fw_crc_err: "comprobación CRC16 fallida: imagen corrupta",
         fw_valid: "imagen de RTLPlayground válida (tamaño, magia y CRC16 correctos)",
         fw_ldr_valid: "imagen de cargador válida (tamaño, magia y CRC16 correctos)",
+        fw_md_valid: "datos de máquina válidos (firmware PoE de este switch, CRC16 correcto)",
+        fw_md_d: "Se escriben en su sitio y se usan desde el próximo arranque; nada más cambia en el switch.",
+        fw_md_done: "datos de máquina escritos, se usan desde el próximo arranque ✓",
         fw_ldr_d: "El firmware en ejecución reescribe el cargador y luego reinicia el switch. No lo apagues hasta que vuelva: un cargador interrumpido a mitad de escritura necesita un programador de flash.",
         fw_ldr_failed: "no se detectó reinicio: falló la escritura del cargador. No apagues el switch, vuelve a subir el cargador o revisa la consola serie.",
         fw_q: "¿Subir firmware?",
@@ -1811,6 +1823,9 @@ var LANG = {
         fw_crc_err: "Somme de contrôle erronée: image corrompue",
         fw_valid: "Image RTLPlayground valide (taille, LJMP et somme de contrôle OK)",
         fw_ldr_valid: "image de chargeur valide (taille, LJMP et somme de contrôle OK)",
+        fw_md_valid: "données machine valides (micrologiciel PoE de ce commutateur, CRC16 OK)",
+        fw_md_d: "Elles sont écrites sur place et utilisées dès le prochain démarrage ; rien d'autre ne change sur le commutateur.",
+        fw_md_done: "données machine écrites, utilisées dès le prochain démarrage ✓",
         fw_ldr_d: "Le firmware en cours réécrit le chargeur puis redémarre le commutateur. Ne coupez pas l'alimentation avant son retour : un chargeur interrompu pendant l'écriture nécessite un programmateur de flash.",
         fw_ldr_failed: "Pas de redémarrage détecté : l'écriture du chargeur a échoué. Ne coupez pas l'alimentation, chargez à nouveau le chargeur ou vérifiez la console série.",
         fw_q: "Chargement du firmware?",
@@ -2201,6 +2216,9 @@ var LANG = {
         fw_crc_err: "CRC16-Prüfung fehlgeschlagen: Image beschädigt",
         fw_valid: "gültiges RTLPlayground-Image (Grösse, Kennung und CRC16 in Ordnung)",
         fw_ldr_valid: "gültiges Loader-Image (Grösse, Kennung und CRC16 in Ordnung)",
+        fw_md_valid: "gültige Maschinendaten (PoE-Firmware dieses Switches, CRC16 in Ordnung)",
+        fw_md_d: "Sie werden an Ort und Stelle geschrieben und ab dem nächsten Start verwendet; sonst ändert sich am Switch nichts.",
+        fw_md_done: "Maschinendaten geschrieben, ab dem nächsten Start verwendet ✓",
         fw_ldr_d: "Die laufende Firmware schreibt den Loader neu und startet den Switch danach neu. Nicht ausschalten, bis er zurück ist: ein beim Schreiben unterbrochener Loader braucht einen Flash-Programmer.",
         fw_ldr_failed: "kein Neustart erkannt: Das Schreiben des Loaders ist fehlgeschlagen. Den Switch nicht ausschalten, den Loader erneut hochladen oder die serielle Konsole prüfen.",
         fw_q: "Firmware hochladen?",
@@ -5262,7 +5280,8 @@ $("saveBtn").addEventListener("click", function() {
 
 var fwBuf = null,
     fwOther = false,
-    fwLoader = false;
+    fwLoader = false,
+    fwMdata = false;
 // Every image carries its machine name as a NUL-terminated string, the same
 // one the running switch reports as hw_ver: an image without it was built
 // for another board (SFP, LED and button pins differ between machines).
@@ -5284,6 +5303,7 @@ $("fwfile").addEventListener("change", function() {
     fwBuf = null;
     fwOther = false;
     fwLoader = false;
+    fwMdata = false;
     $("fwup").disabled = true;
     $("fwinfo").textContent = "";
     if (!f) return;
@@ -5297,13 +5317,16 @@ $("fwfile").addEventListener("change", function() {
             msg = null;
         // The running firmware reports the image size its flash layout
         // takes (compact builds are smaller); older firmware is 512 KiB.
-        // A 16 KiB image is the loader.
+        // A 16 KiB image is the loader; "MDT1" a machine data region.
         var want = Number(S.info.img_size) || 524288;
-        if (u.length !== want && u.length !== 16384) msg = t("fw_size_err", {
+        var md = u.length > 10 && u[0] === 0x4d && u[1] === 0x44 && u[2] === 0x54 && u[3] === 0x31;
+        if (md) {}
+        else if (u.length !== want && u.length !== 16384) msg = t("fw_size_err", {
             n: u.length,
             w: want
         });
         else if (u[0] !== 0x00 || u[1] !== 0x40 || u[2] !== 0x02) msg = t("fw_magic_err");
+        if (msg) {}
         else {
             var crc = 0;
             for (var i = 0; i < u.length; i++) {
@@ -5317,9 +5340,10 @@ $("fwfile").addEventListener("change", function() {
             return;
         }
         fwBuf = f;
-        fwLoader = u.length === 16384;
-        fwOther = !fwLoader && !fwForThisSwitch(u);
-        info.innerHTML = '<span style="color:var(--ok)">\u2713 ' + esc(t(fwLoader ? "fw_ldr_valid" : "fw_valid")) + "</span>" +
+        fwMdata = md;
+        fwLoader = !md && u.length === 16384;
+        fwOther = !fwLoader && !fwMdata && !fwForThisSwitch(u);
+        info.innerHTML = '<span style="color:var(--ok)">\u2713 ' + esc(t(fwMdata ? "fw_md_valid" : fwLoader ? "fw_ldr_valid" : "fw_valid")) + "</span>" +
             (fwOther ? '<br><span style="color:var(--warn)">\u26a0 ' + esc(t("fw_other", {
                 m: S.info.hw_ver
             })) + "</span>" : "");
@@ -5330,7 +5354,7 @@ $("fwup").addEventListener("click", function() {
     if (!fwBuf) return;
     confirmModal(t("fw_q"), (fwOther ? t("fw_other", {
         m: S.info.hw_ver
-    }) + " " : "") + t(fwLoader ? "fw_ldr_d" : "fw_d"), function() {
+    }) + " " : "") + t(fwMdata ? "fw_md_d" : fwLoader ? "fw_ldr_d" : "fw_d"), function() {
         var form = new FormData();
         form.append("uploadedfile", fwBuf, fwBuf.name);
         var xhr = new XMLHttpRequest();
@@ -5376,7 +5400,10 @@ $("fwup").addEventListener("click", function() {
         };
         xhr.onload = function() {
             settle(function() {
-                if (xhr.status === 200) {
+                if (xhr.status === 200 && fwMdata) {
+                    st.textContent = t("fw_md_done");	// in place, no reboot
+                    $("fwup").disabled = false;
+                } else if (xhr.status === 200) {
                     st.textContent = t("fw_verified");
                     fwSettle(st, true, fwLoader);
                 } else {
@@ -5396,7 +5423,7 @@ $("fwup").addEventListener("click", function() {
                 fwSettle(st, false);
             })
         };
-        xhr.open("POST", fwLoader ? "/loader" : "/upload");
+        xhr.open("POST", fwMdata ? "/mdata" : fwLoader ? "/loader" : "/upload");
         xhr.send(form);
     });
 });
