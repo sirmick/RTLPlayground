@@ -177,6 +177,7 @@ SRCS = \
 	dhcp.c \
 	html_data.c \
 	rtlplayground.c \
+	boot0.c \
 	update_apply.c \
 	boot.c \
 	sfp.c \
@@ -231,7 +232,7 @@ DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
 # Every other C source is compiled into the area BANKED, and each build places
 # it in BANK1-3 after compiling (tools/place_banks.py, result in
 # $(BUILDDIR)/banks.txt): no bank placement in the sources or anywhere else.
-RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c update_apply.c timer.c \
+RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c boot0.c update_apply.c timer.c \
 	udp_apps.c rtl837x_flash.c rtl837x_nic.c httpd/html_out.c
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)
@@ -241,6 +242,9 @@ ASM_OBJS = $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel $(BUILDDIR)/crypto/chac
 LINK_OBJS = $(foreach o,$(OBJS),$(if $(filter $(o),$(BANKED_OBJS)),$(BUILDDIR)/placed/$(patsubst $(BUILDDIR)/%,%,$(o)),$(o))) $(ASM_OBJS)
 BANKED_FLAGS = --codeseg BANKED --constseg BANKED
 $(BANKED_OBJS): BANK_FLAGS = $(BANKED_FLAGS)
+# The first code after a reset, in sector 0 right after the interrupt vectors
+# (rtlplayground.c's HOME area, linked before it); see boot0.c.
+$(BUILDDIR)/boot0.rel: BANK_FLAGS = --codeseg HOME --constseg HOME
 HTML := $(shell find html -name '*.html' -or -name '*.svg' -or -name '*.css' -or -name '*.ico')
 
 # Minified copy of the web UI sources, used as the fileadder input.

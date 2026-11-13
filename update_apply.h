@@ -5,7 +5,8 @@
 
 /*
  * At boot, check for an image staged in flash by the web upload and, if one is
- * present and its CRC is good, copy it over the running image and reset.
+ * present and its CRC is good, arm the install (boot_resume() copies it) and
+ * reset.
  *
  * Talks to the flash only through the flash interface (rtl837x_flash.h), so it
  * builds and runs on the host test bench against a modelled flash device.
@@ -14,10 +15,10 @@
  */
 void check_and_flash_update_image(void);
 
-/* Right after flash_init(), before any banked code runs: if the progress
- * record (UPDATE_PROGRESS) shows a copy a reset broke off, finish it and
- * reset. Otherwise returns at once. Resident, for the same reason. */
-void update_resume(void);
+/* boot0.c, from __sdcc_external_startup(): if the progress record
+ * (UPDATE_PROGRESS) is armed, copy the staged image over the running one and
+ * reset; otherwise return at once. In sector 0, self-contained. */
+void boot_resume(void);
 
 /* CRC-16 (the firmware's, as crc16_bank1) of the flash range [a, end). An
  * image with its CRC appended comes to 0xb001. Resident; uses flash_buf.

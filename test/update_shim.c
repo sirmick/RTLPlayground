@@ -64,12 +64,20 @@ int update_run(void)
 	return 0;			/* returned normally -> no reset */
 }
 
+/* boot0.c's flash primitives and reset, on the model */
+extern uint32_t b0_a;
+extern uint8_t b0_d[4], b0_n;
+void b0_read(void)    { fd_read(&g_flash, b0_a, b0_d, 4); }
+void b0_erase(void)   { fd_erase_sector(&g_flash, b0_a); if (g_flash.powercut) longjmp(reset_jmp, 2); }
+void b0_program(void) { fd_write(&g_flash, b0_a, b0_d, b0_n); if (g_flash.powercut) longjmp(reset_jmp, 2); }
+void b0_reset(void)   { longjmp(reset_jmp, 1); }
+
 int resume_run(void)
 {
 	int v = setjmp(reset_jmp);
 	if (v)
 		return v == 1;		/* reset after the finished copy / power cut */
-	update_resume();
+	boot_resume();
 	return 0;			/* nothing to resume */
 }
 

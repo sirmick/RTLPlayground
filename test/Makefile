@@ -108,11 +108,11 @@ $(BUILDDIR)/test_update_apply_compact: CFLAGS += -DLAYOUT_COMPACT
 
 # The one-time config move (compact layout) against the modelled flash.
 $(BUILDDIR)/test_config_migrate $(BUILDDIR)/test_mdata_migrate: CFLAGS += -DLAYOUT_COMPACT
-$(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
+$(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
-$(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
+$(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
-$(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
+$(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 # Each test runs into its own log, so `make -j` runs them side by side; the

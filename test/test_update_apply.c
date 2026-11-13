@@ -9,7 +9,7 @@
  * power cut during the copy that a re-run completes from the intact staged
  * image; and a power cut at every single erase and write in turn, each
  * followed by power-ons until the switch is up (on the new image) or dead
- * (only while the home bank, copied last, is torn). A real built .bin of the
+ * (only while sector 0, copied last, is torn), never on a mix of images. A real built .bin of the
  * layout can be passed as arg 1.
  */
 #include <stdio.h>
@@ -68,13 +68,16 @@ static void run_valid_cycle(uint32_t size, const char *label, const uint8_t *img
 {
 	char msg[96];
 	setup(&g_flash, size, img);
-	int reset = update_run();
+	int reset = update_run() && resume_run();	/* armed and reset; the next boot copies */
 	snprintf(msg, sizeof msg, "%s: applied, copied, config kept, staging cleared, no wrap/NOR fault", label);
 	CHECK(reset && copied_ok(&g_flash, img)
 	      && g_flash.mem[FIRMWARE_UPLOAD_START] == 0xFF
 	      && g_flash.wrote_without_erase == 0 && g_flash.wrapped_ops == 0, msg);
 	fd_free(&g_flash);
 }
+
+/* Sector 0: the reset vector, the C start-up and boot_resume() (boot0.c). */
+#define BOOT0_LEN 0x1000
 
 /* Is flash [from, to) the old image, the new one, or torn between them? */
 enum { OLD, NEW, TORN };
@@ -88,26 +91,29 @@ static int image_state(const uint8_t *img, uint32_t from, uint32_t to)
 	return new ? NEW : old ? OLD : TORN;
 }
 
-/* One power-on, as far as the update is concerned. The resident code up to
- * update_resume() must be one whole home bank; past it, main() calls into the
- * other banks, so they must belong to the same image as the home bank.
- * Returns 1 if the switch comes up, 0 if it resets to try again, -1 dead. */
+/* One power-on, as far as the update is concerned. boot_resume() runs from
+ * sector 0 before anything else, so that sector must be one whole image. Past
+ * it, main() runs the rest of the home bank and calls into the banks, so all
+ * of the image must be one image again: if it isn't, the switch would run a
+ * mix of old and new code ("bad"), which must never happen.
+ * Returns 1 if the switch comes up, 0 if it resets to try again, -1 dead,
+ * -2 bad. */
 static int boot(const uint8_t *img)
 {
-	int home = image_state(img, 0, CODE0_SIZE);
-	if (home == TORN)
+	if (image_state(img, 0, BOOT0_LEN) == TORN)
 		return -1;
 	if (resume_run())
 		return 0;
-	if (home != image_state(img, CODE0_SIZE, IMAGE_COPY_LEN))
-		return -1;
+	if (image_state(img, 0, IMAGE_COPY_LEN) == TORN)
+		return -2;
 	return update_run() ? 0 : 1;
 }
 
-/* Cut the power at every erase and write of an update in turn, then power on
- * until the switch is up or dead. Only a cut that tears the home bank, the
- * last sectors copied, may leave it dead; every other one must come back up
- * on the new image, the config kept and the staging area and record cleared. */
+/* Cut the power at every erase and write of an update in turn - the arming of
+ * the install, then the copy at the next boot - then power on until the switch
+ * is up or dead. Only a cut that tears sector 0, the last sector copied, may
+ * leave it dead; every other one must come back up on the new image, the
+ * config kept and the staging area and record cleared - never on a mix. */
 static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
 {
 	char msg[160];
@@ -115,19 +121,32 @@ static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
 
 	setup(&g_flash, size, img);
 	update_run();
+	resume_run();
 	ops = g_flash.erases + g_flash.writes;
 	fd_free(&g_flash);
 
+	/* The copy programs 4 bytes at a time: every cut point would be ~59000
+	 * full installs. Take the arming (the first ops), the clean-up (the last),
+	 * every 11th op of the last sectors - sector 0 among them - and about 200
+	 * spread over the rest; the emulator (ovs-rtlpg) sweeps every op of the
+	 * real image. */
+	int tried = 0, stride = ops / 200 | 1;
 	for (int n = 0; n < ops; n++) {
 		int r = 0, boots = 0, torn_home;
+		if (!(n < 32 || n >= ops - 64 || n % stride == 0 || (n >= ops - 1200 && n % 11 == 0)))
+			continue;
+		tried++;
 		setup(&g_flash, size, img);
 		fd_fail_after(&g_flash, n);
-		update_run();
+		if (update_run() && !g_flash.powercut)
+			resume_run();
 		fd_fail_after(&g_flash, -1);
-		torn_home = image_state(img, 0, CODE0_SIZE) == TORN;
+		torn_home = image_state(img, 0, BOOT0_LEN) == TORN;
 		while (!r && boots++ < 4)
 			r = boot(img);
-		if (r < 0) {
+		if (r == -2) {
+			bad++;
+		} else if (r < 0) {
 			dead++;
 			if (first_dead < 0) first_dead = n;
 			last_dead = n;
@@ -142,12 +161,12 @@ static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
 		}
 		fd_free(&g_flash);
 	}
-	printf("      %s: %d cut points, %d come up on the new image, %d dead", label, ops, up, dead);
+	printf("      %s: %d of %d cut points, %d come up on the new image, %d dead, %d bad", label, tried, ops, up, dead, bad);
 	if (dead)
 		printf(" (cuts %d-%d)", first_dead, last_dead);
 	printf("\n");
-	snprintf(msg, sizeof msg, "%s: a power cut at any point boots, unless it tears the home bank", label);
-	CHECK(bad == 0 && up + dead == ops && dead <= CODE0_SIZE / 0x1000 * (2 + 0x1000 / FLASH_BUF_SIZE), msg);
+	snprintf(msg, sizeof msg, "%s: a power cut at any point boots, unless it tears sector 0", label);
+	CHECK(bad == 0 && up + dead == tried, msg);
 }
 
 int main(int argc, char **argv)
@@ -175,12 +194,11 @@ int main(int argc, char **argv)
 	setup(&g_flash, need, img);
 	fd_fail_after(&g_flash, 20);
 	reset = update_run();
-	CHECK(!reset && g_flash.powercut && !copied_ok(&g_flash, img),
+	CHECK(reset && !resume_run() && g_flash.powercut && !copied_ok(&g_flash, img),
 	      "power cut mid-copy: not applied, copy incomplete");
 	fd_fail_after(&g_flash, -1);
-	reset = update_run();
-	CHECK(reset && copied_ok(&g_flash, img),
-	      "re-run after power cut completes from the intact staged image");
+	CHECK(resume_run() && copied_ok(&g_flash, img),
+	      "the next boot finishes the copy from the progress record");
 	fd_free(&g_flash);
 
 	powercut_sweep(need, "power cuts", img);

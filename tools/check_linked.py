@@ -11,6 +11,12 @@ check_linked.py - checks on a linked build that the compiler and linker don't ma
   banks     No code bank holds more than the 48 KiB its window (0x4000-0xffff)
             shows: the rest would land outside it.
 
+  boot0     A module compiled wholly into the HOME area (boot0.c: the first
+            code after a reset, which finishes an interrupted install) must
+            lie in sector 0, call nothing outside itself and have no
+            initialised data: it runs before the C start-up, while the rest
+            of the home bank may be half rewritten.
+
   psbank    Code that writes PSBANK (SFR 0x96, the code bank mapped at
             0x4000-0xffff) must put the caller's bank back before it returns: a
             home-bank function called from bank 2 that returns with bank 1
@@ -168,6 +174,46 @@ def check_banks(linkdir):
             f"the code no longer fits the banks (see tools/place_banks.py)" for b, n in sorted(size.items()) if n > BANK_WINDOW]
 
 
+REL_AREA = re.compile(r"^A (\S+) size ([0-9A-Fa-f]+) ")
+CALL_SYM = re.compile(r"\b(?:lcall|ljmp|acall|ajmp)\s+([A-Za-z_$][\w$]*)\s*$")
+LABEL_ANY = re.compile(r"^\s+(?:[0-9A-F]{6}\s+)?\d+\s+([\w$]+)::?")
+SECTOR0 = 0x1000
+
+
+def check_boot0(linkdir, outdir):
+    """Modules with code only in HOME: in sector 0, self-contained, no XINIT."""
+    found = []
+    for rst in rsts(linkdir, outdir):
+        rel = rst[:-4] + ".rel"
+        if not os.path.exists(rel):
+            continue
+        areas = {}
+        for line in open(rel):
+            m = REL_AREA.match(line)
+            if m:
+                areas[m.group(1)] = areas.get(m.group(1), 0) + int(m.group(2), 16)
+        code = {a: n for a, n in areas.items() if n and (a in ("CSEG", "HOME", "CONST") or a.startswith("BANK"))}
+        if set(code) != {"HOME"}:
+            continue
+        mod = os.path.basename(rst)
+        if areas.get("XINIT") or areas.get("XISEG"):
+            found.append(f"{mod}: runs before the C start-up but has initialised data")
+        lines = open(rst, errors="replace").readlines()
+        labels = {m.group(1) for m in map(LABEL_ANY.match, lines) if m}
+        for line in lines:
+            m = RST.match(line)
+            if not m:
+                continue
+            addr = int(m.group(1), 16)
+            if addr >= SECTOR0:
+                found.append(f"{mod}: code at 0x{addr:x}, past sector 0")
+                break
+            c = CALL_SYM.search(m.group(3))
+            if c and c.group(1) not in labels:
+                found.append(f"{mod}: calls {c.group(1)} at 0x{addr:x}, outside itself")
+    return found
+
+
 def insns(rst):
     """(label or None, address, bytes) in listing order."""
     for line in open(rst, errors="replace"):
@@ -261,12 +307,12 @@ def main():
     dirs = [os.path.normpath(os.path.dirname(sys.argv[2]))] if len(sys.argv) == 3 else link_dirs(outdir)
     found = []
     for d in dirs:
-        found += check_absolute(d, outdir) + check_banks(d) + check_psbank(d, outdir)
+        found += check_absolute(d, outdir) + check_banks(d) + check_boot0(d, outdir) + check_psbank(d, outdir)
     for f in found:
         print("check_linked: " + f)
     if found:
         sys.exit(1)
-    print(f"check_linked: {outdir}: no __at overlaps, banks fit, PSBANK restored everywhere")
+    print(f"check_linked: {outdir}: no __at overlaps, banks fit, boot0 self-contained, PSBANK restored everywhere")
 
 
 if __name__ == "__main__":

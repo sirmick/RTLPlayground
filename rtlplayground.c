@@ -1491,16 +1491,6 @@ void setup_serial_timer1(void)
 
 
 
-/* Called by the SDCC startup code before it copies XINIT to XISEG and clears XSEG.
- * Hardware reset starts us with MAP_FLASH_PAGE_TO_XDATA = 1, which maps xdata
- * 0x4000-0xbfff to the flash image (reads return flash, writes are lost), so it
- * must be 0 by then. */
-unsigned char __sdcc_external_startup(void)
-{
-	MAP_FLASH_PAGE_TO_XDATA = 0;
-	return 0;
-}
-
 void main(void)
 {
 	ticks = 0;
@@ -1530,7 +1520,6 @@ void main(void)
 	// See this issue: https://github.com/logicog/RTLPlayground/issues/70
 	print_string("\nInitializing Flash controller\n");
 	flash_init(machine.flash_sio ? 0 : 1);
-	update_resume();	// banks may be half replaced: before calling into one
 
 	// Set default for SFP pins so we can start up a module already inserted
 	sfp_pins_last = 0x33; // signal LOS and no module inserted (for both slots, even if only 1 present)
