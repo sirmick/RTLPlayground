@@ -11,7 +11,9 @@
 CC       = gcc
 SRCROOT  = ..
 # -include shim first so __xdata/__code/__banked vanish before any firmware header.
-CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas \
+# -MMD -MP: each binary also depends on the headers it includes (build/*.d),
+# so a firmware header change rebuilds the tests that use it.
+CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP \
            -Wno-pointer-sign \
            -DRTLP_HOST_TEST \
            -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -113,15 +115,29 @@ $(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.
 $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
-run: $(TESTS)
+# Each test runs into its own log, so `make -j` runs them side by side; the
+# logs are printed in order once all are done. A test's .ok marker is only
+# written when it passes, so a rerun repeats exactly the failed or changed ones.
+$(BUILDDIR)/%.ok: $(BUILDDIR)/%
+	@if $< > $<.log 2>&1; then touch $@; else rm -f $@; fi
+
+run: $(TESTS:=.ok)
+run:
 	@fail=0; for t in $(TESTS); do \
-		echo "=== $$t ==="; \
-		$$t || fail=1; \
-		echo; \
+		echo "=== $$t ==="; cat $$t.log; echo; \
+		[ -e $$t.ok ] || fail=1; \
 	done; \
 	if [ $$fail -ne 0 ]; then echo "TESTS FAILED"; exit 1; else echo "ALL TESTS PASSED"; fi
+
+# Everything but the slow loader simulation (~3-7 min), for quick iteration.
+QUICK = $(filter-out $(BUILDDIR)/test_loader,$(TESTS))
+quick: $(QUICK:=.ok)
+	@fail=0; for t in $(QUICK); do [ -e $$t.ok ] || { echo "=== $$t ==="; cat $$t.log; fail=1; }; done; \
+	if [ $$fail -ne 0 ]; then echo "TESTS FAILED"; exit 1; else echo "QUICK TESTS PASSED (test_loader skipped)"; fi
+
+-include $(wildcard $(BUILDDIR)/*.d)
 
 clean:
 	rm -rf $(BUILDDIR)
 
-.PHONY: all run clean
+.PHONY: all run quick clean
