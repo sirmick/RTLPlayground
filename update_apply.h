@@ -14,6 +14,11 @@
  */
 void check_and_flash_update_image(void);
 
+/* Right after flash_init(), before any banked code runs: if the progress
+ * record (UPDATE_PROGRESS) shows a copy a reset broke off, finish it and
+ * reset. Otherwise returns at once. Resident, for the same reason. */
+void update_resume(void);
+
 /* CRC-16 (the firmware's, as crc16_bank1) of the flash range [a, end). An
  * image with its CRC appended comes to 0xb001. Resident; uses flash_buf.
  * The range is passed in xdata (the macro): internal RAM is full, and 32-bit

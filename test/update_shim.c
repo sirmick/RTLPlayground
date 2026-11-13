@@ -64,6 +64,15 @@ int update_run(void)
 	return 0;			/* returned normally -> no reset */
 }
 
+int resume_run(void)
+{
+	int v = setjmp(reset_jmp);
+	if (v)
+		return v == 1;		/* reset after the finished copy / power cut */
+	update_resume();
+	return 0;			/* nothing to resume */
+}
+
 int migrate_run(void)
 {
 	if (setjmp(reset_jmp))

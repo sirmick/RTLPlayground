@@ -91,6 +91,11 @@
 #define IMAGE_COPY_LEN IMAGE_SIZE
 #endif
 
+// Progress of a loaderless install: "UPD1" once the staged image has verified,
+// then one byte per copied sector, cleared to 0 when that sector is done. A
+// sector the copy never touches, so a reset mid-copy resumes from it at boot.
+#define UPDATE_PROGRESS       0x7e000UL
+
 // Smallest flash that holds the running image, a staged upload and the config.
 #if CONFIG_START + CONFIG_LEN > FIRMWARE_UPLOAD_END
 #define FLASH_NEEDED_FOR_UPDATE (CONFIG_START + CONFIG_LEN)
@@ -127,6 +132,13 @@
 #endif
 #if defined(LAYOUT_COMPACT) && (MDATA_START % 0x1000 || MDATA_START < 0x80000)
 #error "flash layout: machine data lies past the first 512 KiB, sector aligned"
+#endif
+#if UPDATE_PROGRESS < IMAGE_COPY_LEN || UPDATE_PROGRESS + 0x1000 > 0x80000 || \
+    (UPDATE_PROGRESS >= UPLOAD_START && UPDATE_PROGRESS < FIRMWARE_UPLOAD_END) || \
+    UPDATE_PROGRESS == CONFIG_START || \
+    (UPDATE_PROGRESS >= LDR_STAGE && UPDATE_PROGRESS < LDR_STAGE + LDR_LOADER_LEN) || \
+    4 + IMAGE_COPY_LEN / 0x1000 > 0x1000
+#error "flash layout: the update progress record needs a sector of its own in the first 512 KiB"
 #endif
 #if LDR_STAGE < CONFIG_START + CONFIG_LEN && LDR_STAGE + LDR_LOADER_LEN > CONFIG_START
 #error "flash layout: the loader update must not overlap the saved config"

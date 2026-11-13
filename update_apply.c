@@ -18,6 +18,82 @@ extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 void crc16_bank1(__xdata uint8_t *v) __naked;
 
+static void staging_erase(void)
+{
+	__xdata uint32_t dest = FIRMWARE_UPLOAD_START;
+	__xdata uint16_t i;
+
+	for (i = 0; i < IMAGE_SIZE/0x1000; i++) {
+		flash_region.addr = dest;
+		flash_sector_erase();
+		dest += 0x1000;
+		if (i%4 == 0) write_char('.');
+	}
+}
+
+/* Copy the staged sectors the progress record doesn't mark done, highest
+ * first: sector 0 (the reset vector) and the rest of the home bank, which runs
+ * this, go last. Until then the old home bank still boots and update_resume()
+ * finishes the copy before anything calls into the half-replaced banks. Then
+ * clear the staging area and the record, and reset. */
+static __xdata uint8_t copy_s, copy_k;
+static __xdata uint32_t copy_a;
+
+static void update_copy(void)
+{
+
+	flash_init(0); // Re-initialize flash for non-DIO operation, otherwise flashing will fail
+	print_string("Moving firmware to start of flash");
+	/* Statics, not locals: internal RAM has no room for their spills. */
+	copy_s = IMAGE_COPY_LEN / 0x1000;
+	while (copy_s--) {
+		flash_region.addr = UPDATE_PROGRESS + 4 + copy_s;
+		flash_region.len = 1;
+		flash_read_bulk(flash_buf);
+		if (!flash_buf[0])
+			continue;
+		copy_a = (uint32_t)copy_s << 12;
+		flash_region.addr = copy_a;
+		flash_sector_erase();
+		for (copy_k = 0; copy_k < 0x1000/FLASH_BUF_SIZE; copy_k++) {
+			flash_region.addr = FIRMWARE_UPLOAD_START + copy_a;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_read_bulk(flash_buf);
+			flash_region.addr = copy_a;
+			flash_region.len = FLASH_BUF_SIZE;
+			flash_write_bytes(flash_buf);
+			copy_a += FLASH_BUF_SIZE;
+		}
+		flash_buf[0] = 0;
+		flash_region.addr = UPDATE_PROGRESS + 4 + copy_s;
+		flash_region.len = 1;
+		flash_write_bytes(flash_buf);
+		if (copy_s%4 == 0) write_char('.');
+	}
+	print_string("Done.\nDeleting uploaded flash image");
+	staging_erase();
+	flash_region.addr = UPDATE_PROGRESS;
+	flash_sector_erase();
+	print_string("Done.\nResetting now");
+	delay(200);
+	reset_chip();
+}
+
+/* Early in boot, before any banked code runs: finish a copy a reset broke off.
+ * The staged image was verified before the record was armed and the copy
+ * never writes it, so it isn't checked again - which couldn't be done here
+ * anyway: crc16_bank1() reads its tables from a bank that may be new already. */
+void update_resume(void)
+{
+	flash_region.addr = UPDATE_PROGRESS;
+	flash_region.len = 4;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] == 'U' && flash_buf[1] == 'P' && flash_buf[2] == 'D' && flash_buf[3] == '1') {
+		print_string("Resuming the update. ");
+		update_copy();
+	}
+}
+
 void check_and_flash_update_image(void)
 {
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
@@ -44,13 +120,12 @@ void check_and_flash_update_image(void)
 	if (flash_buf[0] == 0x00 && flash_buf[1] == 0x40)
 	{
 		// Yes, flash the new image to the start of flash and reset
-		__xdata uint32_t dest = 0x0;
 		__xdata uint32_t source = FIRMWARE_UPLOAD_START;
 		__xdata uint16_t i = 0;
 		__xdata uint16_t j = 0;
 		__xdata uint8_t * __xdata bptr;
 		print_string("found update image!\nChecking integrity");
-		flash_init(0); // Re-initialize flash for non-DIO operation, otherwise flashing will fail
+		flash_init(0);
 		set_sys_led_state(SYS_LED_FAST);
 		crc_value = 0x0000;
 		for (i = 0; i < IMAGE_SIZE/FLASH_BUF_SIZE; i++) {
@@ -65,47 +140,21 @@ void check_and_flash_update_image(void)
 			if (i%16 == 0) write_char('.');
 		}
 		if (crc_value == 0xb001) {
-			print_string("Checksum OK.\nUpdate in progress, moving firmware to start of flash");
-			source = FIRMWARE_UPLOAD_START;
-			// Copy the image, but not a saved config that sits inside it.
-			for (i = 0; i < IMAGE_COPY_LEN/FLASH_BUF_SIZE; i++) {
-				flash_region.addr = source;
-				flash_region.len = FLASH_BUF_SIZE;
-				flash_read_bulk(flash_buf);
-				if (i%8 == 0) {
-					flash_region.addr = dest;
-					flash_sector_erase();
-					if (i%16 == 0) write_char('.');
-				}
-				flash_region.addr = dest;
-				flash_region.len = FLASH_BUF_SIZE;
-				flash_write_bytes(flash_buf);
-				dest += FLASH_BUF_SIZE;
-				source += FLASH_BUF_SIZE;
-			}
-			print_string("Done.\nDeleting uploaded flash image");
-			// Erase only the staging area (IMAGE_SIZE); erasing a fixed 128
-			// sectors wraps past the end of a small flash onto the image just
-			// written.
-			dest = FIRMWARE_UPLOAD_START;
-			for (i = 0; i < IMAGE_SIZE/0x1000; i++) {
-				flash_region.addr = dest;
-				flash_sector_erase();
-				dest += 0x1000;
-				if (i%4 == 0) write_char('.');
-			}
-			print_string("Done.\nResetting now");
-			delay(200);
-			reset_chip();
+			// Arm the progress record, then copy the image (but not a saved
+			// config that sits inside it).
+			print_string("Checksum OK.\nUpdate in progress. ");
+			flash_region.addr = UPDATE_PROGRESS;
+			flash_sector_erase();
+			flash_buf[0] = 'U'; flash_buf[1] = 'P'; flash_buf[2] = 'D'; flash_buf[3] = '1';
+			flash_region.addr = UPDATE_PROGRESS;
+			flash_region.len = 4;
+			flash_write_bytes(flash_buf);
+			update_copy();
 		}
 		print_string("Checksum incorrect, please upload the image again\n");
-		print_string("Erasing bad uploaded flash image\n");
-		dest = FIRMWARE_UPLOAD_START;
-		for (i = 0; i < IMAGE_SIZE/0x1000; i++) {
-			flash_region.addr = dest;
-			flash_sector_erase();
-			dest += 0x1000;
-		}
+		print_string("Erasing bad uploaded flash image");
+		staging_erase();
+		write_char('\n');
 	}
 	else
 	{

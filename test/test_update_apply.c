@@ -7,7 +7,10 @@
  * the config preserved and the staging area cleared, on the minimum flash and
  * a larger one, WITHOUT the clean-up wrapping past the end of the chip; and a
  * power cut during the copy that a re-run completes from the intact staged
- * image. With the standard layout a real built .bin can be passed as arg 1.
+ * image; and a power cut at every single erase and write in turn, each
+ * followed by power-ons until the switch is up (on the new image) or dead
+ * (only while the home bank, copied last, is torn). A real built .bin of the
+ * layout can be passed as arg 1.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,6 +76,80 @@ static void run_valid_cycle(uint32_t size, const char *label, const uint8_t *img
 	fd_free(&g_flash);
 }
 
+/* Is flash [from, to) the old image, the new one, or torn between them? */
+enum { OLD, NEW, TORN };
+static int image_state(const uint8_t *img, uint32_t from, uint32_t to)
+{
+	int old = 1, new = 1;
+	for (uint32_t a = from; a < to; a++) {
+		old &= g_flash.mem[a] == running[a];
+		new &= g_flash.mem[a] == img[a];
+	}
+	return new ? NEW : old ? OLD : TORN;
+}
+
+/* One power-on, as far as the update is concerned. The resident code up to
+ * update_resume() must be one whole home bank; past it, main() calls into the
+ * other banks, so they must belong to the same image as the home bank.
+ * Returns 1 if the switch comes up, 0 if it resets to try again, -1 dead. */
+static int boot(const uint8_t *img)
+{
+	int home = image_state(img, 0, CODE0_SIZE);
+	if (home == TORN)
+		return -1;
+	if (resume_run())
+		return 0;
+	if (home != image_state(img, CODE0_SIZE, IMAGE_COPY_LEN))
+		return -1;
+	return update_run() ? 0 : 1;
+}
+
+/* Cut the power at every erase and write of an update in turn, then power on
+ * until the switch is up or dead. Only a cut that tears the home bank, the
+ * last sectors copied, may leave it dead; every other one must come back up
+ * on the new image, the config kept and the staging area and record cleared. */
+static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
+{
+	char msg[160];
+	int ops, up = 0, dead = 0, bad = 0, first_dead = -1, last_dead = -1;
+
+	setup(&g_flash, size, img);
+	update_run();
+	ops = g_flash.erases + g_flash.writes;
+	fd_free(&g_flash);
+
+	for (int n = 0; n < ops; n++) {
+		int r = 0, boots = 0, torn_home;
+		setup(&g_flash, size, img);
+		fd_fail_after(&g_flash, n);
+		update_run();
+		fd_fail_after(&g_flash, -1);
+		torn_home = image_state(img, 0, CODE0_SIZE) == TORN;
+		while (!r && boots++ < 4)
+			r = boot(img);
+		if (r < 0) {
+			dead++;
+			if (first_dead < 0) first_dead = n;
+			last_dead = n;
+			bad += !torn_home;
+		} else if (r == 1 && copied_ok(&g_flash, img)
+			   && g_flash.mem[FIRMWARE_UPLOAD_START] == 0xFF
+			   && g_flash.mem[UPDATE_PROGRESS] == 0xFF
+			   && g_flash.wrote_without_erase == 0 && g_flash.wrapped_ops == 0) {
+			up++;
+		} else {
+			bad++;
+		}
+		fd_free(&g_flash);
+	}
+	printf("      %s: %d cut points, %d come up on the new image, %d dead", label, ops, up, dead);
+	if (dead)
+		printf(" (cuts %d-%d)", first_dead, last_dead);
+	printf("\n");
+	snprintf(msg, sizeof msg, "%s: a power cut at any point boots, unless it tears the home bank", label);
+	CHECK(bad == 0 && up + dead == ops && dead <= CODE0_SIZE / 0x1000 * (2 + 0x1000 / FLASH_BUF_SIZE), msg);
+}
+
 int main(int argc, char **argv)
 {
 	static uint8_t img[IMAGE_SIZE];
@@ -106,6 +183,8 @@ int main(int argc, char **argv)
 	      "re-run after power cut completes from the intact staged image");
 	fd_free(&g_flash);
 
+	powercut_sweep(need, "power cuts", img);
+
 	/* a real built .bin of this layout: standard on 2 MiB, compact on the
 	 * 512 KiB it is meant for */
 	if (argc > 1) {
@@ -117,6 +196,7 @@ int main(int argc, char **argv)
 		CHECK(crc16_host_buf(real, IMAGE_SIZE) == 0xB001, "real image: CRC == 0xB001 (matches crc_calculator)");
 		run_valid_cycle(IMAGE_SIZE == 0x80000 ? 0x200000 : need,
 				IMAGE_SIZE == 0x80000 ? "2M real image" : "512K real image", real);
+		powercut_sweep(need, "real image, power cuts", real);
 	}
 
 	printf(failures ? "\ntest_update_apply: %d FAILURE(S)\n" : "\ntest_update_apply: ALL PASS\n", failures);

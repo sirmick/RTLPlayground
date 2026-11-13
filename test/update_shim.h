@@ -15,6 +15,10 @@ extern int shim_verbose;
  * normally (too small / no image / bad CRC). */
 int update_run(void);
 
+/* Run update_resume() against g_flash: 1 if it finished a copy and reset,
+ * 0 if there was nothing to resume or a modelled power cut stopped it. */
+int resume_run(void);
+
 /* Run config_migrate() against g_flash. Returns its result, or -1 if a
  * modelled power cut stopped it part-way (g_flash.powercut set). */
 int migrate_run(void);

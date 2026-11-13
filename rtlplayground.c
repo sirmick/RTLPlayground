@@ -1528,6 +1528,7 @@ void main(void)
 	// See this issue: https://github.com/logicog/RTLPlayground/issues/70
 	print_string("\nInitializing Flash controller\n");
 	flash_init(machine.flash_sio ? 0 : 1);
+	update_resume();	// banks may be half replaced: before calling into one
 
 	// Set default for SFP pins so we can start up a module already inserted
 	sfp_pins_last = 0x33; // signal LOS and no module inserted (for both slots, even if only 1 present)
