@@ -140,6 +140,14 @@ all: create_build_dir $(VERSION_HEADER) $(MACHINE_SRC) $(CONFIG) $(SUBDIRS) $(OU
 bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
 
+# Rebalance the code banks: rewrite banks.txt from the sizes in REPACK_DIRS
+# (default: this build). Give it several builds - machines, layouts, HEALTH=1 -
+# and the placement fits all of them; rebuild them afterwards.
+REPACK_DIRS ?= $(BUILDDIR)
+.PHONY: repack
+repack:
+	python3 tools/pack_banks.py $(REPACK_DIRS) --banks $(BANKS_FILE)
+
 # Fail if any direct call crosses a code bank (needs a prior build of $MACHINE).
 check-banks:
 	python3 tools/check_cross_bank.py $(BUILDDIR)

@@ -8,6 +8,9 @@ check_linked.py - checks on a linked build that the compiler and linker don't ma
             loop's event flags at bits 0-3 of byte 0x20 shared their bits with
             the command parser's bools and the serial TX flag.)
 
+  banks     No code bank holds more than the 48 KiB its window (0x4000-0xffff)
+            shows: the rest would land outside it.
+
   psbank    Code that writes PSBANK (SFR 0x96, the code bank mapped at
             0x4000-0xffff) must put the caller's bank back before it returns: a
             home-bank function called from bank 2 that returns with bank 1
@@ -35,6 +38,8 @@ PSBANK = 0x96
 EXEMPT = {"__sdcc_banked_call", "__sdcc_banked_ret", "_start_app"}
 
 SEG_SYM = re.compile(r"^C:\s+([0-9A-Fa-f]{8})\s+([sl])_(\w+)\s*$")
+BANK_AREA = re.compile(r"^(BANK[0-9])\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]{8}) =")
+BANK_WINDOW = 0xC000
 MEM_ROW = re.compile(r"^0x([0-9a-f]{2}):\|(.*)\|\s*$")
 ASM_AREA = re.compile(r"^\s*\.area\s+(\S+)")
 ASM_ABS = re.compile(r"^(_\w+)\s*=\s*0x([0-9A-Fa-f]+)\s*$")
@@ -153,6 +158,16 @@ def check_absolute(linkdir, outdir):
     return found
 
 
+def check_banks(linkdir):
+    size = {}
+    for line in open(map_base(linkdir) + ".map"):
+        m = BANK_AREA.match(line)
+        if m:
+            size[m.group(1)] = int(m.group(3), 16)
+    return [f"{b} holds {n} bytes, more than the {BANK_WINDOW} its window shows: "
+            f"rebalance with `make repack`" for b, n in sorted(size.items()) if n > BANK_WINDOW]
+
+
 def insns(rst):
     """(label or None, address, bytes) in listing order."""
     for line in open(rst, errors="replace"):
@@ -246,12 +261,12 @@ def main():
     dirs = [os.path.normpath(os.path.dirname(sys.argv[2]))] if len(sys.argv) == 3 else link_dirs(outdir)
     found = []
     for d in dirs:
-        found += check_absolute(d, outdir) + check_psbank(d, outdir)
+        found += check_absolute(d, outdir) + check_banks(d) + check_psbank(d, outdir)
     for f in found:
         print("check_linked: " + f)
     if found:
         sys.exit(1)
-    print(f"check_linked: {outdir}: no __at overlaps, PSBANK restored everywhere")
+    print(f"check_linked: {outdir}: no __at overlaps, banks fit, PSBANK restored everywhere")
 
 
 if __name__ == "__main__":
