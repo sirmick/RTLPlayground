@@ -15,7 +15,7 @@ the resident home/CSEG region as bank 0); the map gives the target symbol's
 bank. A direct call is flagged when the target is in a nonzero bank different
 from the caller's. The fix for a flag is to declare the target __banked.
 
-With --placement FILE (a file->bank JSON from pack_banks.py) it instead checks
+With --placement FILE (a file->bank JSON) it instead checks
 that proposed packing, using each listing's own file as the caller's bank and
 the map's module column for each target's - so a repack can be proven call-safe
 before any relink.
@@ -24,9 +24,8 @@ On linked addresses it also checks data references: an immediate operand
 (`mov dptr,#___str_7`) naming a string literal or a __code const object that
 sits in another nonzero bank. Code reads __code data through the bank window
 with the *current* PSBANK, so such a read returns whatever the running bank
-holds at that offset - garbled strings, no crash. This happens when a file
-reads another file's __code data and banks.txt puts the two in different
-banks.
+holds at that offset - garbled strings, no crash. tools/place_banks.py keeps
+such files together, so this would be a bug there.
 
 Usage: check_cross_bank.py <build-output-dir> [--placement placement.json]
 Exit status is nonzero if any violation is found.
@@ -158,7 +157,7 @@ def main(argv):
         else:
             mods = sorted({mod for _, _, mod, _, _ in data_violations})
             print(f"\n{len(data_violations)} CROSS-BANK __code DATA REFERENCE(S) in {len(mods)} file(s)"
-                  " - put reader and data in one bank (banks.txt):\n")
+                  " - reader and data must share a bank (tools/place_banks.py):\n")
             for cb, tb, mod, target, addr in sorted(data_violations)[:40]:
                 print(f"  bank {cb} reads bank {tb}:  {mod} (@0x{addr:06x}) {target}")
             if len(data_violations) > 40:

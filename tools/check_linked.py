@@ -165,7 +165,7 @@ def check_banks(linkdir):
         if m:
             size[m.group(1)] = int(m.group(3), 16)
     return [f"{b} holds {n} bytes, more than the {BANK_WINDOW} its window shows: "
-            f"rebalance with `make repack`" for b, n in sorted(size.items()) if n > BANK_WINDOW]
+            f"the code no longer fits the banks (see tools/place_banks.py)" for b, n in sorted(size.items()) if n > BANK_WINDOW]
 
 
 def insns(rst):

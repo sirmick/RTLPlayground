@@ -140,14 +140,6 @@ all: create_build_dir $(VERSION_HEADER) $(MACHINE_SRC) $(CONFIG) $(SUBDIRS) $(OU
 bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
 
-# Rebalance the code banks: rewrite banks.txt from the sizes in REPACK_DIRS
-# (default: this build). Give it several builds - machines, layouts, HEALTH=1 -
-# and the placement fits all of them; rebuild them afterwards.
-REPACK_DIRS ?= $(BUILDDIR)
-.PHONY: repack
-repack:
-	python3 tools/pack_banks.py $(REPACK_DIRS) --banks $(BANKS_FILE)
-
 # Fail if any direct call crosses a code bank (needs a prior build of $MACHINE).
 check-banks:
 	python3 tools/check_cross_bank.py $(BUILDDIR)
@@ -233,15 +225,22 @@ SRCS += \
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
 
-# Code banks: banks.txt gives each banked file its bank, passed to the compiler
-# as --codeseg/--constseg (no bank pragmas in the sources). `make repack`
-# rewrites it from a build's sizes (tools/pack_banks.py).
-BANKS_FILE := banks.txt
-BANK_LINES := $(shell sed -e 's/\#.*//' -e '/^[[:space:]]*$$/d' $(BANKS_FILE) | tr -s ' \t' ':')
-bank_src = $(subst MACHINE_INIT,$(MACHINE_INIT_SRC),$(word 1,$(subst :, ,$(1))))
-bank_flags = --codeseg BANK$(word 2,$(subst :, ,$(1))) --constseg BANK$(word 2,$(subst :, ,$(1)))
-$(foreach l,$(BANK_LINES),$(eval $(BUILDDIR)/$(basename $(call bank_src,$(l))).rel: BANK_FLAGS = $(call bank_flags,$(l))))
-MACHINE_INIT_BANK_FLAGS := $(foreach l,$(filter MACHINE_INIT:%,$(BANK_LINES)),$(call bank_flags,$(l)))
+# Code banks. These sources stay in the home bank: interrupt handlers and the
+# code they call, the flash and update code (it rewrites the banks), the board
+# definition, and the generated web UI index (html_data names its own bank).
+# Every other C source is compiled into the area BANKED, and each build places
+# it in BANK1-3 after compiling (tools/place_banks.py, result in
+# $(BUILDDIR)/banks.txt): no bank placement in the sources or anywhere else.
+RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c update_apply.c timer.c \
+	udp_apps.c rtl837x_flash.c rtl837x_nic.c httpd/html_out.c
+BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
+BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)
+RESIDENT_OBJS = $(filter-out $(BANKED_OBJS),$(OBJS))
+ASM_OBJS = $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel $(BUILDDIR)/crypto/chacha_8051.rel
+# What is linked: every object in SRCS order, a banked one as its placed copy.
+LINK_OBJS = $(foreach o,$(OBJS),$(if $(filter $(o),$(BANKED_OBJS)),$(BUILDDIR)/placed/$(patsubst $(BUILDDIR)/%,%,$(o)),$(o))) $(ASM_OBJS)
+BANKED_FLAGS = --codeseg BANKED --constseg BANKED
+$(BANKED_OBJS): BANK_FLAGS = $(BANKED_FLAGS)
 HTML := $(shell find html -name '*.html' -or -name '*.svg' -or -name '*.css' -or -name '*.ico')
 
 # Minified copy of the web UI sources, used as the fileadder input.
@@ -326,15 +325,21 @@ $(CCFLAGS_STAMP): FORCE | create_build_dir
 $(CONFIG_STAMP): FORCE | create_build_dir
 	@echo '$(CONFIG)' | cmp -s - $@ 2>/dev/null || echo '$(CONFIG)' > $@
 
-$(BUILDDIR)/%.rel: %.c $(CCFLAGS_STAMP) $(BANKS_FILE) | create_build_dir html_data.h
+$(BUILDDIR)/%.rel: %.c $(CCFLAGS_STAMP) | create_build_dir html_data.h
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 
 $(BUILDDIR)/%.rel: %.asm $(CCFLAGS_STAMP) | create_build_dir
 	${ASM} ${AFLAGS} -o $@ $<
 #	mv -f $(addprefix $(basename $^), .lst .rel .sym) .
 
-$(BUILDDIR)/rtlplayground.ihx: $(OBJS) $(BUILDDIR)/crtbank.rel $(BUILDDIR)/crc16.rel $(BUILDDIR)/crypto/chacha_8051.rel
-	$(CC) $(CC_FLAGS) --xram-size 49151 -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ $^
+# Place the banked objects into the banks: copies under placed/ for the link.
+$(BUILDDIR)/placed.stamp: $(OBJS) $(ASM_OBJS) tools/place_banks.py
+	python3 tools/place_banks.py $(BUILDDIR) $(BANKED_OBJS) -- $(RESIDENT_OBJS) $(ASM_OBJS)
+	@touch $@
+
+$(BUILDDIR)/rtlplayground.ihx: $(BUILDDIR)/placed.stamp
+	$(CC) $(CC_FLAGS) --xram-size 49151 -Wl-bHOME=0x00000 -Wl-bBANK1=0x14000 -Wl-bBANK2=0x24000 -Wl-bBANK3=0x34000 -Wl-r -o $@ \
+		$(LINK_OBJS)
 	python3 tools/check_linked.py $(BUILDDIR) $(BUILDDIR)/rtlplayground.map || { rm -f $@; exit 1; }
 	python3 tools/check_cross_bank.py $(BUILDDIR) || { rm -f $@; exit 1; }
 
@@ -409,7 +414,7 @@ machine_check: $(SDCC)
 	$(CC) $(MACHINE_LESS_CC_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c machine/$${MACHINE}.c; \
 	INIT=machine/$${MACHINE}_init.c; \
 	if [ ! -e $$INIT ] && [ ! -L $$INIT ]; then INIT=$(MACHINE_INIT_DEFAULT); fi; \
-	$(CC) $(MACHINE_LESS_CC_FLAGS) $(MACHINE_INIT_BANK_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c $$INIT; \
+	$(CC) $(MACHINE_LESS_CC_FLAGS) $(BANKED_FLAGS) -DMACHINE_NAME=$${MACHINE} -MMD -o $(BUILDDIR)/tmp/machine_check -c $$INIT; \
 	done
 	@rm -rf $(BUILDDIR)/tmp
 

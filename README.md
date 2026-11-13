@@ -18,12 +18,14 @@ A Playground for Firmware development for advanced user of RTL8372/RTL8373 based
 > - **Machine data region** at `0x80000` (1 MiB flash and more) for a board's own blobs, such as
 >   the PoE controller firmware of the MokerLink POE-2G040210GSM: written once, never by an update.
 >   The firmware page recognises application, loader and machine data files by their header.
-> - **Code placement and checks**: no bank pragmas in the sources - `banks.txt` places each file,
->   and `make repack` (`tools/pack_banks.py`) rebalances the three code banks over any set of
->   builds. Every link is checked: calls and `__code` data reads that cross a bank, banks that
->   overflow, `__at` variables the linker also hands out, PSBANK not restored
->   (`tools/check_cross_bank.py`, `tools/check_linked.py`); `tools/check_layout.py` for region
->   overlaps; a smaller web UI (`LANGS=`).
+> - **Code placement and checks**: no bank placement in the sources or anywhere else - every
+>   build places the banked files into the three code banks itself, evenly, keeping files that
+>   call each other or read each other's `__code` data together (`tools/place_banks.py`, result
+>   in the build's `banks.txt`); the Makefile only lists the files that stay in the home bank.
+>   Every link is checked: calls and `__code` data reads that cross a bank, banks that overflow,
+>   `__at` variables the linker also hands out, PSBANK not restored (`tools/check_cross_bank.py`,
+>   `tools/check_linked.py`); `tools/check_layout.py` for region overlaps; a smaller web UI
+>   (`LANGS=`).
 > - **Tests without hardware**: a model of the SPI flash chip running the real boot-time update,
 >   config and machine data moves (with power cuts at every flash operation), upload read-back
 >   checks; `make -C test -j8 quick` runs them in seconds. `tools/docker-make.sh` builds in parallel.
