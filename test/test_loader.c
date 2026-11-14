@@ -83,7 +83,7 @@ static uint8_t loader_byte(uint32_t i)
 }
 extern uint8_t slotbuf[LDR_SLOT_BUF];
 
-#define FLASH_LEN 0x200000
+#define FLASH_LEN 0x400000
 static uint8_t flash[FLASH_LEN];
 static long reads_left;
 static jmp_buf escape;
@@ -768,9 +768,21 @@ int main(void)
 		confirm();
 	}
 	wrap = 0x400000;
-	check(boot() == 2 && !started && strstr(out, "Loader window check failed"), "a flash with no window on the loader does not jump");
-	wrap = 0x200000;
+	check(boot() == 2 && !started && strstr(out, "Loader window check failed") && !strstr(out, "Writing the loader window"),
+	      "a flash with no window on the loader does not jump, and a 2 MB one writes no copy");
 	confirm();
+	chip_size = 0x400000;
+	check(boot() == 1 && jumped_bank == 0x3f && jumped_code == 0x4000 + LDR_ALIAS_FLASH && strstr(out, "Writing the loader window") &&
+	      !memcmp(flash + LDR_ALIAS_HIGH, flash + LDR_ALIAS_FLASH, LDR_ALIAS_LEN), "a 4 MB flash writes a copy of the loader window and jumps through it");
+	confirm();
+	check(boot() == 1 && jumped_bank == 0x3f && !strstr(out, "Writing the loader window"), "a 4 MB flash with the copy in place just jumps");
+	confirm();
+	flash[LDR_ALIAS_HIGH + 0x123] ^= 0x10;
+	check(boot() == 1 && jumped_bank == 0x3f && strstr(out, "Writing the loader window") &&
+	      !memcmp(flash + LDR_ALIAS_HIGH, flash + LDR_ALIAS_FLASH, LDR_ALIAS_LEN), "a damaged copy of the loader window is written again");
+	confirm();
+	chip_size = 0x200000;
+	wrap = 0x200000;
 
 	bad_copy = true;
 	check(boot() == 2 && !started && strstr(out, "Application copy failed"), "no jump when the copy in xdata does not match the slot");

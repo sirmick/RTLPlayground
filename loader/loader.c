@@ -615,13 +615,30 @@ static bool alias_find(void)
 	return false;
 }
 
+/* No bank wraps onto the loader on a chip this big: put a copy of the alias
+ * at LDR_ALIAS_HIGH. A copy cut short fails alias_find() and is written again. */
+static bool alias_place(void)
+{
+	uint16_t off;
+
+	if (flash_size <= LDR_ALIAS_REACH)
+		return false;
+	print_string("Writing the loader window\n");
+	erase(LDR_ALIAS_HIGH);
+	for (off = 0; off < LDR_ALIAS_LEN; off += sizeof(buf)) {
+		readb(LDR_ALIAS_FLASH + off, sizeof(buf));
+		program(LDR_ALIAS_HIGH + off, sizeof(buf));
+	}
+	return true;
+}
+
 static void start_app(void)
 {
 	if (!load_slot()) {
 		print_string("Application copy failed\n");
 		return;
 	}
-	if (!alias_find()) {
+	if (!alias_find() && !(alias_place() && alias_find())) {
 		print_string("Loader window check failed, the loader must be reflashed\n");
 		timer0_start();
 		get_timeout(10 * TICKS_1S);
