@@ -140,6 +140,21 @@ all: create_build_dir $(VERSION_HEADER) $(MACHINE_SRC) $(CONFIG) $(SUBDIRS) $(OU
 bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
 
+# Images for rtlsim's flash tests (github.com/sirmick/ovs-rtlpg): every board
+# and layout tools/rtlsim_images.py lists, built one after another (builds
+# share files in the tree), then assembled into OUT with its manifest.json.
+RTLSIM_BOARDS = SWGT024_V2_0_UNMANAGED AMPCOM_WAM902_SWTG018AS POE_2G040210GSM
+RTLSIM_BUILD = output/rtlsim
+.PHONY: rtlsim-images
+rtlsim-images:
+	@test -n "$(OUT)" || { echo "usage: make rtlsim-images OUT=dir" >&2; false; }
+	for m in $(RTLSIM_BOARDS); do \
+		$(MAKE) MACHINE=$$m BUILDDIR=$(RTLSIM_BUILD)/$$m && \
+		$(MAKE) MACHINE=$$m LAYOUT=compact BUILDDIR=$(RTLSIM_BUILD)/$$m-compact && \
+		$(MAKE) MACHINE=$$m LAYOUT=compact LOADER=1 BUILDDIR=$(RTLSIM_BUILD)/$$m-compact-loader || exit 1; \
+	done
+	python3 tools/rtlsim_images.py $(RTLSIM_BUILD) "$(OUT)"
+
 # Fail if any direct call crosses a code bank (needs a prior build of $MACHINE).
 check-banks:
 	python3 tools/check_cross_bank.py $(BUILDDIR)
