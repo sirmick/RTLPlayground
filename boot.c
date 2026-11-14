@@ -575,6 +575,18 @@ bool loader_present(void) __banked
 	return loader_meta(LDR_META);
 }
 
+/* Erase LDR_STAGE: a refused upload must not leave a loader there that a
+ * later boot would take for an accepted one (loader_convert()). */
+static __xdata uint8_t stage_s;
+
+void loader_stage_drop(void) __banked
+{
+	for (stage_s = 0; stage_s < LDR_LOADER_LEN >> 12; stage_s++) {
+		flash_region.addr = LDR_STAGE + ((uint32_t)stage_s << 12);
+		flash_sector_erase();
+	}
+}
+
 /* A loader image at LDR_STAGE, whole, built for this layout: its CRC, its
  * start, and "LDR" + LDR_LAYOUT just before the CRC (tools/bootpack.py). */
 bool loader_stage_fits(void) __banked
@@ -632,8 +644,9 @@ bool loader_update(void) __banked
 
 #ifdef LAYOUT_COMPACT
 /*
- * Give a loaderless board the loader staged at LDR_STAGE by /loader: late in
- * the boot (main(), before the update check), where the reset at the end works.
+ * Give a loaderless board the loader staged at LDR_STAGE by an accepted
+ * /loader or install image upload (loader_convert_arm()): late in the boot
+ * (main(), before the update check), where the reset at the end works.
  * The progress record at UPDATE_PROGRESS reads "CNV1", then one byte per step,
  * cleared when it is done, so a power cut carries on where it was:
  *   CNV_SLOT  the running home bank (flash 2..0x4000) copied into LDR_SLOT
@@ -701,11 +714,24 @@ static void cnv_copy(void)
 /* Back to a plain loaderless board, the stage dropped: upload it again. */
 static void cnv_abandon(void)
 {
-	for (cnv_s = 0; cnv_s < LDR_LOADER_LEN >> 12; cnv_s++)
-		cnv_erase(LDR_STAGE + ((uint32_t)cnv_s << 12));
+	loader_stage_drop();
 	cnv_erase(LDR_META);
 	cnv_erase(UPDATE_PROGRESS);
 	flash_init(machine.flash_sio ? 0 : 1);
+}
+
+/* httpd, on accepting a /loader or install image upload: on a board without
+ * the loader, arm the conversion for the next boot. Only this arms it - a
+ * loader left in the stage by a refused or broken-off upload never does. */
+void loader_convert_arm(void) __banked
+{
+	if (loader_present() || !loader_stage_fits())
+		return;
+	cnv_erase(UPDATE_PROGRESS);
+	flash_buf[0] = 'C'; flash_buf[1] = 'N'; flash_buf[2] = 'V'; flash_buf[3] = '1';
+	flash_region.addr = UPDATE_PROGRESS;
+	flash_region.len = 4;
+	flash_write_bytes(flash_buf);
 }
 
 void loader_convert(void) __banked
@@ -713,15 +739,8 @@ void loader_convert(void) __banked
 	flash_region.addr = UPDATE_PROGRESS;
 	flash_region.len = 4;
 	flash_read_bulk(flash_buf);
-	if (flash_buf[0] != 'C' || flash_buf[1] != 'N' || flash_buf[2] != 'V' || flash_buf[3] != '1') {
-		if (loader_present() || !loader_stage_fits())
-			return;
-		cnv_erase(UPDATE_PROGRESS);
-		flash_buf[0] = 'C'; flash_buf[1] = 'N'; flash_buf[2] = 'V'; flash_buf[3] = '1';
-		flash_region.addr = UPDATE_PROGRESS;
-		flash_region.len = 4;
-		flash_write_bytes(flash_buf);
-	}
+	if (flash_buf[0] != 'C' || flash_buf[1] != 'N' || flash_buf[2] != 'V' || flash_buf[3] != '1')
+		return;
 	print_string("Converting this switch to the loader, do not power it off\n");
 	flash_init(0);
 	set_sys_led_state(SYS_LED_FAST);
@@ -794,8 +813,7 @@ void loader_convert(void) __banked
 		cnv_mark(CNV_SECT + cnv_s);
 	}
 
-	for (cnv_s = 0; cnv_s < LDR_LOADER_LEN >> 12; cnv_s++)
-		cnv_erase(LDR_STAGE + ((uint32_t)cnv_s << 12));
+	loader_stage_drop();
 	cnv_erase(UPDATE_PROGRESS);
 	print_string("Converted to the loader, resetting now\n");
 	delay(200);

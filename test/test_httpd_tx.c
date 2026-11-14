@@ -146,6 +146,9 @@ static bool loader_present_ok = true;
 bool loader_present(void) { return loader_present_ok; }
 static bool loader_fits_ok = true;
 bool loader_stage_fits(void) { return loader_fits_ok; }
+static int stage_drops, convert_arms;
+void loader_stage_drop(void) { stage_drops++; }
+void loader_convert_arm(void) { convert_arms++; }
 void delay(uint16_t t) { (void)t; }
 void write_char(char c) { (void)c; }
 void write_char_no_syslog(char c) { (void)c; }
@@ -684,18 +687,20 @@ static void scenario_upload_reset_owner(void)
 	upload_settings.bptr = 0;
 	uptr = LDR_STAGE + LDR_LOADER_LEN;
 	loader_fits_ok = false;
+	stage_drops = 0;
 	stream_upload();
-	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "not a loader for this layout"),
-	      "a loader built for another layout is refused");
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "not a loader for this layout") && stage_drops == 1,
+	      "a loader built for another layout is refused, the stage erased");
 	loader_fits_ok = true;
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = LDR_STAGE + LDR_LOADER_LEN;
 	loader_present_ok = false;
+	convert_arms = 0;
 	stream_upload();
 #ifdef LAYOUT_COMPACT
-	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING,
-	      "compact: a loader image on a switch without one is staged for the conversion");
+	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING && convert_arms == 1,
+	      "compact: a loader image on a switch without one arms the conversion");
 	uip_conn->appstate.fw_reset_pending = 0;
 #else
 	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "no loader"),
@@ -704,33 +709,53 @@ static void scenario_upload_reset_owner(void)
 	loader_present_ok = true;
 #ifdef LAYOUT_COMPACT
 	/* an install image: the application, then the loader; its stream CRC
-	 * covers both, so only the two read-back CRCs count */
+	 * covers both, so only the two read-back CRCs count. A refused one must
+	 * not leave its loader staged: the next boot would convert to it. */
 	upload_loader = 0;
 	crc_final = 0x1234;
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
 	uip_conn->appstate.fw_reset_pending = 0;
+	stage_drops = convert_arms = 0;
 	stream_upload();
-	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING,
-	      "compact: an install image with both parts read back right records reset intent");
+	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING && !stage_drops && convert_arms == 1,
+	      "compact: an accepted install image records reset intent and arms the conversion");
 	loader_fits_ok = false;
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
 	uip_conn->appstate.fw_reset_pending = 0;
+	stage_drops = convert_arms = 0;
 	stream_upload();
-	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed"),
-	      "compact: an install image whose loader doesn't fit is refused");
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed") && stage_drops == 1 && !convert_arms,
+	      "compact: an install image whose loader doesn't fit is refused, the stage erased, nothing armed");
 	loader_fits_ok = true;
 	readback_crc = 0x1234;
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
+	stage_drops = convert_arms = 0;
 	stream_upload();
-	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed"),
-	      "compact: an install image whose application reads back wrong is refused");
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed") && stage_drops == 1 && !convert_arms,
+	      "compact: an install image whose application reads back wrong is refused, the stage erased, nothing armed");
 	readback_crc = 0xb001;
+	crc_final = 0;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = FIRMWARE_UPLOAD_END + 0x800;
+	stage_drops = 0;
+	stream_upload();
+	CHECK(!uip_conn->appstate.fw_reset_pending && stage_drops == 1,
+	      "compact: an install image cut off inside its loader is refused, the stage erased");
+	crc_final = 0;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = FIRMWARE_UPLOAD_END;
+	stage_drops = 0;
+	stream_upload();
+	CHECK(!uip_conn->appstate.fw_reset_pending && !stage_drops,
+	      "compact: a refused plain image leaves the stage alone");
 	upload_loader = 1;
 	crc_final = 0xb001;
 #endif

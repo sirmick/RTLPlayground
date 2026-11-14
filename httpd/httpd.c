@@ -527,6 +527,10 @@ uint8_t stream_upload(void)
 					slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 33\r\n"
 						"Content-Type: text/plain\r\n\r\n"
 						"OK: checksum verified, rebooting\n");
+#ifdef LAYOUT_COMPACT
+					if (upload_loader || uptr == FIRMWARE_UPLOAD_END + LDR_LOADER_LEN)
+						loader_convert_arm();	/* a board without the loader */
+#endif
 					// Reset once the response is fully ACKed
 					s->fw_reset_pending = FW_UPDATE_PENDING;
 				} else {
@@ -535,6 +539,11 @@ uint8_t stream_upload(void)
 						"Content-Type: text/plain\r\n\r\n"
 						"NO: checksum failed, not applied\n");
 				}
+				/* A refused /loader or install image may have left a whole
+				 * loader at LDR_STAGE: the next boot would convert to it. */
+				if (s->fw_reset_pending != FW_UPDATE_PENDING && !upload_mdata
+				    && (upload_loader || (uptr > LDR_STAGE && uptr <= LDR_STAGE + LDR_LOADER_LEN)))
+					loader_stage_drop();
 			}
 			if (upload_settings.bptr >= upload_settings.plen)
 				return 0;

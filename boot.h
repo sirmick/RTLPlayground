@@ -15,6 +15,8 @@ void loader_confirm(void) __banked;
 bool loader_present(void) __banked;
 bool loader_update(void) __banked;
 bool loader_stage_fits(void) __banked;
+void loader_stage_drop(void) __banked;
+void loader_convert_arm(void) __banked;
 void loader_convert(void) __banked;
 
 #endif
