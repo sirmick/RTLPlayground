@@ -143,7 +143,8 @@ bank_size:
 # Images for rtlsim's flash tests (github.com/sirmick/ovs-rtlpg): every board
 # and layout tools/rtlsim_images.py lists, built one after another (builds
 # share files in the tree), then assembled into OUT with its manifest.json.
-RTLSIM_BOARDS = SWGT024_V2_0_UNMANAGED AMPCOM_WAM902_SWTG018AS POE_2G040210GSM
+RTLSIM_BOARDS = SWGT024_V2_0_UNMANAGED AMPCOM_WAM902_SWTG018AS POE_2G040210GSM \
+	KEEPLINK_KP_9000_9XHPML_V1_2 MOKERLINK_POE_2G080110GS
 RTLSIM_BUILD = output/rtlsim
 .PHONY: rtlsim-images
 rtlsim-images:
