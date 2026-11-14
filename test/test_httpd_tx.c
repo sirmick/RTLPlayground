@@ -1259,7 +1259,7 @@ static void scenario_config_upload(void)
 static void scenario_upload(const char *name, const char *part_type, int split)
 {
 	static const uint8_t payload[] = { 0x00, 0xff, 'R', '\r', '\n', '-', 0x80, 0x00 };
-	static const uint8_t staged[] = { 0x00, 0xff, 'R', '\r', '\n', '-', 0x80, 0x00, 0x00 };
+	static const uint8_t staged[] = { 0x00, 0xff, 'R', '\r', '\n', '-', 0x80, 0x00 };
 	static const char closing[] = "\r\n--upload-boundary--\r\n";
 	char preamble[256], request[512];
 	uint32_t saved_flash_size = flash_size;
@@ -1302,7 +1302,7 @@ static void scenario_upload(const char *name, const char *part_type, int split)
 
 	CHECK(!flash_write_bad && flash_written_len == sizeof(staged) &&
 	      !memcmp(flash_written, staged, sizeof(staged)),
-	      "upload: exact binary payload plus zero terminator staged at image address");
+	      "upload: exactly the binary payload staged at image address, nothing past it");
 	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12),
 	      "upload: invalid firmware is rejected with HTTP 400");
 	CHECK(!uip_conn->appstate.fw_reset_pending && reset_calls == 0,
@@ -1339,7 +1339,7 @@ static int upload_in_two(uint8_t *body, uint16_t body_len, uint16_t split)
 	}
 	return uip_conn->appstate.tstate == TSTATE_NONE
 		&& uptr == FIRMWARE_UPLOAD_START + UPLOAD_LEN && !flash_write_bad
-		&& flash_written_len == UPLOAD_LEN + 1 && !flash_written[UPLOAD_LEN];
+		&& flash_written_len == UPLOAD_LEN;
 }
 
 static void scenario_upload_cr_before_boundary(void)
