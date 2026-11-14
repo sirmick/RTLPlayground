@@ -5322,11 +5322,14 @@ $("fwfile").addEventListener("change", function() {
             msg = null;
         // The running firmware reports the image size its flash layout
         // takes (compact builds are smaller); older firmware is 512 KiB.
-        // A 16 KiB image is the loader; "MDT1" a machine data region.
+        // A 16 KiB image is the loader; "MDT1" a machine data region. A
+        // compact install image is the application followed by the loader,
+        // each with its own CRC.
         var want = Number(S.info.img_size) || 524288;
         var md = u.length > 10 && u[0] === 0x4d && u[1] === 0x44 && u[2] === 0x54 && u[3] === 0x31;
+        var inst = want < 524288 && u.length === want + 16384;
         if (md) {}
-        else if (u.length !== want && u.length !== 16384) msg = t("fw_size_err", {
+        else if (u.length !== want && u.length !== 16384 && !inst) msg = t("fw_size_err", {
             n: u.length,
             w: want
         });
@@ -5335,10 +5338,14 @@ $("fwfile").addEventListener("change", function() {
         else {
             var crc = 0;
             for (var i = 0; i < u.length; i++) {
+                if (inst && i === want) {
+                    if (crc !== 0xB001 || u[i] !== 0x00 || u[i + 1] !== 0x40) break;
+                    crc = 0;
+                }
                 crc ^= u[i];
                 for (var b = 0; b < 8; b++) crc = (crc & 1) ? ((crc >>> 1) ^ 0xA001) : (crc >>> 1);
             }
-            if (crc !== 0xB001) msg = t("fw_crc_err");
+            if (crc !== 0xB001 || i !== u.length) msg = t("fw_crc_err");
         }
         if (msg) {
             info.innerHTML = '<span style="color:var(--bad)">\u2715 ' + esc(msg) + "</span>";

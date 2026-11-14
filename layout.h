@@ -124,6 +124,11 @@
 #if !(LDR_STAGE + LDR_LOADER_LEN <= UPLOAD_START || LDR_STAGE >= FIRMWARE_UPLOAD_END)
 #error "flash layout: the loader update must not lie in the upload staging area"
 #endif
+/* A compact install image is the application with the loader after it: its
+ * upload stages the loader where /loader would (boot.c loader_convert()). */
+#if defined(LAYOUT_COMPACT) && LDR_STAGE != FIRMWARE_UPLOAD_END
+#error "flash layout: the loader stage must follow the upload staging area"
+#endif
 #if defined(LAYOUT_COMPACT) && CONFIG_START != 0x7f000
 #error "flash layout: the saved config stays at 0x7f000 - switches moved there once must never move again"
 #endif

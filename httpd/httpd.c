@@ -475,6 +475,16 @@ uint8_t stream_upload(void)
 			write_len = 0;
 			if (verify_crc) {
 				dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
+#ifdef LAYOUT_COMPACT
+				/* An install image: the application, then the loader at
+				 * LDR_STAGE, each with its own CRC. A board without the
+				 * loader converts at the next boot, then the loader
+				 * installs the application; one with it ignores the stage. */
+				if (!upload_mdata && !upload_loader && uptr == FIRMWARE_UPLOAD_END + LDR_LOADER_LEN)
+					crc_final = flash_crc16(FIRMWARE_UPLOAD_START, FIRMWARE_UPLOAD_END) == 0xb001
+						&& loader_stage_fits() ? 0xb001 : 0;
+				else
+#endif
 				/* the stream CRC alone doesn't catch a write that went wrong */
 				if (crc_final == 0xb001 && flash_crc16(upload_mdata ? MDATA_START : upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START, uptr) != 0xb001) {
 					print_string("Flash read-back does not match the upload\n");
@@ -831,7 +841,11 @@ void handle_post(uint16_t body_off)
 			upload_loader = 0;
 			upload_mdata = 0;
 			uptr = FIRMWARE_UPLOAD_START;
+#ifdef LAYOUT_COMPACT
+			upload_end = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;	/* an install image */
+#else
 			upload_end = FIRMWARE_UPLOAD_END;
+#endif
 			verify_crc = 1;
 			max_upload = 1024576;
 			pre_acc = 0;

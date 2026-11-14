@@ -9,14 +9,15 @@ BUILDROOT holds builds named <MACHINE>, <MACHINE>-compact and
 images and a manifest.json that rtlsim's flash tests read:
 
   [{"name", "file", "machine", "layout", "flash": "512K|2M", "loader": bool,
-    "kind": "app|loader|chip|bridge|mdata", "map", "notes"}, ...]
+    "kind": "app|install|loader|chip|bridge|mdata", "map", "notes"}, ...]
 
 "map" is a build's rtlplayground.map, copied with the .mem, every .rst and the
 banks.txt into <name>.build/. Per board, besides the three application images:
-the loader build's programmer image (-boot) and /loader image (-loader); for
-the 2 MiB boards, a bridge image (standard firmware installs it over the web),
-one that carries the loader (-bridge-loader), and a whole chip of old standard firmware with a config at 0x70000 and a
-factory MAC, the starting point of a migration. The PoE board gets a machine
+the compact install image (-install: the application, then the loader), the
+loader build's programmer image (-boot) and /loader image (-loader); for the
+2 MiB boards, a bridge image carrying the loader (standard firmware installs
+it over the web), and a whole chip of old standard firmware with a config at
+0x70000 and a factory MAC, the starting point of a migration. The PoE board gets a machine
 data region with two SYNTHETIC PSE images (seeded random bytes, not PoE
 firmware) and a bridge that carries it: the real images are the PoE vendor's
 and never belong here.
@@ -69,6 +70,13 @@ def main():
             shutil.copy(pick(bd, "rtlplayground-v*.bin", ("flash512k", "-boot-", "-loader-")), os.path.join(out, t + ".bin"))
             add(name=t, file=t + ".bin", machine=m, layout=layout, flash=fl, loader=loader, kind="app", map=mp,
                 notes=f"{note}. Application image" + ("; installed by the loader" if loader else ""))
+            if layout == "compact" and not loader:
+                shutil.copy(pick(bd, "rtlplayground-install-*.bin"), os.path.join(out, t + "-install.bin"))
+                add(name=t + "-install", file=t + "-install.bin", machine=m, layout=layout, flash=fl, loader=True,
+                    kind="install", map=mp,
+                    notes="the web update image: the application, then the 16 KiB loader (it lands on the stage "
+                          "0x7A000). A board without the loader converts at the next boot and the loader then "
+                          "installs the application; a board with it installs the application as usual")
             if loader:
                 shutil.copy(pick(bd, "rtlplayground-boot-*.bin"), os.path.join(out, t + "-boot.bin"))
                 shutil.copy(pick(bd, "rtlplayground-loader-*.bin"), os.path.join(out, t + "-loader.bin"))
@@ -97,22 +105,16 @@ def main():
             continue
         with_md = m == "POE_2G040210GSM"
         bridge = os.path.join(out, m + "-bridge.bin")
-        subprocess.run([sys.executable, os.path.join(TOOLS, "bridge_image.py"), os.path.join(out, m + "-compact.bin")]
-                       + ([md] if with_md else []) + [bridge], check=True, stdout=subprocess.DEVNULL)
-        add(name=m + "-bridge", file=m + "-bridge.bin", machine=m, layout="standard->compact", flash=fl, loader=False,
-            kind="bridge", map=f"{m}-compact.build/rtlplayground.map",
-            notes="install with standard-layout firmware (web update): its first boot as compact moves the config "
-                  "0x70000->0x7F000" + (" and the synthetic PSE mdata 0x60000->0x80000" if with_md else ""))
-        bridge = os.path.join(out, m + "-bridge-loader.bin")
         subprocess.run([sys.executable, os.path.join(TOOLS, "bridge_image.py"),
                         os.path.join(out, m + "-compact-loader-boot.bin")]
                        + ([md] if with_md else []) + [bridge], check=True, stdout=subprocess.DEVNULL)
-        add(name=m + "-bridge-loader", file=m + "-bridge-loader.bin", machine=m, layout="standard->compact",
-            flash=fl, loader=True, kind="bridge", map=f"{m}-compact-loader.build/rtlplayground.map",
-            notes="as -bridge, but it carries the loader (the -compact-loader-boot image: loader at 0, metadata "
-                  "0x3B000, the application's home bank in the slot 0x3C000): the board arrives with the loader, "
-                  "which starts the compact application; that moves the config" +
-                  (" and the PSE mdata" if with_md else "") + " as -bridge does")
+        add(name=m + "-bridge", file=m + "-bridge.bin", machine=m, layout="standard->compact", flash=fl, loader=True,
+            kind="bridge", map=f"{m}-compact-loader.build/rtlplayground.map",
+            notes="install with standard-layout firmware (web update). It carries the loader (the "
+                  "-compact-loader-boot image: loader at 0, metadata 0x3B000, the application's home bank in the "
+                  "slot 0x3C000): the board arrives with the loader, which starts the compact application; its "
+                  "first boot moves the config 0x70000->0x7F000"
+                  + (" and the synthetic PSE mdata 0x60000->0x80000" if with_md else ""))
         chip = bytearray(b"\xff" * 0x200000)
         std = open(os.path.join(out, m + ".bin"), "rb").read()
         chip[:len(std)] = std

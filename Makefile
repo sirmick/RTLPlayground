@@ -386,8 +386,12 @@ endif
 		ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin "$(BUILDDIR)/../rtlplayground.bin"; \
 	fi
 
-ifdef LOADER
-all: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin
+# A compact build always builds the loader: the programmer image (-boot), the
+# /loader image (-loader) and the install image (-install: the application,
+# then the loader, which its upload stages at LDR_STAGE; a board without the
+# loader converts to it at the next boot). LOADER=1 is kept for old commands.
+ifneq ($(or $(LOADER),$(filter compact,$(LAYOUT))),)
+all: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin $(BUILDDIR)/rtlplayground-install-$(FILENAME_EXTENSION).bin
 endif
 
 LOADER_OBJS = $(BUILDDIR)/loader/loader.rel $(BUILDDIR)/loader/net.rel $(BUILDDIR)/loader/loader_alias.rel $(BUILDDIR)/loader/rtl837x_flash.rel
@@ -409,6 +413,9 @@ $(BUILDDIR)/loader/loader.ihx: $(LOADER_OBJS)
 
 $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin tools/bootpack.py tools/layout.py layout.h
 	LAYOUT_DEFS="$(LAYOUT_DEFS)" HOSTCC="$(HOSTCC)" python3 tools/bootpack.py $(BUILDDIR)/loader/loader.ihx $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin $@ $(BUILDDIR)/rtlplayground-loader-$(FILENAME_EXTENSION).bin
+
+$(BUILDDIR)/rtlplayground-install-$(FILENAME_EXTENSION).bin: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin
+	cat $(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin $(BUILDDIR)/rtlplayground-loader-$(FILENAME_EXTENSION).bin > $@
 
 .PHONY: clean distclean all $(SUBDIRS) $(SUBDIRSCLEAN) create_build_dir
 

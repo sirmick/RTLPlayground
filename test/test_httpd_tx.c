@@ -702,6 +702,38 @@ static void scenario_upload_reset_owner(void)
 	      "a loader image is refused on a switch without a loader");
 #endif
 	loader_present_ok = true;
+#ifdef LAYOUT_COMPACT
+	/* an install image: the application, then the loader; its stream CRC
+	 * covers both, so only the two read-back CRCs count */
+	upload_loader = 0;
+	crc_final = 0x1234;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
+	uip_conn->appstate.fw_reset_pending = 0;
+	stream_upload();
+	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING,
+	      "compact: an install image with both parts read back right records reset intent");
+	loader_fits_ok = false;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
+	uip_conn->appstate.fw_reset_pending = 0;
+	stream_upload();
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed"),
+	      "compact: an install image whose loader doesn't fit is refused");
+	loader_fits_ok = true;
+	readback_crc = 0x1234;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
+	stream_upload();
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "checksum failed"),
+	      "compact: an install image whose application reads back wrong is refused");
+	readback_crc = 0xb001;
+	upload_loader = 1;
+	crc_final = 0xb001;
+#endif
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = LDR_STAGE + LDR_LOADER_LEN;
@@ -767,6 +799,8 @@ static void scenario_upload_reset_owner(void)
 
 	crc_final = 0;
 	bindex = 0;
+	upload_loader = 0;
+	uptr = FIRMWARE_UPLOAD_START + 0x100;	/* a firmware image, not the size of an install image */
 	stream_upload();
 	CHECK(uip_conn->appstate.fw_reset_pending == 0,
 	      "failed CRC does not request reset");
