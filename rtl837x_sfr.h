@@ -134,7 +134,21 @@ __sfr16 __at(0xcbca) RCAP2_U16;
  * boots until its main loop starts.
  */
 #define RESET_CHAR 0x12
+/* The chip reset doesn't reset the flash controller, and the reset refetches
+ * the home bank through it as it was left: a programmed command still set up
+ * (boot0's last status poll leaves READ_STATUS in CMD_R) makes that fetch
+ * garbage and the chip hangs until a power cycle - as switch-denlounge did
+ * after a boot0 install. So every reset first sets it back to a plain fast
+ * read (single I/O, which every chip supports), letting a transfer in flight
+ * finish. Possibly also the cause of the mid-boot hang described above. */
+#define FLASH_READ_FOR_RESET() do { \
+	while (SFR_FLASH_EXEC_BUSY); \
+	SFR_FLASH_MODEB = 0; \
+	SFR_FLASH_CMD_R = 0x0b; \
+	SFR_FLASH_DUMMYCYCLES = 8; \
+} while (0)
 #define CHIP_RESET_NOW() do { \
+	FLASH_READ_FOR_RESET(); \
 	while (SFR_EXEC_STATUS != 0); \
 	SFR_DATA_24 = 0; SFR_DATA_16 = 0; SFR_DATA_8 = 0; SFR_DATA_0 = 1; \
 	SFR_REG_ADDR_U16 = 0x0024; \

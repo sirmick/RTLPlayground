@@ -1282,6 +1282,7 @@ void idle(void)
 
 void reset_chip(void)
 {
+	FLASH_READ_FOR_RESET();	/* see rtl837x_sfr.h */
 	REG_SET(RTL837X_REG_RESET, 1);
 	while(1);
 }
