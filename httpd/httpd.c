@@ -497,11 +497,21 @@ uint8_t stream_upload(void)
 							"Content-Type: text/plain\r\n\r\n"
 							"NO: not valid machine data\n");
 					}
+				} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_stage_fits()) {
+					print_string("Not a loader for this layout\n");
+					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 33\r\n"
+						"Content-Type: text/plain\r\n\r\n"
+						"NO: not a loader for this layout\n");
+#ifndef LAYOUT_COMPACT
+				/* a compact board without one is converted at the next boot
+				 * (boot.c loader_convert()); a standard image uses the
+				 * loader's area for itself */
 				} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_present()) {
 					print_string("No loader to update\n");
 					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 29\r\n"
 						"Content-Type: text/plain\r\n\r\n"
 						"NO: no loader on this switch\n");
+#endif
 				} else if (crc_final == 0xb001 && (!upload_loader || uptr == LDR_STAGE + LDR_LOADER_LEN)) {
 					print_string("Checksum OK.\nUpload to flash done, will reset!\n");
 					slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 33\r\n"

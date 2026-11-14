@@ -30,6 +30,9 @@ void boot_resume(void);
 extern __xdata uint32_t flash_crc16_from, flash_crc16_to;
 uint16_t flash_crc16_range(void);
 #define flash_crc16(a, end) (flash_crc16_from = (a), flash_crc16_to = (end), flash_crc16_range())
+/* The same, carrying on from crc_value: one CRC over several ranges. */
+uint16_t flash_crc16_more(void);
+#define flash_crc16_on(a, end) (flash_crc16_from = (a), flash_crc16_to = (end), flash_crc16_more())
 
 /*
  * Move a saved config from the standard layout's sector (LEGACY_CONFIG_START)

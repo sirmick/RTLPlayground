@@ -108,10 +108,15 @@ __xdata uint32_t flash_crc16_from, flash_crc16_to;
 
 uint16_t flash_crc16_range(void)
 {
+	crc_value = 0;
+	return flash_crc16_more();
+}
+
+uint16_t flash_crc16_more(void)
+{
 	__xdata uint32_t a = flash_crc16_from;
 	__xdata uint16_t i, n;
 
-	crc_value = 0;
 	while (a < flash_crc16_to) {
 		n = flash_crc16_to - a > FLASH_BUF_SIZE ? FLASH_BUF_SIZE : flash_crc16_to - a;
 		flash_region.addr = a;

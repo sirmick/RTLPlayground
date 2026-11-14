@@ -16,6 +16,7 @@
 #include "boot.h"
 #include "timer.h"
 #include "loader/layout.h"
+#include "update_apply.h"
 
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
@@ -574,18 +575,30 @@ bool loader_present(void) __banked
 	return loader_meta(LDR_META);
 }
 
+/* A loader image at LDR_STAGE, whole, built for this layout: its CRC, its
+ * start, and "LDR" + LDR_LAYOUT just before the CRC (tools/bootpack.py). */
+bool loader_stage_fits(void) __banked
+{
+	if (!loader_staged_ok())
+		return false;
+	flash_region.addr = LDR_STAGE;
+	flash_region.len = 2;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] != 0x00 || flash_buf[1] != 0x40)
+		return false;
+	flash_region.addr = LDR_STAGE + LDR_LOADER_LEN - 6;
+	flash_region.len = 4;
+	flash_read_bulk(flash_buf);
+	return flash_buf[0] == 'L' && flash_buf[1] == 'D' && flash_buf[2] == 'R' && flash_buf[3] == LDR_LAYOUT;
+}
+
 bool loader_update(void) __banked
 {
 	uint8_t tries;
 	uint16_t a;
 	uint32_t src = LDR_STAGE;
 
-	if (!loader_meta(LDR_META) || !loader_staged_ok())
-		return true;
-	flash_region.addr = src;
-	flash_region.len = 2;
-	flash_read_bulk(flash_buf);
-	if (flash_buf[0] != 0x00 || flash_buf[1] != 0x40 || loader_same(src))
+	if (!loader_meta(LDR_META) || !loader_stage_fits() || loader_same(src))
 		return true;
 
 	print_string("Updating the loader\n");
@@ -615,3 +628,177 @@ bool loader_update(void) __banked
 	print_string("Loader update failed, upload the image again before a reset\n");
 	return false;
 }
+
+
+#ifdef LAYOUT_COMPACT
+/*
+ * Give a loaderless board the loader staged at LDR_STAGE by /loader: late in
+ * the boot (main(), before the update check), where the reset at the end works.
+ * The progress record at UPDATE_PROGRESS reads "CNV1", then one byte per step,
+ * cleared when it is done, so a power cut carries on where it was:
+ *   CNV_SLOT  the running home bank (flash 2..0x4000) copied into LDR_SLOT
+ *   CNV_META  the loader's metadata written: "RTLB", the application CRC as
+ *             loader.c app_crc() computes it, LDR_LAYOUT. From here on the
+ *             board counts as having a loader.
+ *   CNV_SECT+s  sector s of the loader written over 0..0x3fff and read back,
+ *             sector 3 first, 0 last. The one risk: a cut in here leaves a home
+ *             bank part loader, part application, and the board won't start.
+ * Then the stage and the record are erased and the chip resets into the
+ * loader, which starts the same application from the slot. Once the slot is
+ * copied it is never copied again: after a cut in the loader write, flash 0
+ * is no longer the application.
+ */
+#define CNV_SLOT	4
+#define CNV_META	5
+#define CNV_SECT	6
+
+extern __xdata uint16_t crc_value;
+static __xdata uint8_t cnv_s, cnv_m;
+static __xdata uint16_t cnv_n, cnv_len, cnv_c;
+static __xdata uint32_t cnv_src, cnv_dst;
+
+/* No parameters (internal RAM is full): the mark goes in cnv_m. */
+static bool cnv_is_done(void)
+{
+	flash_region.addr = UPDATE_PROGRESS + cnv_m;
+	flash_region.len = 1;
+	flash_read_bulk(flash_buf);
+	return !flash_buf[0];
+}
+#define cnv_done(m) (cnv_m = (m), cnv_is_done())
+
+static void cnv_set_mark(void)
+{
+	flash_buf[0] = 0;
+	flash_region.addr = UPDATE_PROGRESS + cnv_m;
+	flash_region.len = 1;
+	flash_write_bytes(flash_buf);
+}
+#define cnv_mark(m) (cnv_m = (m), cnv_set_mark())
+
+#define cnv_erase(a) do { flash_region.addr = (a); flash_sector_erase(); } while (0)
+
+/* cnv_len bytes from cnv_src to cnv_dst, erased already. Whole buffers
+ * but the last, and constant steps: no temporaries in internal RAM. */
+static void cnv_copy(void)
+{
+	while (cnv_len) {
+		cnv_n = FLASH_BUF_SIZE;
+		if (cnv_len < FLASH_BUF_SIZE)
+			cnv_n = cnv_len;
+		flash_region.addr = cnv_src;
+		flash_region.len = cnv_n;
+		flash_read_bulk(flash_buf);
+		flash_region.addr = cnv_dst;
+		flash_region.len = cnv_n;
+		flash_write_bytes(flash_buf);
+		cnv_src += FLASH_BUF_SIZE;
+		cnv_dst += FLASH_BUF_SIZE;
+		cnv_len -= cnv_n;
+	}
+}
+
+/* Back to a plain loaderless board, the stage dropped: upload it again. */
+static void cnv_abandon(void)
+{
+	for (cnv_s = 0; cnv_s < LDR_LOADER_LEN >> 12; cnv_s++)
+		cnv_erase(LDR_STAGE + ((uint32_t)cnv_s << 12));
+	cnv_erase(LDR_META);
+	cnv_erase(UPDATE_PROGRESS);
+	flash_init(machine.flash_sio ? 0 : 1);
+}
+
+void loader_convert(void) __banked
+{
+	flash_region.addr = UPDATE_PROGRESS;
+	flash_region.len = 4;
+	flash_read_bulk(flash_buf);
+	if (flash_buf[0] != 'C' || flash_buf[1] != 'N' || flash_buf[2] != 'V' || flash_buf[3] != '1') {
+		if (loader_present() || !loader_stage_fits())
+			return;
+		cnv_erase(UPDATE_PROGRESS);
+		flash_buf[0] = 'C'; flash_buf[1] = 'N'; flash_buf[2] = 'V'; flash_buf[3] = '1';
+		flash_region.addr = UPDATE_PROGRESS;
+		flash_region.len = 4;
+		flash_write_bytes(flash_buf);
+	}
+	print_string("Converting this switch to the loader, do not power it off\n");
+	flash_init(0);
+	set_sys_led_state(SYS_LED_FAST);
+
+	if (!cnv_done(CNV_SECT) && !loader_stage_fits()) {
+		if (cnv_done(CNV_SECT + 3)) {
+			print_string("The staged loader is gone, the conversion can't finish\n");
+			return;
+		}
+		print_string("The staged loader is gone, conversion abandoned\n");
+		cnv_abandon();
+		return;
+	}
+
+	if (!cnv_done(CNV_SLOT)) {
+		for (cnv_s = 0; cnv_s < 4; cnv_s++)
+			cnv_erase(LDR_SLOT + ((uint32_t)cnv_s << 12));
+		cnv_src = 2;
+		cnv_dst = LDR_SLOT;
+		cnv_len = LDR_HOME_LEN;
+		cnv_copy();
+		cnv_c = flash_crc16(2, 2 + LDR_HOME_LEN);
+		if (cnv_c != flash_crc16(LDR_SLOT, LDR_SLOT + LDR_HOME_LEN)) {
+			print_string("Home bank copy failed, conversion abandoned\n");
+			cnv_abandon();
+			return;
+		}
+		cnv_mark(CNV_SLOT);
+	}
+
+	if (!cnv_done(CNV_META)) {
+		flash_crc16(LDR_SLOT, LDR_SLOT + LDR_HOME_LEN);
+		cnv_c = flash_crc16_on(LDR_APP_A, LDR_APP_A_END);
+		cnv_erase(LDR_BOOTCNT);
+		cnv_erase(LDR_META);
+		flash_buf[0] = 'R'; flash_buf[1] = 'T'; flash_buf[2] = 'L'; flash_buf[3] = 'B';
+		flash_buf[4] = cnv_c; flash_buf[5] = cnv_c >> 8; flash_buf[6] = LDR_LAYOUT;
+		flash_region.addr = LDR_META;
+		flash_region.len = 7;
+		flash_write_bytes(flash_buf);
+		flash_region.addr = LDR_META;
+		flash_region.len = 7;
+		flash_read_bulk(flash_buf);
+		if (flash_buf[0] != 'R' || flash_buf[1] != 'T' || flash_buf[2] != 'L' || flash_buf[3] != 'B'
+		    || flash_buf[4] != (uint8_t)cnv_c || flash_buf[5] != cnv_c >> 8 || flash_buf[6] != LDR_LAYOUT) {
+			print_string("Loader metadata write failed, conversion abandoned\n");
+			cnv_abandon();
+			return;
+		}
+		cnv_mark(CNV_META);
+	}
+
+	/* No way back from here: retry a sector until it reads back right. */
+	cnv_s = LDR_LOADER_LEN >> 12;
+	while (cnv_s--) {
+		if (cnv_done(CNV_SECT + cnv_s))
+			continue;
+		for (;;) {
+			cnv_dst = (uint32_t)cnv_s << 12;
+			cnv_erase(cnv_dst);
+			cnv_src = LDR_STAGE + cnv_dst;
+			cnv_len = 0x1000;
+			cnv_copy();
+			cnv_dst = (uint32_t)cnv_s << 12;
+			cnv_c = flash_crc16(LDR_STAGE + cnv_dst, LDR_STAGE + cnv_dst + 0x1000);
+			if (cnv_c == flash_crc16(cnv_dst, cnv_dst + 0x1000))
+				break;
+			print_string("Loader sector read back wrong, writing it again\n");
+		}
+		cnv_mark(CNV_SECT + cnv_s);
+	}
+
+	for (cnv_s = 0; cnv_s < LDR_LOADER_LEN >> 12; cnv_s++)
+		cnv_erase(LDR_STAGE + ((uint32_t)cnv_s << 12));
+	cnv_erase(UPDATE_PROGRESS);
+	print_string("Converted to the loader, resetting now\n");
+	delay(200);
+	reset_chip();
+}
+#endif

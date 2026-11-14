@@ -14,5 +14,7 @@ bool loader_recovery(void) __banked;
 void loader_confirm(void) __banked;
 bool loader_present(void) __banked;
 bool loader_update(void) __banked;
+bool loader_stage_fits(void) __banked;
+void loader_convert(void) __banked;
 
 #endif

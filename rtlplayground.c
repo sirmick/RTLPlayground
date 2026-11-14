@@ -1614,6 +1614,9 @@ void main(void)
 		rtl8372_init();
 	delay(1000);
 
+#ifdef LAYOUT_COMPACT
+	loader_convert();	// a loader staged by /loader on a loaderless board
+#endif
 	check_and_flash_update_image();
 
 	syslog_init();

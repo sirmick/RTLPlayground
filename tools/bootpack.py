@@ -20,6 +20,7 @@ APP = ((L["LDR_APP_A"], L["LDR_APP_A_END"]), (L["LDR_APP_B"], L["LDR_APP_B_END"]
 IMAGE_LEN = L["LDR_IMAGE_LEN"]
 LAYOUT = L["LDR_LAYOUT"]
 CHIP = 0x80000                  # a boot image is a whole 512 KiB chip
+LDR_MARK = b"LDR" + bytes((LAYOUT,))   # boot.c loader_stage_fits()
 
 
 def crc16(data, crc=0):
@@ -88,8 +89,11 @@ def main():
         else:
             sys.exit("loader byte outside HOME and the alias area at 0x%x" % a)
 
-    if alias > LOADER_LEN - ALIAS_FLASH - 2:
+    # "LDR" and the layout it is built for, before its CRC: the application
+    # refuses a loader for another layout before writing any of it
+    if alias > LOADER_LEN - ALIAS_FLASH - 2 - len(LDR_MARK):
         sys.exit("loader alias too large")
+    img[LOADER_LEN - 2 - len(LDR_MARK):LOADER_LEN - 2] = LDR_MARK
     c = crc16(img[:LOADER_LEN - 2]) ^ 0xffff
     img[LOADER_LEN - 2] = c & 0xff
     img[LOADER_LEN - 1] = c >> 8

@@ -30,6 +30,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_page_json \
         $(BUILDDIR)/test_httpd_tx \
+        $(BUILDDIR)/test_httpd_tx_compact \
         $(BUILDDIR)/test_tick_gate \
         $(BUILDDIR)/test_timer \
         $(BUILDDIR)/test_cpu_vlan_full \
@@ -87,10 +88,13 @@ $(BUILDDIR)/test_loader: test_loader.c $(SRCROOT)/loader/loader.c $(SRCROOT)/loa
 
 # httpd/httpd.c and uip/uip.c are compiled UNMODIFIED from the firmware tree;
 # this test carries the environment below them itself.
-$(BUILDDIR)/test_httpd_tx: test_httpd_tx.c $(SRCROOT)/httpd/httpd.c $(SRCROOT)/uip/uip.c $(SRCROOT)/timer.c | $(BUILDDIR)
+# Built for both layouts: /loader differs (a compact board without a loader
+# is converted, a standard one refuses).
+$(BUILDDIR)/test_httpd_tx_compact: CFLAGS += -DLAYOUT_COMPACT
+$(BUILDDIR)/test_httpd_tx $(BUILDDIR)/test_httpd_tx_compact: test_httpd_tx.c $(SRCROOT)/httpd/httpd.c $(SRCROOT)/uip/uip.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 # the login sessions httpd.c calls into
-$(BUILDDIR)/test_httpd_tx: $(SRCROOT)/sessions.c
+$(BUILDDIR)/test_httpd_tx $(BUILDDIR)/test_httpd_tx_compact: $(SRCROOT)/sessions.c
 
 # CPU VLAN initialization with full and reduced user-port ranges.
 $(BUILDDIR)/test_cpu_vlan_restricted: CFLAGS += -DMACHINE_MAX_PORT=7

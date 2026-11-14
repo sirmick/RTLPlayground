@@ -111,7 +111,7 @@ void flash_sector_erase(void)
 
 void flash_write_bytes(uint8_t *ptr)
 {
-	if (flash_region.addr < FIRMWARE_UPLOAD_START) {
+	if (flash_region.addr >= CONFIG_START && flash_region.addr < CONFIG_START + CONFIG_LEN) {
 		config_writes++;
 		config_write_addr = flash_region.addr;
 		written_config_len = flash_region.len;
@@ -128,6 +128,7 @@ void flash_write_bytes(uint8_t *ptr)
 	flash_written_len += flash_region.len;
 }
 const char *get_flash_size_str(void) { return "512 kB"; }
+void flash_read_jedecid(void) { }
 void crc16_bank1(uint8_t *v) { (void)v; }
 /* The flash read-back of a finished upload comes to readback_crc. */
 static uint16_t readback_crc = 0xb001;
@@ -143,6 +144,8 @@ static int loader_update_calls;
 bool loader_update(void) { loader_update_calls++; return loader_update_ok; }
 static bool loader_present_ok = true;
 bool loader_present(void) { return loader_present_ok; }
+static bool loader_fits_ok = true;
+bool loader_stage_fits(void) { return loader_fits_ok; }
 void delay(uint16_t t) { (void)t; }
 void write_char(char c) { (void)c; }
 void write_char_no_syslog(char c) { (void)c; }
@@ -680,10 +683,24 @@ static void scenario_upload_reset_owner(void)
 	bindex = 0;
 	upload_settings.bptr = 0;
 	uptr = LDR_STAGE + LDR_LOADER_LEN;
+	loader_fits_ok = false;
+	stream_upload();
+	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "not a loader for this layout"),
+	      "a loader built for another layout is refused");
+	loader_fits_ok = true;
+	bindex = 0;
+	upload_settings.bptr = 0;
+	uptr = LDR_STAGE + LDR_LOADER_LEN;
 	loader_present_ok = false;
 	stream_upload();
+#ifdef LAYOUT_COMPACT
+	CHECK(uip_conn->appstate.fw_reset_pending == FW_UPDATE_PENDING,
+	      "compact: a loader image on a switch without one is staged for the conversion");
+	uip_conn->appstate.fw_reset_pending = 0;
+#else
 	CHECK(!uip_conn->appstate.fw_reset_pending && strstr((char *)outbuf, "no loader"),
 	      "a loader image is refused on a switch without a loader");
+#endif
 	loader_present_ok = true;
 	bindex = 0;
 	upload_settings.bptr = 0;
