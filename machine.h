@@ -124,4 +124,14 @@ struct machine_runtime
 
 void machine_custom_init(void) __banked;
 
+#ifdef MACHINE_POE
+/* A board with a PoE controller: how loading its firmware went at boot. */
+#define POE_NO_IMAGE		0	/* none in the machine data region */
+#define POE_NO_ANSWER		1
+#define POE_NO_CHIP_IMAGE	2	/* none for this controller's type */
+#define POE_FAILED		3
+#define POE_OK			4
+extern __xdata uint8_t poe_state;
+#endif
+
 #endif

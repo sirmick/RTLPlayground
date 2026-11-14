@@ -2297,7 +2297,9 @@ void execute_config(void) __banked
 				skipping = 1;
 			}
 			c = flash_buf[cfg_idx++];
-			if (c == 0 || c == '\n' || c == '\r') {
+			/* a NUL ends the config, or erased flash: a config saved
+			 * without its NUL (older firmware) */
+			if (c == 0 || c == 0xff || c == '\n' || c == '\r') {
 				if (skipping) {
 					skipping = 0;
 				} else {
@@ -2308,7 +2310,7 @@ void execute_config(void) __banked
 							cmd_parser();
 					}
 				}
-				if (c == 0)
+				if (c == 0 || c == 0xff)
 					goto config_done;
 				cmd_idx = 0;
 				continue;

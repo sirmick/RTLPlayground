@@ -494,6 +494,9 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
         <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
           <button class="ctl" id="cfgreload" data-i18n="sy_reload">Reload from flash</button>
           <button class="ctl pri" id="cfgwrite" data-i18n="sy_write">Write to flash</button>
+          <button class="ctl" id="cfgdl" data-i18n="sy_download">Download</button>
+          <button class="ctl" id="cfgload" data-i18n="sy_loadfile">Load file...</button>
+          <input type="file" id="cfgfile" accept=".txt,text/plain" style="display:none">
           <span class="small mut" style="align-self:center" data-i18n="sy_unknown_note">Unknown lines are highlighted before writing.</span>
         </div>
       </div>
@@ -503,14 +506,38 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
     </section>
 
     <section class="tab" id="tab-fw">
-      <div class="card"><h2 data-i18n="fw_title">Firmware update</h2>
-        <p class="small mut" style="margin-bottom:12px" data-i18n="fw_intro">Upload an RTLPlayground image (512 KiB .bin). The image is staged to flash and CRC-checked; on success the switch reboots itself, re-verifies the image and applies it. The startup configuration is preserved. A 16 KiB loader image is written by the running firmware before it reboots.</p>
+      <div class="card"><h2 data-i18n="fw_status">This switch</h2>
+        <table class="t" id="fwstatus"></table>
+      </div>
+      <div class="card" id="fwcard" style="margin-top:16px"><h2 data-i18n="fw_title"></h2>
+        <p class="small mut" style="margin-bottom:12px" data-i18n="fw_intro"></p>
         <input type="file" id="fwfile" accept=".bin">
         <div id="fwinfo" class="small" style="margin:10px 0"></div>
         <div style="display:flex;gap:10px;align-items:center">
           <button class="ctl pri" id="fwup" disabled data-i18n="fw_upload">Upload</button>
           <progress id="fwprog" max="100" value="0" style="display:none;width:220px"></progress>
           <span class="small" id="fwstat"></span>
+        </div>
+      </div>
+      <div class="card" id="pfcard" style="margin-top:16px"><h2 data-i18n="pf_title"></h2>
+        <p class="small mut" style="margin-bottom:12px" data-i18n="pf_intro"></p>
+        <input type="file" id="pffile" accept=".bin">
+        <div id="pfinfo" class="small" style="margin:10px 0"></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="ctl pri" id="pfup" disabled data-i18n="fw_upload">Upload</button>
+          <progress id="pfprog" max="100" value="0" style="display:none;width:220px"></progress>
+          <span class="small" id="pfstat"></span>
+        </div>
+      </div>
+      <div class="card dangerzone" id="ldcard" style="margin-top:16px"><h2 data-i18n="ld_title"></h2>
+        <p class="small mut" style="margin-bottom:12px" data-i18n="ld_intro"></p>
+        <p class="small" style="margin-bottom:12px;color:var(--warn)" id="ldwarn"></p>
+        <input type="file" id="ldfile" accept=".bin">
+        <div id="ldinfo" class="small" style="margin:10px 0"></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="ctl pri" id="ldup" disabled data-i18n="fw_upload">Upload</button>
+          <progress id="ldprog" max="100" value="0" style="display:none;width:220px"></progress>
+          <span class="small" id="ldstat"></span>
         </div>
       </div>
     </section>

@@ -363,10 +363,33 @@ var LANG = {
         t_rejected: "command rejected: {c}",
         t_failed: "failed: {c}",
         fw_title: "Firmware update",
-        fw_intro: "Upload an RTLPlayground image (.bin) built for this switch. The image is staged to flash and CRC-checked; on success the switch reboots itself, re-verifies the image and applies it. The startup configuration is preserved. A 16 KiB loader image is written by the running firmware before it reboots.",
+        fw_intro: "The application: the -install image (the application with the loader; a switch without the loader gets it on the way), or a plain application image. It is staged to flash and CRC-checked; on success the switch reboots and installs it. The startup configuration is kept.",
+        sy_download: "Download",
+        sy_loadfile: "Load file...",
+        sy_loaded_note: "Loaded into the editor: check it, then Write to flash",
+        fw_status: "This switch",
+        fw_s_ver: "Firmware",
+        fw_s_loader: "Loader",
+        fw_s_poe: "PoE controller",
+        fw_s_yes: "yes: updates are installed by the loader",
+        fw_s_no: "no: the next -install image adds it",
+        fw_poe_ok: "firmware loaded",
+        fw_poe_none: "no firmware: upload it below, PoE is off",
+        fw_poe_noanswer: "no answer from the controller",
+        fw_poe_nochip: "the firmware has no image for this controller",
+        fw_poe_noroom: "no room for its firmware on this flash",
+        fw_poe_failed: "loading its firmware failed",
+        fw_inst_valid: "valid install image: the application and the loader (sizes, magic and both CRC16 OK)",
+        fw_wrong_card: "this is not for this card: use \u201c{c}\u201d",
+        pf_title: "PoE controller firmware",
+        pf_intro: "The machine data image with the PoE controller's firmware (MDT1). It is written in its own flash region, which no firmware update touches, and loaded at the next boot.",
+        ld_title: "Loader",
+        ld_intro: "The 16 KiB loader, which installs application updates and recovers a switch whose application fails. Only needed when the loader itself changes: the -install image already brings it to a switch without one.",
+        ld_none: "This switch has no loader yet. Uploading it here (or an -install image above) converts the switch at the next boot.",
+        ld_convert_d: "The switch reboots and converts itself to the loader at the next boot, then starts the same application. Do not power it off for a minute after the upload: a power cut while the loader is written (about 8 s) needs a flash programmer.",
         fw_upload: "Upload",
         fw_checking: "{f}: {n} bytes. Checking...",
-        fw_size_err: "size is {n}, expected {w} or 16384 (16 KiB loader)",
+        fw_size_err: "size is {n}: expected {w} (application), {w} + 16384 (install image) or 16384 (loader)",
         fw_magic_err: "missing bank header / LJMP magic: not a firmware image",
         fw_crc_err: "CRC16 check failed: corrupt image",
         fw_valid: "valid RTLPlayground image (size, magic and CRC16 OK)",
@@ -677,7 +700,6 @@ var LANG = {
         t_rejected: "コマンドが拒否されました: {c}",
         t_failed: "失敗: {c}",
         fw_title: "ファームウェア更新",
-        fw_intro: "RTLPlayground イメージ (512 KiB の .bin) をアップロードします。イメージはフラッシュに書き込まれ CRC を検証され、成功するとスイッチが自動的に再起動して再検証のうえ適用します。起動設定は保持されます。16 KiB のローダーイメージは、動作中のファームウェアが再起動前に書き込みます。",
         fw_upload: "アップロード",
         fw_checking: "{f}: {n} バイト。確認中...",
         fw_size_err: "サイズが {n} です。{w} または 16384 (16 KiB のローダー) が必要です",
@@ -1067,7 +1089,6 @@ var LANG = {
         t_rejected: "命令被拒绝: {c}",
         t_failed: "失败: {c}",
         fw_title: "固件升级",
-        fw_intro: "上传 RTLPlayground 镜像 (512 KiB 的 .bin)。镜像会写入 Flash 并进行 CRC 校验；成功后交换机自动重启，再次校验并应用镜像。启动配置将被保留。16 KiB 的加载程序镜像由正在运行的固件在重启前写入。",
         fw_upload: "上传",
         fw_checking: "{f}: {n} 字节。正在检查...",
         fw_size_err: "大小为 {n}，应为 {w} 或 16384 (16 KiB 加载程序)",
@@ -1379,7 +1400,6 @@ var LANG = {
         t_rejected: "comando rechazado: {c}",
         t_failed: "fallo: {c}",
         fw_title: "Actualización de firmware",
-        fw_intro: "Sube una imagen de RTLPlayground (512 KiB .bin). La imagen se almacena provisionalmente en flash y se comprueba con CRC; si es correcta, el switch se reinicia, vuelve a verificar la imagen y la aplica. La configuración de inicio se conserva. Una imagen de cargador de 16 KiB la escribe el firmware en ejecución antes de reiniciar.",
         fw_upload: "Subir",
         fw_checking: "{f}: {n} bytes. Comprobando...",
         fw_size_err: "el tamaño es {n}, se esperaban {w} o 16384 (cargador de 16 KiB)",
@@ -1815,7 +1835,6 @@ var LANG = {
         t_rejected: "commandes rejetées: {c}",
         t_failed: "échecs: {c}",
         fw_title: "Mise à jour du micro-logiciel",
-        fw_intro: "Charge une image RTLPlayground (512 KiB .bin). L'image est envoée en mémoire flash, analysée et sa somme de contrôle est vérifiée; en cas de succès le commutateur va redémarrer, re-verifiez l'image et appliquez-là. LA configuration de démarrage est conservée. Une image de chargeur de 16 KiB est écrite par le firmware en cours avant le redémarrage.",
         fw_upload: "Charger",
         fw_checking: "{f}: {n} bytes. Vérification...",
         fw_size_err: "la taille est {n} alors que nous attendons {w} ou 16384 (chargeur de 16 KiB)",
@@ -2208,7 +2227,6 @@ var LANG = {
         t_rejected: "Befehl abgelehnt: {c}",
         t_failed: "fehlgeschlagen: {c}",
         fw_title: "Firmware-Update",
-        fw_intro: "Ein RTLPlayground-Image hochladen (.bin, 512 KiB). Das Image wird im Flash abgelegt und per CRC geprüft; ist es in Ordnung, startet der Switch neu, prüft das Image erneut und übernimmt es. Die Startkonfiguration bleibt erhalten. Ein 16-KiB-Loader-Image schreibt die laufende Firmware vor dem Neustart.",
         fw_upload: "Hochladen",
         fw_checking: "{f}: {n} Bytes. Wird geprüft...",
         fw_size_err: "Grösse ist {n}, erwartet {w} oder 16384 (16-KiB-Loader)",
@@ -4948,6 +4966,36 @@ function cfgBytes() {
 }
 $("cfgedit").addEventListener("input", cfgBytes);
 $("cfgreload").addEventListener("click", cfgReload);
+// Download what is in flash as text; a file loaded back goes into the editor,
+// to be checked and written like an edit.
+$("cfgdl").addEventListener("click", function() {
+    getText("/config").then(function(x) {
+        var a = h("a", {
+            href: URL.createObjectURL(new Blob([x.replace(/[\0\xff\ufffd][\s\S]*$/, "")], {
+                type: "text/plain"
+            })),
+            download: (S.info.hostname || "switch") + "-config.txt"
+        });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }).catch(function() {});
+});
+$("cfgload").addEventListener("click", function() {
+    $("cfgfile").click()
+});
+$("cfgfile").addEventListener("change", function() {
+    var f = this.files[0];
+    if (!f) return;
+    f.text().then(function(x) {
+        x = x.replace(/[\0\xff\ufffd][\s\S]*$/, "");
+        $("cfgedit").value = x;
+        cfgBytes();
+        cfgParseKnown(x);
+        toast(t("sy_loaded_note"));
+    });
+    this.value = "";
+});
 $("cfgwrite").addEventListener("click", function() {
     writeConfig($("cfgedit").value, t("cw_title"));
 });
@@ -5278,10 +5326,6 @@ $("saveBtn").addEventListener("click", function() {
     });
 });
 
-var fwBuf = null,
-    fwOther = false,
-    fwLoader = false,
-    fwMdata = false;
 // Every image carries its PCB configuration name as a NUL-terminated string,
 // the same one the running switch reports as pcb_ver: an image without it was
 // built for another board (SFP, LED and button pins differ between PCBs).
@@ -5303,147 +5347,199 @@ function fwForThisSwitch(u) {
     }
     return false;
 }
-$("fwfile").addEventListener("change", function() {
-    var f = this.files[0];
-    fwBuf = null;
-    fwOther = false;
-    fwLoader = false;
-    fwMdata = false;
-    $("fwup").disabled = true;
-    $("fwinfo").textContent = "";
-    if (!f) return;
-    var info = $("fwinfo");
-    info.textContent = t("fw_checking", {
-        f: f.name,
-        n: f.size
-    });
-    f.arrayBuffer().then(function(buf) {
-        var u = new Uint8Array(buf),
-            msg = null;
-        // The running firmware reports the image size its flash layout
-        // takes (compact builds are smaller); older firmware is 512 KiB.
-        // A 16 KiB image is the loader; "MDT1" a machine data region. A
-        // compact install image is the application followed by the loader,
-        // each with its own CRC.
-        var want = Number(S.info.img_size) || 524288;
-        var md = u.length > 10 && u[0] === 0x4d && u[1] === 0x44 && u[2] === 0x54 && u[3] === 0x31;
-        var inst = want < 524288 && u.length === want + 16384;
-        if (md) {}
-        else if (u.length !== want && u.length !== 16384 && !inst) msg = t("fw_size_err", {
+
+// What a file is: "app" (an application image, or a compact install image -
+// the application followed by the loader, each with its own CRC), "loader"
+// (16 KiB) or "mdata" (a machine data region, "MDT1": the PoE controller's
+// firmware). Returns {kind} or {msg} for a file that is none of them. The
+// running firmware reports the image size its flash layout takes (compact
+// builds are smaller); older firmware is 512 KiB.
+function fwClassify(u) {
+    var want = Number(S.info.img_size) || 524288;
+    var kind, inst = want < 524288 && u.length === want + 16384;
+    if (u.length > 10 && u[0] === 0x4d && u[1] === 0x44 && u[2] === 0x54 && u[3] === 0x31) kind = "mdata";
+    else if (u.length === 16384) kind = "loader";
+    else if (u.length === want || inst) kind = "app";
+    else return {
+        msg: t("fw_size_err", {
             n: u.length,
             w: want
-        });
-        else if (u[0] !== 0x00 || u[1] !== 0x40 || u[2] !== 0x02) msg = t("fw_magic_err");
-        if (msg) {}
-        else {
-            var crc = 0;
-            for (var i = 0; i < u.length; i++) {
-                if (inst && i === want) {
-                    if (crc !== 0xB001 || u[i] !== 0x00 || u[i + 1] !== 0x40) break;
-                    crc = 0;
-                }
-                crc ^= u[i];
-                for (var b = 0; b < 8; b++) crc = (crc & 1) ? ((crc >>> 1) ^ 0xA001) : (crc >>> 1);
-            }
-            if (crc !== 0xB001 || i !== u.length) msg = t("fw_crc_err");
+        })
+    };
+    if (kind !== "mdata" && (u[0] !== 0x00 || u[1] !== 0x40 || u[2] !== 0x02)) return {
+        msg: t("fw_magic_err")
+    };
+    var crc = 0;
+    for (var i = 0; i < u.length; i++) {
+        if (inst && i === want) {
+            if (crc !== 0xB001 || u[i] !== 0x00 || u[i + 1] !== 0x40) break;
+            crc = 0;
         }
-        if (msg) {
-            info.innerHTML = '<span style="color:var(--bad)">\u2715 ' + esc(msg) + "</span>";
-            return;
-        }
-        fwBuf = f;
-        fwMdata = md;
-        fwLoader = !md && u.length === 16384;
-        fwOther = !fwLoader && !fwMdata && !fwForThisSwitch(u);
-        info.innerHTML = '<span style="color:var(--ok)">\u2713 ' + esc(t(fwMdata ? "fw_md_valid" : fwLoader ? "fw_ldr_valid" : "fw_valid")) + "</span>" +
-            (fwOther ? '<br><span style="color:var(--warn)">\u26a0 ' + esc(t("fw_other", {
-                m: fwBoardName()
-            })) + "</span>" : "");
-        $("fwup").disabled = false;
-    });
-});
-$("fwup").addEventListener("click", function() {
-    if (!fwBuf) return;
-    confirmModal(t("fw_q"), (fwOther ? t("fw_other", {
-        m: fwBoardName()
-    }) + " " : "") + t(fwMdata ? "fw_md_d" : fwLoader ? "fw_ldr_d" : "fw_d"), function() {
-        var form = new FormData();
-        form.append("uploadedfile", fwBuf, fwBuf.name);
-        var xhr = new XMLHttpRequest();
-        var prog = $("fwprog"),
-            st = $("fwstat");
-        var sent = false,
-            settled = false,
-            t0 = Date.now(),
-            pct = 0;
-        prog.style.display = "";
-        prog.value = 0;
-        $("fwup").disabled = true;
+        crc ^= u[i];
+        for (var b = 0; b < 8; b++) crc = (crc & 1) ? ((crc >>> 1) ^ 0xA001) : (crc >>> 1);
+    }
+    if (crc !== 0xB001 || i !== u.length) return {
+        msg: t("fw_crc_err")
+    };
+    return {
+        kind: kind,
+        inst: inst
+    };
+}
 
-        function settle(fn) {
-            if (settled) return;
-            settled = true;
-            clearInterval(tick);
-            prog.style.display = "none";
-            fn();
-        }
-        var tick = setInterval(function() {
-            var s = Math.round((Date.now() - t0) / 1000);
-            st.textContent = sent ? t("fw_finishing", {
-                s: s
-            }) : t("fw_uploading", {
-                p: pct,
-                s: s
-            });
-        }, 500);
-        st.textContent = t("fw_uploading", {
-            p: 0,
-            s: 0
+// One upload card: p is its element id prefix, kind the only file kind it
+// takes, ep where that goes.
+var FW_CARDS = {
+    app: {
+        p: "fw",
+        ep: "/upload",
+        title: "fw_title",
+        valid: "fw_valid",
+        d: "fw_d"
+    },
+    mdata: {
+        p: "pf",
+        ep: "/mdata",
+        title: "pf_title",
+        valid: "fw_md_valid",
+        d: "fw_md_d"
+    },
+    loader: {
+        p: "ld",
+        ep: "/loader",
+        title: "ld_title",
+        valid: "fw_ldr_valid",
+        d: "fw_ldr_d"
+    }
+};
+Object.keys(FW_CARDS).forEach(function(kind) {
+    var c = FW_CARDS[kind],
+        p = c.p,
+        file = null,
+        other = false;
+    var info = $(p + "info"),
+        btn = $(p + "up");
+    $(p + "file").addEventListener("change", function() {
+        var f = this.files[0];
+        file = null;
+        btn.disabled = true;
+        info.textContent = "";
+        if (!f) return;
+        info.textContent = t("fw_checking", {
+            f: f.name,
+            n: f.size
         });
-        xhr.upload.onprogress = function(e) {
-            if (e.lengthComputable) {
-                pct = Math.round(100 * e.loaded / e.total);
-                prog.value = pct;
+        f.arrayBuffer().then(function(buf) {
+            var u = new Uint8Array(buf),
+                r = fwClassify(u),
+                msg = r.msg;
+            if (!msg && r.kind !== kind) msg = t("fw_wrong_card", {
+                c: t(FW_CARDS[r.kind].title)
+            });
+            if (msg) {
+                info.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(msg) + "</span>";
+                return;
             }
-        };
-        xhr.upload.onload = function() {
-            sent = true;
-            prog.removeAttribute("value");
-        };
-        xhr.onload = function() {
-            settle(function() {
-                if (xhr.status === 200 && fwMdata) {
-                    st.textContent = t("fw_md_done");	// in place, no reboot
-                    $("fwup").disabled = false;
-                } else if (xhr.status === 200) {
-                    st.textContent = t("fw_verified");
-                    fwSettle(st, true, fwLoader);
-                } else {
-                    var why = (xhr.responseText || "").trim().split("\n")[0];
-                    st.textContent = "\u2715 " + t("fw_rejected") + " (HTTP " + xhr.status + (why ? ": " + why : "") + ")";
-                    $("fwup").disabled = false;
-                }
-            })
-        };
-        xhr.onerror = function() {
-            settle(function() {
-                if (!sent) {
-                    st.textContent = t("fw_lost");
-                    $("fwup").disabled = false;
-                    return;
-                }
-                fwSettle(st, false);
-            })
-        };
-        xhr.open("POST", fwMdata ? "/mdata" : fwLoader ? "/loader" : "/upload");
-        xhr.send(form);
+            file = f;
+            other = kind !== "mdata" && !fwForThisSwitch(u);
+            info.innerHTML = '<span style="color:var(--ok)">✓ ' + esc(t(r.inst ? "fw_inst_valid" : c.valid)) + "</span>" +
+                (other ? '<br><span style="color:var(--warn)">⚠ ' + esc(t("fw_other", {
+                    m: fwBoardName()
+                })) + "</span>" : "");
+            btn.disabled = false;
+        });
+    });
+    btn.addEventListener("click", function() {
+        if (!file) return;
+        var d = kind === "loader" && S.info.loader === "no" ? "ld_convert_d" : c.d;
+        confirmModal(t("fw_q"), (other ? t("fw_other", {
+            m: fwBoardName()
+        }) + " " : "") + t(d), function() {
+            fwSend(c, file, kind);
+        });
     });
 });
+
+function fwSend(c, file, kind) {
+    var form = new FormData();
+    form.append("uploadedfile", file, file.name);
+    var xhr = new XMLHttpRequest();
+    var prog = $(c.p + "prog"),
+        st = $(c.p + "stat"),
+        btn = $(c.p + "up");
+    var sent = false,
+        settled = false,
+        t0 = Date.now(),
+        pct = 0;
+    prog.style.display = "";
+    prog.value = 0;
+    Object.keys(FW_CARDS).forEach(function(k) {
+        $(FW_CARDS[k].p + "up").disabled = true
+    });
+
+    function settle(fn) {
+        if (settled) return;
+        settled = true;
+        clearInterval(tick);
+        prog.style.display = "none";
+        fn();
+    }
+    var tick = setInterval(function() {
+        var s = Math.round((Date.now() - t0) / 1000);
+        st.textContent = sent ? t("fw_finishing", {
+            s: s
+        }) : t("fw_uploading", {
+            p: pct,
+            s: s
+        });
+    }, 500);
+    st.textContent = t("fw_uploading", {
+        p: 0,
+        s: 0
+    });
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            pct = Math.round(100 * e.loaded / e.total);
+            prog.value = pct;
+        }
+    };
+    xhr.upload.onload = function() {
+        sent = true;
+        prog.removeAttribute("value");
+    };
+    xhr.onload = function() {
+        settle(function() {
+            if (xhr.status === 200 && kind === "mdata") {
+                st.textContent = t("fw_md_done"); // in place, no reboot
+                btn.disabled = false;
+            } else if (xhr.status === 200) {
+                st.textContent = t("fw_verified");
+                fwSettle(st, true, kind === "loader", btn);
+            } else {
+                var why = (xhr.responseText || "").trim().split("\n")[0];
+                st.textContent = "✕ " + t("fw_rejected") + " (HTTP " + xhr.status + (why ? ": " + why : "") + ")";
+                btn.disabled = false;
+            }
+        })
+    };
+    xhr.onerror = function() {
+        settle(function() {
+            if (!sent) {
+                st.textContent = t("fw_lost");
+                btn.disabled = false;
+                return;
+            }
+            fwSettle(st, false, false, btn);
+        })
+    };
+    xhr.open("POST", c.ep);
+    xhr.send(form);
+}
 /* knownGood: the firmware answered 200, so an early reply only means the
  * reset is still pending. Without a verdict an early reply means no reboot
  * happened, i.e. the image was rejected. Raw fetch: a 401 from the fresh
  * boot still counts as "the switch is back". */
-function fwSettle(st, knownGood, loader) {
+function fwSettle(st, knownGood, loader, btn) {
     var waited = 3,
         down = false;
 
@@ -5459,15 +5555,15 @@ function fwSettle(st, knownGood, loader) {
             clearTimeout(to);
             if (!down && (loader || waited <= 9)) {
                 if (!knownGood || waited > 30) {
-                    st.textContent = "\u2715 " + t(loader ? "fw_ldr_failed" : "fw_noreboot");
-                    $("fwup").disabled = false;
+                    st.textContent = "✕ " + t(loader ? "fw_ldr_failed" : "fw_noreboot");
+                    btn.disabled = false;
                     return;
                 }
                 waited += 3;
                 setTimeout(probe, 3000);
                 return;
             }
-            st.textContent = t("fw_applied") + " \u2713";
+            st.textContent = t("fw_applied") + " ✓";
             modal(t("fw_done_t"), h("p", {
                     text: t("fw_done")
                 }),
@@ -5485,7 +5581,7 @@ function fwSettle(st, knownGood, loader) {
             st.textContent = t("fw_rebooting");
             if (waited > 150) {
                 st.textContent = t("fw_timeout");
-                $("fwup").disabled = false;
+                btn.disabled = false;
                 return;
             }
             setTimeout(probe, 3000);
@@ -5493,7 +5589,43 @@ function fwSettle(st, knownGood, loader) {
     }
     setTimeout(probe, 3000);
 }
-tabHooks.fw = {};
+
+// What is on this switch, and which cards apply: the PoE card only on a board
+// with a PoE controller ("poe" in information.json) and room for its firmware.
+function fwStatus() {
+    var i = S.info,
+        rows = [
+            ["fw_s_ver", i.sw_ver],
+            ["fw_s_loader", i.loader == null ? null : t(i.loader === "yes" ? "fw_s_yes" : "fw_s_no")],
+            ["fw_s_poe", i.poe == null ? null : t({
+                "ok": "fw_poe_ok",
+                "no image": "fw_poe_none",
+                "no answer": "fw_poe_noanswer",
+                "no image for this chip": "fw_poe_nochip",
+                "no room": "fw_poe_noroom"
+            }[i.poe] || "fw_poe_failed")]
+        ];
+    var tb = $("fwstatus");
+    tb.innerHTML = "";
+    rows.forEach(function(r) {
+        if (r[1] == null) return;
+        tb.appendChild(h("tr", null, [h("td", {
+            class: "mut",
+            text: t(r[0])
+        }), h("td", {
+            class: "mono",
+            text: String(r[1])
+        })]));
+    });
+    $("pfcard").style.display = i.poe != null && i.poe !== "no room" ? "" : "none";
+    $("ldwarn").textContent = i.loader === "no" ? t("ld_none") : "";
+}
+tabHooks.fw = {
+    enter: function() {
+        pollInfo().then(fwStatus).catch(function() {});
+        fwStatus();
+    }
+};
 
 window.addEventListener("hashchange", function() {
     var id = location.hash.slice(1);

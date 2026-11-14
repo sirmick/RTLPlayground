@@ -20,6 +20,8 @@
 #include "dhcp.h"
 #include "update_apply.h"
 
+extern __xdata uint32_t flash_size;
+
 // #define DEBUG
 #include "debug.h"
 
@@ -266,6 +268,19 @@ void send_basic_info(void)
 	/* The size a firmware upload must have for this build's flash layout. */
 	str_code_to_html("\"," JSONQUOTE("img_size") ":\"" STR(IMAGE_SIZE));
 	str_code_to_html(has_loader ? "\"," JSONQUOTE("loader") ":\"yes" : "\"," JSONQUOTE("loader") ":\"no");
+#ifdef MACHINE_POE
+	/* the PoE firmware's upload (/mdata) needs the machine data region */
+	str_code_to_html("\"," JSONQUOTE("poe") ":\"");
+#ifdef LAYOUT_COMPACT
+	if (flash_size < MDATA_START + MDATA_LEN)
+#endif
+		str_code_to_html("no room");
+#ifdef LAYOUT_COMPACT
+	else
+		str_code_to_html(poe_state == POE_OK ? "ok" : poe_state == POE_NO_IMAGE ? "no image" :
+				 poe_state == POE_NO_ANSWER ? "no answer" : poe_state == POE_NO_CHIP_IMAGE ? "no image for this chip" : "failed");
+#endif
+#endif
 
 	if (machine.n_sfp) {
 		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");
@@ -1080,8 +1095,9 @@ void send_config(void)
 		
 		// Look for null terminator in this chunk
 		for (uint16_t i = 0; i < flash_region.len; i++) {
-			if (flash_buf[i] == 0) {
-				// Found end of valid data
+			if (flash_buf[i] == 0 || flash_buf[i] == 0xff) {
+				// Found end of valid data: a NUL, or erased flash after
+				// a config saved without one
 				valid_len += i;
 				goto found_end;
 			}

@@ -312,10 +312,14 @@ static bool pse_write_image(uint8_t img)
 	return true;
 }
 
+/* How the boot's load went, for information.json (page_impl.c) */
+__xdata uint8_t poe_state;
+
 static void pse_load(void)
 {
 	__xdata uint8_t img;
 
+	poe_state = POE_NO_IMAGE;
 	if (!pse_image_header()) {
 		print_string("PSE: no RTL8238B image, PoE stays off\n");
 		return;
@@ -324,6 +328,7 @@ static void pse_load(void)
 
 	if (!pse_reset()) {
 		print_string("PSE: no answer from the RTL8238B\n");
+		poe_state = POE_NO_ANSWER;
 		return;
 	}
 	delay(100);
@@ -344,16 +349,19 @@ static void pse_load(void)
 	img = (pse_buf[0] == 2 && !pse_buf[1] && !pse_buf[2] && !pse_buf[3]) ? 1 : 0;
 	if (!img_len[img]) {
 		print_string("PSE: no image for this chip type\n");
+		poe_state = POE_NO_CHIP_IMAGE;
 		return;
 	}
 	print_string("PSE: loading image "); write_char('0' + img); write_char('\n');
 	if (!pse_write_image(img)) {
 		print_string("PSE: load failed, no answer\n");
+		poe_state = POE_FAILED;
 		return;
 	}
 	delay(10);
 	pse_read(0xec);
 	print_string(pse_buf[0] & 0x20 ? "PSE: load ok\n" : "PSE: load failed\n");
+	poe_state = pse_buf[0] & 0x20 ? POE_OK : POE_FAILED;
 	delay(10);
 }
 
