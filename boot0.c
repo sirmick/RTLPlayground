@@ -2,11 +2,12 @@
  * boot0.c - the first code to run after a reset, in sector 0 of the flash.
  *
  * A loaderless install (update_apply.c) verifies the staged image, arms the
- * progress record at UPDATE_PROGRESS and resets. This then copies the staged
- * image over the running one, highest sector first, marking each sector done
- * in the record, clears the staging area and the record, and resets into the
- * new image. A reset or power cut part way through just runs it again, and it
- * carries on where the marks say.
+ * progress record at UPDATE_PROGRESS and calls boot_copy(), late in the boot.
+ * That copies the staged image over the running one, highest sector first,
+ * marking each sector done in the record, and clears the staging area and the
+ * record; the install then resets into the new image. A reset or power cut
+ * part way through leaves the record armed, and the next boot's
+ * boot_resume() carries on where the marks say, before main().
  *
  * It is self-contained in sector 0, which it copies last. It runs from
  * __sdcc_external_startup(), before the C start-up initialises any data and
@@ -121,16 +122,16 @@ static void b0_program(void)
 #define b0_reset() CHIP_RESET_NOW()
 #endif
 
-void boot_resume(void)
+uint8_t boot_copy(void)
 {
 	b0_a = UPDATE_PROGRESS;
 	b0_read();
 	if (b0_d[0] != 'U' || b0_d[1] != 'P' || b0_d[2] != 'D' || b0_d[3] != '1')
-		return;
+		return 0;
 	b0_a = LDR_META;	/* the loader installs updates itself */
 	b0_read();
 	if (b0_d[0] == 'R' && b0_d[1] == 'T' && b0_d[2] == 'L' && b0_d[3] == 'B')
-		return;
+		return 0;
 
 	b0_s = IMAGE_COPY_LEN / 0x1000;
 	while (b0_s--) {
@@ -162,7 +163,16 @@ void boot_resume(void)
 	}
 	b0_a = UPDATE_PROGRESS;
 	b0_erase();
-	b0_reset();
+	return 1;
+}
+
+/* Before main(): finish a copy a power cut broke off. This early a reset has
+ * hung on silicon (switch-denlounge) until a power cycle; the copy is complete
+ * by then, so that power cycle comes up on the new image. */
+void boot_resume(void)
+{
+	if (boot_copy())
+		b0_reset();
 }
 
 #ifndef RTLP_HOST_TEST

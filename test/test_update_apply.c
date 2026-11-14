@@ -5,12 +5,12 @@
  * Built twice: standard (needs >=1 MiB) and -DLAYOUT_COMPACT (fits 512 KiB).
  * Covers: the too-small refusal; a valid image copied over the running one with
  * the config preserved and the staging area cleared, on the minimum flash and
- * a larger one, WITHOUT the clean-up wrapping past the end of the chip; and a
- * power cut during the copy that a re-run completes from the intact staged
- * image; and a power cut at every single erase and write in turn, each
- * followed by power-ons until the switch is up (on the new image) or dead
- * (only while sector 0, copied last, is torn), never on a mix of images. A real built .bin of the
- * layout can be passed as arg 1.
+ * a larger one, WITHOUT the clean-up wrapping past the end of the chip; a
+ * power cut during the copy that the next boot's boot_resume() completes from
+ * the intact staged image; and a power cut at every single erase and write in
+ * turn, each followed by power-ons until the switch is up (on the new image)
+ * or dead (only while sector 0, copied last, is torn), never on a mix of
+ * images. A real built .bin of the layout can be passed as arg 1.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +68,7 @@ static void run_valid_cycle(uint32_t size, const char *label, const uint8_t *img
 {
 	char msg[96];
 	setup(&g_flash, size, img);
-	int reset = update_run() && resume_run();	/* armed and reset; the next boot copies */
+	int reset = update_run();	/* armed, copied, reset */
 	snprintf(msg, sizeof msg, "%s: applied, copied, config kept, staging cleared, no wrap/NOR fault", label);
 	CHECK(reset && copied_ok(&g_flash, img)
 	      && g_flash.mem[FIRMWARE_UPLOAD_START] == 0xFF
@@ -110,7 +110,7 @@ static int boot(const uint8_t *img)
 }
 
 /* Cut the power at every erase and write of an update in turn - the arming of
- * the install, then the copy at the next boot - then power on until the switch
+ * the install, then its copy - then power on until the switch
  * is up or dead. Only a cut that tears sector 0, the last sector copied, may
  * leave it dead; every other one must come back up on the new image, the
  * config kept and the staging area and record cleared - never on a mix. */
@@ -121,7 +121,6 @@ static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
 
 	setup(&g_flash, size, img);
 	update_run();
-	resume_run();
 	ops = g_flash.erases + g_flash.writes;
 	fd_free(&g_flash);
 
@@ -138,8 +137,7 @@ static void powercut_sweep(uint32_t size, const char *label, const uint8_t *img)
 		tried++;
 		setup(&g_flash, size, img);
 		fd_fail_after(&g_flash, n);
-		if (update_run() && !g_flash.powercut)
-			resume_run();
+		update_run();
 		fd_fail_after(&g_flash, -1);
 		torn_home = image_state(img, 0, BOOT0_LEN) == TORN;
 		while (!r && boots++ < 4)
@@ -194,7 +192,7 @@ int main(int argc, char **argv)
 	setup(&g_flash, need, img);
 	fd_fail_after(&g_flash, 20);
 	reset = update_run();
-	CHECK(reset && !resume_run() && g_flash.powercut && !copied_ok(&g_flash, img),
+	CHECK(!reset && g_flash.powercut && !copied_ok(&g_flash, img),
 	      "power cut mid-copy: not applied, copy incomplete");
 	fd_fail_after(&g_flash, -1);
 	CHECK(resume_run() && copied_ok(&g_flash, img),

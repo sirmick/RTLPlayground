@@ -11,8 +11,9 @@ extern flashdev_t g_flash;
 extern int shim_verbose;
 
 /* Run check_and_flash_update_image() against g_flash.
- * Returns 1 if it reset the chip (an install armed for the next boot's
- * boot_resume()), 0 if it returned normally (too small / no image / bad CRC). */
+ * Returns 1 if it reset the chip (an install armed, copied by boot_copy() and
+ * finished), 0 if it returned normally (too small / no image / bad CRC) or a
+ * modelled power cut stopped it (g_flash.powercut set). */
 int update_run(void);
 
 /* Run boot0.c's boot_resume() against g_flash, as the start of a boot: 1 if

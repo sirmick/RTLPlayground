@@ -77,17 +77,19 @@ void check_and_flash_update_image(void)
 			if (i%16 == 0) write_char('.');
 		}
 		if (crc_value == 0xb001) {
-			// Arm the progress record, then copy the image (but not a saved
-			// config that sits inside it).
-			// Arm the progress record and reset: the copy is done by
-			// boot_resume() (boot0.c), from sector 0, before main().
-			print_string("Checksum OK.\nInstalling at the next boot, resetting");
+			// Arm the progress record and copy, here, late in the boot,
+			// where the reset after it works on silicon (an early one
+			// has hung). boot_copy() is boot0.c's: if a power cut breaks
+			// it off, boot_resume() finishes it before main().
+			print_string("Checksum OK.\nInstalling");
 			flash_region.addr = UPDATE_PROGRESS;
 			flash_sector_erase();
 			flash_buf[0] = 'U'; flash_buf[1] = 'P'; flash_buf[2] = 'D'; flash_buf[3] = '1';
 			flash_region.addr = UPDATE_PROGRESS;
 			flash_region.len = 4;
 			flash_write_bytes(flash_buf);
+			boot_copy();
+			print_string(", resetting now\n");
 			delay(200);
 			reset_chip();
 		}

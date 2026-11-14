@@ -15,9 +15,12 @@
  */
 void check_and_flash_update_image(void);
 
-/* boot0.c, from __sdcc_external_startup(): if the progress record
- * (UPDATE_PROGRESS) is armed, copy the staged image over the running one and
- * reset; otherwise return at once. In sector 0, self-contained. */
+/* boot0.c, in sector 0, self-contained. boot_copy(): if the progress record
+ * (UPDATE_PROGRESS) is armed, copy the staged image over the running one
+ * (the sectors it doesn't mark done), clear the staging area and the record,
+ * and return 1; otherwise return 0 at once. boot_resume(), from
+ * __sdcc_external_startup(): the same, then reset if it copied. */
+uint8_t boot_copy(void);
 void boot_resume(void);
 
 /* CRC-16 (the firmware's, as crc16_bank1) of the flash range [a, end). An
