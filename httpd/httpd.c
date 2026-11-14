@@ -877,15 +877,16 @@ void handle_post(uint16_t body_off)
 				send_unauthorized();
 				return;
 			}
+			/* only the compact layout has the region, on a chip big enough */
 #ifdef LAYOUT_COMPACT
 			if (!flash_size)
 				flash_read_jedecid();
-			if (flash_size < MDATA_START + MDATA_LEN)
+			if (flash_size < MDATA_START + MDATA_LEN) {
 #endif
-			{
 				print_string("No machine data region on this switch\n");
 				send_bad_request();
 				return;
+#ifdef LAYOUT_COMPACT
 			}
 			print_string("Machine data upload started.");
 			config_upload = 0;
@@ -896,6 +897,7 @@ void handle_post(uint16_t body_off)
 			verify_crc = 1;
 			max_upload = MDATA_LEN + 0x1000;
 			pre_acc = 0;
+#endif
 		} else if (is_word(request_path, "config")) {
 			if (!authenticated) {
 				send_unauthorized();

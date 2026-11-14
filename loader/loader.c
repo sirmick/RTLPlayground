@@ -356,14 +356,19 @@ static void handle_upload(void)
 			return;
 		}
 		install(LDR_UPLOAD + LDR_SLOT);
-	} else if (LDR_IMAGE_LEN <= LDR_DATA ||
-		   is_all(LDR_UPLOAD + LDR_DATA, LDR_UPLOAD + LDR_DATA_END, 0)) {
+#if IMAGE_SIZE <= LDR_DATA
+	} else {
 		/* a compact image ends where the data area begins, so cannot use it */
+		install(LDR_UPLOAD + 2);
+	}
+#else
+	} else if (is_all(LDR_UPLOAD + LDR_DATA, LDR_UPLOAD + LDR_DATA_END, 0)) {
 		install(LDR_UPLOAD + 2);
 	} else {
 		print_string("Image uses the loader data area, dropped\n");
 		drop_upload();
 	}
+#endif
 }
 
 static uint8_t marks(void)
