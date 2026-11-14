@@ -3,32 +3,45 @@ A Playground for Firmware development for advanced user of RTL8372/RTL8373 based
 
 > **This is an experimental branch** (`dev` of the [sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground)
 > fork of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground)). It changes the flash
-> layout and the update path; use it on switches you can recover with a flash programmer. The
+> layout and the update path. Keep a flash programmer at hand for any switch you put it on. The
 > intent is to merge the pieces back upstream once they have proven themselves.
 >
 > What it adds:
 > - **Compact flash layout** (`make LAYOUT=compact`): a 232 KiB image, defined once in `layout.h`,
->   so that **512 KiB devices can be updated through the web UI**. The saved config moves once,
->   at first boot, to its fixed place at `0x7f000`; `tools/bridge_image.py` lets a switch running
->   standard-layout firmware install a compact image over the web.
-> - **XMODEM flashing and recovery** with DrDoof's optional loader
->   ([#852](https://github.com/logicog/RTLPlayground/pull/852)), which on the compact layout stages
->   every install - web or XMODEM - and verifies it before copying. `^R ^R` on the console resets
->   the switch from the UART interrupt (deferred until the boot completes).
+>   so that **512 KiB switches can be updated through the web UI**. The saved config moves once,
+>   at first boot, to its fixed place at `0x7f000`.
+> - **DrDoof's loader on every compact switch, without a programmer**
+>   ([#852](https://github.com/logicog/RTLPlayground/pull/852)). The loader installs every
+>   update, web or XMODEM, verifies it first, and recovers a switch whose application fails. A
+>   compact build makes, besides the application image:
+>   - `rtlplayground-install-*.bin`, the web update image: the application followed by the loader.
+>     A switch without the loader converts to it at the next boot, then the loader installs the
+>     application. A switch with the loader just installs the application.
+>   - `rtlplayground-boot-*.bin`, the image for a flash programmer: loader, application, metadata.
+>   - `rtlplayground-loader-*.bin`, the 16 KiB loader alone, for the Loader card of the web UI.
+>
+>   Upstream standard-layout switches (1 MiB flash or more) move over with one web upload of a
+>   bridge image (`tools/bridge_image.py`), which carries the loader. Firmware from before the
+>   install image can't take it: give such a switch one plain application image first.
 > - **Machine data region** at `0x80000` (1 MiB flash and more) for a board's own blobs, such as
 >   the PoE controller firmware of the MokerLink POE-2G040210GSM: written once, never by an update.
->   The firmware page recognises application, loader and machine data files by their header.
-> - **Code placement and checks**: no bank placement in the sources or anywhere else - every
->   build places the banked files into the three code banks itself, evenly, keeping files that
->   call each other or read each other's `__code` data together (`tools/place_banks.py`, result
->   in the build's `banks.txt`); the Makefile only lists the files that stay in the home bank.
->   Every link is checked: calls and `__code` data reads that cross a bank, banks that overflow,
+> - **A web UI card per upload**: firmware, PoE controller firmware (on boards that have one) and
+>   the loader, each refusing the others' files, with the switch's firmware, loader and PoE state
+>   at the top. The startup config can be downloaded and loaded back from a file.
+> - **Automatic code placement, a major refactor**: the 8051 code banks used to be assigned by
+>   hand, with `#pragma codeseg` in 37 source files upstream, to keep in step whenever code grew or
+>   moved. Now there is no bank placement in the sources or anywhere else: every build packs the
+>   banked files into the three code banks itself, by a heuristic that fills them evenly and keeps
+>   files that call each other or read each other's `__code` data together
+>   (`tools/place_banks.py`, result in the build's `banks.txt`). The only decision left to a
+>   developer is the short list of files that stay in the home bank (`RESIDENT_SRCS` in the
+>   Makefile), so adding or growing code needs no bank bookkeeping. Every link is checked: calls and `__code` data reads that cross a bank, banks that overflow,
 >   `__at` variables the linker also hands out, PSBANK not restored (`tools/check_cross_bank.py`,
 >   `tools/check_linked.py`); `tools/check_layout.py` for region overlaps; a smaller web UI
 >   (`LANGS=`).
-> - **Tests without hardware**: a model of the SPI flash chip running the real boot-time update,
->   config and machine data moves (with power cuts at every flash operation), upload read-back
->   checks; `make -C test -j8 quick` runs them in seconds. `tools/docker-make.sh` builds in parallel.
+> - **Tested in a simulator, in CI**: every push runs the real firmware image in
+>   [rtlsim](https://github.com/sirmick/ovs-rtlpg), a simulator of the RTL837x, see
+>   [Testing and CI](#testing-and-ci). `tools/docker-make.sh` builds in parallel.
 > - **Low-hanging upstream PRs pulled in**: [#747](https://github.com/logicog/RTLPlayground/pull/747)
 >   (MokerLink POE-2G040210GSM), [#370](https://github.com/logicog/RTLPlayground/pull/370) and parts
 >   of [#305](https://github.com/logicog/RTLPlayground/pull/305) (code and internal RAM),
@@ -36,9 +49,15 @@ A Playground for Firmware development for advanced user of RTL8372/RTL8373 based
 >   [#843](https://github.com/logicog/RTLPlayground/pull/843) (installer checksum),
 >   [#876](https://github.com/logicog/RTLPlayground/pull/876) (upgrade check against the PCB).
 >
-> Proven on a 512 KiB SWTG024AS so far: compact web updates, the loader's web and XMODEM installs
-> and self-update, config kept across updates, bad uploads refused. Not yet on hardware: the
-> config and machine data moves from the standard layout, and the PoE board on the compact layout.
+> On hardware so far:
+> - **A 512 KiB SWTG024AS:** compact web updates, the loader's web and XMODEM installs and
+>   self-update, config kept across updates, bad uploads refused.
+> - **A 2 MiB MokerLink POE-2G040210GSM:** migrated from the standard layout with the bridge,
+>   then converted to the loader over the web. Its config and PoE firmware were kept throughout.
+>
+> One known silicon quirk: a chip reset issued early in the boot (before the clock set-up) can
+> hang a switch until a power cycle. The cause isn't known. Installs and the loader conversion
+> reset late in the boot, where it has never happened.
 
 For each hardware configuration of these devices, there is usually a managed and an
 unmanaged version sold, with mostly identical hardware. The aim is to provide management
@@ -278,6 +297,12 @@ Unmanaged switch cannot be flashed this way (see 5).
 Go to "Firmware update" tab, select the correct file.
 
 > [!IMPORTANT]
+> On this branch with `LAYOUT=compact`, upload `rtlplayground-install-*.bin` in the Firmware
+> card: it brings the loader to a switch that doesn't have it yet. A switch running RTLPlayground
+> from before the install image takes the plain `rtlplayground-v*.bin` once; use the install
+> image from then on. A standard-layout switch moves to compact with one upload of a bridge image
+> (`tools/bridge_image.py`).
+>
 > If your device already runs RTLPlayground, you must upload the binary file /RTLPlayground/output/rtlplayground_Version_Machine.bin
 > If your device is OEM, you must upload the binary file /RTLPlayground/installer/output/rtlplayground_oem_upgrade.bin
 
@@ -297,6 +322,7 @@ This is also the only way to unbrick your device if something went wrong.
 > You need a SOIC-8 clip to flash the ROM chip directly onboard.
 > Alternatively you can de-solder the flash chip and install a SOIC adapter).
 > For flashing the chip directly, you must use the binary file /RTLPlayground/output/rtlplayground_Version_Machine.bin
+> (on this branch with `LAYOUT=compact`: `rtlplayground-boot-*.bin`, which includes the loader).
 
 > [!CAUTION]
 > As you need to open your switch case, consider that the warranty is gone.
@@ -471,6 +497,42 @@ options:
 ```
 
 The machine parsing is somewhat experimental.
+
+## Testing and CI
+
+The firmware is tested without hardware in **rtlsim**, a simulator of the RTL837x switch chips:
+[github.com/sirmick/ovs-rtlpg](https://github.com/sirmick/ovs-rtlpg). It runs the real built
+image, unmodified: the 8051 core with its code banks, the flash controller and SPI flash, the
+switch registers, the NIC and the PoE controller on I2C. Linux in a network namespace talks to
+it over a tap or an Open vSwitch bridge.
+
+**CI.** Every push and pull request runs two GitHub workflows:
+- **`build.yml`** builds the firmware with warnings as errors, for several machines and
+  variants, compiles every machine definition, and runs the host unit tests (`make -C test`).
+- **`rtlsim.yml`** builds the SWTG024AS compact image and the image set below, checks out
+  rtlsim, and runs the image through it (`tools/ci/rtlsim-ci.sh` there). The tests check:
+  - the boot log against silicon, and ARP, ICMP and TCP through the NIC
+  - switching, with Linux in network namespaces over a tap and over Open vSwitch
+  - rtlsim's Alpine switch VM booting under QEMU
+  - a power cut at every step of a web firmware install
+  - standard-to-compact migrations, the PoE controller's firmware load, and the loader
+    starting the application
+
+There is no CD yet: the workflows don't publish the images they build.
+
+**Locally.** `make rtlsim-images OUT=dir` builds the images rtlsim's flash tests read, with a
+`manifest.json`, for three boards (the SWTG024AS, a 2 MiB RTL8373 board, and the PoE board).
+It includes the bridges and an old-firmware chip to migrate from. rtlsim's own README explains
+how to run its tests against them.
+
+**What rtlsim can't vouch for.** Its tests are functional, not timing-faithful. Its flash and
+CPU timing aren't the real chip's, and it doesn't model why early resets hang on silicon. A
+green run means the logic and the flash contents are right, not that an update is safe on a
+real switch. A switch with serial on the bench is the last check.
+
+The host unit tests in `test/` (`make -C test -j8 quick` takes seconds) cover the web server,
+the command editor, the port tables and the update code against a model of the flash. Most of
+the flash-model tests are on their way out, now that rtlsim covers that ground better.
 
 ## (12) Other documents
 
