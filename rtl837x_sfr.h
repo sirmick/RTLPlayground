@@ -134,13 +134,15 @@ __sfr16 __at(0xcbca) RCAP2_U16;
  * boots until its main loop starts.
  */
 #define RESET_CHAR 0x12
-/* The chip reset doesn't reset the flash controller, and the reset refetches
- * the home bank through it as it was left: a programmed command still set up
- * (boot0's last status poll leaves READ_STATUS in CMD_R) makes that fetch
- * garbage and the chip hangs until a power cycle - as switch-denlounge did
- * after a boot0 install. So every reset first sets it back to a plain fast
- * read (single I/O, which every chip supports), letting a transfer in flight
- * finish. Possibly also the cause of the mid-boot hang described above. */
+/* Every reset first sets the flash controller back to a plain fast read
+ * (single I/O, which every chip supports), letting a transfer in flight
+ * finish, in case the reset refetches the home bank through it as it was
+ * left. That was a guess at why boot0's reset, early in the boot, hung
+ * switch-denlounge until a power cycle; silicon disproved it (the hang stayed
+ * with this in place), and the cause is unknown. What is known: resets early
+ * in the boot, before setup_clock() and the rest (boot0's, a ^R ^R mid-boot),
+ * have hung, and late ones never have - so installs reset late (update_apply.c,
+ * boot.c loader_convert()). This stays because it costs nothing. */
 #define FLASH_READ_FOR_RESET() do { \
 	while (SFR_FLASH_EXEC_BUSY); \
 	SFR_FLASH_MODEB = 0; \

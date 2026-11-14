@@ -150,8 +150,7 @@ rtlsim-images:
 	@test -n "$(OUT)" || { echo "usage: make rtlsim-images OUT=dir" >&2; false; }
 	for m in $(RTLSIM_BOARDS); do \
 		$(MAKE) MACHINE=$$m BUILDDIR=$(RTLSIM_BUILD)/$$m && \
-		$(MAKE) MACHINE=$$m LAYOUT=compact BUILDDIR=$(RTLSIM_BUILD)/$$m-compact && \
-		$(MAKE) MACHINE=$$m LAYOUT=compact LOADER=1 BUILDDIR=$(RTLSIM_BUILD)/$$m-compact-loader || exit 1; \
+		$(MAKE) MACHINE=$$m LAYOUT=compact BUILDDIR=$(RTLSIM_BUILD)/$$m-compact || exit 1; \
 	done
 	python3 tools/rtlsim_images.py $(RTLSIM_BUILD) "$(OUT)"
 
@@ -377,11 +376,6 @@ $(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
 	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
-ifeq ($(LAYOUT),compact)
-	# Whole-chip copy for a programmer: the image, then erased (0xff) flash up
-	# to 512 KiB - empty staging area and a blank saved config, seeded at boot.
-	{ cat "$@"; head -c $$((524288 - $(IMAGESIZE))) /dev/zero | tr '\000' '\377'; } > "$(basename $@)-flash512k.bin"
-endif
 	if [ "$(OUTPUT)" = "$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin" ]; then \
 		ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin "$(BUILDDIR)/../rtlplayground.bin"; \
 	fi
@@ -389,9 +383,13 @@ endif
 # A compact build always builds the loader: the programmer image (-boot), the
 # /loader image (-loader) and the install image (-install: the application,
 # then the loader, which its upload stages at LDR_STAGE; a board without the
-# loader converts to it at the next boot). LOADER=1 is kept for old commands.
+# loader converts to it at the next boot). For a programmer, use -boot.
+# LOADER=1 builds the loader and -boot for the standard layout (loader layout 1).
 ifneq ($(or $(LOADER),$(filter compact,$(LAYOUT))),)
-all: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin $(BUILDDIR)/rtlplayground-install-$(FILENAME_EXTENSION).bin
+all: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin
+endif
+ifeq ($(LAYOUT),compact)
+all: $(BUILDDIR)/rtlplayground-install-$(FILENAME_EXTENSION).bin
 endif
 
 LOADER_OBJS = $(BUILDDIR)/loader/loader.rel $(BUILDDIR)/loader/net.rel $(BUILDDIR)/loader/loader_alias.rel $(BUILDDIR)/loader/rtl837x_flash.rel

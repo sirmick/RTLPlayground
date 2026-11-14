@@ -4,17 +4,18 @@ rtlsim_images.py - assemble an image set for rtlsim (github.com/sirmick/ovs-rtlp
 
     tools/rtlsim_images.py BUILDROOT OUT
 
-BUILDROOT holds builds named <MACHINE>, <MACHINE>-compact and
-<MACHINE>-compact-loader (as `make rtlsim-images` makes them); OUT gets the
+BUILDROOT holds builds named <MACHINE> and <MACHINE>-compact (as
+`make rtlsim-images` makes them); OUT gets the
 images and a manifest.json that rtlsim's flash tests read:
 
   [{"name", "file", "machine", "layout", "flash": "512K|2M", "loader": bool,
     "kind": "app|install|loader|chip|bridge|mdata", "map", "notes"}, ...]
 
 "map" is a build's rtlplayground.map, copied with the .mem, every .rst and the
-banks.txt into <name>.build/. Per board, besides the three application images:
-the compact install image (-install: the application, then the loader), the
-loader build's programmer image (-boot) and /loader image (-loader); for the
+banks.txt into <name>.build/. Per board, besides the standard and compact
+application images: the compact install image (-compact-install: the
+application, then the loader), the programmer image (-compact-boot) and the
+/loader image (<MACHINE>-loader); for the
 2 MiB boards, a bridge image carrying the loader (standard firmware installs
 it over the web), and a whole chip of old standard firmware with a config at
 0x70000 and a factory MAC, the starting point of a migration. The PoE board gets a machine
@@ -33,7 +34,7 @@ BOARDS = {
     "POE_2G040210GSM": ("2M", "MokerLink POE-2G040210GSM, RTL8372 + RTL8238B PSE on I2C 0x20 (GPIO46/47), 2 MiB, "
                         "factory MAC at 0x1FC000", "00e04c2b0402"),
 }
-VARIANTS = (("", "standard", False), ("-compact", "compact", False), ("-compact-loader", "compact", True))
+VARIANTS = (("", "standard"), ("-compact", "compact"))
 OLD_CONFIG = b"ip 192.168.2.2\ngw 192.168.2.1\nnetmask 255.255.255.0\nhostname chip-old\n"
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 
@@ -56,7 +57,7 @@ def main():
         man.append(k)
 
     for m, (fl, note, _) in BOARDS.items():
-        for suf, layout, loader in VARIANTS:
+        for suf, layout in VARIANTS:
             t = m + suf
             bd = os.path.join(root, t)
             dst = os.path.join(out, t + ".build")
@@ -67,22 +68,22 @@ def main():
                     os.makedirs(os.path.dirname(o), exist_ok=True)
                     shutil.copy(f, o)
             mp = os.path.relpath(os.path.join(dst, "rtlplayground.map"), out)
-            shutil.copy(pick(bd, "rtlplayground-v*.bin", ("flash512k", "-boot-", "-loader-")), os.path.join(out, t + ".bin"))
-            add(name=t, file=t + ".bin", machine=m, layout=layout, flash=fl, loader=loader, kind="app", map=mp,
-                notes=f"{note}. Application image" + ("; installed by the loader" if loader else ""))
-            if layout == "compact" and not loader:
+            shutil.copy(pick(bd, "rtlplayground-v*.bin"), os.path.join(out, t + ".bin"))
+            add(name=t, file=t + ".bin", machine=m, layout=layout, flash=fl, loader=False, kind="app", map=mp,
+                notes=f"{note}. Application image" + ("; the same image installs with or without the loader"
+                                                      if layout == "compact" else ""))
+            if layout == "compact":
                 shutil.copy(pick(bd, "rtlplayground-install-*.bin"), os.path.join(out, t + "-install.bin"))
                 add(name=t + "-install", file=t + "-install.bin", machine=m, layout=layout, flash=fl, loader=True,
                     kind="install", map=mp,
                     notes="the web update image: the application, then the 16 KiB loader (it lands on the stage "
                           "0x7A000). A board without the loader converts at the next boot and the loader then "
                           "installs the application; a board with it installs the application as usual")
-            if loader:
                 shutil.copy(pick(bd, "rtlplayground-boot-*.bin"), os.path.join(out, t + "-boot.bin"))
-                shutil.copy(pick(bd, "rtlplayground-loader-*.bin"), os.path.join(out, t + "-loader.bin"))
+                shutil.copy(pick(bd, "rtlplayground-loader-*.bin"), os.path.join(out, m + "-loader.bin"))
                 add(name=t + "-boot", file=t + "-boot.bin", machine=m, layout=layout, flash=fl, loader=True, kind="chip",
                     map=mp, notes="first 512 KiB for a programmer: loader at 0, app home bank in the slot, metadata")
-                add(name=t + "-loader", file=t + "-loader.bin", machine=m, layout=layout, flash=fl, loader=True,
+                add(name=m + "-loader", file=m + "-loader.bin", machine=m, layout=layout, flash=fl, loader=True,
                     kind="loader", map=None, notes="16 KiB loader image, for the /loader upload (staged at 0x7A000)")
 
     # synthetic PSE images: seeded random bytes, NOT PoE firmware
@@ -106,12 +107,12 @@ def main():
         with_md = m == "POE_2G040210GSM"
         bridge = os.path.join(out, m + "-bridge.bin")
         subprocess.run([sys.executable, os.path.join(TOOLS, "bridge_image.py"),
-                        os.path.join(out, m + "-compact-loader-boot.bin")]
+                        os.path.join(out, m + "-compact-boot.bin")]
                        + ([md] if with_md else []) + [bridge], check=True, stdout=subprocess.DEVNULL)
         add(name=m + "-bridge", file=m + "-bridge.bin", machine=m, layout="standard->compact", flash=fl, loader=True,
-            kind="bridge", map=f"{m}-compact-loader.build/rtlplayground.map",
+            kind="bridge", map=f"{m}-compact.build/rtlplayground.map",
             notes="install with standard-layout firmware (web update). It carries the loader (the "
-                  "-compact-loader-boot image: loader at 0, metadata 0x3B000, the application's home bank in the "
+                  "-compact-boot image: loader at 0, metadata 0x3B000, the application's home bank in the "
                   "slot 0x3C000): the board arrives with the loader, which starts the compact application; its "
                   "first boot moves the config 0x70000->0x7F000"
                   + (" and the synthetic PSE mdata 0x60000->0x80000" if with_md else ""))
