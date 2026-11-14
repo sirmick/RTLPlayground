@@ -14,6 +14,8 @@
  * so it cannot run from one.
  */
 void check_and_flash_update_image(void);
+/* Set by it: 1 if the board has the loader (its metadata, LDR_META). */
+extern __xdata uint8_t has_loader;
 
 /* boot0.c, in sector 0, self-contained. boot_copy(): if the progress record
  * (UPDATE_PROGRESS) is armed, copy the staged image over the running one

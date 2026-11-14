@@ -31,8 +31,11 @@ static void staging_erase(void)
 	}
 }
 
+__xdata uint8_t has_loader;
+
 void check_and_flash_update_image(void)
 {
+	has_loader = 0;		/* xdata isn't zeroed by the startup code */
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
 
 	print_string(get_flash_size_str()); print_string(" flash size detected.\n");
@@ -46,6 +49,7 @@ void check_and_flash_update_image(void)
 	flash_read_bulk(flash_buf);
 	if (flash_buf[0] == 'R' && flash_buf[1] == 'T' && flash_buf[2] == 'L' && flash_buf[3] == 'B') {
 		print_string("Updates are installed by the loader\n");
+		has_loader = 1;
 		return;
 	}
 

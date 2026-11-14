@@ -18,6 +18,7 @@
 #include "page_impl.h"
 #include "syslog.h"
 #include "dhcp.h"
+#include "update_apply.h"
 
 // #define DEBUG
 #include "debug.h"
@@ -264,6 +265,7 @@ void send_basic_info(void)
 	str_code_to_html(get_flash_size_str());
 	/* The size a firmware upload must have for this build's flash layout. */
 	str_code_to_html("\"," JSONQUOTE("img_size") ":\"" STR(IMAGE_SIZE));
+	str_code_to_html(has_loader ? "\"," JSONQUOTE("loader") ":\"yes" : "\"," JSONQUOTE("loader") ":\"no");
 
 	if (machine.n_sfp) {
 		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");
