@@ -16,3 +16,4 @@ build/
 !test/stub/version.h
 .vscode
 .layout
+__pycache__/
