@@ -633,6 +633,56 @@ static void scenario_oversized_data_offset(void)
 	      "oversized data offset: a normal request after it still serves the file");
 }
 
+/* A SYN advertising MSS 0 (option 02 04 00 00). uip_send clamps to conn->mss,
+ * so storing 0 would leave a connection that can never send and holds its slot
+ * until timeout. The option must be floored to a usable MSS instead. */
+static void scenario_mss_zero(void)
+{
+	static const uint8_t mss0[4] = { 0x02, 0x04, 0x00, 0x00 };
+
+	uip_init();
+	httpd_init();
+	cli_window = MSS_FULL;
+	cli_rcv_nxt = 0;
+	put_tcp(TCP_SYN, 6 /* 24-byte header */, mss0, sizeof(mss0), 1000, 44);
+	uip_len = 44;
+	uip_input();
+	CHECK(uip_conns[0].mss != 0,
+	      "an advertised MSS of 0 is floored, so the connection can send");
+}
+
+#define TCP_URG 0x20
+
+/* A segment with URG set and an urgent pointer past the payload. Advancing
+ * uip_appdata by the urgent pointer ran httpd off the end of uip_buf
+ * (CVE-2020-17437, ASan SEGVs without the fix); delivered inline, the byte is
+ * just data and the connection carries on. */
+static void scenario_urg_inline(void)
+{
+	session_start(MSS_FULL);
+
+	memset(uip_buf, 0, UIP_LLH_LEN + 41);
+	TCPH->vhl = 0x45;
+	TCPH->len[0] = 0; TCPH->len[1] = 41;	/* 20 IP + 20 TCP + 1 data */
+	TCPH->ttl = 64;
+	TCPH->proto = UIP_PROTO_TCP;
+	TCPH->srcipaddr[0] = hton16(0x0a00); TCPH->srcipaddr[1] = hton16(0x0002);
+	TCPH->destipaddr[0] = hton16(0x0a00); TCPH->destipaddr[1] = hton16(0x0001);
+	TCPH->srcport = hton16(40000);
+	TCPH->destport = hton16(80);
+	wr32(TCPH->seqno, cli_seq);
+	wr32(TCPH->ackno, cli_rcv_nxt);
+	TCPH->tcpoffset = 5 << 4;
+	TCPH->flags = TCP_ACK | TCP_URG;
+	TCPH->wnd[0] = MSS_FULL >> 8; TCPH->wnd[1] = MSS_FULL & 0xff;
+	TCPH->urgp[0] = 0; TCPH->urgp[1] = 2;	/* urgent pointer one past the byte */
+	uip_buf[UIP_LLH_LEN + 40] = 'x';
+	uip_len = 41;
+	uip_input();
+	CHECK(uip_conn_active(0),
+	      "URG segment: delivered inline, no out-of-bounds, connection survives");
+}
+
 
 /* Private HTTP lifecycle values; drive the real callback, not a model. */
 enum { TSTATE_NONE = 0, TSTATE_TX = 1, TSTATE_POST = 4 };
@@ -1554,6 +1604,8 @@ int main(int argc, char **argv)
 	scenario_bad_l4_checksum();
 	scenario_malformed_tcp_options();
 	scenario_oversized_data_offset();
+	scenario_mss_zero();
+	scenario_urg_inline();
 	scenario_upload_reset_owner();
 	scenario_fragmented_post_header();
 	scenario_split_content_type();
