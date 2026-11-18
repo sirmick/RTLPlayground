@@ -44,6 +44,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_config_migrate \
         $(BUILDDIR)/test_mdata_migrate \
         $(BUILDDIR)/test_sched_gen \
+        $(BUILDDIR)/test_sched \
         $(BUILDDIR)/test_loader
 
 # The table tests link the register mock and one environment file; stub/
@@ -124,6 +125,17 @@ $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update
 # "binary" is a wrapper, so it runs and logs like the others.
 $(BUILDDIR)/test_sched_gen: test_sched_gen.py $(SRCROOT)/tools/sched_gen.py $(wildcard sched_gen/*/*) | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_sched_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+
+# The scheduler core, rings, watchdog and crash record, compiled UNMODIFIED,
+# over the tables the generator makes from sched_core/.
+SCHED_T = $(BUILDDIR)/sched_core
+$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: sched_core/tasks.def sched_core/tasks.h sched_core/sequence.def $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) sched_core/tasks.def >/dev/null
+$(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
+	'-DCRASH_RESET()=host_reset()' '-DCRASH_JUMP()=crash_die()' '-DCRASH_IDATA(a)=host_idata[(uint8_t)(a)]'
+$(BUILDDIR)/test_sched: test_sched.c $(SRCROOT)/sched.c $(SRCROOT)/sched_bank.c $(SRCROOT)/con_ring.c $(SRCROOT)/crash.c $(SRCROOT)/sched_health.c \
+		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c | $(SCHED_T)/sched_gen.h
+	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 # Each test runs into its own log, so `make -j` runs them side by side; the
 # logs are printed in order once all are done. A test's .ok marker is only
