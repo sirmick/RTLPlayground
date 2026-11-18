@@ -21,6 +21,10 @@ endif
 ifneq ($(ST_NEG),)
 CC_FLAGS += -DST_NEG_$(shell echo $(ST_NEG) | tr a-z A-Z)
 endif
+# ST_CRASH=8000: the crash record at xdata 0x8000 (silicon C), and `poke`
+ifneq ($(ST_CRASH),)
+CC_FLAGS += -DCRASH_ADDR=0x$(ST_CRASH) -DST_POKE
+endif
 
 # Resident: the core, the rings, the crash record, the dispatch tables.
 # Banked, placed by place_banks.py: the rest of the scheduler, the names,

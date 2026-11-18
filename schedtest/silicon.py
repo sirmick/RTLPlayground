@@ -608,7 +608,7 @@ def embed(build):
     imgs = sorted(glob.glob(os.path.join(build, "rtlplayground-boot-schedtest*.bin")), key=os.path.getmtime)
     if not imgs:
         sys.exit(f"silicon.py --embed: no -boot schedtest image in {build}")
-    m = re.match(r"rtlplayground-boot-schedtest(?:-(hang|overrun|bad_flash))?-(.+)-[A-Z0-9_]+-compact\.bin$",
+    m = re.match(r"rtlplayground-boot-schedtest(?:-(hang|overrun|bad_flash))?(?:-crash[0-9a-f]+)?-(.+)-[A-Z0-9_]+-compact\.bin$",
                  os.path.basename(imgs[-1]))
     variant, version = m.group(1) or "base", m.group(2)
     app = open(imgs[-1].replace("rtlplayground-boot-", "rtlplayground-"), "rb").read()

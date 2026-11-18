@@ -91,7 +91,7 @@ ifeq ($(MACHINE_INIT_SRC),)
 endif
 
 ifndef BUILDDIR
-	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG)))
+	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH)))
 endif
 
 CONFIG_STAMP := $(BUILDDIR)/.config
@@ -104,7 +104,7 @@ else
 endif
 
 VERSION_EXTENSION = v$(VERSION)-$(GIT_VERSION)
-FILENAME_EXTENSION = $(if $(SCHEDTEST),schedtest$(if $(ST_NEG),-$(ST_NEG))-)$(VERSION_EXTENSION)-$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
+FILENAME_EXTENSION = $(if $(SCHEDTEST),schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH))-)$(VERSION_EXTENSION)-$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
 
 # Path and file name of the final image. BUILDDIR still holds the intermediate
 # objects and tools. OUTPUT_DIR is the destination directory. OUTPUT_PREFIX is

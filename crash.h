@@ -18,7 +18,9 @@
 
 #include <stdint.h>
 
+#ifndef CRASH_ADDR			/* schedtest ST_CRASH=8000: -DCRASH_ADDR=0x8000 */
 #define CRASH_ADDR	0xbfe0		/* last 32 bytes of the 48 KiB xdata */
+#endif
 #define CRASH_MAGIC	0x5c4d
 
 #define CRASH_SWDT	1		/* software watchdog */
