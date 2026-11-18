@@ -1,0 +1,249 @@
+# B3 evidence: make schedtest (2026-11-18)
+
+## Build
+
+    tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1   -> exit 0
+
+Images:
+    output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-boot-schedtest-v0.1.0-42a6ea2-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+    output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-install-schedtest-v0.1.0-42a6ea2-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+    output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-loader-schedtest-v0.1.0-42a6ea2-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+    output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-schedtest-v0.1.0-42a6ea2-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+
+From the build log:
+    run sequence: 44 positions, 24 slots (12 fixed, 12 dynamic), 2 between high groups
+    isr_ev     once       1        44
+    python3 tools/isr_frame.py output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground.asm \
+    isr_timer2 8
+    isr_serial 9
+    place_banks: bank 1 48836 B (316 free), bank 2 48172 B (980 free), bank 3 48181 B (971 free)
+    resources (output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest):
+      internal RAM: data 105 B, overlay 8 B, bits 3 B, stack 131 B
+      common area:  ends 0x3ede (162 B to the 0x3f80 gate)
+      xdata:        ends 0x5043
+      banks:        1: 48836 B (316 free), 2: 48172 B (980 free), 3: 48181 B (971 free)
+    loader HOME 11628 B, alias 243 B, application CRC 0x2003
+
+Placement (banks.txt):
+    sched_bank 1
+    sched_gen_names 1
+    sched_health 1
+    schedtest/st_b1 1 (pinned)
+    schedtest/st_b2 2 (pinned)
+    schedtest/st_b3 3 (pinned)
+    schedtest/st_main 1
+
+Variants: ST_NEG=hang, overrun, bad_flash -> exit 0; bad_spec -> exit 2 with
+    sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c
+    hang: common area:  ends 0x3ede (162 B to the 0x3f80 gate)
+    overrun: common area:  ends 0x3ede (162 B to the 0x3f80 gate)
+    bad_flash: common area:  ends 0x3f0f (113 B to the 0x3f80 gate)
+
+## The firmware build is unchanged
+
+make MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 BUILDDIR=output/b3-fwcheck: every .map area size
+identical to the A0 baseline (md5 of the area lines equal); rtlplayground.asm and rtl837x_flash.asm identical
+apart from comments and the version string.
+
+## Resources (vs baseline/resources-8x.txt and B2's evidence)
+
+| | baseline firmware | schedtest (firmware + scheduler + dummies) |
+|---|---|---|
+| internal RAM data / overlay / bits | 105 / 8 / 3 | 105 / 8 / 3 |
+| stack (.mem) | 131 | 131; 14 B in use at a step's entry (SP 0x8a), 3 of them the dispatcher's r5-r7 |
+| common area end | 0x396a | 0x3ede (162 B to the 0x3f80 gate) |
+| xdata end | 0x41c8 | 0x5041 (the logs: 7 x 390 B); crash record 0xbfe0 |
+| banks 1/2/3 used | 46188 / 46202 / 45565 | 48836 / 48172 / 48181 |
+
+## rtlsim: boot, commands (schedtest/sim_smoke.py)
+
+ovs-rtlpg build/rtlsim at 07c6457 ctl, test: the flash busy rule in control mode, and its tests (UART at its baud rate).
+
+    === boot: prompt at 1995.328 ms firmware time
+    
+    RTLPlayground loader
+    Flash information:
+      Manufacturer ID: 0xef
+      Memory Type:     0x40
+      Capacity:        0x15 = 2 MB
+    Starting application
+    
+    schedtest v0.1.0-42a6ea2-dirty
+    > health
+    slot	task	state	mask	wake
+    0	con	CON_EDIT	0x8004	+32766
+    1	cli	CLI_PROMPT	0x0000	now
+    2	sleep_a	SLEEP_A	0x0000	+1
+    3	waiter	WAITER	0x1000	+20
+    4	hot	HOT	0x0000	now
+    5	printer	PR_IDLE	0xa000	+32766
+    6	sleep_b	SLEEP_B	0x0000	+8
+    7	poster	POSTER	0x0000	+60
+    8	jobber	JOBBER	0xa000	+32766
+    9	sleep_c	SLEEP_C	0x0000	+200
+    10	isr_ev	ISR_EV	0x8004	+32766
+    11	slow	SL_IDLE	0xa000	+32766
+    12	job0	free
+    13	job1	free
+    14	job2	free
+    15	job3	free
+    16	job4	free
+    17	job5	free
+    18	job6	free
+    19	job7	free
+    20	job8	free
+    21	job9	free
+    22	job10	free
+    23	job11	free
+    state	runs	max
+    CON_EDIT	12	122us
+    CLI_IDLE	2	12us
+    CLI_RUN	0	0us
+    CLI_PROMPT	0	0us
+    SLEEP_A	1	0us
+    WAITER	2	67us
+    HOT	56	42us
+    PR_IDLE	1	0us
+    PR_LINE	0	0us
+    SLEEP_B	1	0us
+    POSTER	1	0us
+    JOBBER	1	0us
+    JB_RUN	0	0us
+    FL_ERASE	0	0us
+    FL_PROG	0	0us
+    FL_VERIFY	0	0us
+    FL_DONE	0	0us
+    SLEEP_C	1	55us
+    ISR_EV	2	36us
+    SL_IDLE	1	18us
+    SL_SLOW	0	0us
+    SL_HANG	0	0us
+    passes 0x00000005 idle 0x00000000 longest 1596us
+    overruns 0, con rx overruns 0
+    > status
+    print 0 jobs claimed 0 full 0 done 0 flash 0 bad 0 slow 0
+    con rx 14 sum 0x0534 overruns 0 step SP max 8a
+    sleep_a/b/c runs 3 2 1 waiter 2 poster 1 isr_ev 2 hot 210
+    > print 20
+    > P0 the quick brown fox jumps
+    P1 the quick brown fox jumps
+    P2 the quick brown fox jumps
+    P3 the quick brown fox jumps
+    P4 the quick brown fox jumps
+    P5 the quick brown fox jumps
+    P6 the quick brown fox jumps
+    P7 the quick brown fox jumps
+    P8 the quick brown fox jumps
+    P9 the quick brown fox jumps
+    P10 the quick brown fox jumps
+    P11 the quick brown fox jumps
+    P12 the quick brown fox jumps
+    P13 the quick brown fox jumps
+    P14 the quick brown fox jumps
+    P15 the quick brown fox jumps
+    P16 the quick brown fox jumps
+    P17 the quick brown fox jumps
+    P18 the quick brown fox jumps
+    P19 the quick brown fox jumps
+    print done
+    jobs
+    > flash
+    > flash: ok
+    slow
+    > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | reset
+    > status
+    print 20 jobs claimed 12 full 1 done 12 flash 2 bad 0 slow 1
+    con rx 247 sum 0x6e16 overruns 0 step SP max 8a
+    sleep_a/b/c runs 264 60 3 waiter 29 poster 10 isr_ev 17 hot 17359
+    > health
+    slot	task	state	mask	wake
+    0	con	CON_EDIT	0x8004	+32766
+    1	cli	CLI_PROMPT	0x0000	now
+    2	sleep_a	SLEEP_A	0x0000	now
+    3	waiter	WAITER	0x1000	+3
+    4	hot	HOT	0x0000	now
+    5	printer	PR_IDLE	0xa000	+32537
+    6	sleep_b	SLEEP_B	0x0000	+1
+    7	poster	POSTER	0x0000	+43
+    8	jobber	JOBBER	0xa000	+32537
+    9	sleep_c	SLEEP_C	0x0000	+37
+    10	isr_ev	ISR_EV	0x8004	+32766
+    11	slow	SL_IDLE	0xa000	+32543
+    12	job0	free
+    13	job1	free
+    14	job2	free
+    15	job3	free
+    16	job4	free
+    17	job5	free
+    18	job6	free
+    19	job7	free
+    20	job8	free
+    21	job9	free
+    22	job10	free
+    23	job11	free
+    state	runs	max
+    CON_EDIT	199	165us
+    CLI_IDLE	18	18us
+    CLI_RUN	8	76ms
+    CLI_PROMPT	8	24us
+    SLEEP_A	265	110us
+    WAITER	29	128us
+    HOT	17513	79us
+    PR_IDLE	5	24us
+    PR_LINE	24	319us
+    SLEEP_B	60	110us
+    POSTER	10	221us
+    JOBBER	5	184us
+    JB_RUN	60	18us
+    FL_ERASE	1	39993us
+    FL_PROG	128	8394us
+    FL_VERIFY	16	1424us
+    FL_DONE	1	67us
+    SLEEP_C	3	67us
+    ISR_EV	19	147us
+    SL_IDLE	5	24us
+    SL_SLOW	1	27761us
+    SL_HANG	0	0us
+    passes 0x00000638 idle 0x00000000 longest 77ms
+    overruns 3 last SL_SLOW, con rx overruns 0
+    > 
+    === symbols
+      st_jobs_claimed = 12
+      st_jobs_full = 1
+      st_jobs_done = 12
+      st_fl_state = 2
+      st_fl_bad = 0
+      st_slow_runs = 1
+      sched_overruns = 4
+      sched_overrun_state = 3
+      st_con_rx_n = 254
+      con_rx_overruns = 0
+      st_sp_step_max = 138
+      sched_fine_per_tick = 813
+      st_log_sleep_a: {'n': 267, 'gap_min': 1242, 'gap_max': 14901}
+    === checks
+      (5900, 'unmodelled', 'unmodelled SFR b9 written (00) at pc=1758')
+      (5900, 'unmodelled', 'unmodelled SFR ba written (80) at pc=175b')
+      (5905, 'unmodelled', 'unmodelled reg 7f90 RTL837X_PIN_MUX_1 (R 00000000) pc=013e')
+      (1992176, 'unmodelled', 'unmodelled reg 5f84 RTL837X_ISR_SW_INT_MODE (W 00000042) pc=0bd6')
+      (1992177, 'unmodelled', 'unmodelled reg 5f88 RTL837X_ISR_INT_PORT_LINK_CHG (W 000003ff) pc=0bd6')
+      (1992179, 'unmodelled', 'unmodelled reg 5f34 RTL837X_IMR_INT_PORT_LINK_STS_CHG (W 000003ff) pc=0bd6')
+    === firmware time 4922.570 ms, wall 2.7 s
+
+## rtlsim: the hang and bad_flash variants (a quick look; B5 owns these)
+
+    == hang: line at 8964.270
+    schedtest v0.1.0-42a6ea2-dirty
+    Last reset: watchdog in slow/SL_HANG after 5000 ms, PC 0xfa31 bank 3, states HOT HOT CLI_IDLE HOT HOT HOT HOT SL_HANG
+    
+      crash_last pc/bank: {'magic': 23629, 'cause': 1, 'resets': 0, 'tick': 1001, 'slot': 11, 'state': 22, 'step_tick': 1, 'sp': 138, 'bank': 3, 'pc': 64049}
+    == bad_flash:
+       (5905, 'unmodelled', 'unmodelled reg 7f90 RTL837X_PIN_MUX_1 (R 00000000) pc=013e')
+       (1992176, 'unmodelled', 'unmodelled reg 5f84 RTL837X_ISR_SW_INT_MODE (W 00000042) pc=0bd6')
+       (1992177, 'unmodelled', 'unmodelled reg 5f88 RTL837X_ISR_INT_PORT_LINK_CHG (W 000003ff) pc=0bd6')
+       (1992178, 'unmodelled', 'unmodelled reg 5f34 RTL837X_IMR_INT_PORT_LINK_STS_CHG (W 000003ff) pc=0bd6')
+       (1999637, 'flash-busy', 'flash busy (sector erase 040000, 39.991 of 40.000 ms left): instruction fetch of faa7 (flash 01baa7) at pc=faa7 psbank=02 sp=8a, t=1999.637 ms')
+       badflash |  | schedtest v0.1.0-42a6ea2-dirty | > 
+
+PC 0xfa31 bank 3 lies in sl_hang (0x3fa21 in the .map, so window 0xfa21): 16 B in, the spin loop.

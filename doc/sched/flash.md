@@ -45,7 +45,9 @@ FL_DONE    post the requester's event, free the slot
 
 - `rtl837x_flash.c` stays resident (common area). The new job states call
   its primitives from short common-area helpers: `flash_erase_wait()`,
-  `flash_program_pages_wait()`. The job's states can themselves be banked:
+  `flash_program_pages_wait()` (today's `flash_write_bytes()` issues one
+  4-byte program per ~1 ms, so a step can program only ~32 B within the
+  step budget; B3's flasher does that). The job's states can themselves be banked:
   they call the common-area helper, which returns only when the flash is
   idle.
 - Update apply at boot (runs before any task) is unchanged.
