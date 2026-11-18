@@ -24,9 +24,9 @@ def main(argv):
     sys.path.insert(0, os.path.join(ovs, "tests"))
     from rtlsim_ctl import Sim, fmt_us
 
-    image = glob.glob(os.path.join(build, "rtlplayground-boot-schedtest*.bin"))
-    if len(image) != 1:
-        sys.exit(f"sim_smoke: want one -boot schedtest image in {build}, got {image}")
+    image = sorted(glob.glob(os.path.join(build, "rtlplayground-boot-schedtest*.bin")), key=os.path.getmtime)[-1:]
+    if not image:
+        sys.exit(f"sim_smoke: no -boot schedtest image in {build}")
     board = os.path.join(ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
     t0 = time.time()
     with Sim(image[0], board=board, map=os.path.join(build, "rtlplayground.map"),

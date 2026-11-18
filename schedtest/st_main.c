@@ -165,6 +165,10 @@ static void status(void)
 	itoa_short(con_rx_overruns);
 	print_string(" step SP max ");
 	print_byte(st_sp_step_max);
+	print_string(" stack hw ");
+	print_byte(st_stack_hw);
+	print_string(" deep SP ");
+	print_byte(st_deep_sp);
 	print_string("\nsleep_a/b/c runs ");
 	itoa_short(st_log_sleep_a.n);
 	write_char(' ');
@@ -219,10 +223,12 @@ void cli_run(void) __banked
 #else
 		print_string("badflash: build with ST_NEG=bad_flash\n");
 #endif
+	} else if (word("deep")) {
+		st_deep_depth = number() ? num : 9;
 	} else if (word("reset")) {
 		crash_reset(CRASH_RESET_CMD);
 	} else {
-		print_string("health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | reset\n");
+		print_string("health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | deep [N] | reset\n");
 	}
 }
 
@@ -237,6 +243,7 @@ void cli_prompt(void) __banked
 
 void schedtest_main(void) __banked
 {
+	st_stack_paint();
 	print_string("\nschedtest " VERSION_SW "\n");
 	crash_boot();		/* interrupts are on: a long line drains as it goes */
 	sched_init();

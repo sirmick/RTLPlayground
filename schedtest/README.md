@@ -50,6 +50,7 @@ The prompt is `> ` (the firmware's).
 | `slow` | one 25-30 ms step (`SL_SLOW`) |
 | `hang`, `badflash` | the negative variants above; otherwise they say how to build them |
 | `flash` | the flasher job: erase the 4 KiB sector at UPLOAD_START (0x40000), program it 32 B per step, verify it 256 B per step, then `flash: ok` or `flash: verify FAILED` (or `flash: no free slot`) |
+| `deep [N]` | every 20 ms, a step runs a chain of N (default 9; 0 stops) banked calls through banks 1, 2, 3, 1, ..., and at the bottom prints a line and spins 5-10 ms, so the console ISRs land on the deepest stack. Paste input meanwhile for RX |
 | `reset` | `crash_reset(CRASH_RESET_CMD)` |
 
 Commands that print a lot (`health`, `status`) do it in one `CLI_RUN` step,
@@ -63,7 +64,7 @@ so they show up as `CLI_RUN` overruns: the console takes 87 µs a byte.
 | `cli` | st_main.c | once | `CLI_IDLE` / `CLI_RUN` / `CLI_PROMPT` |
 | `sleep_a`, `waiter`, `hot`, `printer` | st_b1.c, BANK1 | once, once, **high**, once | 5 ms sleep; waits `EV_ST_POKE` with a 100 ms timeout; ~1 µs per run; the printer |
 | `sleep_b`, `poster`, `jobber` + job `jb`, job `fl` | st_b2.c, BANK2 | once | 37 ms sleep; posts `EV_ST_POKE` every 300 ms; the jobber; the flasher |
-| `sleep_c`, `isr_ev`, `slow` | st_b3.c, BANK3 | once | 1000 ms sleep; woken by `EV_CON_RX` (UART ISR -> event); slow/hang |
+| `sleep_c`, `isr_ev`, `deep`, `slow` | st_b3.c, BANK3 | once | 1000 ms sleep (and the stack rescan); woken by `EV_CON_RX` (UART ISR -> event); the deep call chain; slow/hang |
 
 12 fixed slots, 12 dynamic. The generated sequence and its spacing are in
 `<builddir>/sched/sequence.txt`.
@@ -95,6 +96,8 @@ per tick.
 | `st_slow_runs`, `st_hang_spins` | u16 |
 | `st_con_rx_n`, `st_con_rx_sum` | console bytes the con task took, and their 16-bit sum |
 | `st_sp_step_max` | u8, the highest SP at a step's entry (sampled by `hot`) |
+| `st_stack_paint_from`, `st_stack_hw` | u8: idata from `paint_from` to 0xff is painted 0xa5 at boot; `st_stack_hw` is the highest address found changed since, rescanned by `sleep_c` each second (0: none). Peak stack use = `st_stack_hw` - 0x7c. The raw paint is readable too (`i:0x80`...) |
+| `st_deep_depth`, `st_deep_sp`, `st_deep_runs` | `deep`'s depth, the highest SP at the bottom of the chain, and its runs |
 | `sched_task[24]` | `{u8 state, u16 mask, u16 wake}` |
 | `sched_st_max[]`, `sched_st_runs[]` | u16 per state ID |
 | `sched_overruns`, `sched_overrun_state`, `sched_pass_max`, `sched_passes_lo/hi`, `sched_idle_lo/hi` | |
@@ -103,6 +106,9 @@ per tick.
 | `crash_rec` (0xbfe0), `crash_last` | `struct crash_rec` (crash.h) |
 
 ## Stack
+
+Scheduler cost over today's direct call: ~9-10 B per step (memory.md). B4
+measures it with `st_stack_hw` (all paths, ISRs included) and `deep`.
 
 - The `.mem` gives 131 B of stack, starting at 0x7d.
 - At a step's entry SP is 0x8a (`st_sp_step_max` in the sim), so 14 B are in
