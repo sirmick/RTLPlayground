@@ -1,0 +1,77 @@
+# ovs-rtlpg test baseline (A0)
+# repo: ~/src/ovs-rtlpg, branch feat/sched-sim at ce3334c (= main ce3334c, no changes)
+# date: 2026-11-18T18:56Z, host devel
+# commands: make -j  (build/rtlsim already up to date: "Nothing to be done for 'all'")
+#           time make test -j   -> exit 0, real 7.2 s (user 6.9 s)
+# FW_IMAGE (Makefile default, newest SWGT024 compact build in ~/src/RTLPlayground):
+#   rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin
+#   sha256 78b5a1dc71b8decc2f2189215fd52c7e88a9a662f963978f5482bea6639afab7
+#
+# Summary: 7 test programs (31 named checks + isa 12 runs + bank), all PASS, no failures.
+#   test_flash_dev   7/7  PASS
+#   tests/isa        12 runs, all match the host
+#   tests/bank       PASS (3 banks + misplaced-constseg detection)
+#   test_boot       10/10 PASS
+#   test_nic         5/5  PASS
+#   test_flows       5/5  PASS
+#   test_boot0       4/4  PASS
+#
+# Not run (not part of 'make test'): test-net, test-update (need sudo), test-flash,
+# test-powercut, test-vm, check-banks.
+#
+# Full output of 'make test -j' follows.
+build/test_flash_dev
+PASS  erased device reads 0xFF
+PASS  write to erased sector reads back, no fault
+PASS  write that sets a cleared bit is flagged
+PASS  write-without-erase is AND (0xFF & 0xDE = 0xDE)
+PASS  sector erase clears the whole 4 KiB sector
+PASS  erase past end wraps onto address 0 and is flagged (wrap-erase bug)
+PASS  power cut drops the operation past the cap
+
+flash_dev: ALL PASS
+make -C tests/isa RTLSIM=~/src/ovs-rtlpg/build/rtlsim SDCC_DIR=~/src/RTLPlayground/toolchain/sdcc-1397895099/bin
+make[1]: Entering directory '~/src/ovs-rtlpg/tests/isa'
+isa: 12 runs, all match the host
+make[1]: Leaving directory '~/src/ovs-rtlpg/tests/isa'
+make -C tests/bank RTLSIM=~/src/ovs-rtlpg/build/rtlsim SDCC_DIR=~/src/RTLPlayground/toolchain/sdcc-1397895099/bin
+make[1]: Entering directory '~/src/ovs-rtlpg/tests/bank'
+bank: 3 banks, cross-bank calls and constants match the host; the bank check catches a misplaced constseg
+make[1]: Leaving directory '~/src/ovs-rtlpg/tests/bank'
+python3 tests/fw/test_boot.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+PASS  boots to the prompt (0.1 s)
+PASS  the silicon boot log appears in order
+PASS  port table State/Link match silicon: [('6', 'NO SFP', 'Down'), ('1', 'On', '2.5G'), ('2', 'On', 'Down'), ('3', 'On', 'Down'), ('4', 'On', 'Down'), ('5', 'NO SFP', 'Down')]
+PASS  regget reads the chip id (RTL8372)
+PASS  vlan 10 1t 2 goes into the VLAN table
+PASS  the L2 table holds the CPU's MAC (static, VLAN 1)
+PASS  an SFP module in slot 1: its port is up at 10G, its LOS pin says light, the firmware reads its EEPROM
+PASS  the sfp command reads its identity and diagnostics
+PASS  a board file: another UUID gives another MAC (06:0f:00:12:34:56), and its module is in slot 1
+PASS  --flash persists the saved config across boots (default written: [True, False])
+test_boot: ALL PASS
+python3 tests/net/test_nic.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+switch IP 192.168.2.2, peer 192.168.2.1
+PASS  ARP: the switch answers with its MAC
+PASS  ARP tagged with VLAN 1: the reply leaves port 1 untagged
+PASS  ARP tagged with VLAN 10 (no such VLAN): the CPU never sees it
+PASS  ICMP echo: a reply with valid IP and ICMP checksums
+PASS  TCP SYN to port 80: a SYN-ACK with valid checksums
+test_nic: ALL PASS
+python3 tests/fabric/test_flows.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+PASS  boot: 24 flows
+PASS  vlans: 30 flows (vlan 10 2 3; pvid 2 10; pvid 3 10; vlan 20 1t 3t)
+PASS  isolate: 25 flows (isolate 1 3)
+PASS  ingress: 21 flows (ingress 1t 2u)
+PASS  igmp: 33 flows (igmp on)
+test_flows: ALL PASS
+python3 tests/flash/test_boot0.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+PASS  the install of rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin (v0.1.0-1be05b9): up on v0.1.0-1be05b9 in one power-on; resets: late (pc 0x1704)
+PASS  the install arms the record (op 1) and then erases the image area (cut before op 3 of 59567)
+PASS  the power cut at op 3 (E 039000) leaves the record armed
+PASS  after the cut, boot_resume finishes the copy: power-on 1: v0.1.0-1be05b9, resets early (pc 0x03b9)
+test_boot0: ALL PASS
+
+real	0m7.228s
+user	0m6.873s
+sys	0m0.048s

@@ -1,0 +1,151 @@
+# Host tests baseline: make -C test -j8 quick (and -k for the full picture)
+# tree: feat/sched 063016e (fork main 612116e + book), gcc 14
+
+## Result: FAIL (exit 2). 10 of 17 quick tests pass; 7 do not link.
+
+Pass:
+  test_cmd_editor
+  test_config_migrate
+  test_flash_dev
+  test_lacp
+  test_mdata_migrate
+  test_nic_rx
+  test_tick_gate
+  test_timer
+  test_update_apply_compact
+  test_update_apply
+
+Fail to link (undefined references; test stubs predate a45f034 RLDP web + 612116e LED web):
+  test_cpu_vlan_8372
+  test_cpu_vlan_full
+  test_cpu_vlan_restricted
+  test_httpd_tx
+  test_httpd_tx_compact
+  test_page_json
+  test_port_tables
+
+Missing symbols (count of references):
+      10 leds_mode
+      10 rldp_blocked
+      30 rldp_enabled
+      10 rldp_looped
+       2 send_loop
+  leds_mode (rtl837x_leds.c), rldp_enabled/rldp_looped/rldp_blocked (rtl837x_rldp.c): referenced by httpd/page_impl.c
+  send_loop (httpd/page_impl.c): referenced by httpd/httpd.c in the tests that link httpd.c without page_impl.c
+
+test_loader is not in quick and was not run.
+
+## Full log of make -C test -k -j8 quick
+make: Entering directory '~/src/rtlpg-sched/test'
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch test_port_tables.c support.c hw_mock.c env_tables.c ../cmd_editor.c ../rtl837x_port.c ../httpd/page_impl.c ../httpd/html_out.c -o build/test_port_tables -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch test_page_json.c support.c hw_mock.c env_tables.c ../cmd_editor.c ../rtl837x_port.c ../httpd/page_impl.c ../httpd/html_out.c -o build/test_page_json -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch test_httpd_tx.c ../httpd/httpd.c ../uip/uip.c ../timer.c ../sessions.c -o build/test_httpd_tx -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DLAYOUT_COMPACT test_httpd_tx.c ../httpd/httpd.c ../uip/uip.c ../timer.c ../sessions.c -o build/test_httpd_tx_compact -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch test_cpu_vlan.c support.c hw_mock.c env_tables.c ../cmd_editor.c ../rtl837x_port.c ../httpd/page_impl.c ../httpd/html_out.c -o build/test_cpu_vlan_full -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DMACHINE_MAX_PORT=7 test_cpu_vlan.c support.c hw_mock.c env_tables.c ../cmd_editor.c ../rtl837x_port.c ../httpd/page_impl.c ../httpd/html_out.c -o build/test_cpu_vlan_restricted -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DMACHINE_MAX_PORT=7 -DMACHINE_MIN_PORT=3 -DRTLP_TEST_IS8373=0 test_cpu_vlan.c support.c hw_mock.c env_tables.c ../cmd_editor.c ../rtl837x_port.c ../httpd/page_impl.c ../httpd/html_out.c -o build/test_cpu_vlan_8372 -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch test_update_apply.c update_shim.c crc16_host.c flash_dev.c ../update_apply.c ../boot0.c -o build/test_update_apply -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DLAYOUT_COMPACT test_update_apply.c update_shim.c crc16_host.c flash_dev.c ../update_apply.c ../boot0.c -o build/test_update_apply_compact -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DLAYOUT_COMPACT test_config_migrate.c update_shim.c crc16_host.c flash_dev.c ../update_apply.c ../boot0.c -o build/test_config_migrate -fsanitize=address,undefined
+gcc -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP -Wno-pointer-sign -DRTLP_HOST_TEST -fsanitize=address,undefined -fno-omit-frame-pointer -include sdcc_shim.h -Istub -I.. -I../httpd -I../uip -Wno-builtin-declaration-mismatch -DLAYOUT_COMPACT test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c ../update_apply.c ../boot0.c -o build/test_mdata_migrate -fsanitize=address,undefined
+/usr/bin/ld: /tmp/cclw6DlD.o: in function `httpd_appcall':
+~/src/rtlpg-sched/test/../httpd/httpd.c:1167:(.text+0x5caa): undefined reference to `send_loop'
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:95: build/test_httpd_tx] Error 1
+/usr/bin/ld: /tmp/ccZ34CT7.o: in function `httpd_appcall':
+~/src/rtlpg-sched/test/../httpd/httpd.c:1167:(.text+0x5df6): undefined reference to `send_loop'
+collect2: error: ld returned 1 exit status
+/usr/bin/ld: /tmp/ccCenR6Y.o: warning: relocation against `rldp_blocked' in read-only section `.text'
+make: *** [Makefile:95: build/test_httpd_tx_compact] Error 1
+/usr/bin/ld: /tmp/ccCenR6Y.o: in function `send_basic_info':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ab5): undefined reference to `leds_mode'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1adc): undefined reference to `leds_mode'
+/usr/bin/ld: /tmp/ccCenR6Y.o: in function `send_loop':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x5465): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x548c): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x54f1): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5517): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5525): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x554f): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x5567): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x558d): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x559b): undefined reference to `rldp_blocked'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55c1): undefined reference to `rldp_blocked'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:103: build/test_cpu_vlan_8372] Error 1
+/usr/bin/ld: /tmp/ccO8E7oJ.o: warning: relocation against `rldp_blocked' in read-only section `.text'
+/usr/bin/ld: /tmp/ccO8E7oJ.o: in function `send_basic_info':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ab3): undefined reference to `leds_mode'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ada): undefined reference to `leds_mode'
+/usr/bin/ld: /tmp/ccO8E7oJ.o: in function `send_loop':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54bf): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54e6): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x554b): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5571): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x557f): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x55a9): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55c1): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55e7): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55f5): undefined reference to `rldp_blocked'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x561b): undefined reference to `rldp_blocked'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:103: build/test_cpu_vlan_full] Error 1
+/usr/bin/ld: /tmp/ccdOJmrq.o: warning: relocation against `rldp_blocked' in read-only section `.text'
+/usr/bin/ld: /tmp/ccm9jXGs.o: warning: relocation against `rldp_blocked' in read-only section `.text'
+/usr/bin/ld: /tmp/ccdOJmrq.o: in function `send_basic_info':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ab3): undefined reference to `leds_mode'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ada): undefined reference to `leds_mode'
+/usr/bin/ld: /tmp/ccdOJmrq.o: in function `send_loop':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54c3): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54ea): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x554f): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5575): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5583): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x55ad): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55c5): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55eb): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55f9): undefined reference to `rldp_blocked'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x561f): undefined reference to `rldp_blocked'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+/usr/bin/ld: /tmp/ccm9jXGs.o: in function `send_basic_info':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ab3): undefined reference to `leds_mode'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ada): undefined reference to `leds_mode'
+/usr/bin/ld: /tmp/ccm9jXGs.o: in function `send_loop':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54bf): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54e6): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x554b): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5571): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x557f): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x55a9): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55c1): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55e7): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55f5): undefined reference to `rldp_blocked'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x561b): undefined reference to `rldp_blocked'
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:103: build/test_cpu_vlan_restricted] Error 1
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:65: build/test_port_tables] Error 1
+/usr/bin/ld: /tmp/ccaVqYLQ.o: warning: relocation against `rldp_blocked' in read-only section `.text'
+/usr/bin/ld: /tmp/ccaVqYLQ.o: in function `send_basic_info':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ab3): undefined reference to `leds_mode'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:287:(.text+0x1ada): undefined reference to `leds_mode'
+/usr/bin/ld: /tmp/ccaVqYLQ.o: in function `send_loop':
+~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54bf): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:733:(.text+0x54e6): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x554b): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x5571): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x557f): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:737:(.text+0x55a9): undefined reference to `rldp_looped'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55c1): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55e7): undefined reference to `rldp_enabled'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x55f5): undefined reference to `rldp_blocked'
+/usr/bin/ld: ~/src/rtlpg-sched/test/../httpd/page_impl.c:739:(.text+0x561b): undefined reference to `rldp_blocked'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:80: build/test_page_json] Error 1
+make: Target 'quick' not remade because of errors.
+make: Leaving directory '~/src/rtlpg-sched/test'
+exit=2

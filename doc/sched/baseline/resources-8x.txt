@@ -1,0 +1,128 @@
+# 8x baseline resources: KEEPLINK_KP_9000_9XHPML_V1_2, LAYOUT=compact LOADER=1
+# fork main 612116e + book (063016e); output/KEEPLINK_KP_9000_9XHPML_V1_2-compact
+
+## Internal RAM (.map areas)
+REG_BANK_0  0x00000 size      8  end 0x00008
+BSEG_BYTES  0x00020 size      3  end 0x00023
+BIT_BANK    0x00023 size      1  end 0x00024
+DSEG        0x00000 size    128  end 0x00080
+OSEG        0x00075 size      8  end 0x0007d
+SSEG        0x0007d size    131  end 0x00100
+DSEG bytes used (a-z in .mem): 105   overlay (Q): 8   bits (B): 3   bit regs (T): 1   stack (S): 131
+(the .map DSEG size 0x80 is the area span from 0, not use; the .mem count is the use)
+
+## Stack (.mem)
+16 bit mode initial stack starts at: 0x7d (sp set to 0x7c) with 131 bytes available.
+No spare internal RAM space left.
+
+## Common area (code)
+HOME        0x00000 size    993  end 0x003e1
+GSINIT0     0x003e1 size      3  end 0x003e4
+GSFINAL     0x0043a size      3  end 0x0043d
+CSEG        0x0043d size  12021  end 0x03332
+CONST       0x03332 size   1570  end 0x03954
+XINIT       0x03954 size     22  end 0x0396a
+common-area end: 0x396a (book gate limit 0x3f80; 0x4000 window)
+
+## xdata
+XSEG        0x00001 size  16817  end 0x041b2
+XISEG       0x041b2 size     22  end 0x041c8
+xdata end: 0x41c8
+
+## Banks (.map; 49152 B each)
+BANK1       0x14000 size  46188  end 0x1f46c  free 2964
+BANK2       0x24000 size  46202  end 0x2f47a  free 2950
+BANK3       0x34000 size  45565  end 0x3f1fd  free 3587
+
+## DSEG symbols from the .asm files (54 symbols, 104 B; format as /tmp/ds-*.txt)
+./boot.asm _sds_config_mac_PARM_2: 1
+./boot.asm _sds_config_PARM_2: 1
+./boot.asm _loader_staged_ok_a_10000_255: 2
+./boot.asm _loader_same_src_10000_261: 4
+./boot.asm _loader_update_tries_10000_279: 1
+./boot.asm _loader_update_sloc0_1_0: 4
+./cmd_parser.asm _atoi_short_hex_PARM_2: 1
+./cmd_parser.asm _parse_storm_port_10000_788: 1
+./cmd_parser.asm _parse_storm_d_10000_788: 1
+./cmd_parser.asm _parse_storm_sloc0_1_0: 4
+./cmd_parser.asm _parse_storm_sloc1_1_0: 4
+./cmd_parser.asm _execute_config_skipping_10001_1058: 1
+./crypto/chacha20.asm _chacha20_encrypt_i_20000_89: 1
+./dhcp.asm _parse_dhcp_sloc0_1_0: 4
+./httpd/httpd.asm _stream_upload_sloc0_1_0: 4
+./httpd/httpd.asm _stream_upload_sloc1_1_0: 4
+./httpd/httpd.asm _handle_post_body_off_10000_365: 2
+./httpd/httpd.asm _handle_post_sloc0_1_0: 1
+./httpd/httpd.asm _httpd_appcall_sloc0_1_0: 2
+./httpd/httpd.asm _httpd_appcall_sloc1_1_0: 4
+./httpd/httpd.asm _httpd_appcall_sloc2_1_0: 4
+./httpd/page_impl.asm _sfp_send_data_PARM_2: 1
+./httpd/page_impl.asm _sfp_send_data_PARM_3: 1
+./httpd/page_impl.asm _send_vlan_vlan_10000_277: 2
+./httpd/page_impl.asm _send_vlan_i_20001_280: 1
+./httpd/page_impl.asm _send_vlan_i_20001_288: 1
+./rtl837x_lacp.asm _lacp_lag_set_lag_10000_237: 1
+./rtl837x_lacp.asm _lacp_lag_set_i_20000_248: 1
+./rtl837x_leds.asm _leds_off_PARM_2: 1
+./rtl837x_leds_dump.asm _leds_dump_i_20000_106: 1
+./rtl837x_lldp.asm _lldp_portdesc_PARM_2: 1
+./rtl837x_nic.asm _nic_tx_packet_PARM_2: 2
+./rtl837x_nic.asm _nic_tx_packet_PARM_3: 2
+./rtl837x_phy.asm _phy_config_8261_PARM_2: 1
+./rtl837x_phy.asm _phy_show_port_10000_168: 1
+./rtl837x_pins.asm _gpio_set_pull_mode_PARM_2: 1
+./rtl837x_rldp.asm _port_state_PARM_2: 1
+./rtl837x_stp.asm _stp_reselect_sloc0_1_0: 4
+./rtl837x_stp.asm _stp_in_port_10000_374: 1
+./rtl837x_stp.asm _stp_port_admin_PARM_2: 1
+./rtl837x_trap.asm _trap_rma_set_PARM_2: 1
+./rtlplayground.asm _reg_bit_set_PARM_2: 1
+./rtlplayground.asm _reg_bit_clear_PARM_2: 1
+./rtlplayground.asm _reg_bit_test_PARM_2: 1
+./rtlplayground.asm _flash_default_config_sloc0_1_0: 4
+./syslog.asm _syslog_callback_syslog_hdr_10000_117: 2
+./timer.asm _timer_set_PARM_2: 2
+./uip/uip.asm _uip_process_uip_connr_10000_188: 2
+./uip/uip.asm _uip_process_m_70000_316: 1
+./uip/uip.asm _uip_process_sloc0_1_0: 1
+./uip/uip_arp.asm _uip_arp_update_sloc0_1_0: 2
+./update_apply.asm _check_and_flash_update_image_sloc0_1_0: 2
+./update_apply.asm _flash_crc16_more_sloc0_1_0: 4
+./update_apply.asm _mdata_len_at_sloc0_1_0: 4
+
+## sloc/PARM subset: B6 seed (35 symbols, 77 B)
+./boot.asm _sds_config_mac_PARM_2: 1
+./boot.asm _sds_config_PARM_2: 1
+./boot.asm _loader_update_sloc0_1_0: 4
+./cmd_parser.asm _atoi_short_hex_PARM_2: 1
+./cmd_parser.asm _parse_storm_sloc0_1_0: 4
+./cmd_parser.asm _parse_storm_sloc1_1_0: 4
+./dhcp.asm _parse_dhcp_sloc0_1_0: 4
+./httpd/httpd.asm _stream_upload_sloc0_1_0: 4
+./httpd/httpd.asm _stream_upload_sloc1_1_0: 4
+./httpd/httpd.asm _handle_post_sloc0_1_0: 1
+./httpd/httpd.asm _httpd_appcall_sloc0_1_0: 2
+./httpd/httpd.asm _httpd_appcall_sloc1_1_0: 4
+./httpd/httpd.asm _httpd_appcall_sloc2_1_0: 4
+./httpd/page_impl.asm _sfp_send_data_PARM_2: 1
+./httpd/page_impl.asm _sfp_send_data_PARM_3: 1
+./rtl837x_leds.asm _leds_off_PARM_2: 1
+./rtl837x_lldp.asm _lldp_portdesc_PARM_2: 1
+./rtl837x_nic.asm _nic_tx_packet_PARM_2: 2
+./rtl837x_nic.asm _nic_tx_packet_PARM_3: 2
+./rtl837x_phy.asm _phy_config_8261_PARM_2: 1
+./rtl837x_pins.asm _gpio_set_pull_mode_PARM_2: 1
+./rtl837x_rldp.asm _port_state_PARM_2: 1
+./rtl837x_stp.asm _stp_reselect_sloc0_1_0: 4
+./rtl837x_stp.asm _stp_port_admin_PARM_2: 1
+./rtl837x_trap.asm _trap_rma_set_PARM_2: 1
+./rtlplayground.asm _reg_bit_set_PARM_2: 1
+./rtlplayground.asm _reg_bit_clear_PARM_2: 1
+./rtlplayground.asm _reg_bit_test_PARM_2: 1
+./rtlplayground.asm _flash_default_config_sloc0_1_0: 4
+./timer.asm _timer_set_PARM_2: 2
+./uip/uip.asm _uip_process_sloc0_1_0: 1
+./uip/uip_arp.asm _uip_arp_update_sloc0_1_0: 2
+./update_apply.asm _check_and_flash_update_image_sloc0_1_0: 2
+./update_apply.asm _flash_crc16_more_sloc0_1_0: 4
+./update_apply.asm _mdata_len_at_sloc0_1_0: 4
