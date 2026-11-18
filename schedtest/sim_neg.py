@@ -113,6 +113,9 @@ class Neg(Suite):
             self.check(r["cause"] == CAUSE["watchdog"], f"hang {n}: cause watchdog ({r['cause']})")
             self.check(r["slot"] == self.T["T_SLOW"] and r["state"] == self.S["S_SL_HANG"],
                        f"hang {n}: slot slow, state SL_HANG ({r['slot']}, {r['state']})")
+            # Exact in the sim. On silicon a tick can land between sched.c's
+            # sched_now = sched_ticks() and CRASH_NOTE (c = 999, age = 1000):
+            # silicon.py accepts age in {c, c + 1}.
             self.check(age == c, f"hang {n}: the step's age at the reset {age} ticks")
             self.check(a <= r["pc"] < a + size and r["bank"] == bank,
                        f"hang {n}: PC {r['pc']:#06x} bank {r['bank']} inside sl_hang ({a:#06x}+{size}, bank {bank})")
@@ -155,6 +158,7 @@ class Neg(Suite):
                    f"reset: PC 0 (not from an ISR), in cli/CLI_RUN ({r['slot']}, {r['state']})")
         self.plausible_sp(sim, r, "reset")
         line = self.boot_line(sim)
+        # "after 0 ms" here; silicon.py also takes 5 ms (a tick before CRASH_NOTE)
         self.check(line and re.match(r"Last reset: reset command in cli/CLI_RUN after 0 ms bank \d, states", line),
                    "reset: the boot printed it, without a PC", line)
         self.after_print(sim, "reset", 2)

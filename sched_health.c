@@ -148,7 +148,9 @@ void sched_health_tasks(void) __banked
 void sched_health_clear(void) __banked
 {
 	sched_clear_stats();
+	ES = 0;			/* an ISR increment mid-write would leave a stray count */
 	con_rx_overruns = 0;
+	ES = 1;
 }
 
 /* At boot: a record whose magic and sum hold is printed once, kept for
