@@ -20,7 +20,7 @@ on fork main 612116e, from `hw-research/os-audit.md`).
 | `igmp` | once | `IGMP_TICK` if IGMP has timers (querier, ageing); otherwise no task, rx-driven only | 1 s | igmp |
 | `house` | once | `HOUSE_SEC`: uptime register, `handle_button()`, ARP timer every 10 s | 1 s | `handle_tick` 1 Hz |
 
-14 fixed slots (with two SFP slots), leaving 10 for jobs.
+13 fixed slots (with two SFP slots), leaving 11 for jobs.
 
 ### SFP, per slot (the #770 shape)
 

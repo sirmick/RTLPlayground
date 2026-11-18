@@ -142,6 +142,7 @@ def test_sequence_def():
             (fixed + " job" * 10, "10 job placeholders for 11 dynamic slots"),
             (fixed.replace(" igmp", "") + " job" * 11, "never runs: igmp"),
             (fixed + " sfp" + " job" * 11, "'sfp' is not a fixed slot or 'job'"),
+            (fixed + " job" * 12, "12 job placeholders for 11 dynamic slots: one per slot"),
         ):
             open(p, "w").write(text + "\n")
             r = gen(defs, sequence=p)
@@ -186,6 +187,10 @@ BROKEN = [
     ("unknown line", {"m": ("task a fixed\nstat A_S a_s\n", None, "")}, 24, "unknown line 'stat'"),
     ("slot name clash", {"m": ("task s fixed count=2\nstate A_S a_s\ntask s1 fixed\nstate B_S b_s\n", None, "")}, 24,
      "slot name s1 clashes"),
+    ("task named fixed", {"m": ("task fixed fixed\nstate A_S a_s\n", None, "")}, 24,
+     "slot name fixed clashes with the generated T_FIXED"),
+    ("task named slots", {"m": ("task slots fixed\nstate A_S a_s\n", None, "")}, 24,
+     "slot name slots clashes with the generated T_SLOTS"),
     ("reserved state", {"m": ("task a fixed\nstate COUNT a_s\n", None, "")}, 24, "state name COUNT is reserved"),
 ]
 

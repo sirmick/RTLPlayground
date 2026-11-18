@@ -136,3 +136,40 @@ output/b2-probe:
 
     none in sched.c, sched_bank.c, con_ring.c, crash.c, sched_health.c
     (sched_pass had one sloc until the ready check became a leaf function)
+
+## The real dispatcher (reviewer's check): sched_pass in output/b2-probe/sched.asm
+
+DSEG entries in sched.asm: 0; OSEG: 0; sloc/PARM symbols: 0
+The call through step_addr, as linked:
+
+    ;	sched.c:116: step_addr[st]();
+    	mov	dptr,#_st
+    	movx	a,@dptr
+    	mov	b,#0x03
+    	mul	ab
+    	add	a, #_step_addr
+    	mov	dpl,a
+    	mov	a,#(_step_addr >> 8)
+    	addc	a, b
+    	mov	dph,a
+    	clr	a
+    	movc	a,@a+dptr
+    	mov	r5,a
+    	inc	dptr
+    	clr	a
+    	movc	a,@a+dptr
+    	mov	r6,a
+    	inc	dptr
+    	clr	a
+    	movc	a,@a+dptr
+    	mov	r7,a
+    	push	ar7
+    	push	ar6
+    	push	ar5
+    	push	ar5
+    	push	ar6
+    	push	ar7
+    	pop	ar2
+    	pop	ar1
+    	pop	ar0
+    	lcall	__sdcc_banked_call

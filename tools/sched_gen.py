@@ -211,9 +211,11 @@ def load(defs, slots):
                 fixed.append((t.name if t.count == 1 else f"{t.name}{i}", t))
     names = {}
     for n, t in fixed:
-        if n in names or re.match(r"^job\d+$", n):
+        if n in names or re.match(r"^job\d+$", n) or n in ("fixed", "slots"):
             raise SpecError(f"{t.where}: slot name {n} clashes with "
-                            + (f"{names[n].where}" if n in names else "the dynamic slots' job<N>"))
+                            + (f"{names[n].where}" if n in names else
+                               "the dynamic slots' job<N>" if n.startswith("job") else
+                               f"the generated T_{n.upper()}"))
         names[n] = t
     if len(fixed) > slots:
         raise SpecError(f"{len(fixed)} fixed slots, more than the {slots} slots (--slots)")
@@ -274,6 +276,8 @@ def read_sequence(path, table, nfixed):
     ndyn = len(table) - nfixed
     if jobs and not ndyn:
         raise SpecError(f"{path}: job placeholders, but no dynamic slots")
+    if jobs > ndyn:
+        raise SpecError(f"{path}: {jobs} job placeholders for {ndyn} dynamic slots: one per slot")
     if ndyn and jobs < ndyn:
         raise SpecError(f"{path}: {jobs} job placeholders for {ndyn} dynamic slots: a claimed slot would never run")
     missing = [n for n, i in names.items() if i not in seq]
