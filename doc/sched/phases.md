@@ -27,6 +27,9 @@ D0 sim P1 (NIC ring, LACP partner) + the old-vs-new harness + reference
 scenarios; D1 UART rings; D2 today's loop phases become fixed tasks; D3
 control-frame TX buffer, web command buffer, one cli task.
 
+For D2: schedtest's bank 3 has 28 B free (5 B in the overrun variant), so
+M2 must move code.
+
 Carried from B2's review, for D1 and the crash line:
 - `con_putc()` busy-waits on a full TX ring for the ISR to drain it, so it
   must never run with interrupts (or ES) off: code that prints with EA = 0

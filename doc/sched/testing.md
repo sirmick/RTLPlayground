@@ -28,7 +28,7 @@ Dummy tasks are spread over **every bank**:
 | Dummy | Checks |
 |---|---|
 | `sleep_a/b/c`: 5 ms, 37 ms, 1000 ms periods; each logs `fine_now()` per run into an xdata ring | wake accuracy: never early, late by ≤ pass length |
-| `waiter`: waits on an event posted by `poster`, 100 ms timeout | event latency ≤ one pass; the timeout path |
+| `waiter`: waits on an event posted by `poster`, 100 ms timeout | event latency ≤ one pass (the waiter is before the poster in `run_seq`; in general up to ~2 passes); the timeout path |
 | `isr_ev`: waits on `EV_CON_RX`; the test writes UART bytes | ISR → event → task |
 | `hot`: `freq=high`, 1 µs work | spacing: worst gap ≤ its spacing × the longest step |
 | `jobber`: claims jobs that run N steps and end; claims until the table is full | claim, free, `SCHED_NONE` |
