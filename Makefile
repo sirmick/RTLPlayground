@@ -91,7 +91,7 @@ ifeq ($(MACHINE_INIT_SRC),)
 endif
 
 ifndef BUILDDIR
-	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
+	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG)))
 endif
 
 CONFIG_STAMP := $(BUILDDIR)/.config
@@ -104,7 +104,7 @@ else
 endif
 
 VERSION_EXTENSION = v$(VERSION)-$(GIT_VERSION)
-FILENAME_EXTENSION = $(VERSION_EXTENSION)-$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
+FILENAME_EXTENSION = $(if $(SCHEDTEST),schedtest$(if $(ST_NEG),-$(ST_NEG))-)$(VERSION_EXTENSION)-$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)
 
 # Path and file name of the final image. BUILDDIR still holds the intermediate
 # objects and tools. OUTPUT_DIR is the destination directory. OUTPUT_PREFIX is
@@ -139,6 +139,12 @@ all: create_build_dir $(VERSION_HEADER) $(MACHINE_SRC) $(CONFIG) $(SUBDIRS) $(OU
 
 bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
+
+# The scheduler test image (doc/sched/testing.md, schedtest/README.md):
+# make schedtest MACHINE=... [LAYOUT=compact] [LOADER=1] [ST_NEG=hang|overrun|bad_flash|bad_spec]
+.PHONY: schedtest
+schedtest:
+	$(MAKE) SCHEDTEST=1
 
 # Images for rtlsim's flash tests (github.com/sirmick/ovs-rtlpg): every board
 # and layout tools/rtlsim_images.py lists, built one after another (builds
@@ -249,6 +255,10 @@ DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
 # $(BUILDDIR)/banks.txt): no bank placement in the sources or anywhere else.
 RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c boot0.c update_apply.c timer.c \
 	udp_apps.c rtl837x_flash.c rtl837x_nic.c httpd/html_out.c
+# The scheduler test image adds its sources here (make schedtest).
+ifneq ($(SCHEDTEST),)
+include schedtest/schedtest.mk
+endif
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)
 RESIDENT_OBJS = $(filter-out $(BANKED_OBJS),$(OBJS))
@@ -377,7 +387,7 @@ $(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
 	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
-	if [ "$(OUTPUT)" = "$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin" ]; then \
+	if [ -z "$(SCHEDTEST)" ] && [ "$(OUTPUT)" = "$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin" ]; then \
 		ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin "$(BUILDDIR)/../rtlplayground.bin"; \
 	fi
 

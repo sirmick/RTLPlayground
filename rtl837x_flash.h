@@ -17,6 +17,9 @@ void flash_dump(uint8_t len);
 void flash_read_jedecid(void);
 void flash_read_security(void);
 void flash_sector_erase(void);
+#ifdef ST_NEG_BAD_FLASH
+void flash_sector_erase_nowait(void);
+#endif
 void flash_read_bulk(__xdata uint8_t *dst);
 void flash_write_bytes(__xdata uint8_t *ptr);
 __code const char* get_flash_size_str(void);

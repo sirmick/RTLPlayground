@@ -31,6 +31,11 @@
 #include "phy.h"
 #include "syslog.h"
 #include "dns.h"
+#ifdef SCHEDTEST
+#include "crash.h"
+#include "con_ring.h"
+#include "schedtest/schedtest.h"
+#endif
 #include "ntp.h"
 #include "timer.h"
 #include "httpd/page_impl.h"
@@ -216,6 +221,9 @@ void isr_timer2(void) __interrupt(5)
 {
 	ticks++;
 	tick_pending = 1;
+#ifdef SCHEDTEST
+	SWDT_ISR(ST_ISR_T2_PUSHES);	/* the push count is checked against the .asm */
+#endif
 
 	// Clear TF2 & EXF2 by software
 	T2CON &= ~0xC0;
@@ -235,16 +243,28 @@ void isr_serial(void) __interrupt(4)
 		// ^R ^R resets at once, even if the main loop is stuck
 		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR) {
 			if (serial_reset_ok)
+#ifdef SCHEDTEST
+				CRASH_FROM_ISR(CRASH_CTRL_R, ST_ISR_SERIAL_PUSHES);
+#else
 				CHIP_RESET_NOW();
+#endif
 			serial_reset_pending = 1;
 		}
 		serial_last_rx = c;
+#ifdef SCHEDTEST
+		CON_ISR_RX(c);
+#else
 		sbuf[sbuf_ptr] = c;
 		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
+#endif
 	}
 	if (TI == 1) {
 		TI = 0;
+#ifdef SCHEDTEST
+		CON_ISR_TX();
+#else
 		tx_buf_empty = 1;
+#endif
 	}
 }
 
@@ -268,6 +288,11 @@ void write_char_no_syslog(char c)
 			cmd_capture = 2;	/* out of room, httpd says so */
 	}
 
+#ifdef SCHEDTEST
+	if (c == '\n')
+		con_putc('\r');
+	con_putc(c);
+#else
 	do {
 	} while (tx_buf_empty == 0);
 	if (c =='\n') {
@@ -278,6 +303,7 @@ void write_char_no_syslog(char c)
 	}
 	tx_buf_empty = 0;
 	SBUF = c;
+#endif
 }
 
 void write_char(char c)
@@ -1494,6 +1520,29 @@ void setup_serial_timer1(void)
 
 
 
+#ifdef SCHEDTEST
+/* The scheduler test image (schedtest/): the CPU, the tick, the UART and
+ * the flash controller, as below, but no switch init; then the scheduler
+ * over the dummy tasks. The firmware's main stays linked, unused. */
+void main(void)
+{
+	ticks = 0;
+	CKCON = 0;
+	SFR_b9 = 0x00;
+	SFR_ba = 0x80;
+	IE = 0;
+	EIE = 0;
+	con_ring_init();
+	setup_clock();
+	setup_timer2();
+	setup_serial_timer1();
+	setup_external_irqs();
+	EA = 1;
+	flash_init(machine.flash_sio ? 0 : 1);
+	schedtest_main();
+}
+#define main firmware_main
+#endif
 
 void main(void)
 {
