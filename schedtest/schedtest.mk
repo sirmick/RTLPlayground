@@ -53,8 +53,10 @@ $(BUILDDIR)/isr_frame.ok: $(BUILDDIR)/rtlplayground.rel tools/isr_frame.py
 	@touch $@
 $(BUILDDIR)/placed.stamp: $(BUILDDIR)/isr_frame.ok
 
-# The resource report, after the image
-.PHONY: st-report
-all: st-report
-st-report: $(OUTPUT)
-	python3 tools/resource_report.py $(BUILDDIR)
+# The resource gate (doc/sched/memory.md), after the image: it fails the
+# build on internal RAM growth, a short stack or a full common area.
+ST_BASELINE = doc/sched/baseline/gate-schedtest.json
+.PHONY: st-gate
+all: st-gate
+st-gate: $(OUTPUT)
+	python3 tools/resource_gate.py $(BUILDDIR) --baseline $(ST_BASELINE)

@@ -146,6 +146,13 @@ bank_size:
 schedtest:
 	$(MAKE) SCHEDTEST=1
 
+# The resource gate on a build of $(MACHINE) (doc/sched/memory.md); the 8x
+# firmware has a baseline, other boards only get the absolute checks.
+GATE_BASELINE = $(wildcard doc/sched/baseline/gate-$(if $(filter KEEPLINK_KP_9000_9XHPML_V1_2,$(MACHINE)),8x,none).json)
+.PHONY: gate
+gate:
+	python3 tools/resource_gate.py $(BUILDDIR) $(if $(GATE_BASELINE),--baseline $(GATE_BASELINE))
+
 # Images for rtlsim's flash tests (github.com/sirmick/ovs-rtlpg): every board
 # and layout tools/rtlsim_images.py lists, built one after another (builds
 # share files in the tree), then assembled into OUT with its manifest.json.
