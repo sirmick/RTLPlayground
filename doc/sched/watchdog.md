@@ -6,14 +6,19 @@ There is no hardware watchdog (chapter 2). A software one in the tick ISR
 was proven on silicon (a hung main loop reset 5.0 s later):
 
 ```c
-/* isr_timer2 */
-if (swdt_limit && ++swdt_cnt >= swdt_limit) {
-	crash_save(CRASH_SWDT);   /* fills the record from xdata, no calls into banks */
-	CHIP_RESET_NOW();
+/* isr_timer2, after the tick: SWDT_ISR(pushes) from crash.h */
+if (swdt_on && !--swdt_cnt) {
+	crash_cause = CRASH_SWDT;
+	crash_pc_sp = SP - pushes;     /* where the interrupted PC is */
+	__asm__("ljmp _crash_die");    /* fills the record, resets; never returns */
 }
 ```
 
-- `swdt_kick()` at each pass start sets `swdt_cnt = 0`.
+- A jump, not a call: any call in an ISR makes SDCC save every register on
+  every entry. `pushes` is the ISR prologue's push count (8 in isr_timer2,
+  9 in isr_serial with the rings); `tools/isr_frame.py` reads it from the
+  `.asm` and checks the number in the source.
+- `swdt_kick()` at each pass start sets `swdt_cnt = 1000`.
 - **Limit: 5 s** (1000 ticks). It must be far above the step limit (20 ms)
   and the flash exception (40 ms), and below LACP/STP's patience only by
   accident: the watchdog catches hangs, not slow steps.
@@ -24,8 +29,9 @@ if (swdt_limit && ++swdt_cnt >= swdt_limit) {
 
 ## Crash record
 
-At a fixed xdata address ≥ 0x5000 (survives a chip reset, chapter 2),
-outside every XSEG. **32 bytes:**
+At a fixed xdata address, **0xbfe0** (the last 32 bytes of the 48 KiB;
+survives a chip reset, chapter 2), outside every XSEG: the app's ends at
+0x41c8 (0x43e4 with B2 linked in), the loader's at 0x4f6a. **32 bytes:**
 
 | Offset | Size | Field |
 |---|---|---|
@@ -44,13 +50,17 @@ outside every XSEG. **32 bytes:**
 | 23 | 7 | spare |
 | 30 | 2 | 16-bit sum of bytes 0-29 |
 
-- `crash_note(slot, state)` (in the loop, before each dispatch) keeps the
+- `CRASH_NOTE(slot, state)` (in the loop, before each dispatch) keeps the
   slot, state, start tick and ring current: a few xdata writes, ~2 µs.
-- `crash_save(cause)` fills the rest and the sum. Called by the tick ISR,
-  the `^R ^R` path and the `reset` command.
-- **Boot:** if the magic and sum check out, print one line (`Last reset:
-  watchdog in stp/STP_SECOND after 5.0 s, PC 0x1234 bank 2`), copy it for
-  `health`, then clear the magic. A power-on finds garbage: the magic or sum
+- `crash_die()` (resident) fills the rest and the sum and resets. The tick
+  ISR and the `^R ^R` path jump to it; the `reset` command and an update
+  call `crash_reset(cause)`.
+- "Resets since power-on" counts recorded resets: the boot that consumes a
+  valid record carries its count + 1 into the next record.
+- **Boot:** `crash_boot()`: if the magic and sum check out, print one line
+  (`Last reset: watchdog in stp/STP_SECOND after 5000 ms, PC 0x1234 bank 2,
+  states ...`, the last 8 states oldest first), copy it for `health`, then
+  clear the magic. A power-on finds garbage: the magic or sum
   fails, and the record is ignored.
 - The loader must not use the address (its XSEG ends at 0x4f6a; the address
   goes above both). The B5 test checks the record survives a reset through
