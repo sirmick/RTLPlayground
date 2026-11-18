@@ -22,10 +22,10 @@ uint16_t events_snapshot(void)
 	EA = 0;
 	if (link_irq)   { link_irq = 0;   ev |= EV_LINK; }
 	if (rx_irq)     { rx_irq = 0;     ev |= EV_RX; }
-	if (con_rx_irq) { con_rx_irq = 0; ev |= EV_CON_RX; }
 	EA = 1;
-	if (con_tx_room())      ev |= EV_CON_TX;
-	if (!flash_busy())      ev |= EV_FLASH_IDLE;
+	if (con_rx_ready())                  ev |= EV_CON_RX;
+	if (con_tx_room() >= CON_TX_LINE)    ev |= EV_CON_TX;
+	if (!sched_flash_busy)               ev |= EV_FLASH_IDLE;
 	return ev;
 }
 ```
@@ -42,7 +42,7 @@ ISR register.
 |---|---|---|---|
 | 0 | `EV_RX` | INT1 (`rx_irq`) | rx |
 | 1 | `EV_LINK` | INT0 (`link_irq`) | link |
-| 2 | `EV_CON_RX` | UART RX ISR | con |
+| 2 | `EV_CON_RX` | sampled: the UART RX ring is not empty (no new ISR bit) | con |
 | 3 | `EV_CON_TX` | sampled: TX ring has room for a line | con, cli dumps |
 | 4 | `EV_FLASH_IDLE` | sampled | flash job |
 | 5 | `EV_LINE` | posted by con: a console line is complete | cli |
@@ -52,7 +52,8 @@ ISR register.
 | 9 | `EV_UPLOAD` | posted by httpd: upload data staged | flash job |
 | 10 | `EV_UPLOAD_DONE` | posted by the flash job | httpd poll (net) |
 | 11 | `EV_CFG` | posted: the config changed | (spare, for save-on-change) |
-| 12-15 | spare | | |
+| 12-14 | spare | | |
+| 15 | `EV_FOREVER` | the scheduler's own: marks a wait without timeout | - |
 
 The tick isn't an event: time is the `wake` field.
 

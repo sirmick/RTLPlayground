@@ -1,0 +1,138 @@
+# B2 evidence: the scheduler core linked into the 8x image (temporary link)
+# 2026-11-18, feat/sched + B2 files, SDCC 4.6.0 (in-tree toolchain)
+
+## How
+
+Not wired into the firmware (that is M2). One build with:
+- output/b2-probe.mk (below) adding sched.c, con_ring.c, crash.c (resident), sched_bank.c, sched_health.c (banked),
+  and the golden tables of test/sched_gen/golden (modules.md's set: 38 states, RUN_SEQ_LEN 72)
+  with an empty banked step per state (step names prefixed p_: stp_step and sfp_wake exist in the firmware);
+- rtlplayground.c's ISRs patched as they will be in M2 (diff below), reverted after the build.
+
+tools/docker-make.sh -f Makefile -f output/b2-probe.mk MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 BUILDDIR=output/b2-probe  -> exit 0
+(check_linked.py and check_cross_bank.py ran in it and passed)
+
+    PROBE = schedprobe
+    B2_BANKED = $(BUILDDIR)/sched_bank.rel $(BUILDDIR)/sched_health.rel $(BUILDDIR)/$(PROBE)/sched_gen_names.rel $(BUILDDIR)/$(PROBE)/steps.rel
+    B2_RESIDENT = $(BUILDDIR)/sched.rel $(BUILDDIR)/con_ring.rel $(BUILDDIR)/crash.rel $(BUILDDIR)/$(PROBE)/sched_gen.rel
+    SRCS += sched.c sched_bank.c con_ring.c crash.c sched_health.c $(PROBE)/sched_gen.c $(PROBE)/sched_gen_names.c $(PROBE)/steps.c
+    RESIDENT_SRCS += sched.c con_ring.c crash.c $(PROBE)/sched_gen.c
+    CC_FLAGS += -I$(PROBE)
+    $(B2_BANKED): BANK_FLAGS = $(BANKED_FLAGS)
+    $(BUILDDIR)/placed.stamp: $(B2_BANKED) $(B2_RESIDENT)
+    $(shell mkdir -p $(BUILDDIR)/$(PROBE))
+
+    diff --git a/rtlplayground.c b/rtlplayground.c
+    index cfa5898..9c261c9 100644
+    --- a/rtlplayground.c
+    +++ b/rtlplayground.c
+    @@ -31,6 +31,8 @@
+     #include "phy.h"
+     #include "syslog.h"
+     #include "dns.h"
+    +#include "crash.h"
+    +#include "con_ring.h"
+     #include "ntp.h"
+     #include "timer.h"
+     #include "httpd/page_impl.h"
+    @@ -216,6 +218,7 @@ void isr_timer2(void) __interrupt(5)
+     {
+     	ticks++;
+     	tick_pending = 1;
+    +	SWDT_ISR(8);
+     
+     	// Clear TF2 & EXF2 by software
+     	T2CON &= ~0xC0;
+    @@ -235,16 +238,15 @@ void isr_serial(void) __interrupt(4)
+     		// ^R ^R resets at once, even if the main loop is stuck
+     		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR) {
+     			if (serial_reset_ok)
+    -				CHIP_RESET_NOW();
+    +				CRASH_FROM_ISR(CRASH_CTRL_R, 9);
+     			serial_reset_pending = 1;
+     		}
+     		serial_last_rx = c;
+    -		sbuf[sbuf_ptr] = c;
+    -		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
+    +		CON_ISR_RX(c);
+     	}
+     	if (TI == 1) {
+     		TI = 0;
+    -		tx_buf_empty = 1;
+    +		CON_ISR_TX();
+     	}
+     }
+     
+
+## Result (baseline: baseline/resources-8x.txt)
+
+| | baseline | with B2 | delta |
+|---|---|---|---|
+| common area end (XINIT end) | 0x396a | 0x3ecc | +1378 B; gate 0x3f80: 180 B left |
+| internal RAM data (.mem) | 105 | 105 | 0 |
+| overlay / bits | 8 / 3 | 8 / 3 | 0 |
+| stack (SSEG) | 131 | 131 | 0 |
+| DSEG symbols (sloc/PARM etc.) | 54 | 54, identical list | 0 |
+| xdata end | 0x41c8 | 0x43e4 | +540 B |
+| BANK1/2/3 | 46188/46202/45565 | 47020/46970/47679 | +3714 B |
+| isr_timer2 prologue pushes | 8 | 8 | 0 |
+| isr_serial prologue pushes | 6 | 9 | +3 stack bytes in the serial ISR |
+
+Resident pieces (CSEG/CONST from the .rel files): sched.c 606, crash.c 266, con_ring.c 149,
+sched_gen.c (tables) 172; the ISRs +134 (rtlplayground.rel CSEG 6589 -> 6723); start-up/HOME +42.
+Banked: sched_bank.c 1633, sched_health.c 1514 (bank 1 and 3 here; place_banks.py puts
+sched_health with sched_gen_names, which it reads).
+
+First attempt, all of sched.c resident (2131 B): the common area overflowed 0x4000
+("Bank 0: code segment too large"). Hence the split in core.md.
+
+## .map / .mem lines
+
+output/KEEPLINK_KP_9000_9XHPML_V1_2-compact:
+    BANK1                               00014000    0000B46C =       46188. bytes (REL,CON,CODE)
+    BANK2                               00024000    0000B47A =       46202. bytes (REL,CON,CODE)
+    BANK3                               00034000    0000B1FD =       45565. bytes (REL,CON,CODE)
+    BSEG_BYTES                          00000020    00000003 =           3. bytes (REL,CON)
+    CONST                               00003332    00000622 =        1570. bytes (REL,CON,CODE)
+    CSEG                                0000043D    00002EF5 =       12021. bytes (REL,CON,CODE)
+    DSEG                                00000000    00000080 =         128. bytes (REL,CON)
+    HOME                                00000000    000003E1 =         993. bytes (REL,CON,CODE)
+    HOME = 0x0000
+    OSEG                                00000075    00000008 =           8. bytes (REL,OVR)
+    SSEG                                0000007D    00000083 =         131. bytes (REL,OVR)
+    XINIT                               00003954    00000016 =          22. bytes (REL,CON,CODE)
+    XISEG                               000041B2    00000016 =          22. bytes (REL,CON,XDATA)
+    XSEG                                00000001    000041B1 =       16817. bytes (REL,CON,XDATA)
+    XSEG = 0x0001
+    16 bit mode initial stack starts at: 0x7d (sp set to 0x7c) with 131 bytes available.
+
+output/b2-probe:
+    BANK1                               00014000    0000B7AC =       47020. bytes (REL,CON,CODE)
+    BANK2                               00024000    0000B77A =       46970. bytes (REL,CON,CODE)
+    BANK3                               00034000    0000BA3F =       47679. bytes (REL,CON,CODE)
+    BSEG_BYTES                          00000020    00000003 =           3. bytes (REL,CON)
+    CONST                               000037E8    000006CE =        1742. bytes (REL,CON,CODE)
+    CSEG                                00000467    00003381 =       13185. bytes (REL,CON,CODE)
+    DSEG                                00000000    00000080 =         128. bytes (REL,CON)
+    HOME                                00000000    0000040B =        1035. bytes (REL,CON,CODE)
+    HOME = 0x0000
+    OSEG                                00000075    00000008 =           8. bytes (REL,OVR)
+    SSEG                                0000007D    00000083 =         131. bytes (REL,OVR)
+    XINIT                               00003EB6    00000016 =          22. bytes (REL,CON,CODE)
+    XISEG                               000043CE    00000016 =          22. bytes (REL,CON,XDATA)
+    XSEG                                00000001    000043CD =       17357. bytes (REL,CON,XDATA)
+    XSEG = 0x0001
+    16 bit mode initial stack starts at: 0x7d (sp set to 0x7c) with 131 bytes available.
+
+         0000BFE0  _crash_rec                         crash
+
+## ISR frames (tools/isr_frame.py)
+
+    $ tools/isr_frame.py output/b2-probe/rtlplayground.asm isr_timer2=8 isr_serial=9
+    isr_timer2 8
+    isr_serial 9
+
+## Internal RAM of each new file (SDCC .asm: DSEG / BSEG / OSEG entries)
+
+    none in sched.c, sched_bank.c, con_ring.c, crash.c, sched_health.c
+    (sched_pass had one sloc until the ready check became a leaf function)

@@ -1,7 +1,18 @@
 # 4. The scheduler core
 
-Files: `sched.c` / `sched.h` (common area, resident), `sched_gen.c` /
-`sched_gen.h` (generated, chapter 5).
+Files: `sched.c` / `sched.h` (common area, resident), `sched_bank.c` and
+`sched_health.c` (banked), `sched_gen.c` / `sched_gen.h` (generated,
+chapter 5).
+
+**Resident** is what runs at every position of every pass: the ready check
+and the dispatch (`sched_pass`), and the small calls every step makes
+(`task_next`, `task_until`, `task_mask`, `task_end`). **Banked** is what
+runs once per pass or per step (the event snapshot, idle, the measurement
+around each step) or rarely (`sched_init`, `task_claim`, `task_sleep`,
+`health`). That is safe because no flash operation outlives its step
+(chapter 10), and it is needed: the whole core resident overflowed the
+common area (B2 measured 2.1 KiB for `sched.c` alone; the resident half is
+606 B).
 
 ## Data (all xdata)
 
@@ -96,10 +107,10 @@ All act on the current slot (`sched_cur`) unless they name a slot.
 |---|---|
 | `task_next(S_FOO)` | the next step is `S_FOO` |
 | `task_yield()` | run again at its next position (the default) |
-| `task_sleep(ms)` | `wake = now + ceil(ms / 5)`; max 163,000 ms |
+| `task_sleep(ms)` | `wake = tick + ceil(ms / 5) + 1`, the tick read at the call: never early, even when the call comes just before a tick; at most 5 ms late. Max 65,534 ms (16-bit argument); longer: `task_until` |
 | `task_until(tick)` | `wake = tick` |
 | `task_wait(ev_mask, timeout_ms)` | wake on any of `ev_mask`, or at the timeout |
-| `task_wait(ev_mask, SCHED_FOREVER)` | as above, no timeout (`wake = now + 0x7fff`, re-armed) |
+| `task_wait(ev_mask, SCHED_FOREVER)` | as above, no timeout (`wake = now + 0x7fff` and `EV_FOREVER` in the mask; when that horizon comes the pass pushes it on instead of running the step) |
 | `task_end()` | free the slot (`state = 0`) |
 | `task_claim(S_FIRST)` | claim a free slot for a job; returns the slot or `SCHED_NONE` |
 | `event_post(EV_x)` | set bits for the next pass (chapter 6) |
@@ -107,9 +118,12 @@ All act on the current slot (`sched_cur`) unless they name a slot.
 Steps call `task_next()` and one wake call. Helpers are macros or common-area
 functions that touch only xdata. Arguments are 8 or 16 bits.
 
-**Waits over 163 s** (ARP ageing, DHCP lease): the module counts down in its
-own context and sleeps ≤ 160 s at a time. `SCHED_FOREVER` waits re-arm the
-same way, inside the scheduler.
+**Waits over 65 s** (ARP ageing, DHCP lease): the module counts down in its
+own context and sleeps ≤ 65 s at a time (or `task_until` up to 163 s).
+`SCHED_FOREVER` waits re-arm inside the scheduler.
+
+No API function takes two parameters: SDCC would put the second in
+internal RAM. `task_wait(m, ms)` is a macro for `task_mask(m); task_sleep(ms)`.
 
 ## Claiming slots
 
@@ -121,7 +135,8 @@ same way, inside the scheduler.
 
 ## Measurement
 
-- `fine_start()` / `fine_stop()` read ticks + Timer 2 (~6 µs each).
+- Around each step, banked hooks read ticks + Timer 2 (~6 µs each). The
+  unit is 64 Timer 2 counts, 6.144 µs; 16 bits saturate at ~400 ms.
 - Per state: longest step, run count.
 - Global: passes, overruns > 20 ms (with the state), longest pass, idle passes.
 - Per task (debug builds): the longest wait from "became ready" to "ran".

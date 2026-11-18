@@ -7,8 +7,12 @@
 | RX | 64 B (from 16) | `isr_serial` | the `con` task |
 | TX | 128 B (one long line plus room) | `write_char` | `isr_serial` on TI |
 
-- **RX:** the ISR stores, sets `con_rx_irq`, and counts overruns (shown in
-  `health`). `^R ^R` stays in the ISR, as today.
+- **RX:** the ISR stores, or counts an overrun when the ring is full (shown
+  in `health`). `EV_CON_RX` is sampled (the ring not empty), so no new ISR
+  bit. `^R ^R` stays in the ISR, as today, and records the reset
+  (chapter 11).
+- The ISR side is two macros, `CON_ISR_RX(c)` and `CON_ISR_TX()`
+  (`con_ring.h`); with them the serial ISR pushes 9 bytes instead of 6.
 - **TX:** `write_char` puts a byte in the ring and, if the transmitter is
   idle, starts it. **If the ring is full it busy-waits** for room, as today's
   code waits for every byte. Old code that prints a lot keeps working at

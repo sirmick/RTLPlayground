@@ -1,13 +1,16 @@
 # 12. Memory
 
-## The four spaces (KeepLink 9XHPML, compact, fork build fcf16cc)
+## The four spaces (KeepLink 9XHPML, compact LOADER=1, fork main 612116e)
+
+Baseline: `baseline/resources-8x.txt`. Scheduler share: measured in B2 with
+the B2 code linked in (`evidence/b2-resources.txt`).
 
 | Space | Size | Used | Free | Scheduler's share |
 |---|---|---|---|---|
-| internal RAM | 256 B | everything outside the stack; stack 131 B, peak seen ~79 | **0**; ~50 B of stack headroom | **0 bytes** |
-| xdata | 48 KiB | 16.8 KiB (0x0001-0x41c3) | ~31.8 KiB | < 1 KiB |
-| common area (code RAM) | 16 KiB | to 0x396a | ~1.7 KiB | core ~0.5 KiB + `step_addr` (3 B per state) + `run_seq` |
-| banks (compact) | 3 × 48 KiB | 45.4 / 46.1 / 46.0 KiB | ~10 KiB total | steps; state names |
+| internal RAM | 256 B | data 105 B, overlay 8, bits 3+1; stack 131 B, peak seen ~79 | **0**; ~50 B of stack headroom | **0 bytes** (the serial ISR pushes 3 more) |
+| xdata | 48 KiB | 16.8 KiB (0x0001-0x41c8) | ~31 KiB | 540 B; crash record at 0xbfe0 |
+| common area (code RAM) | 16 KiB | to 0x396a | 1558 B to the 0x3f80 gate | 1378 B with modules.md's task set: core 606, crash 266, rings 149, tables 172 (3 B per state + `run_seq`), ISRs +134, start-up +42 |
+| banks (compact) | 3 × 48 KiB | 46188 / 46202 / 45565 B | 8.5 KiB total | measurement, init, idle, health, names: ~3.4 KiB |
 
 ## Why internal RAM is the limit
 
@@ -34,9 +37,11 @@ broke the link three times.
 `tools/resource_gate.py BUILDDIR [--baseline FILE]`, run on every build of
 the test target:
 
-- **internal RAM:** DSEG + OSEG + bits from the `.map`, and the stack size
-  from the `.mem`. Fail if the stack drops below 120 B, or if DSEG grew
-  against the baseline without the baseline being updated in the same commit.
+- **internal RAM:** data, overlay and bits counted from the `.mem` map (the
+  `.map`'s DSEG size is the area's span from 0, 128, not its use, 105), and
+  the stack size from the `.mem`. Fail if the stack drops below 120 B, or if
+  the data grew against the baseline without the baseline being updated in
+  the same commit.
 - **Common area:** the end address from the `.map`. Fail above 0x3f80.
 - **Banks:** each bank's use. Warn above 47 KiB.
 - **Spills:** list every new `sloc` and `PARM` symbol in DSEG against the
