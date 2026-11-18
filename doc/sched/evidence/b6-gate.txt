@@ -1,0 +1,75 @@
+# B6 evidence: the resource gate (2026-11-18)
+
+## make -C test -j8 quick (test_resource_gate's log)
+
+      ok:   the baseline build passes
+      ok:   a spilling function fails the gate
+      ok:   and says how much
+      ok:   naming each new DSEG symbol
+      ok:   and how to update the baseline if it is meant
+      ok:   the baseline updated in the same commit: passes
+      ok:   a common-area overflow fails, with the address
+      ok:   a short stack fails
+      ok:   overlay growth fails
+      ok:   a full bank only warns
+      ok:   less than the baseline passes, with a note
+    resource gate: ~/src/rtlpg-sched/test/../output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest against ~/src/rtlpg-sched/test/../doc/sched/baseline/gate-schedtest.json
+      internal RAM: data 105 B (baseline 105), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+      DSEG symbols: 54, none new
+      stack: 131 B (at least 120)
+      common area: ends 0x3ee2 (gate 0x3f80, 158 B left)
+      bank 1: 48330 B used, 822 B free
+      bank 2: 48973 B used, 179 B free
+      bank 3: 48330 B used, 822 B free
+      WARN bank 1 holds 48330 B, over 47 KiB (822 B free)
+      WARN bank 2 holds 48973 B, over 47 KiB (179 B free)
+      WARN bank 3 holds 48330 B, over 47 KiB (822 B free)
+      PASS (3 warnings)
+      ok:   output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest passes the gate against gate-schedtest.json
+    resource gate: ~/src/rtlpg-sched/test/../output/KEEPLINK_KP_9000_9XHPML_V1_2-compact against ~/src/rtlpg-sched/test/../doc/sched/baseline/gate-8x.json
+      internal RAM: data 105 B (baseline 105), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+      DSEG symbols: 54, none new
+      stack: 131 B (at least 120)
+      common area: ends 0x396a (gate 0x3f80, 1558 B left)
+      bank 1: 46188 B used, 2964 B free
+      bank 2: 46202 B used, 2950 B free
+      bank 3: 45565 B used, 3587 B free
+      PASS
+      ok:   output/KEEPLINK_KP_9000_9XHPML_V1_2-compact passes the gate against gate-8x.json
+    resource gate: 13 checks, 0 failed
+
+## In every schedtest build (tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1)
+
+    resource gate: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest against doc/sched/baseline/gate-schedtest.json
+      internal RAM: data 105 B (baseline 105), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+      DSEG symbols: 54, none new
+      stack: 131 B (at least 120)
+      common area: ends 0x3ee2 (gate 0x3f80, 158 B left)
+      bank 1: 48330 B used, 822 B free
+      bank 2: 48973 B used, 179 B free
+      bank 3: 48330 B used, 822 B free
+      WARN bank 1 holds 48330 B, over 47 KiB (822 B free)
+      WARN bank 2 holds 48973 B, over 47 KiB (179 B free)
+      WARN bank 3 holds 48330 B, over 47 KiB (822 B free)
+      PASS (3 warnings)
+
+## make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact (the A0 firmware build)
+
+    resource gate: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact against doc/sched/baseline/gate-8x.json
+      internal RAM: data 105 B (baseline 105), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+      DSEG symbols: 54, none new
+      stack: 131 B (at least 120)
+      common area: ends 0x396a (gate 0x3f80, 1558 B left)
+      bank 1: 46188 B used, 2964 B free
+      bank 2: 46202 B used, 2950 B free
+      bank 3: 45565 B used, 3587 B free
+      PASS
+
+## The spill fixture: test/gate/spill.c through SDCC 4.6 (test/gate/spill.asm), its DSEG
+
+    _spilling_step_PARM_2:
+    	.ds 2
+    _spilling_step_a_10000_2:
+    	.ds 2
+    _spilling_step_x_10000_3:
+    	.ds 4
