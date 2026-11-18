@@ -58,10 +58,21 @@ compares every measured number.
 | paste | 500 characters + CR all taken, no RX overrun (deep off): quiet, and across a ~20 ms step (`slow 20`; ~230 B arrive meanwhile, the 256 B ring holds them). Across the 40 ms erase a paste may lose bytes (decision 19): recorded, not asserted |
 | invariants | 30 pass ends: states valid, defined mask bits, wakes within the task's longest wait; `sched_posted` empty at the next pass's first step |
 | stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
+| horizon | 170 s with no input: con's wait without timeout reaches its horizon (~164 s) and is pushed on, without running |
 | soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
 
 Every test also requires the simulator's checks to be clean
-("unmodelled" register notes from the CPU setup excepted).
+("unmodelled" register notes from the CPU setup excepted), and dumps its
+coverage. After a full run, the dumps are ORed together and
+ovs-rtlpg's `tools/cov_report.py` (region `loaded`, the application)
+requires every state's step function (the generated list) and every line of
+`sched.c` to have run. sched_bank.c, crash.c and con_ring.c are reported,
+not required: crash.c runs only when the image resets (B5), and sched_bank.c
+has two lines nothing here reaches (a step over 400 ms, `task_sleep(0)`).
+
+The poster keeps its 300 ms beat with the low-level `task_until`, so the
+API's every call runs; `hang` in a build without `ST_NEG=hang` enters
+`SL_HANG`, which only says so.
 
 ## Console
 
