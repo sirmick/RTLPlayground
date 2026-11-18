@@ -136,6 +136,8 @@ void sl_hang(void) __banked
 #ifdef ST_NEG_HANG
 	for (;;)		/* busy, not a jump-to-self (which rtlsim takes for a halt) */
 		st_hang_spins++;
+#else
+	print_string("hang: build with ST_NEG=hang\n");
 #endif
 	st_slow_req = 0;
 	STEP_NEXT(S_SL_IDLE);
