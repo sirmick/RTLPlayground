@@ -51,18 +51,22 @@ web `/cmd` overwrites a half-typed console line.
 
 ## Chunked output
 
-A long command is states owned by the cli task, with a cursor in the cli
-context (the "next param"):
+A long command is states owned by the cli task, with its cursor (the "next
+param") in the slot's `arg`:
 
 ```c
-static __xdata uint16_t cli_cursor;      /* next entry / row / line */
+void l2_first(void) __banked
+{
+	STEP_ARG(S_L2_MORE, 0);              /* from the first entry */
+}
 
 void l2_more(void) __banked
 {
-	if (!con_tx_room_line()) { task_wait(EV_CON_TX, SCHED_FOREVER); return; }
-	if (!l2_print_entry(cli_cursor++))   /* one line */
-		{ task_next(S_CLI_PROMPT); return; }
-	/* stays in L2_MORE; yields */
+	if (!con_tx_room_line())
+		STEP_WAIT(S_L2_MORE, EV_CON_TX, SCHED_FOREVER);
+	if (!l2_print_entry(task_arg()))     /* one line */
+		STEP_NEXT(S_CLI_PROMPT);
+	task_set_arg(task_arg() + 1);       /* stays in L2_MORE; yields */
 }
 ```
 

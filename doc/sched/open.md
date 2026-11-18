@@ -21,6 +21,7 @@
 | 15 | Matching the sim's flash-busy garbage to silicon waits for bring-up (C) |
 | 16 | (was O1, settled in B1) `step_addr` is C: `__code const` table of a `__banked` function-pointer type, 3 bytes per entry (low, high, bank), in a resident file. SDCC 4.6 rejects casts of a function address in an initializer, but `typedef void (*step_fn)(void) __banked` emits `.byte _f, (_f >> 8), (_f >> 16)`; linked through place_banks.py the bytes are right (bank 2 and 3 functions checked), and a call through it is SDCC's own `__sdcc_banked_call` with no DSEG. Evidence: `evidence/o1-bank-byte.txt` |
 | 17 | (was O7, settled in B3) schedtest shares `rtlplayground.c`'s ISRs: the whole firmware is linked, and `SCHEDTEST` swaps in another `main()` (no switch init) and the ISRs' ring, watchdog and crash paths. The firmware build is unchanged (`evidence/b3-schedtest.txt`) |
+| 18 | Steps end with return macros (`STEP_NEXT/SLEEP/WAIT/ARG/END`); a 16-bit per-slot `arg`. Michael, 2026-11-18 |
 
 ## Open
 

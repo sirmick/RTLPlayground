@@ -81,12 +81,13 @@ directly.
 - Two states with the same name, or one function used by two states.
 - A step function that is `static` or not `void f(void)` (rule 4, chapter 12).
 - A state no task can reach, unless marked `entry`: reached means a task's
-  first state, or named in a `task_next(S_X)` / `task_claim(S_X)` in the
+  first state, or named in a `task_next(S_X)`, `STEP_NEXT/SLEEP/WAIT/ARG(S_X, ...)`,
+  `task_claim(S_X)` or `task_claim_arg(S_X, ...)` in the
   scanned sources (the `.h`/`.c` beside the `.def` and its `source` lines).
 - More fixed slots than `SCHED_SLOTS`, or none left over when there are jobs;
   two slots of one name, or a slot named `fixed`, `slots` or `job<N>` (its
   enum would clash with `T_FIXED`, `T_SLOTS`, `T_JOB<N>`).
-- A `task_next(S_X)` in a module's source naming a state of another module
+- A `task_next(S_X)` or `STEP_*(S_X ...)` in a module's source naming a state of another module
   (warning: cross-module jumps go through events).
 
 ## Sequence derivation
