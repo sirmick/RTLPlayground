@@ -91,19 +91,22 @@ void isr_ev(void) __banked
 
 /* slow: one step of st_slow_ms on request (default 30, an overrun;
  * the length rides into SL_SLOW in the slot's arg); hang: a step that never
- * returns (ST_NEG=hang), for the watchdog. ST_NEG=overrun runs slow once by
- * itself, 2 s after boot. */
+ * returns (ST_NEG=hang), for the watchdog. ST_NEG=overrun runs slow (25 ms)
+ * once by itself, 2 s after boot. */
 static __xdata uint16_t sl_t0, sl_c0, sl_n, sl_dt, sl_el;	/* up to 400 ms */
+#ifdef ST_NEG_OVERRUN
+__xdata uint16_t st_slow_ms = 25;		/* testing.md: a 25 ms step */
+#else
 __xdata uint16_t st_slow_ms = 30;
+#endif
 
 void sl_idle(void) __banked
 {
 #ifdef ST_NEG_OVERRUN
-	static __xdata uint8_t auto_done;
-	if (!auto_done) {
-		auto_done = 1;
+	if (st_slow_req == 3) {		/* boot: slow in 2 s (st_main.c) */
 		st_slow_req = 1;
-		STEP_SLEEP(S_SL_IDLE, 2000);
+		task_sleep(2000);	/* still SL_IDLE: a byte-saving STEP_SLEEP */
+		return;
 	}
 #endif
 	if (st_slow_req == 1)

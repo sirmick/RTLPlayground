@@ -43,7 +43,7 @@ void st_log(void) __banked;
 /* requests from cli; each worker clears its own */
 extern __xdata uint16_t st_print_req;	/* lines to print */
 extern __xdata uint8_t  st_jobs_req;
-extern __xdata uint8_t  st_slow_req;	/* 1 slow, 2 hang */
+extern __xdata uint8_t  st_slow_req;	/* 1 slow, 2 hang, 3 ST_NEG=overrun at boot */
 extern __xdata uint16_t st_slow_ms;	/* slow's step, ms (30: 25-30 ms) */
 extern __xdata uint8_t  st_hot_on;	/* hot runs (yielding) */
 
