@@ -454,3 +454,19 @@ common area unchanged (0x3ee2: sched.c 606 B either way).
 
 make schedtest-sim ... SIM_ARGS=--twice: 0 failures, deterministic, 149.1 s wall for both runs.
 make -C test -j8 quick: exit 0 (test_sched 109 checks incl. the macros and arg; test_sched_gen 174).
+
+## Addendum: the 256 B RX ring (4b9a17d, decision 19)
+
+make schedtest: gate PASS; internal RAM 105/8/3 unchanged, DSEG list unchanged; common area 0x3ee2 -> 0x3ec4 (-30 B:
+the 8-bit indexes need no masking); xdata 0x5069 -> 0x512d (+196 B: the ring's +192, slow's length and fine-clock spin);
+isr_serial's prologue 9 -> 7 pushes (tools/isr_frame.py caught the change and failed the build until
+ST_ISR_SERIAL_PUSHES followed), so the worst ISR frame is isr_timer2's again (8 + 2 = 10 B).
+
+make schedtest-sim ... SIM_ARGS=--twice: 0 failures, deterministic, 148.6 s for both runs. The paste test:
+
+        ok   a quiet paste: all 501 bytes taken, none lost (501, overruns 0)
+        ok   across a 20.1 ms step: all 501 bytes taken, none lost (501, overruns 0)
+        ok   that step was ~20 ms (20066 us)
+        note: a paste across the 40 ms erase: 294 of 501 bytes taken, 207 overruns (accepted, decision 19)
+
+make -C test -j8 quick: exit 0 (test_sched 112 checks, 0 failed).
