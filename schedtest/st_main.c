@@ -135,24 +135,6 @@ static uint8_t number(void)	/* a decimal at ap into num */
 	return 1;
 }
 
-#ifdef ST_POKE
-static void hex(void)		/* a hex number at ap into num */
-{
-	num = 0;
-	for (;;) {
-		c = st_line[ap];
-		if (c >= '0' && c <= '9')
-			c -= '0';
-		else if ((c | 0x20) >= 'a' && (c | 0x20) <= 'f')
-			c = (c | 0x20) - 'a' + 10;
-		else
-			return;
-		num = num << 4 | c;
-		ap++;
-	}
-}
-#endif
-
 void cli_idle(void) __banked
 {
 	if (st_line_ready)
@@ -217,12 +199,12 @@ void cli_run(void) __banked
 	} else if (word("deep")) {
 		st_deep_depth = number() ? num : 9;
 #ifdef ST_POKE
-	} else if (word("poke")) {	/* A V, hex: one byte of xdata */
-		hex();
+	} else if (word("poke")) {	/* A V, decimal (as peek): one byte of xdata */
+		number();
 		st_pk_addr = num;
 		while (st_line[ap] == ' ')
 			ap++;
-		hex();
+		number();
 		*(__xdata uint8_t *)st_pk_addr = num;
 #endif
 	} else if (word("reset")) {
