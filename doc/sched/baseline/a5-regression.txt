@@ -202,3 +202,85 @@
 #   real	0m11.892s
 #   user	0m12.073s
 #   sys	0m0.147s
+#
+# == Addendum 2026-11-18T20:17Z: test-net and test-update, with sudo ==
+#
+# On feat/sched-sim 267954e (A5's fb7874f + 562fce3 cov_report exclusions +
+# 267954e: no NULs in run until uart's text). Passwordless sudo (sudo -n);
+# local network namespaces, veths/taps and private OVS instances only (the
+# tests' own; tests/net/hardware not run, nothing on the bench host or the bench).
+# Both drive the paced loop (--nic, --ofp, --realtime) through system::run.
+#
+# make test-net                                  rc 0   53.6 s
+#   test_net --via tap: ALL PASS (7); test_net --via ovs: ALL PASS (11);
+#   test_switching: ALL PASS (8); test_topo: ALL PASS (9); test_igmp: ALL PASS (11)
+# make test-update                               rc 0   51.2 s
+#   test_update: ALL PASS (3; "power cut: this image can't resume a broken-off
+#   install, skipped", as the test says for this FW_IMAGE)
+#
+# Clean-up: nothing left by these runs. Namespaces and OVS instances still on
+# the box predate them and aren't the tests': rtl-sw0 with its rtlswitch-sw0
+# OVS and rtlsim (Nov 13, the long-running LAN switch sim), vlfmt (Nov 14),
+# rtl-mc and rtl-mc-1 with an rtlswitch-mc OVS (Nov 16). Left alone.
+#
+# Also re-run on 267954e: make test -j rc 0 12.3 s; make vm rc 0; make
+# test-vm rc 0 (on the VM just built, musl, after the NUL change).
+#
+# test-net / test-update output (PASS/FAIL lines):
+#   PASS  boots to the prompt
+#   PASS  ping 192.168.2.2 (avg rtt 0.510 ms)
+#   PASS  login.html and the login (the default password) in 0.04 s
+#   PASS  the web UI (/ and /app.js, 8376+54222 bytes) loads in 0.24 s
+#   PASS  all 15 JSON pages answer with JSON
+#   PASS  the SFP module's vendor shows in the web UI's data
+#   PASS  TCP throughput: app.js, 54222 bytes in 0.19 s = 273.4 KiB/s
+#   test_net: ALL PASS
+#   PASS  boots to the prompt
+#   PASS  the veth's link comes up on physical port 4
+#   PASS  ping 192.168.2.2 (avg rtt 0.342 ms)
+#   PASS  login.html and the login (the default password) in 0.04 s
+#   PASS  the web UI (/ and /app.js, 8376+54222 bytes) loads in 0.24 s
+#   PASS  all 15 JSON pages answer with JSON
+#   PASS  the SFP module's vendor shows in the web UI's data
+#   PASS  TCP throughput: app.js, 54222 bytes in 0.19 s = 273.4 KiB/s
+#   PASS  Linux on port 2 reaches the switch too
+#   PASS  a cable pull on the veth: the firmware sees the link go and come back
+#   PASS  and the switch answers again after it
+#   test_net: ALL PASS
+#   PASS  boots to the prompt
+#   PASS  hosts on ports 1, 2 and 3 reach each other through the bridge
+#   PASS  the firmware's l2 table has the three hosts' MACs: 42:1d:04:b5:59:1a	0x0001	learned	1; 6e:67:50:79:3f:d9	0x0001	learned	2; 8a:28:c9:bf:24:c9	0x0001	learned	3
+#   PASS  a known unicast doesn't flood: port 3 sees none of 1 -> 2's pings
+#   PASS  isolate 1 3: port 1 reaches port 3, not port 2
+#   PASS  isolate 1 off: port 1 reaches port 2 again
+#   PASS  PVID 10 on ports 2 and 3: they reach each other, not port 1
+#   PASS  VLAN 20 tagged on ports 1 and 3: 802.1Q frames get through
+#   PASS  ageing (3 s): the learned MACs leave the l2 table 4 s after the traffic stops
+#   test_switching: ALL PASS
+#   PASS  the two chips have their own MACs: a 06:0f:00:c8:54:07, b 06:0f:00:c8:54:06
+#   PASS  each switch has its own address: a 192.168.2.2, b 192.168.2.3
+#   PASS  h1 on a reaches h2 and h3 on b across the cable
+#   PASS  hosts reach both switches' addresses, near and far
+#   PASS  each l2 table has the far host's MAC: 76:2c:d1:c0:6e:52	0x0001	learned	4; fe:d5:42:64:1b:bc	0x0001	learned	4
+#   PASS  VLAN 20 tagged on a.1, b.1 and the cable (a trunk): h1 reaches h2 on it
+#   PASS  VLAN 30 untagged on a.1 and b.2, tagged on the cable: h1 reaches h3, not h2
+#   PASS  a cable pull: both firmwares see port 4 go down and come back
+#   PASS  and h1 -> h3 stops while it's out, and works again after
+#   test_topo: ALL PASS
+#   PASS  off: {'member': 10, 'other': 10}
+#   PASS  on: {'member': 0, 'other': 0, 'entry': None}
+#   PASS  link-local: {'member': 10, 'other': 10}
+#   PASS  report: {'forwarded': 0, 'entry': 1}
+#   PASS  stream: {'member': 10, 'other': 0}
+#   PASS  unregistered: {'member': 0, 'other': 0}
+#   PASS  report-other: {'forwarded': 0, 'entry': 2}
+#   PASS  stream-both: {'member': 10, 'other': 10}
+#   PASS  leave: {'forwarded': 0, 'entry': 1}
+#   PASS  leave-other: {'forwarded': 0, 'entry': None}
+#   PASS  stream-gone: {'member': 0, 'other': 0}
+#   test_igmp: ALL PASS
+#   PASS  first boot on an empty flash writes the default config
+#   PASS  a good image, uploaded from 6 to 19 s after the boot ('OK: checksum verified, rebooti'), is staged, verified, copied, and the switch comes back with its config
+#   PASS  a corrupted image is refused ('NO: checksum failed, not applied') and the switch carries on
+#   power cut: this image can't resume a broken-off install, skipped
+#   test_update: ALL PASS
