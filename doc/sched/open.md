@@ -19,12 +19,12 @@
 | 13 | Start with a small test scheduler with dummy tasks before the whole firmware |
 | 14 | Work on the sirmick fork first; upstream later |
 | 15 | Matching the sim's flash-busy garbage to silicon waits for bring-up (C) |
+| 16 | (was O1, settled in B1) `step_addr` is C: `__code const` table of a `__banked` function-pointer type, 3 bytes per entry (low, high, bank), in a resident file. SDCC 4.6 rejects casts of a function address in an initializer, but `typedef void (*step_fn)(void) __banked` emits `.byte _f, (_f >> 8), (_f >> 16)`; linked through place_banks.py the bytes are right (bank 2 and 3 functions checked), and a call through it is SDCC's own `__sdcc_banked_call` with no DSEG. Evidence: `evidence/o1-bank-byte.txt` |
 
 ## Open
 
 | # | Question | Leaning |
 |---|---|---|
-| O1 | Can C express a banked function's bank byte in a `__code` initializer, or must `step_addr` be generated asm? | settle in B1 |
 | O2 | `run_seq` length and the high/medium/once spacing numbers | derive in B1, tune with D2's measurements |
 | O3 | Does `uip_stop()`/`uip_restart()` throttle uploads cleanly with real browsers (Firefox, curl)? | test in E3 |
 | O4 | Should `EV_CON_TX` be "room for a line" (100 B) or any room? | a line |
