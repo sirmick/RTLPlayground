@@ -1,0 +1,24 @@
+# Host tests after the stub commit: make -C test -j8 quick
+# tree: feat/sched 64ddfc0 + test stubs (leds_mode, rldp_enabled/looped/blocked in test/env_tables.c; send_loop in test/test_httpd_tx.c)
+
+## Result: PASS (exit 0). 17 of 17 quick tests pass: "QUICK TESTS PASSED (test_loader skipped)"
+
+  test_cmd_editor: 5 checks, 0 failed
+  test_config_migrate: test_config_migrate: ALL PASS
+  test_cpu_vlan_8372: CPU VLAN min=3 max=7 RTL8373=0: 5 checks, 0 failed
+  test_cpu_vlan_full: CPU VLAN min=0 max=8 RTL8373=1: 5 checks, 0 failed
+  test_cpu_vlan_restricted: CPU VLAN min=0 max=7 RTL8373=1: 5 checks, 0 failed
+  test_flash_dev: flash_dev: ALL PASS
+  test_httpd_tx_compact: BENCH: ALL PASS (0 failures)
+  test_httpd_tx: BENCH: ALL PASS (0 failures)
+  test_lacp: SANDBOX: ALL PASS (0 failures)
+  test_mdata_migrate: test_mdata_migrate: ALL PASS
+  test_nic_rx: all NIC RX checks passed
+  test_page_json: 34 checks, 0 failed
+  test_port_tables: 39 checks, 0 failed
+  test_tick_gate: 5 checks, 0 failed
+  test_timer: 11 checks, 0 failed
+  test_update_apply_compact: test_update_apply: ALL PASS
+  test_update_apply: test_update_apply: ALL PASS
+
+test_loader is not in quick and was not run.
