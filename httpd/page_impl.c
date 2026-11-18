@@ -16,6 +16,7 @@
 #include "rtl837x_stp.h"
 #include "rtl837x_lacp.h"
 #include "rtl837x_rldp.h"
+#include "rtl837x_leds.h"
 #include "page_impl.h"
 #include "syslog.h"
 #include "dhcp.h"
@@ -282,6 +283,8 @@ void send_basic_info(void)
 				 poe_state == POE_NO_ANSWER ? "no answer" : poe_state == POE_NO_CHIP_IMAGE ? "no image for this chip" : "failed");
 #endif
 #endif
+	str_code_to_html("\"," JSONQUOTE("leds") ":\"");
+	str_code_to_html(leds_mode == 2 ? "off" : leds_mode == 1 ? "ports" : "on");
 
 	if (machine.n_sfp) {
 		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");

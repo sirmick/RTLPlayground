@@ -22,6 +22,12 @@ var LANG = {
         th_auto: "System",
         th_auto_sel: "System (Selenized)",
         sy_display: "Display",
+        sy_leds: "LEDs",
+        sy_leds_l: "Front panel",
+        sy_leds_note: "Applies at once; Save to flash keeps it across restarts.",
+        led_on: "On",
+        led_ports: "Port LEDs off",
+        led_off: "All off",
         sy_theme: "Theme",
         sy_display_note: "Stored in this browser only.",
         th_light: "Light",
@@ -2469,6 +2475,7 @@ var CONF_CMDS = [
     /^mtu\s+\d+\s+\d+$/,
     /^lldp\s+(on|off)$/,
     /^loop\s+(on|off)$/,
+    /^led\s+(on|off)(\s+ports)?$/,
     /^bw\s+(in|out)\s+\d+\s+\S+$/,
     /^storm\s+\d+\s+(bcast|mcast|ucast|umcast)\s+(off|\d+\s+(pps|kbps))$/,
 ];
@@ -4792,10 +4799,18 @@ function sysLoad() {
         if (sl[0] && sl[0] !== "0.0.0.0") $("sy-sysip").value = sl[0];
         if (sl[1]) $("sy-sysport").value = sl[1];
         if (S.info.session_timeout) $("sy-sesstmo").value = S.info.session_timeout;
+        if (S.info.leds && document.activeElement !== $("ledSel")) $("ledSel").value = S.info.leds;
     }).catch(function() {});
     cfgReload();
     dnsLoad();
 }
+
+$("ledSel").addEventListener("change", function() {
+    var cmd = {on: "led on", ports: "led off ports", off: "led off"}[this.value];
+    postCmd(cmd).then(function() {
+        return pollInfo();
+    }).catch(function() {});
+});
 
 function dnsLoad() {
     return api("/cmd", {
@@ -5137,7 +5152,7 @@ var CONF_OVERWRITE = [
     /^lag\s+\d\b/, /^laghash\s+\d\b/, /^isolate\s+\d{1,2}\b/,
     /^stp\s+(prio|hello|maxage|fwd|txhold|version)\b/,
     /^stp\s+(port\s+\d{1,2}|lag\s+[1-4])\s+(edge|cost|prio|guard|filter|p2p)\b/,
-    /^igmp\b/, /^mtu\s+\d{1,2}\b/, /^storm\s+\d{1,2}\s+(bcast|mcast|ucast|umcast)\b/,
+    /^igmp\b/, /^led\b/, /^mtu\s+\d{1,2}\b/, /^storm\s+\d{1,2}\s+(bcast|mcast|ucast|umcast)\b/,
 ];
 var CONF_TOGGLE = [/^(syslog)\s+(on|off)$/, /^(ntp)\s+(on|off)$/, /^(stp)\s+(on|off)$/, /^(lldp)\s+(on|off)$/, /^(loop)\s+(on|off)$/, /^(stp\s+(port\s+\d{1,2}|lag\s+[1-4]))\s+(on|off)$/];
 

@@ -26,4 +26,7 @@ void leds_dump(void) __banked;
 void leds_setup(void) __banked;
 void leds_off(uint8_t ports, uint8_t sys) __banked;
 
+// 0 all on, 1 port LEDs off, 2 all off ("led on", "led off ports", "led off")
+extern __xdata uint8_t leds_mode;
+
 #endif

@@ -25,6 +25,7 @@ extern __xdata uint8_t sfr_data[4];
 
 void leds_setup(void) __banked
 {
+	leds_mode = 0;
 	print_string("leds_setup called\n");
 	REG_SET(RTL837X_REG_LED_MODE, 0x0021e6b0);
 
@@ -155,6 +156,8 @@ void leds_setup(void) __banked
 }
 
 
+__xdata uint8_t leds_mode;
+
 /*
  * Turns the port LEDs and/or the system LED off, or back to normal.
  * The port LEDs go dark under software control and return to their
@@ -171,4 +174,5 @@ void leds_off(uint8_t ports, uint8_t sys) __banked
 		REG_SET(RTL837X_REG_LED_PORT_SW_EN + 4, 0);
 	}
 	set_sys_led_state(sys ? SYS_LED_OFF : SYS_LED_ON);
+	leds_mode = sys ? 2 : ports ? 1 : 0;
 }
