@@ -470,3 +470,111 @@ make schedtest-sim ... SIM_ARGS=--twice: 0 failures, deterministic, 148.6 s for 
         note: a paste across the 40 ms erase: 294 of 501 bytes taken, 207 overruns (accepted, decision 19)
 
 make -C test -j8 quick: exit 0 (test_sched 112 checks, 0 failed).
+
+## Addendum: coverage and the horizon test (59553cc, eac984c)
+
+rtlsim: ovs-rtlpg 267954e ctl: no NULs in what run until uart matches (build/rtlsim, tools/cov_report.py).
+
+make schedtest (resource gate):
+
+      internal RAM: data 105 B (baseline 105), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+      DSEG symbols: 54, none new
+      stack: 131 B (at least 120)
+      common area: ends 0x3ec4 (gate 0x3f80, 188 B left)
+      bank 1: 48484 B used, 668 B free
+      bank 2: 48496 B used, 656 B free
+      bank 3: 49124 B used, 28 B free
+      PASS (3 warnings)
+    xdata:        ends 0x5135
+
+make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS=--twice: exit 0, real 3m2.986s for both runs (~91 s a run).
+
+      horizon
+        ok   con's horizon was pushed on (wake 0x7fff -> 0xfffe, 31514 ticks ahead)
+        ok   and con did not run for it (0 runs)
+        ok   horizon: the simulator's checks are clean
+        (15.3 s wall)
+      soak
+        ok   t=60 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=60 s: sched_posted empty at the next pass's first step
+        ok   t=120 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=120 s: sched_posted empty at the next pass's first step
+        ok   t=180 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=180 s: sched_posted empty at the next pass's first step
+        ok   t=240 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=240 s: sched_posted empty at the next pass's first step
+        ok   t=300 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=300 s: sched_posted empty at the next pass's first step
+        ok   t=360 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=360 s: sched_posted empty at the next pass's first step
+        ok   t=420 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=420 s: sched_posted empty at the next pass's first step
+        ok   t=480 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=480 s: sched_posted empty at the next pass's first step
+        ok   t=540 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=540 s: sched_posted empty at the next pass's first step
+        ok   t=600 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=600 s: sched_posted empty at the next pass's first step
+        ok   every flash run verified (10 of 10)
+        ok   every claimed job ended
+        ok   no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing)
+        ok   sleep_a/b never early across the whole soak (and both tick wraps)
+        ok   no watchdog reset
+        ok   no RX overruns (0)
+        ok   stack headroom 90 B
+        ok   soak: the simulator's checks are clean
+        (55.6 s wall)
+      coverage
+        ok   every state's step function ran (23)
+        ok   every line of sched.c ran: sched.c: 44 of 44 lines with code ran
+        info sched_bank.c: 130 of 132 lines with code ran (missed sched_bank.c:57, sched_bank.c:119)
+        info crash.c: 0 of 21 lines with code ran (missed crash.c:31, crash.c:32, crash.c:33, crash.c:34, crash.c:35, crash.c:39, crash.c:40, crash.c:41, crash.c:42, crash.c:43, crash.c:44, crash.c:45, crash.c:46, crash.c:47, crash.c:49, crash.c:50, crash.c:52, crash.c:53, crash.c:54, crash.c:59, crash.c:61)
+        info con_ring.c: 21 of 21 lines with code ran
+      horizon
+        ok   con's horizon was pushed on (wake 0x7fff -> 0xfffe, 31514 ticks ahead)
+        ok   and con did not run for it (0 runs)
+        ok   horizon: the simulator's checks are clean
+        (15.6 s wall)
+      soak
+        ok   t=60 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=60 s: sched_posted empty at the next pass's first step
+        ok   t=120 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=120 s: sched_posted empty at the next pass's first step
+        ok   t=180 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=180 s: sched_posted empty at the next pass's first step
+        ok   t=240 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=240 s: sched_posted empty at the next pass's first step
+        ok   t=300 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=300 s: sched_posted empty at the next pass's first step
+        ok   t=360 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=360 s: sched_posted empty at the next pass's first step
+        ok   t=420 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=420 s: sched_posted empty at the next pass's first step
+        ok   t=480 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=480 s: sched_posted empty at the next pass's first step
+        ok   t=540 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=540 s: sched_posted empty at the next pass's first step
+        ok   t=600 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=600 s: sched_posted empty at the next pass's first step
+        ok   every flash run verified (10 of 10)
+        ok   every claimed job ended
+        ok   no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing)
+        ok   sleep_a/b never early across the whole soak (and both tick wraps)
+        ok   no watchdog reset
+        ok   no RX overruns (0)
+        ok   stack headroom 90 B
+        ok   soak: the simulator's checks are clean
+        (55.3 s wall)
+      coverage
+        ok   every state's step function ran (23)
+        ok   every line of sched.c ran: sched.c: 44 of 44 lines with code ran
+        info sched_bank.c: 130 of 132 lines with code ran (missed sched_bank.c:57, sched_bank.c:119)
+        info crash.c: 0 of 21 lines with code ran (missed crash.c:31, crash.c:32, crash.c:33, crash.c:34, crash.c:35, crash.c:39, crash.c:40, crash.c:41, crash.c:42, crash.c:43, crash.c:44, crash.c:45, crash.c:46, crash.c:47, crash.c:49, crash.c:50, crash.c:52, crash.c:53, crash.c:54, crash.c:59, crash.c:61)
+        info con_ring.c: 21 of 21 lines with code ran
+      deterministic: yes, every number the same
+    sim_tests: 0 failures, 182.9 s wall
+    sim_tests: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-boot-schedtest-v0.1.0-849debc-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+      deterministic: yes, every number the same
+    sim_tests: 0 failures, 182.9 s wall
+
+make -C test -j8 quick: exit 0.
