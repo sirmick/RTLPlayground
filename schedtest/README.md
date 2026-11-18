@@ -63,6 +63,7 @@ compares every measured number.
 | stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
 | horizon | 170 s with no input: con's wait without timeout reaches its horizon (~164 s) and is pushed on, without running |
 | soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
+| probes | silicon.py's commands: `peek` prints what the simulator reads; `flashtime` verifies and times (erase ~40 ms); `erasepeek`'s busy row is rtlsim's 0xff, its idle row the bank's code, and its reads are the one checker finding (flash-busy, a movc in `flash_erase_peek`): rtlsim exits 6 |
 
 Every test also requires the simulator's checks to be clean
 ("unmodelled" register notes from the CPU setup excepted), and dumps its
@@ -97,6 +98,30 @@ intended:
 
 Over the hang variant's tests every line of crash.c must run.
 
+## On silicon (C)
+
+The build writes `silicon.py` into its directory: `schedtest/silicon.py`
+with the build's constants embedded (the .map's addresses, the states and
+slots, `sl_hang`'s range, the bank window's bytes, the version). Copy it to
+the bench host; it needs Python 3's stdlib only and opens the port raw at
+115200.
+
+    python3 silicon.py [--port /dev/ttyUSB0] [--only TEST...] [--json F] [--log F]
+    python3 silicon.py report [--port ...]
+    python3 silicon.py --sim          # the same through a pty into rtlsim
+
+The base image's copy runs layer 2's scenario from the console alone: wake,
+waiter, isr_ev (runs and ring head; the latency needs the sim's clock), hot,
+jobs, printer (the 3000 lines checked on the host), flash, slow 30 and 20,
+paste (500 characters at 115200, quiet and across `slow 20`), stack
+(`deep 9`), the report, flashtime, erasepeek. It reads the firmware's state
+with `peek` snapshots and decodes them as sim_tests.py does, against the
+same bounds with silicon's own pass length. The hang image's copy runs
+`hang` twice, `health`, `^R ^R` and `reset`, and checks the `Last reset:`
+lines (cause, slot/state, 4995-5005 ms, PC inside `sl_hang`). The image's
+version must match the copy's. `--sim` runs either against rtlsim, paced
+to the wall clock.
+
 ## Console
 
 The prompt is `> ` (the firmware's).
@@ -105,7 +130,10 @@ The prompt is `> ` (the firmware's).
 |---|---|
 | `health` | every slot (task, state, mask, wake), runs and longest step per state, passes, overruns, console RX overruns, the last reset |
 | `health clear` | resets those counters |
-| `status` | the dummies' counters |
+| `peek A N [A N..]` | N bytes of xdata from A (decimal) in hex, `x <hex>`, a line per pair; all of a line's pairs in one step (a snapshot), 64 bytes at a time with the interrupts off. For silicon.py |
+| `clear` | `health clear`, and the timestamp logs start again (but the poster's) |
+| `flashtime` | erase, 4-byte and 256-byte program in the upload area's second sector, timed on the fine clock into `st_ft`, read back into `st_ft_bad`; then `flashtime done` |
+| `erasepeek` | erases the upload area's third sector and reads 64 bytes spread over the bank window **while it is busy**, from the common area (`flash_erase_peek`, the one sanctioned read), then the same once idle, into `flash_peek`; then `erasepeek done` |
 | `print [N]` | the printer prints N lines (default 3000), `P<n> the quick brown fox jumps`, one per step, only when the TX ring has room; then `print done` |
 | `jobs` | the jobber claims jobs until the table is full (`task_claim` returns `SCHED_NONE`); each runs 5 steps and ends |
 | `slow [ms]` | one step of ms (default 30, up to 400) in `SL_SLOW`, timed on the fine clock |
@@ -114,8 +142,9 @@ The prompt is `> ` (the firmware's).
 | `deep [N]` | every 20 ms, a step runs a chain of N (default 9; 0 stops) banked calls through banks 1, 2, 3, 1, ..., and at the bottom prints a line and spins 5-10 ms, so the console ISRs land on the deepest stack. Paste input meanwhile for RX |
 | `hot on`, `hot off` | the high-frequency task runs (yielding: the scheduler never idles) or waits; off at boot |
 | `reset` | `crash_reset(CRASH_RESET_CMD)` |
+| anything else | the usage line |
 
-Commands that print a lot (`health`, `status`) do it in one `CLI_RUN` step,
+Commands that print a lot (`health`, a long `peek`) do it in one `CLI_RUN` step,
 so they show up as `CLI_RUN` overruns: the console takes 87 µs a byte.
 
 ## Tasks and where they live

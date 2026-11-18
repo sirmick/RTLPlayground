@@ -7,7 +7,7 @@ sim_smoke.py - boot the schedtest image in rtlsim and run its commands once.
 BUILDDIR is a schedtest build (output/<MACHINE>-compact-schedtest);
 OVS_RTLPG the ovs-rtlpg checkout (default ~/src/ovs-rtlpg), whose
 tests/rtlsim_ctl.py and build/rtlsim are used. Boots the -boot image (the
-loader, then schedtest) to its prompt, then health, status, print 20, jobs,
+loader, then schedtest) to its prompt, then health, ?, print 20, jobs,
 flash, slow, a paste, and health again, printing the console transcript, a
 few symbols, and the simulator's checks. A smoke test, not B4's suite.
 """
@@ -45,7 +45,7 @@ def main(argv):
             print(sim.uart_text())
             return 1
         cmd("health")
-        cmd("status")
+        cmd("?")
         cmd("print 20", until=r"print done\n")
         cmd("jobs")
         sim.run(200)				# the jobs end, freeing their slots
@@ -54,7 +54,7 @@ def main(argv):
         sim.run(100)
         cmd("x" * 200)				# a paste: one long line, at the UART's rate
         sim.run(1000)
-        cmd("status")
+        cmd("?")
         cmd("health")
         out.append(sim.uart_text())
         print("".join(out))

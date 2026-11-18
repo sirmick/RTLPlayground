@@ -337,7 +337,7 @@ class Suite:
         self.boot(sim)
         self.cmd(sim, "deep 9")
         for i in range(10):              # serial traffic both ways under the deep chain
-            sim.uart_write("status\r")
+            sim.uart_write("?\r")          # the usage line
             sim.run(150)
         sim.uart_write("deep 0\r")
         sim.run(1200)                    # sleep_c rescans the paint each second
@@ -371,7 +371,7 @@ class Suite:
         lets the scheduler idle) running, stimuli every 10 s; the 16-bit tick
         wraps twice. Sampled at a pass end each time."""
         self.boot(sim)
-        stim = ["jobs", "print 100", "flash", "slow", "status", None]
+        stim = ["jobs", "print 100", "flash", "slow", "?", None]
         flashes, inv = 0, 0
         for i in range(60):
             s = stim[i % len(stim)]
@@ -402,8 +402,45 @@ class Suite:
         self.check(0xff - hw >= 30, f"stack headroom {0xff - hw} B")
         self.checks_clean(sim, "soak")
 
+    def t_probes(self, sim):
+        """silicon.py's console commands: peek prints what the simulator reads;
+        flashtime times and verifies its programs; erasepeek's busy row is
+        rtlsim's 0xff and its idle row the bank's code, and its reads are the
+        one flash-busy finding (the sanctioned bank-window read, a movc from
+        flash_erase_peek in the common area), so rtlsim exits 6."""
+        self.boot(sim)
+        self.fine(sim)
+        a1, a2 = sim.sym("sched_fine_per_tick")[1], sim.sym("st_stack_paint_from")[1]
+        self.cmd(sim, f"peek {a1} 2 {a2} 1")
+        rows = re.findall(r"^x ([0-9a-f]*)$", sim.uart_text(), re.M)
+        want = [sim.peek(f"x:{a1:#x}", 2).hex(), sim.peek(f"x:{a2:#x}", 1).hex()]
+        self.check(rows == want, f"peek A N A N: a row each, as the simulator reads them ({rows})", want)
+        self.cmd(sim, "flashtime", until=r"flashtime done\n> $", ms=3000)
+        ft = struct.unpack("<12H", sim.peek_sym("st_ft", 24))
+        t = [self.span_us(ft[i:i + 2], ft[i + 2:i + 4]) for i in (0, 4, 8)]
+        bad = self.u(sim, "st_ft_bad")
+        self.record(ft_erase_us=round(t[0], 1), ft_write4_us=round(t[1], 1), ft_write256_us=round(t[2], 1), ft_bad=bad)
+        self.check(bad == 0 and 39900 <= t[0] <= 40500 and t[1] < 1000 and t[2] < 10000,
+                   f"flashtime: erase {t[0]:.0f} us, 4 B {t[1]:.0f} us, 256 B {t[2]:.0f} us, {bad} bad")
+        self.checks_clean(sim, "flashtime")
+        self.cmd(sim, "erasepeek", until=r"erasepeek done\n> $", ms=3000)
+        peek, bank = sim.peek_sym("flash_peek", 128), self.u(sim, "st_pk_bank", 1)
+        app = open(self.image.replace("rtlplayground-boot-", "rtlplayground-"), "rb").read()
+        code = bytes(app[0x4000 + (bank - 1) * 0xC000 + 0x300 * i] for i in range(64))
+        bad = [c for c in sim.checks() if c[1] != "unmodelled"]
+        funcs = sorted((int(a, 16), n) for a, n in
+                       re.findall(r"^C:\s+([0-9A-F]{8})\s+(_\w+)", open(os.path.join(self.build, "rtlplayground.map")).read(), re.M))
+        m = bad and re.search(r"movc of 4000 \(flash \w+\) at pc=([0-9a-f]+) psbank=([0-9a-f]+)", bad[0][2])
+        fn = m and [n for a, n in funcs if a <= int(m.group(1), 16)][-1]
+        self.record(peek_bank=bank, peek_checks=[c[1] for c in bad], peek_fn=fn)
+        self.check(peek[:64] == b"\xff" * 64, "erasepeek: the busy row reads 0xff (rtlsim's model)", peek[:64].hex())
+        self.check(peek[64:] == code, f"erasepeek: the idle row is bank {bank}'s code", peek[64:].hex())
+        self.check(len(bad) == 1 and bad[0][1] == "flash-busy" and m and int(m.group(2), 16) == bank
+                   and fn == "_flash_erase_peek",
+                   f"erasepeek: exactly one finding, flash-busy, a movc from the window in {fn}", bad)
+
     TESTS = ["wake", "waiter", "isr_ev", "hot", "jobs", "printer", "flash", "slow", "paste", "invariants", "stack",
-             "horizon", "soak"]
+             "horizon", "soak", "probes"]
 
     def run(self, only=None):
         for name in self.TESTS:
@@ -415,9 +452,11 @@ class Suite:
             try:
                 with self.sim() as sim:
                     getattr(self, "t_" + name)(sim)
-                    if name not in ("flash", "soak"):
+                    if name not in ("flash", "soak", "probes"):
                         self.checks_clean(sim, name)
                     sim.cov_dump(os.path.join(self.covdir, name + ".cov"))
+                if name == "probes":
+                    self.check(sim.p.returncode == 6, f"rtlsim exits 6, the flash busy rule ({sim.p.returncode})")
             except (Fail, self.ctl.SimError) as e:
                 self.failures.append(f"{name}: {e}")
                 print(f"    FAIL {e}")

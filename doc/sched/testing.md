@@ -66,7 +66,9 @@ Assertions over the control socket:
 The schedtest image on the 8x: the timing checks against `health`, the
 flash job against real flash, a real hang leaving a real crash record across
 the loader. It also records what garbage reads return during an erase, so
-the sim's 0xFF can be matched.
+the sim's 0xFF can be matched. `schedtest/silicon.py` drives it from the
+console alone: the firmware's `peek` replaces the simulator's peeks, and the
+same bounds apply (schedtest/README.md).
 
 ## Layer 4: old vs new (phases D-F)
 
