@@ -123,7 +123,7 @@ class Suite:
         no wake beyond the horizon; then sched_posted empty at the next pass's
         first step (the snapshot took it)."""
         sim.run_until_pc("_sched_m_pass_end", max_ms=1000)
-        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H")], count=self.slots)
+        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=self.slots)
         now = self.u(sim, "sched_now")
         def wake_ok(t):
             ahead, behind = (t["wake"] - now) & 0xffff, (now - t["wake"]) & 0xffff
@@ -226,7 +226,7 @@ class Suite:
         sim.run(300)
         dyn = self.slots - self.T["T_FIXED"]
         claimed, full, done = (self.u(sim, n) for n in ("st_jobs_claimed", "st_jobs_full", "st_jobs_done"))
-        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H")], count=self.slots)
+        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=self.slots)
         self.record(claimed=claimed, full=full, done=done)
         self.check(claimed == dyn and full == 1, f"claims take the {dyn} dynamic slots, then SCHED_NONE ({claimed} claimed, {full} full)")
         self.check(done == dyn, f"every job ran its 5 steps and ended ({done})")

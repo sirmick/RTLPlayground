@@ -28,7 +28,7 @@ void sleep_b(void) __banked
 	st_lp = &st_log_sleep_b;
 	st_aux = 0;
 	st_log();
-	task_sleep(37);
+	STEP_SLEEP(S_SLEEP_B, 37);
 }
 
 /* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out */
@@ -38,39 +38,29 @@ void poster(void) __banked
 	st_lp = &st_log_poster;
 	st_aux = 0;
 	st_log();
-	task_sleep(300);
+	STEP_SLEEP(S_POSTER, 300);
 }
 
 /* ---- jobber: on request, claim jobs until the table is full ---- */
 
 #define JB_STEPS 5
-static __xdata uint8_t jb_left[SCHED_SLOTS];	/* steps left, per slot */
-static __xdata uint8_t js;
 
 void jobber(void) __banked
 {
-	if (!st_jobs_req) {
-		task_wait(EV_ST_GO, SCHED_FOREVER);
-		return;
-	}
+	if (!st_jobs_req)
+		STEP_WAIT(S_JOBBER, EV_ST_GO, SCHED_FOREVER);
 	st_jobs_req = 0;
-	for (;;) {
-		js = task_claim(S_JB_RUN);
-		if (js == SCHED_NONE) {
-			st_jobs_full++;
-			break;
-		}
-		jb_left[js] = JB_STEPS;
+	while (task_claim_arg(S_JB_RUN, JB_STEPS) != SCHED_NONE)	/* arg: its steps */
 		st_jobs_claimed++;
-	}
+	st_jobs_full++;
 }
 
 void jb_run(void) __banked
 {
-	if (--jb_left[sched_cur])
+	if (--task_arg())
 		return;			/* yields: runs again at its next position */
 	st_jobs_done++;
-	task_end();
+	STEP_END();
 }
 
 /* ---- the flasher job: erase, program and verify a sector of the upload
@@ -111,7 +101,7 @@ void fl_erase(void) __banked
 #else
 	flash_sector_erase();
 #endif
-	task_next(S_FL_PROG);
+	STEP_NEXT(S_FL_PROG);
 }
 
 void fl_prog(void) __banked
@@ -126,7 +116,7 @@ void fl_prog(void) __banked
 		return;
 	if (++fl_page == FL_PAGES) {
 		fl_page = 0;
-		task_next(S_FL_VERIFY);
+		STEP_NEXT(S_FL_VERIFY);
 	}
 }
 
@@ -142,12 +132,12 @@ void fl_verify(void) __banked
 			break;
 	}
 	if (++fl_page == FL_PAGES)
-		task_next(S_FL_DONE);
+		STEP_NEXT(S_FL_DONE);
 }
 
 void fl_done(void) __banked
 {
 	st_fl_state = st_fl_bad ? 3 : 2;
 	print_string(st_fl_bad ? "flash: verify FAILED\n" : "flash: ok\n");
-	task_end();
+	STEP_END();
 }

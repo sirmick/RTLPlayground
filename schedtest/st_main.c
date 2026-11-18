@@ -63,10 +63,8 @@ static __xdata uint8_t st_line_ready;
 void con_edit(void) __banked
 {
 	while (con_rx_ready()) {
-		if (con_tx_room() < 4) {	/* the echo must not wait */
-			task_wait(EV_CON_TX, SCHED_FOREVER);
-			return;
-		}
+		if (con_tx_room() < 4)		/* the echo must not wait */
+			STEP_WAIT(S_CON_EDIT, EV_CON_TX, SCHED_FOREVER);
 		c = con_getc();
 		st_con_rx_n++;
 		st_con_rx_sum += c;
@@ -98,7 +96,7 @@ void con_edit(void) __banked
 			write_char(c);
 		}
 	}
-	task_wait(EV_CON_RX, SCHED_FOREVER);
+	STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
 }
 
 /* ---- cli ---- */
@@ -136,9 +134,8 @@ static uint8_t number(void)	/* a decimal at ap into num */
 void cli_idle(void) __banked
 {
 	if (st_line_ready)
-		task_next(S_CLI_RUN);
-	else
-		task_wait(EV_LINE, SCHED_FOREVER);
+		STEP_NEXT(S_CLI_RUN);
+	STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
 }
 
 static void status(void)
@@ -239,7 +236,7 @@ void cli_prompt(void) __banked
 {
 	print_string("> ");
 	st_line_ready = 0;
-	task_next(S_CLI_IDLE);
+	STEP_NEXT(S_CLI_IDLE);
 }
 
 /* ---- boot ---- */
