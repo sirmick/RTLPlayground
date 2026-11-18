@@ -440,3 +440,17 @@ sched_ms_to_ticks without its +1 tick, built into output/b4-mut (reverted), --on
   kept the old T_FIXED and slot 12 (slow) started free (jobs claimed 12 slots). Fixed in 2d69a5e.
 - hot's yield kept every pass busy, so the simulator could not skip idle time: 10 s of firmware took 6.5 s
   busy, 0.9 s idle. hot is now on only for its test; the soak runs everything else.
+
+## Addendum: the return macros and the slot's arg (67af796, 39a5994)
+
+make schedtest: gate PASS, internal RAM data 105 / overlay 8 / bits 3 unchanged, DSEG list unchanged (54),
+common area unchanged (0x3ee2: sched.c 606 B either way).
+
+| | before | after | delta |
+|---|---|---|---|
+| xdata end | 0x5052 | 0x5069 | +23 B (+48 the slots' arg, -24 jb_left[], -2 pr_n, +2 sched_claim_arg, ...) |
+| sched_bank.c (banked) | 1665 B | 1737 B | +72 B (claim's arg, init) |
+| banks used (1/2/3) | 48390/48363/48975 | 49099/48433/48431 | +235 B in all: mostly the dummies, each STEP_SLEEP/WAIT adds a task_next call |
+
+make schedtest-sim ... SIM_ARGS=--twice: 0 failures, deterministic, 149.1 s wall for both runs.
+make -C test -j8 quick: exit 0 (test_sched 109 checks incl. the macros and arg; test_sched_gen 174).
