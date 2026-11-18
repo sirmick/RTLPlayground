@@ -1,0 +1,143 @@
+# B5 evidence: negative tests in rtlsim (2026-11-18)
+
+Tree: feat/sched 339676f (images named 339676f-dirty: only the orchestrator's
+uncommitted .wash/ files differ). The four images (base, hang, overrun,
+bad_flash) were rebuilt one at a time at 339676f, old images deleted first:
+
+    tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 [ST_NEG=hang|overrun|bad_flash]
+
+  all exit 0; place_banks (overrun): bank 1 656 free, bank 2 644, bank 3 5.
+rtlsim: ovs-rtlpg 267954e (build/rtlsim 2026-11-18 20:14).
+
+## make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice --json /tmp/b5/l2.json" NEG_ARGS="--json /tmp/b5/l2b.json"
+
+exit 0; 225 s wall for the whole target. 410 ok, 0 failures.
+
+    sim_tests: 0 failures, 182.5 s wall   (layer 2, --twice)
+      deterministic: yes, every number the same
+    sim_neg: 0 failures, 41.8 s wall      (layer 2b, --twice from SIM_ARGS)
+      deterministic: yes, every number the same
+
+Layer 2 is unchanged from B4 (doc/sched/evidence/b4-sim-tests.txt). Its
+coverage reports crash.c 0 of 21 lines as info, by design: crash.c is required
+in 2b. The waiter check now explains its bound:
+    ok   post -> waiter within one pass: 522 us <= 743
+
+Layer 2b, first run (the second run is identical; "unmodelled" sim notes cut):
+
+sim_neg: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest-{hang,overrun,bad_flash,bad_spec}
+  hang (rtlplayground-boot-schedtest-hang-v0.1.0-339676f-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin)
+    ok   a power-on boot finds no record
+    ok   hang 1: the reset went through the loader
+    ok   hang 1: SL_HANG began 0 tick(s) after the kick
+    ok   hang 1: the watchdog fired at the 1000th tick, 4995.132 ms after SL_HANG began (5 s - a tick at most)
+    ok   hang 1: a valid record at 0xbfe0 after the loader (magic 0x5c4d, sum ok True)
+    ok   hang 1: cause watchdog (1)
+    ok   hang 1: slot slow, state SL_HANG (12, 23)
+    ok   hang 1: the step's age at the reset 1000 ticks
+    ok   hang 1: PC 0xfb4f bank 3 inside sl_hang (0xfb44+241, bank 3)
+    ok   hang 1: SP 0x8a on the stack (0x7d..0xff)
+    ok   hang 1: resets before it 0
+    ok   hang 1: the boot printed it
+    ok   hang 1: the record is cleared after printing (magic 0x0)
+    ok   hang 1: kept in crash_last for health
+    ok   hang 1: crash_prior 1 (want 1)
+    ok   hang 2: the reset went through the loader
+    ok   hang 2: SL_HANG began 0 tick(s) after the kick
+    ok   hang 2: the watchdog fired at the 1000th tick, 4999.258 ms after SL_HANG began (5 s - a tick at most)
+    ok   hang 2: a valid record at 0xbfe0 after the loader (magic 0x5c4d, sum ok True)
+    ok   hang 2: cause watchdog (1)
+    ok   hang 2: slot slow, state SL_HANG (12, 23)
+    ok   hang 2: the step's age at the reset 1000 ticks
+    ok   hang 2: PC 0xfb53 bank 3 inside sl_hang (0xfb44+241, bank 3)
+    ok   hang 2: SP 0x8a on the stack (0x7d..0xff)
+    ok   hang 2: resets before it 1
+    ok   hang 2: the boot printed it
+    ok   hang 2: the record is cleared after printing (magic 0x0)
+    ok   hang 2: kept in crash_last for health
+    ok   hang 2: crash_prior 2 (want 2)
+    ok   health shows it
+    ok   hang: the simulator's checks are clean
+    (8.9 s wall)
+  ctrl_r (rtlplayground-boot-schedtest-hang-v0.1.0-339676f-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin)
+    ok   ^R ^R: the reset went through the loader
+    ok   ^R ^R: a valid record, cause ^R ^R (2), resets 0
+    ok   ^R ^R: the interrupted PC 0x33ec bank 1 is in _sched_pass
+    ok   ^R ^R: SP 0x84 on the stack (0x7d..0xff)
+    ok   ^R ^R: the boot printed it
+    ok   ^R ^R: the record is cleared after printing (magic 0x0)
+    ok   ^R ^R: kept in crash_last for health
+    ok   ^R ^R: crash_prior 1 (want 1)
+    ok   reset: the reset went through the loader
+    ok   reset: a valid record, cause reset command (3), resets 1
+    ok   reset: PC 0 (not from an ISR), in cli/CLI_RUN (1, 3)
+    ok   reset: SP 0x8c on the stack (0x7d..0xff)
+    ok   reset: the boot printed it, without a PC
+    ok   reset: the record is cleared after printing (magic 0x0)
+    ok   reset: kept in crash_last for health
+    ok   reset: crash_prior 2 (want 2)
+    ok   ctrl_r: the simulator's checks are clean
+    (3.1 s wall)
+  powercut (rtlplayground-boot-schedtest-hang-v0.1.0-339676f-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin)
+    ok   hang: the reset went through the loader
+    ok   a valid record before the cut
+    ok   after the power cut the record is not valid (magic 0x0, sum ok False)
+    ok   nothing kept, crash_prior 0
+    ok   and nothing printed
+    ok   powercut: the simulator's checks are clean
+    (6.1 s wall)
+  overrun (rtlplayground-boot-schedtest-overrun-v0.1.0-339676f-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin)
+    ok   one overrun, of SL_SLOW (overruns 1, state 22)
+    ok   the step measured ~25 ms: 25092 us
+    ok   health names it: overruns 1 last SL_SLOW
+    ok   and lists SL_SLOW once, ~25 ms
+    ok   overrun: the simulator's checks are clean
+    (1.3 s wall)
+  bad_flash (rtlplayground-boot-schedtest-bad_flash-v0.1.0-339676f-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin)
+    ok   exactly one check, flash-busy
+    ok   a fetch from a bank while busy, with PC/PSBANK/SP/time, in _fl_erase (the step that returned with the erase running)
+    ok   rtlsim exits 6, the flash busy rule (6)
+    (1.1 s wall)
+  bad_spec
+    ok   make fails (2)
+    ok   with the generator's message
+    (0.1 s wall)
+  coverage
+    ok   every line of crash.c ran: crash.c: 21 of 21 lines with code ran
+    ok   crash_boot, crash_die, crash_reset, crash_sum ran
+
+## The watchdog timing (why hang reads 4995..4999 ms, not 5000)
+
+The software watchdog counts timer ticks (5 ms, SWDT_TICKS 1000) from the
+pass's kick, not from the step's start. sched_pass kicks it once a pass, and
+SL_HANG starts later in the same pass, so the reset comes at the 1000th tick
+after the kick: (c-1)*5 < t <= c*5 ms after SL_HANG starts, where c is the
+count when it starts (c = 1000 when it starts in the kick's tick, 999 one
+tick later). The test reads swdt_cnt at SL_HANG's entry, asserts c is 999 or
+1000 and the reset falls in that window, the record's age == c, and the boot
+line prints 5*age ms. Here c = 1000 both times: 4995.132 and 4999.258 ms.
+
+## bad_spec
+
+Host: make -s SCHEDTEST=1 ST_NEG=bad_spec MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest-bad_spec/sched/sched_gen.h
+    sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c
+    exit 2
+Docker: tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 ST_NEG=bad_spec
+    sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c
+    make: *** [Makefile:147: schedtest] Error 2
+    exit 2
+
+## make -C test -j8 quick
+
+All stamps removed first: QUICK TESTS PASSED (test_loader skipped), 20 tests,
+exit 0, 4 s wall.
+
+## Open items
+
+- The overrun variant's bank 3 has 5 B free (28 B in the base build); code
+  added to st_b3.c may break it (phases.md, D2).
+- ^R ^R: the interrupted PC (0x33ec bank 1, _sched_pass) is deterministic,
+  recorded but not asserted: the test asserts only that it resolves via the .map.
+- powercut: the test cuts power after the loader, with a valid record waiting
+  at _crash_boot. That stands in for cutting instead of the reset: the
+  record is in xdata either way, and a cut clears it.
