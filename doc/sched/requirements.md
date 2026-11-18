@@ -36,7 +36,7 @@
 | Consumer | Tolerance | Consequence when missed |
 |---|---|---|
 | Loop detection (RLDP poll, 1 s) | as small as possible; each ms of delay is ms of storm | broadcast storm until blocked |
-| Console RX | ring overflow; 64 B ring = 5.6 ms of pasted text at 115200 | lost characters |
+| Console RX | ring overflow; 256 B ring = ~22 ms of pasted text at 115200 (decision 19), more than the 20 ms step limit; only the ~40 ms flash erase can lose pasted text | lost characters |
 | NIC RX ring | 10 KiB: ~6 full frames, ~150 small ones | the ASIC drops frames, BPDUs and LACPDUs included |
 | Link change | users notice > ~0.5-1 s | LAG member or STP port acted on late, traffic black-holed |
 | LACP, fast rate | we send every 1 s; partner times out at 3 s | LAG member flaps |

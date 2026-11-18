@@ -89,10 +89,12 @@ void isr_ev(void) __banked
 	STEP_WAIT(S_ISR_EV, EV_CON_RX, SCHED_FOREVER);
 }
 
-/* slow: one 25-30 ms step on request (an overrun); hang: a step that never
+/* slow: one step of st_slow_ms on request (default 30, an overrun;
+ * the length rides into SL_SLOW in the slot's arg); hang: a step that never
  * returns (ST_NEG=hang), for the watchdog. ST_NEG=overrun runs slow once by
  * itself, 2 s after boot. */
-static __xdata uint16_t sl_t0;
+static __xdata uint16_t sl_t0, sl_c0, sl_n, sl_dt, sl_el;	/* up to 400 ms */
+__xdata uint16_t st_slow_ms = 30;
 
 void sl_idle(void) __banked
 {
@@ -105,7 +107,7 @@ void sl_idle(void) __banked
 	}
 #endif
 	if (st_slow_req == 1)
-		STEP_NEXT(S_SL_SLOW);
+		STEP_ARG(S_SL_SLOW, st_slow_ms);
 	if (st_slow_req == 2)
 		STEP_NEXT(S_SL_HANG);
 	STEP_WAIT(S_SL_IDLE, EV_ST_GO, SCHED_FOREVER);
@@ -113,9 +115,17 @@ void sl_idle(void) __banked
 
 void sl_slow(void) __banked
 {
-	sl_t0 = sched_ticks();
-	while ((uint16_t)(sched_ticks() - sl_t0) < 6)	/* 25-30 ms */
-		;
+	sl_n = task_arg() * 163;		/* fine units (6.144 us): ms x 162.8 */
+	sched_fine_read();
+	sl_t0 = sched_f_tick;
+	sl_c0 = sched_f_cnt;
+	do {					/* the fine clock: ms within ~10 us */
+		sched_fine_read();
+		sl_dt = sched_f_tick - sl_t0;
+		sl_el = sched_f_cnt - sl_c0;
+		while (sl_dt--)
+			sl_el += sched_fine_per_tick;
+	} while (sl_el < sl_n);
 	st_slow_runs++;
 	st_slow_req = 0;
 	STEP_NEXT(S_SL_IDLE);

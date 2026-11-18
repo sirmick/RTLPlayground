@@ -4,7 +4,7 @@
 
 | Ring | Size | Filled by | Drained by |
 |---|---|---|---|
-| RX | 64 B (from 16) | `isr_serial` | the `con` task |
+| RX | 256 B (from 16), 8-bit indexes that wrap by themselves (decision 19) | `isr_serial` | the `con` task |
 | TX | 128 B (one long line plus room) | `write_char` | `isr_serial` on TI |
 
 - **RX:** the ISR stores, or counts an overrun when the ring is full (shown
@@ -12,7 +12,8 @@
   bit. `^R ^R` stays in the ISR, as today, and records the reset
   (chapter 11).
 - The ISR side is two macros, `CON_ISR_RX(c)` and `CON_ISR_TX()`
-  (`con_ring.h`); with them the serial ISR pushes 9 bytes instead of 6.
+  (`con_ring.h`); with them the serial ISR pushes 7 bytes instead of 6 (8-bit
+  RX indexes: the 256 B ring wraps by itself).
 - **TX:** `write_char` puts a byte in the ring and, if the transmitter is
   idle, starts it. **If the ring is full it busy-waits** for room, as today's
   code waits for every byte. Old code that prints a lot keeps working at
@@ -23,9 +24,11 @@
 
 ## The `con` task (editor)
 
-Fixed, frequency **high** (pasted input must not overflow 64 B: at 115200 a
-byte arrives every 87 µs, so `con` must run at least every ~5 ms while
-input flows).
+Fixed, frequency **high**: at 115200 a byte arrives every 87 µs, so the
+256 B RX ring fills in ~22 ms. One step of up to the 20 ms limit between two
+runs of `con` loses nothing (schedtest: a 500-character paste across a 20 ms
+step); a ~40 ms flash erase across a fast paste can (decision 19). High
+frequency keeps `con` within a few steps of every byte.
 
 | State | Does | Next |
 |---|---|---|

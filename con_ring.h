@@ -1,7 +1,7 @@
 /*
  * con_ring.h - the console UART rings (doc/sched/console.md).
  *
- * RX, 64 B: the serial ISR stores each byte, or counts an overrun when the
+ * RX, 256 B: the serial ISR stores each byte, or counts an overrun when the
  * ring is full; the con task drains it. TX, 128 B: con_putc() queues a byte
  * and starts the transmitter if it is idle, busy-waiting while the ring is
  * full; the ISR sends the next byte on each TI.
@@ -14,8 +14,9 @@
 
 #include <stdint.h>
 
-#define CON_RX_SIZE	64	/* powers of 2 */
-#define CON_TX_SIZE	128
+#define CON_RX_SIZE	256	/* 8-bit indexes wrap by themselves: ~22 ms of input at
+				 * 115200, more than a 20 ms step (decision 19) */
+#define CON_TX_SIZE	128	/* a power of 2 */
 #define CON_TX_LINE	100	/* EV_CON_TX: room for a line */
 
 extern __xdata uint8_t con_rx_buf[CON_RX_SIZE];
@@ -29,11 +30,11 @@ extern volatile __xdata uint8_t con_tx_busy;	/* the transmitter is sending */
 
 /* In isr_serial, for a received byte c (an 8-bit local or SBUF). */
 #define CON_ISR_RX(c) do { \
-	if (((con_rx_head + 1) & (CON_RX_SIZE - 1)) == con_rx_tail) { \
+	if ((uint8_t)(con_rx_head + 1) == con_rx_tail) { \
 		con_rx_overruns++; \
 	} else { \
 		con_rx_buf[con_rx_head] = (c); \
-		con_rx_head = (con_rx_head + 1) & (CON_RX_SIZE - 1); \
+		con_rx_head++; \
 	} \
 } while (0)
 

@@ -285,20 +285,38 @@ class Suite:
         mx = self.st_max_us(sim, "S_SL_SLOW")
         self.record(overruns=ov, state=st, sl_slow_us=round(mx, 1))
         self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"one overrun, of SL_SLOW (overruns {ov}, state {st})")
-        self.check(25000 <= mx < 31000, f"its length measured: {mx:.0f} us")
+        self.check(29500 <= mx < 31000, f"its length measured (slow's default 30 ms): {mx:.0f} us")
 
-    def t_paste(self, sim):
-        self.boot(sim)
-        n0, s0 = self.u(sim, "st_con_rx_n"), self.u(sim, "st_con_rx_sum")
+    def paste(self, sim, what):
+        """500 characters + CR at the UART's rate; (bytes con took, sum ok, overruns)"""
+        n0, s0, o0 = self.u(sim, "st_con_rx_n"), self.u(sim, "st_con_rx_sum"), self.u(sim, "con_rx_overruns")
         text = "".join(chr(33 + (i * 7) % 94) for i in range(500))
         sim.uart_write(text + "\r")
         sim.run(500)
-        n1, s1 = self.u(sim, "st_con_rx_n"), self.u(sim, "st_con_rx_sum")
-        ov = self.u(sim, "con_rx_overruns")
+        n1, s1, o1 = self.u(sim, "st_con_rx_n"), self.u(sim, "st_con_rx_sum"), self.u(sim, "con_rx_overruns")
         want = (s0 + sum(map(ord, text)) + 13) & 0xffff
-        self.record(bytes=n1 - n0, sum=s1, overruns=ov)
-        self.check(n1 - n0 == 501 and s1 == want, f"500 characters + CR all taken by con ({n1 - n0} bytes, sum {s1:#x} want {want:#x})")
-        self.check(ov == 0, f"no RX ring overrun ({ov})")
+        self.record(**{f"{what}_bytes": n1 - n0, f"{what}_overruns": o1 - o0})
+        return n1 - n0, s1 == want, o1 - o0
+
+    def t_paste(self, sim):
+        """The 256 B RX ring (decision 19): a paste is safe alone and across a
+        20 ms step (~230 B arrive meanwhile). A 40 ms erase across a paste may
+        lose bytes: accepted, recorded, not asserted."""
+        self.boot(sim)
+        n, ok, ov = self.paste(sim, "quiet")
+        self.check(n == 501 and ok and ov == 0, f"a quiet paste: all 501 bytes taken, none lost ({n}, overruns {ov})")
+        self.cmd(sim, "slow 20")
+        sim.run_until_pc("_sl_slow", max_ms=100)
+        n, ok, ov = self.paste(sim, "step20")
+        self.fine(sim)
+        mx = self.st_max_us(sim, "S_SL_SLOW")
+        self.record(step20_us=round(mx, 1))
+        self.check(n == 501 and ok and ov == 0, f"across a {mx / 1000:.1f} ms step: all 501 bytes taken, none lost ({n}, overruns {ov})")
+        self.check(19500 <= mx <= 21000, f"that step was ~20 ms ({mx:.0f} us)")
+        sim.uart_write("flash\r")
+        sim.run_until_pc("_fl_erase", max_ms=200)
+        n, ok, ov = self.paste(sim, "erase")
+        print(f"    note: a paste across the 40 ms erase: {n} of 501 bytes taken, {ov} overruns (accepted, decision 19)")
 
     def t_invariants(self, sim):
         self.boot(sim)

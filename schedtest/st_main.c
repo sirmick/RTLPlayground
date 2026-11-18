@@ -203,6 +203,7 @@ void cli_run(void) __banked
 		st_jobs_req = 1;
 		event_post(EV_ST_GO);
 	} else if (word("slow")) {
+		st_slow_ms = number() ? num : 30;
 		st_slow_req = 1;
 		event_post(EV_ST_GO);
 	} else if (word("hang")) {
@@ -228,7 +229,7 @@ void cli_run(void) __banked
 	} else if (word("reset")) {
 		crash_reset(CRASH_RESET_CMD);
 	} else {
-		print_string("health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | deep [N] | hot on|off | reset\n");
+		print_string("health [clear] | status | print [N] | jobs | slow [ms] | hang | flash | badflash | deep [N] | hot on|off | reset\n");
 	}
 }
 

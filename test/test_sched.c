@@ -352,13 +352,25 @@ static void test_rings(void)
 {
 	printf("console rings\n");
 	con_ring_init();
-	for (int k = 0; k < 70; k++)
-		CON_ISR_RX('0' + k);
-	CHECK(con_rx_overruns == 7, "64-byte RX ring keeps 63, counts 7 overruns");
+	CHECK(sizeof(con_rx_buf) == 256, "the RX ring is 256 B");
+	for (int k = 0; k < 262; k++)
+		CON_ISR_RX((uint8_t)k);
+	CHECK(con_rx_overruns == 7, "256-byte RX ring keeps 255, counts 7 overruns");
 	int ok = 1;
-	for (int k = 0; k < 63; k++)
-		ok &= con_rx_ready() && con_getc() == '0' + k;
+	for (int k = 0; k < 255; k++)
+		ok &= con_rx_ready() && con_getc() == (uint8_t)k;
 	CHECK(ok && !con_rx_ready(), "RX bytes come out in order, then empty");
+	ok = 1;
+	for (int round = 0; round < 10; round++) {	/* 2000 bytes: the 8-bit indexes wrap 7 times */
+		for (int k = 0; k < 200; k++)
+			CON_ISR_RX((uint8_t)(k * 3 + round));
+		for (int k = 0; k < 200; k++)
+			ok &= con_rx_ready() && con_getc() == (uint8_t)(k * 3 + round);
+	}
+	CHECK(ok && !con_rx_ready() && con_rx_overruns == 7, "across the wraps: in order, no overrun, then empty");
+	for (int k = 0; k < 300; k++)
+		CON_ISR_RX('z');
+	CHECK(con_rx_overruns == 7 + 45, "full again at any index: 255 kept, the rest counted");
 
 	CHECK(con_tx_room() == 127, "empty TX ring: 127 free");
 	con_putc('H');

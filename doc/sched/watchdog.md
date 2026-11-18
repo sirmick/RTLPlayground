@@ -16,7 +16,7 @@ if (swdt_on && !--swdt_cnt) {
 
 - A jump, not a call: any call in an ISR makes SDCC save every register on
   every entry. `pushes` is the ISR prologue's push count (8 in isr_timer2,
-  9 in isr_serial with the rings); `tools/isr_frame.py` reads it from the
+  7 in isr_serial with the 256 B ring's 8-bit indexes); `tools/isr_frame.py` reads it from the
   `.asm` and checks the number in the source.
 - `swdt_kick()` at each pass start sets `swdt_cnt = 1000`.
 - **Limit: 5 s** (1000 ticks). It must be far above the step limit (20 ms)

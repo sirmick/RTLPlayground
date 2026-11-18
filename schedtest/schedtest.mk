@@ -11,7 +11,7 @@ ST_DEFS = $(ST_DIR)/st_main.def $(ST_DIR)/st_b1.def $(ST_DIR)/st_b2.def $(ST_DIR
 # What the ISR prologues push before SWDT_ISR / CRASH_FROM_ISR read SP
 # (crash.h); checked against the compiled rtlplayground.asm below.
 ST_ISR_T2_PUSHES = 8
-ST_ISR_SERIAL_PUSHES = 9
+ST_ISR_SERIAL_PUSHES = 7
 
 CC_FLAGS += -DSCHEDTEST -I$(ST_GEN) \
 	-DST_ISR_T2_PUSHES=$(ST_ISR_T2_PUSHES) -DST_ISR_SERIAL_PUSHES=$(ST_ISR_SERIAL_PUSHES)
