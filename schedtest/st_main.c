@@ -2,7 +2,6 @@
  * st_main.c - schedtest's boot, the console editor (con), the command task
  * (cli) and the timestamp log. Banked; place_banks.py picks the bank.
  */
-#include <8051.h>
 #include <stdint.h>
 #include "rtl837x_common.h"
 #include "version.h"
@@ -143,40 +142,6 @@ void cli_idle(void) __banked
 	STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
 }
 
-static void status(void)
-{
-	print_string("print ");
-	itoa_short(st_print_done);
-	print_string(" jobs claimed ");
-	itoa_short(st_jobs_claimed);
-	print_string(" full ");
-	itoa_short(st_jobs_full);
-	print_string(" done ");
-	itoa_short(st_jobs_done);
-	print_string(" flash ");
-	itoa(st_fl_state);
-	print_string(" bad ");
-	itoa_short(st_fl_bad);
-	print_string(" slow ");
-	itoa_short(st_slow_runs);
-	print_string("\ncon rx ");
-	itoa_short(st_con_rx_n);
-	print_string(" sum ");
-	print_short(st_con_rx_sum);
-	print_string(" overruns ");
-	ES = 0;			/* the ISR writes it: read both bytes at once */
-	st_aux = con_rx_overruns;
-	ES = 1;
-	itoa_short(st_aux);
-	print_string(" step SP max ");
-	print_byte(st_sp_step_max);
-	print_string(" stack hw ");
-	print_byte(st_stack_hw);
-	print_string(" deep SP ");
-	print_byte(st_deep_sp);
-	write_char('\n');		/* the logs' run counts: their n, by symbol */
-}
-
 void cli_run(void) __banked
 {
 	task_next(S_CLI_PROMPT);
@@ -188,8 +153,25 @@ void cli_run(void) __banked
 			return;
 		}
 		sched_health_tasks();
-	} else if (word("status")) {
-		status();
+	} else if (word("peek")) {	/* A N [A N ...]: all in this step, a snapshot */
+		while (number()) {
+			st_pk_addr = num;
+			while (st_line[ap] == ' ')
+				ap++;
+			number();
+			st_pk_len = num;
+			while (st_line[ap] == ' ')
+				ap++;
+			st_peek();
+		}
+	} else if (word("clear")) {
+		st_clear();
+	} else if (word("flashtime")) {
+		st_flashtime();
+		print_string("flashtime done\n");
+	} else if (word("erasepeek")) {
+		st_erasepeek();
+		print_string("erasepeek done\n");
 	} else if (word("print")) {
 		st_print_req = number() ? num : 3000;
 		event_post(EV_ST_GO);
@@ -219,7 +201,8 @@ void cli_run(void) __banked
 	} else if (word("reset")) {
 		crash_reset(CRASH_RESET_CMD);
 	} else {
-		print_string("health [clear] | status | print [N] | jobs | slow [ms] | hang | flash | badflash | deep [N] | hot on|off | reset\n");
+		print_string("health [clear] | peek A N [A N..] | clear | print [N] | jobs | slow [ms] | hang | flash | badflash"
+			     " | flashtime | erasepeek | deep [N] | hot on|off | reset\n");
 	}
 }
 

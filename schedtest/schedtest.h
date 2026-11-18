@@ -75,6 +75,13 @@ void deep_2(void) __banked;
 void deep_3(void) __banked;
 void st_deep_bottom(void) __banked;
 
+/* st_report.c: peek, clear and the flash probes, for silicon.py */
+extern __xdata uint16_t st_pk_addr, st_pk_len;
+void st_peek(void) __banked;
+void st_clear(void) __banked;
+void st_flashtime(void) __banked;
+void st_erasepeek(void) __banked;
+
 void schedtest_main(void) __banked;	/* from main(): never returns */
 void st_flash_start(void) __banked;	/* claim the flasher job */
 
