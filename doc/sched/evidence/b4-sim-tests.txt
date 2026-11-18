@@ -1,0 +1,442 @@
+# B4 evidence: schedtest in rtlsim (2026-11-18)
+
+schedtest build: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest (tree = 2d69a5e's sources; image named facccb1-dirty)
+rtlsim: ovs-rtlpg fb7874f ctl: build with musl - REG_STARTEND only where there is one (build/rtlsim 2026-11-18 20:10)
+
+## make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice --json ..."
+
+exit 0; real 2m43.694s for both runs (~82 s a run)
+
+    sim_tests: output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground-boot-schedtest-v0.1.0-facccb1-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+      wake
+        ok   sleep_a (5 ms): never early, shortest gap 9990 us
+        ok   sleep_a: late by at most a pass, longest gap 10052 us <= 10657
+        ok   sleep_b (37 ms): never early, shortest gap 44716 us
+        ok   sleep_b: late by at most a pass, longest gap 45195 us <= 45657
+        ok   sleep_c (1000 ms): never early, shortest gap 1003997 us
+        ok   sleep_c: late by at most a pass, longest gap 1004237 us <= 1005657
+        ok   wake: the simulator's checks are clean
+        (2.0 s wall)
+      waiter
+        ok   the waiter woke by EV_ST_POKE 10 times
+        ok   post -> waiter within one pass: 547 us <= 608
+        ok   the timeout path: 20 timeouts
+        ok   timeouts 100 ms, never early: 104288..104995 us (<= 105608)
+        ok   waiter: the simulator's checks are clean
+        (1.9 s wall)
+      isr_ev
+        ok   isr_ev ran for each byte (8 runs)
+        ok   UART byte -> ISR -> EV_CON_RX -> isr_ev within 2 ms: 787 us
+        ok   and saw the ring head move forward
+        ok   isr_ev: the simulator's checks are clean
+        (1.4 s wall)
+      hot
+        ok   hot ran 22620 times in 2 s
+        ok   worst gap 332 us <= spacing 4 x (longest step 221 + 60) us = 1125
+        ok   hot: the simulator's checks are clean
+        (3.4 s wall)
+      jobs
+        ok   claims take the 11 dynamic slots, then SCHED_NONE (11 claimed, 1 full)
+        ok   every job ran its 5 steps and ended (11)
+        ok   all dynamic slots free again
+        ok   fixed slots untouched
+        ok   and a second round reuses them
+        ok   jobs: the simulator's checks are clean
+        (1.5 s wall)
+      printer
+        ok   print 3000 finished
+        ok   3000 lines, in order, none lost or garbled (3000 seen)
+        ok   st_print_done 3000
+        ok   no printer or console step over 5 ms (PR_LINE 356 us, CON_EDIT 55 us)
+        ok   printer: the simulator's checks are clean
+        (8.6 s wall)
+      flash
+        ok   erase, program, verify of the sector at 0x40000: ok (state 2, bad 0)
+        ok   program and verify steps under 5 ms (2746, 1425 us)
+        ok   the erase, the sanctioned exception: 40016 us
+        ok   flash: the simulator's checks are clean
+        (1.5 s wall)
+      slow
+        ok   one overrun, of SL_SLOW (overruns 1, state 22)
+        ok   its length measured: 27980 us
+        ok   slow: the simulator's checks are clean
+        (1.4 s wall)
+      paste
+        ok   500 characters + CR all taken by con (501 bytes, sum 0x9acb want 0x9acb)
+        ok   no RX ring overrun (0)
+        ok   paste: the simulator's checks are clean
+        (1.5 s wall)
+      invariants
+        ok   pass 0: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 0: sched_posted empty at the next pass's first step
+        ok   pass 1: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 1: sched_posted empty at the next pass's first step
+        ok   pass 2: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 2: sched_posted empty at the next pass's first step
+        ok   pass 3: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 3: sched_posted empty at the next pass's first step
+        ok   pass 4: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 4: sched_posted empty at the next pass's first step
+        ok   pass 5: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 5: sched_posted empty at the next pass's first step
+        ok   pass 6: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 6: sched_posted empty at the next pass's first step
+        ok   pass 7: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 7: sched_posted empty at the next pass's first step
+        ok   pass 8: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 8: sched_posted empty at the next pass's first step
+        ok   pass 9: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 9: sched_posted empty at the next pass's first step
+        ok   pass 10: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 10: sched_posted empty at the next pass's first step
+        ok   pass 11: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 11: sched_posted empty at the next pass's first step
+        ok   pass 12: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 12: sched_posted empty at the next pass's first step
+        ok   pass 13: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 13: sched_posted empty at the next pass's first step
+        ok   pass 14: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 14: sched_posted empty at the next pass's first step
+        ok   pass 15: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 15: sched_posted empty at the next pass's first step
+        ok   pass 16: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 16: sched_posted empty at the next pass's first step
+        ok   pass 17: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 17: sched_posted empty at the next pass's first step
+        ok   pass 18: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 18: sched_posted empty at the next pass's first step
+        ok   pass 19: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 19: sched_posted empty at the next pass's first step
+        ok   pass 20: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 20: sched_posted empty at the next pass's first step
+        ok   pass 21: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 21: sched_posted empty at the next pass's first step
+        ok   pass 22: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 22: sched_posted empty at the next pass's first step
+        ok   pass 23: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 23: sched_posted empty at the next pass's first step
+        ok   pass 24: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 24: sched_posted empty at the next pass's first step
+        ok   pass 25: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 25: sched_posted empty at the next pass's first step
+        ok   pass 26: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 26: sched_posted empty at the next pass's first step
+        ok   pass 27: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 27: sched_posted empty at the next pass's first step
+        ok   pass 28: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 28: sched_posted empty at the next pass's first step
+        ok   pass 29: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 29: sched_posted empty at the next pass's first step
+        ok   invariants: the simulator's checks are clean
+        (1.4 s wall)
+      stack
+        ok   deep ran 43 times under the console traffic (~30 ms a round: 20 ms sleep + its spin)
+        ok   st_stack_hw 0xc2 agrees with the raw paint 0xc2
+        ok   stack headroom 61 B >= 30 (high-water 0xc2, deep's bottom SP 0xa8)
+        ok   stack: the simulator's checks are clean
+        (2.1 s wall)
+      soak
+        ok   t=60 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=60 s: sched_posted empty at the next pass's first step
+        ok   t=120 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=120 s: sched_posted empty at the next pass's first step
+        ok   t=180 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=180 s: sched_posted empty at the next pass's first step
+        ok   t=240 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=240 s: sched_posted empty at the next pass's first step
+        ok   t=300 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=300 s: sched_posted empty at the next pass's first step
+        ok   t=360 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=360 s: sched_posted empty at the next pass's first step
+        ok   t=420 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=420 s: sched_posted empty at the next pass's first step
+        ok   t=480 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=480 s: sched_posted empty at the next pass's first step
+        ok   t=540 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=540 s: sched_posted empty at the next pass's first step
+        ok   t=600 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=600 s: sched_posted empty at the next pass's first step
+        ok   every flash run verified (10 of 10)
+        ok   every claimed job ended
+        ok   no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing)
+        ok   sleep_a/b never early across the whole soak (and both tick wraps)
+        ok   no watchdog reset
+        ok   no RX overruns (0)
+        ok   stack headroom 91 B
+        ok   soak: the simulator's checks are clean
+        (62.6 s wall)
+    second run:
+      wake
+        ok   sleep_a (5 ms): never early, shortest gap 9990 us
+        ok   sleep_a: late by at most a pass, longest gap 10052 us <= 10657
+        ok   sleep_b (37 ms): never early, shortest gap 44716 us
+        ok   sleep_b: late by at most a pass, longest gap 45195 us <= 45657
+        ok   sleep_c (1000 ms): never early, shortest gap 1003997 us
+        ok   sleep_c: late by at most a pass, longest gap 1004237 us <= 1005657
+        ok   wake: the simulator's checks are clean
+        (1.5 s wall)
+      waiter
+        ok   the waiter woke by EV_ST_POKE 10 times
+        ok   post -> waiter within one pass: 547 us <= 608
+        ok   the timeout path: 20 timeouts
+        ok   timeouts 100 ms, never early: 104288..104995 us (<= 105608)
+        ok   waiter: the simulator's checks are clean
+        (1.3 s wall)
+      isr_ev
+        ok   isr_ev ran for each byte (8 runs)
+        ok   UART byte -> ISR -> EV_CON_RX -> isr_ev within 2 ms: 787 us
+        ok   and saw the ring head move forward
+        ok   isr_ev: the simulator's checks are clean
+        (1.1 s wall)
+      hot
+        ok   hot ran 22620 times in 2 s
+        ok   worst gap 332 us <= spacing 4 x (longest step 221 + 60) us = 1125
+        ok   hot: the simulator's checks are clean
+        (2.4 s wall)
+      jobs
+        ok   claims take the 11 dynamic slots, then SCHED_NONE (11 claimed, 1 full)
+        ok   every job ran its 5 steps and ended (11)
+        ok   all dynamic slots free again
+        ok   fixed slots untouched
+        ok   and a second round reuses them
+        ok   jobs: the simulator's checks are clean
+        (1.1 s wall)
+      printer
+        ok   print 3000 finished
+        ok   3000 lines, in order, none lost or garbled (3000 seen)
+        ok   st_print_done 3000
+        ok   no printer or console step over 5 ms (PR_LINE 356 us, CON_EDIT 55 us)
+        ok   printer: the simulator's checks are clean
+        (6.8 s wall)
+      flash
+        ok   erase, program, verify of the sector at 0x40000: ok (state 2, bad 0)
+        ok   program and verify steps under 5 ms (2746, 1425 us)
+        ok   the erase, the sanctioned exception: 40016 us
+        ok   flash: the simulator's checks are clean
+        (1.2 s wall)
+      slow
+        ok   one overrun, of SL_SLOW (overruns 1, state 22)
+        ok   its length measured: 27980 us
+        ok   slow: the simulator's checks are clean
+        (1.1 s wall)
+      paste
+        ok   500 characters + CR all taken by con (501 bytes, sum 0x9acb want 0x9acb)
+        ok   no RX ring overrun (0)
+        ok   paste: the simulator's checks are clean
+        (1.2 s wall)
+      invariants
+        ok   pass 0: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 0: sched_posted empty at the next pass's first step
+        ok   pass 1: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 1: sched_posted empty at the next pass's first step
+        ok   pass 2: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 2: sched_posted empty at the next pass's first step
+        ok   pass 3: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 3: sched_posted empty at the next pass's first step
+        ok   pass 4: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 4: sched_posted empty at the next pass's first step
+        ok   pass 5: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 5: sched_posted empty at the next pass's first step
+        ok   pass 6: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 6: sched_posted empty at the next pass's first step
+        ok   pass 7: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 7: sched_posted empty at the next pass's first step
+        ok   pass 8: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 8: sched_posted empty at the next pass's first step
+        ok   pass 9: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 9: sched_posted empty at the next pass's first step
+        ok   pass 10: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 10: sched_posted empty at the next pass's first step
+        ok   pass 11: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 11: sched_posted empty at the next pass's first step
+        ok   pass 12: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 12: sched_posted empty at the next pass's first step
+        ok   pass 13: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 13: sched_posted empty at the next pass's first step
+        ok   pass 14: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 14: sched_posted empty at the next pass's first step
+        ok   pass 15: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 15: sched_posted empty at the next pass's first step
+        ok   pass 16: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 16: sched_posted empty at the next pass's first step
+        ok   pass 17: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 17: sched_posted empty at the next pass's first step
+        ok   pass 18: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 18: sched_posted empty at the next pass's first step
+        ok   pass 19: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 19: sched_posted empty at the next pass's first step
+        ok   pass 20: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 20: sched_posted empty at the next pass's first step
+        ok   pass 21: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 21: sched_posted empty at the next pass's first step
+        ok   pass 22: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 22: sched_posted empty at the next pass's first step
+        ok   pass 23: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 23: sched_posted empty at the next pass's first step
+        ok   pass 24: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 24: sched_posted empty at the next pass's first step
+        ok   pass 25: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 25: sched_posted empty at the next pass's first step
+        ok   pass 26: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 26: sched_posted empty at the next pass's first step
+        ok   pass 27: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 27: sched_posted empty at the next pass's first step
+        ok   pass 28: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 28: sched_posted empty at the next pass's first step
+        ok   pass 29: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   pass 29: sched_posted empty at the next pass's first step
+        ok   invariants: the simulator's checks are clean
+        (1.1 s wall)
+      stack
+        ok   deep ran 43 times under the console traffic (~30 ms a round: 20 ms sleep + its spin)
+        ok   st_stack_hw 0xc2 agrees with the raw paint 0xc2
+        ok   stack headroom 61 B >= 30 (high-water 0xc2, deep's bottom SP 0xa8)
+        ok   stack: the simulator's checks are clean
+        (1.6 s wall)
+      soak
+        ok   t=60 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=60 s: sched_posted empty at the next pass's first step
+        ok   t=120 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=120 s: sched_posted empty at the next pass's first step
+        ok   t=180 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=180 s: sched_posted empty at the next pass's first step
+        ok   t=240 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=240 s: sched_posted empty at the next pass's first step
+        ok   t=300 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=300 s: sched_posted empty at the next pass's first step
+        ok   t=360 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=360 s: sched_posted empty at the next pass's first step
+        ok   t=420 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=420 s: sched_posted empty at the next pass's first step
+        ok   t=480 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=480 s: sched_posted empty at the next pass's first step
+        ok   t=540 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=540 s: sched_posted empty at the next pass's first step
+        ok   t=600 s: slots valid at a pass end (state < S_COUNT, defined mask bits, wake within the task's longest wait)
+        ok   t=600 s: sched_posted empty at the next pass's first step
+        ok   every flash run verified (10 of 10)
+        ok   every claimed job ended
+        ok   no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing)
+        ok   sleep_a/b never early across the whole soak (and both tick wraps)
+        ok   no watchdog reset
+        ok   no RX overruns (0)
+        ok   stack headroom 91 B
+        ok   soak: the simulator's checks are clean
+        (54.0 s wall)
+      deterministic: yes, every number the same
+    sim_tests: 0 failures, 163.6 s wall
+
+## The measured numbers (identical in both runs)
+
+    {
+     "flash": {
+      "S_FL_DONE_max_us": 67.6,
+      "S_FL_ERASE_max_us": 40015.9,
+      "S_FL_PROG_max_us": 2746.4,
+      "S_FL_VERIFY_max_us": 1425.4,
+      "bad": 0,
+      "state": 2
+     },
+     "hot": {
+      "gap_max_us": 331.8,
+      "longest_step_us": 221.2,
+      "runs": 22620,
+      "spacing": 4
+     },
+     "invariants": {
+      "ok": 30,
+      "passes_checked": 30
+     },
+     "isr_ev": {
+      "heads": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8
+      ],
+      "latency_us": [
+       394,
+       418,
+       418,
+       418,
+       418,
+       417,
+       787,
+       418
+      ]
+     },
+     "jobs": {
+      "claimed": 11,
+      "done": 11,
+      "full": 1
+     },
+     "paste": {
+      "bytes": 501,
+      "overruns": 0,
+      "sum": 39627
+     },
+     "printer": {
+      "lines": 3000,
+      "pr_line_max_us": 356.4,
+      "runs": 3999
+     },
+     "slow": {
+      "overruns": 1,
+      "sl_slow_us": 27979.8,
+      "state": 22
+     },
+     "soak": {
+      "flash_ok": 10,
+      "jobs_done": 110,
+      "overruns": 20,
+      "passes_hi": 3,
+      "passes_lo": 11208,
+      "sleep_a_gap_min": 1045,
+      "sleep_b_gap_min": 6901,
+      "stack_hw": 164
+     },
+     "stack": {
+      "deep_runs": 43,
+      "deep_sp": 168,
+      "raw_hw": 194,
+      "stack_hw": 194
+     },
+     "waiter": {
+      "event_wakes": 10,
+      "latency_max_us": 546.8,
+      "pass_max_us": 608.3,
+      "timeout_gap_max_us": 104994.8,
+      "timeout_gap_min_us": 104288.3,
+      "timeouts": 20
+     },
+     "wake": {
+      "pass_max_us": 657.4,
+      "sleep_a_gap_max_us": 10051.6,
+      "sleep_a_gap_min_us": 9990.1,
+      "sleep_a_runs": 501,
+      "sleep_b_gap_max_us": 45195.3,
+      "sleep_b_gap_min_us": 44716.0,
+      "sleep_b_runs": 112,
+      "sleep_c_gap_max_us": 1004236.8,
+      "sleep_c_gap_min_us": 1003997.2,
+      "sleep_c_runs": 5
+     }
+    }
+## The suite catches a real fault
+
+sched_ms_to_ticks without its +1 tick, built into output/b4-mut (reverted), --only wake waiter:
+
+    FAIL wake: sleep_a (5 ms): never early, shortest gap 4995 us
+    FAIL wake: sleep_c (1000 ms): never early, shortest gap 998775 us
+    FAIL waiter: timeouts 100 ms, never early: 99072..99901 us (<= 106106)
+
+## Found on the way
+
+- The Makefile reads DEPS before schedtest.mk adds its sources: after deep's extra slot, sched_bank.rel
+  kept the old T_FIXED and slot 12 (slow) started free (jobs claimed 12 slots). Fixed in 2d69a5e.
+- hot's yield kept every pass busy, so the simulator could not skip idle time: 10 s of firmware took 6.5 s
+  busy, 0.9 s idle. hot is now on only for its test; the soak runs everything else.
