@@ -31,14 +31,19 @@ void sleep_b(void) __banked
 	STEP_SLEEP(S_SLEEP_B, 37);
 }
 
-/* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out */
+/* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out. A beat
+ * that doesn't drift: the low-level task_until, from the last due tick. */
+static __xdata uint16_t po_due;
 void poster(void) __banked
 {
 	event_post(EV_ST_POKE);
 	st_lp = &st_log_poster;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_POSTER, 300);
+	if ((int16_t)(sched_now - po_due) > 60)	/* first run, or fell behind */
+		po_due = sched_now;
+	po_due += 60;				/* 300 ms */
+	task_until(po_due);
 }
 
 /* ---- jobber: on request, claim jobs until the table is full ---- */

@@ -166,21 +166,7 @@ static void status(void)
 	print_byte(st_stack_hw);
 	print_string(" deep SP ");
 	print_byte(st_deep_sp);
-	print_string("\nsleep_a/b/c runs ");
-	itoa_short(st_log_sleep_a.n);
-	write_char(' ');
-	itoa_short(st_log_sleep_b.n);
-	write_char(' ');
-	itoa_short(st_log_sleep_c.n);
-	print_string(" waiter ");
-	itoa_short(st_log_waiter.n);
-	print_string(" poster ");
-	itoa_short(st_log_poster.n);
-	print_string(" isr_ev ");
-	itoa_short(st_log_isr_ev.n);
-	print_string(" hot ");
-	itoa_short(st_log_hot.n);
-	write_char('\n');
+	write_char('\n');		/* the logs' run counts: their n, by symbol */
 }
 
 void cli_run(void) __banked
@@ -207,12 +193,8 @@ void cli_run(void) __banked
 		st_slow_req = 1;
 		event_post(EV_ST_GO);
 	} else if (word("hang")) {
-#ifdef ST_NEG_HANG
-		st_slow_req = 2;
+		st_slow_req = 2;		/* SL_HANG says so unless ST_NEG=hang */
 		event_post(EV_ST_GO);
-#else
-		print_string("hang: build with ST_NEG=hang\n");
-#endif
 	} else if (word("flash")) {
 		st_flash_start();
 	} else if (word("badflash")) {
