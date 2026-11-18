@@ -487,6 +487,15 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
             </select></label>
           <p class="small mut" data-i18n="sy_display_note">Stored in this browser only.</p>
         </div>
+        <div class="card"><h2 data-i18n="sy_leds">LEDs</h2>
+          <label class="row"><span class="lb" data-i18n="sy_leds_l">Front panel</span>
+            <select class="in" id="ledSel">
+              <option value="on" data-i18n="led_on">On</option>
+              <option value="ports" data-i18n="led_ports">Port LEDs off</option>
+              <option value="off" data-i18n="led_off">All off</option>
+            </select></label>
+          <p class="small mut" data-i18n="sy_leds_note">Applies at once; Save to flash keeps it across restarts.</p>
+        </div>
       </div>
       <div class="card" style="margin-top:16px"><h2><span data-i18n="sy_startup">Startup configuration</span>
         <span class="hint"><span id="cfgbytes"></span>, <span data-i18n="sy_replayed">replayed on every boot</span></span></h2>

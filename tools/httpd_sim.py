@@ -44,6 +44,7 @@ l2_entries = [
 
 state = {
     "lldp_enabled": False,
+    "leds": "on",
     "vlans": {
         1: {"active": True, "name": "", "untagged":[3,4,5,6,7,8], "tagged":[], "pvid":[3,4,5,6,7,8]},
         64: {"active": True, "name": "sixtyFour", "untagged": [1], "tagged": [2], "pvid":[1]}
@@ -317,6 +318,7 @@ class Handler(SimpleHTTPRequestHandler):
         return {
             "vlan": self._parse_vlan,
             "lldp": self._parse_lldp,
+            "led": self._parse_led,
             "pvid": self._parse_pvid,
             "dns": self._parse_dns,
             "ntp": self._parse_ntp,
@@ -371,6 +373,15 @@ class Handler(SimpleHTTPRequestHandler):
     def _parse_lldp(self, pieces):
         global state
         state.lldp_enabled = (pieces[0] == "on")
+
+    def _parse_led(self, pieces):
+        # pieces is the whole command: ["led", "off", "ports"]
+        if pieces[1:] == ["on"]:
+            state["leds"] = "on"
+        elif pieces[1:] == ["off"]:
+            state["leds"] = "off"
+        elif pieces[1:] == ["off", "ports"]:
+            state["leds"] = "ports"
 
     def _parse_ntp(self, pieces):
         global state
@@ -669,6 +680,7 @@ class Handler(SimpleHTTPRequestHandler):
     def _api_information(self):
         return {
             "ip_address":"192.168.10.247",
+            "leds": state["leds"],
             "ip_gateway":"192.168.2.22",
             "ip_netmask":"255.255.255.0",
             "ip_source":"static",

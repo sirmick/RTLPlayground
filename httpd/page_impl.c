@@ -15,6 +15,7 @@
 #include "machine.h"
 #include "rtl837x_stp.h"
 #include "rtl837x_lacp.h"
+#include "rtl837x_leds.h"
 #include "page_impl.h"
 #include "syslog.h"
 #include "dhcp.h"
@@ -264,6 +265,8 @@ void send_basic_info(void)
 	temp_to_html();
 	str_code_to_html("\"," JSONQUOTE("flash_size") ":\"");
 	str_code_to_html(get_flash_size_str());
+	str_code_to_html("\"," JSONQUOTE("leds") ":\"");
+	str_code_to_html(leds_mode == 2 ? "off" : leds_mode == 1 ? "ports" : "on");
 
 	if (machine.n_sfp) {
 		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");
