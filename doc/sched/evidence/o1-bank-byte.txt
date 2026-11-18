@@ -1,0 +1,86 @@
+# O1 evidence: a banked function's bank byte from a C __code initializer
+# SDCC mcs51 TD- 4.6.0 #16555 (Linux), the in-tree toolchain (toolchain/sdcc-1397895099), 2026-11-18
+
+## 1. What SDCC accepts (sdcc -mmcs51 -c, one file per variant)
+
+Rejected, 'Initializer element is not a constant expression':
+  (uint8_t)(uint16_t)f, (uint8_t)((uint16_t)f >> 8), (uint8_t)((uint32_t)f >> 16)   -- any cast of a function address
+  __code const uint32_t t[] = { (uint32_t)f };
+Rejected, 'incompatible types ... __banked ... to ... __code':
+  a plain void (*)(void) table holding a __banked function
+Accepted, 2 bytes only (no bank):
+  (__code const void *)f                    -> .byte _f, (_f >> 8)
+Accepted, 3 bytes WITH the bank byte:
+  typedef void (*step_fn)(void) __banked;
+  __code const step_fn t[] = { f };        -> .byte _f, (_f >> 8), (_f >> 16)
+
+## 2. Dispatch through that table (compiled --codeseg HOME): no DSEG, no sloc
+
+;	v6.c:9: step_addr[cur_state]();
+	mov	dptr,#_cur_state
+	movx	a,@dptr
+	mov	b,#0x03
+	mul	ab
+	add	a, #_step_addr
+	mov	dpl,a
+	mov	a,#(_step_addr >> 8)
+	addc	a, b
+	mov	dph,a
+	clr	a
+	movc	a,@a+dptr
+	mov	r5,a
+	inc	dptr
+	clr	a
+	movc	a,@a+dptr
+	mov	r6,a
+	inc	dptr
+	clr	a
+	movc	a,@a+dptr
+	mov	r7,a
+	push	ar7
+	push	ar6
+	push	ar5
+	push	ar5
+	push	ar6
+	push	ar7
+	pop	ar2
+	pop	ar1
+	pop	ar0
+	lcall	__sdcc_banked_call
+	pop	ar5
+	pop	ar6
+	pop	ar7
+;	v6.c:10: }
+	ret
+
+(r0,r1,r2 = low, high, bank: the same registers SDCC's own banked calls load;
+ crtbank.asm's __sdcc_banked_call writes r2 & 0x1f to PSBANK.)
+
+## 3. Through the real build (place_banks.py, check_linked.py, check_cross_bank.py all pass)
+
+Probe, a resident file added for one build only (not committed):
+  /* O1 probe (temporary, not committed): a banked function-pointer table in the common area */
+  #include <stdint.h>
+  void rldp_tick(void) __banked;
+  void stp_timers(void) __banked;
+  typedef void (*step_fn)(void) __banked;
+  __code const step_fn o1_step_addr[3] = { 0, rldp_tick, stp_timers };
+
+Built: tools/docker-make.sh -f Makefile -f output/o1-probe.mk MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 BUILDDIR=output/o1-probe
+  (o1-probe.mk: SRCS += o1_probe.c; RESIDENT_SRCS += o1_probe.c; $(BUILDDIR)/placed.stamp: $(BUILDDIR)/o1_probe.rel)  -> exit 0
+
+rtlplayground.map:
+  C:   00003954  _o1_step_addr                      o1_probe
+  C:   0003C448  _stp_timers                        rtl837x_stp
+  C:   0002E6B0  _rldp_tick                         rtl837x_rldp
+banks.txt:
+  rtl837x_rldp 2
+  rtl837x_stp 3
+Linked bytes (rtlplayground.img, the linker's output, at the table's address):
+  00003954: 0000 00b0 e602 48c4 03                   ......H..
+  = { 00 00 00 }, { b0 e6 02 }, { 48 c4 03 }
+  rldp_tick  0x2E6B0: bank 2, window address 0xE6B0 (0x2E6B0 - 0x24000 + 0x4000)
+  stp_timers 0x3C448: bank 3, window address 0xC448
+
+Conclusion: C expresses it. step_addr is a __code table of a __banked function-pointer type,
+in a resident (common-area) file; no .asm needed.
