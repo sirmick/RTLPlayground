@@ -1,0 +1,5 @@
+task flash job first=FL_ERASE
+state FL_ERASE fl_erase
+state FL_PROG fl_prog
+state FL_VERIFY fl_verify
+state FL_DONE fl_done

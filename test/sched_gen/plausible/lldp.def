@@ -1,0 +1,2 @@
+task lldp fixed
+state LLDP_PORT lldp_port

@@ -1,0 +1,2 @@
+task loop fixed freq=high
+state LOOP_POLL loop_poll

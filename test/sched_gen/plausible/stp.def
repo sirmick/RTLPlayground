@@ -1,0 +1,3 @@
+task stp fixed freq=medium first=STP_STEP
+state STP_STEP stp_step
+state STP_SECOND stp_second

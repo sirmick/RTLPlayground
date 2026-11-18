@@ -1,0 +1,7 @@
+# one slot per SFP cage
+task sfp fixed count=2 first=SFP_POLL
+state SFP_POLL sfp_poll
+state SFP_WAKE sfp_wake
+state SFP_READ sfp_read
+state SFP_CONFIG sfp_config
+state SFP_DDM sfp_ddm

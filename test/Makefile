@@ -43,6 +43,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_update_apply_compact \
         $(BUILDDIR)/test_config_migrate \
         $(BUILDDIR)/test_mdata_migrate \
+        $(BUILDDIR)/test_sched_gen \
         $(BUILDDIR)/test_loader
 
 # The table tests link the register mock and one environment file; stub/
@@ -118,6 +119,11 @@ $(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+
+# The scheduler table generator (tools/sched_gen.py) is tested in Python; its
+# "binary" is a wrapper, so it runs and logs like the others.
+$(BUILDDIR)/test_sched_gen: test_sched_gen.py $(SRCROOT)/tools/sched_gen.py $(wildcard sched_gen/*/*) | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_sched_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # Each test runs into its own log, so `make -j` runs them side by side; the
 # logs are printed in order once all are done. A test's .ok marker is only

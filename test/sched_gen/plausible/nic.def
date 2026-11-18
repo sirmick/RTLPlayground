@@ -1,0 +1,2 @@
+task rx fixed freq=high
+state RX_STEP rx_step
