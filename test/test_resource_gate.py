@@ -84,6 +84,17 @@ def test_fixtures():
         rc, _ = run(b, base, "--update")
         rc, out = run(b, base)
         check(rc == 0, "the baseline updated in the same commit: passes")
+
+        # a second local of a name the module already has
+        with open(os.path.join(b, "main.asm"), "a") as f:
+            f.write("\t.area DSEG    (DATA)\n_parse_storm_sloc0_2_0:\n\t.ds 4\n\t.area OSEG    (OVR,DATA)\n")
+        write_build(b, data=117)
+        rc, out = run(b, base)
+        check(rc == 1 and "+ main.asm _parse_storm_sloc0: 4  [sloc]" in out, "a repeated name is still listed")
+        with open(os.path.join(b, "main.asm")) as f:
+            txt = f.read()
+        with open(os.path.join(b, "main.asm"), "w") as f:
+            f.write(txt[:txt.rindex("\t.area DSEG")])
         os.remove(os.path.join(b, "spill.asm"))
 
         write_build(b)

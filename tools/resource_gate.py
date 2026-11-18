@@ -18,7 +18,7 @@ and checks it, against FILE (JSON) where a check needs a baseline:
 
 Exit status 1 on any FAIL. --update writes FILE from BUILDDIR instead.
 """
-import argparse, glob, json, os, re, sys
+import argparse, collections, glob, json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from resource_report import areas, iram, BANK_SIZE    # noqa: E402
@@ -71,8 +71,10 @@ def gate(builddir, baseline_file):
 
     lines.append(f"internal RAM: data {m['data']} B{bl('data')}, overlay {m['overlay']} B{bl('overlay')}, "
                  f"bits {m['bits']} B{bl('bits')}")
-    new = sorted(set(m["dseg"]) - set(base["dseg"])) if base else []
-    gone = sorted(set(base["dseg"]) - set(m["dseg"])) if base else []
+    # multisets: one module can have two locals of one name (send_vlan's i)
+    now, was = collections.Counter(m["dseg"]), collections.Counter(base["dseg"] if base else [])
+    new = sorted((now - was).elements()) if base else []
+    gone = sorted((was - now).elements()) if base else []
     if base:
         grew = [k for k in ("data", "overlay", "bits") if m[k] > base[k]]
         if grew:
