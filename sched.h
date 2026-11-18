@@ -62,6 +62,8 @@ extern __xdata uint16_t sched_idle_lo, sched_idle_hi;
 extern __xdata uint16_t sched_overruns;
 extern __xdata uint8_t  sched_overrun_state;	/* the last overrun's state */
 extern __xdata uint16_t sched_pass_max;		/* longest pass, fine units */
+extern __xdata uint16_t sched_fine_per_tick;	/* fine units per 5 ms tick */
+extern __xdata uint16_t sched_f_tick, sched_f_cnt;	/* the last sched_fine_read(): tick, units into it */
 extern __xdata uint8_t  sched_st;		/* the state being measured */
 extern __xdata struct task * __xdata sched_cur_task;	/* &sched_task[sched_cur] */
 
@@ -87,6 +89,7 @@ void sched_run(void) __banked;		/* never returns */
 void sched_clear_stats(void) __banked;
 
 /* measurement around each step and pass (sched_bank.c) */
+void sched_fine_read(void) __banked;	/* now, into sched_f_tick/sched_f_cnt */
 void sched_m_pass_start(void) __banked;
 void sched_m_step_start(void) __banked;
 void sched_m_step_end(void) __banked;

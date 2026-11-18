@@ -17,9 +17,11 @@ extern volatile __bit rx_irq;
 
 /* ---- the fine clock: ticks + Timer 2 (counts from RCAP2 up to 0xffff) ---- */
 
-static __xdata uint16_t fine_per_tick;	/* units of 64 counts per tick (813) */
+__xdata uint16_t sched_fine_per_tick;	/* units of 64 counts per tick (813) */
 static __xdata uint8_t fine_mid_h;	/* TH2 halfway between the reload and the overflow */
-static __xdata uint16_t f_tick, f_cnt;	/* the last fine_read() */
+static __xdata uint16_t fine_reload;	/* RCAP2 */
+static __xdata uint16_t fine_raw;
+__xdata uint16_t sched_f_tick, sched_f_cnt;	/* the last fine_read() */
 static __xdata uint16_t s_tick, s_cnt;	/* step start */
 static __xdata uint16_t p_tick, p_cnt;	/* pass start */
 
@@ -33,41 +35,51 @@ static void fine_read(void)
 		h = TH2;
 		l = TL2;
 	}
-	f_tick = *(volatile __xdata uint16_t *)&ticks;
+	sched_f_tick = *(volatile __xdata uint16_t *)&ticks;
 	/* Overflowed with the ISR still pending: the count is past the reload */
 	if ((T2CON & 0x80) && h < fine_mid_h)
-		f_tick++;
+		sched_f_tick++;
 	EA = 1;
-	f_cnt = ((((uint16_t)h << 8) | l) - (((uint16_t)RCAP2H << 8) | RCAP2L)) >> 6;
+	/* Before the timer's first overflow after it is started, it counts up
+	 * from 0, below the reload: count that as the start of the tick. */
+	fine_raw = ((uint16_t)h << 8) | l;
+	if (fine_raw < fine_reload)
+		fine_raw = fine_reload;
+	sched_f_cnt = (uint16_t)(fine_raw - fine_reload) >> 6;	/* 16-bit, as SDCC does it */
 }
 
 /* Fine units from (e_tick, e_cnt) to the last fine_read(), saturating. */
 static __xdata uint16_t e_tick, e_cnt, el;
 static uint16_t fine_elapsed(void)
 {
-	e_tick = f_tick - e_tick;
+	e_tick = sched_f_tick - e_tick;
 	if (e_tick >= 80)
 		return 0xffff;
-	el = f_cnt - e_cnt;		/* may wrap below 0; the ticks make up for it */
+	el = sched_f_cnt - e_cnt;		/* may wrap below 0; the ticks make up for it */
 	while (e_tick--)
-		el += fine_per_tick;
+		el += sched_fine_per_tick;
 	return el;
 }
 
 static __xdata uint16_t d;
 
+void sched_fine_read(void) __banked
+{
+	fine_read();
+}
+
 void sched_m_pass_start(void) __banked
 {
 	fine_read();
-	p_tick = f_tick;
-	p_cnt = f_cnt;
+	p_tick = sched_f_tick;
+	p_cnt = sched_f_cnt;
 }
 
 void sched_m_step_start(void) __banked
 {
 	fine_read();
-	s_tick = f_tick;
-	s_cnt = f_cnt;
+	s_tick = sched_f_tick;
+	s_cnt = sched_f_cnt;
 }
 
 void sched_m_step_end(void) __banked
@@ -163,7 +175,8 @@ void sched_init(void) __banked
 	}
 	sched_cur = SCHED_NONE;
 	sched_posted = 0;
-	fine_per_tick = (uint16_t)(0 - (((uint16_t)RCAP2H << 8) | RCAP2L)) >> 6;
+	fine_reload = ((uint16_t)RCAP2H << 8) | RCAP2L;
+	sched_fine_per_tick = (uint16_t)(0 - fine_reload) >> 6;
 	fine_mid_h = ((uint16_t)RCAP2H + 0x100) >> 1;
 	sched_clear_stats();
 }
