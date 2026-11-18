@@ -1,0 +1,148 @@
+# 8x boot transcript in rtlsim (A0 baseline)
+# image: ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+#   (loader+app, 524288 B) sha256 26a7dbce5ccdb26cdb81f7ed3ec2ba69eafab67216699a511110293357bbf001
+#   app: rtlplayground-v0.1.0-063016e-dirty-...-compact.bin sha256 898712331a3f9628c2b57499dca42c1bd4588311f26c7f3bd6cb4a84c693f9db
+#   built by sched: tools/docker-make.sh MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 at 063016e
+#   ("-dirty" from .wash/plan.toml only)
+# rtlsim: ~/src/ovs-rtlpg build/rtlsim, branch feat/sched-sim at ce3334c (= main)
+# command line (run from ~/src/ovs-rtlpg):
+#   build/rtlsim --image <image above> --cycles 0 --quiet --board boards/keeplink_kp_9000_9xhpml_v1_2.json
+#   driven by tests/fw/console.py's Console class (script reproduced at the end of this file):
+#   wait for "\n> ", then send each command + CR and wait for the prompt again; CRs stripped.
+# commands: version, health, ip, stat
+# timings (wall, devel): boot to prompt 2.2 s; each command < 0.1 s
+# notes: no flash file (fresh 2M flash each run, hence "Written default config to flash");
+#   'health' answers "Unknown command": health_show is under #ifdef and not in this build.
+# ---------------------------------------------------------------------------
+
+RTLPlayground loader
+Flash information:
+  Manufacturer ID: 0xef
+  Memory Type:     0x40
+  Capacity:        0x15 = 2 MB
+Starting application
+
+Initializing Flash controller
+Detecting CPU: RTL8373
+Software version: v0.1.0-063016e-dirty
+Build date: 2026-11-18 18:05:20
+Compiler: SDCC 4.6.0 #16555
+Toolchain: sdcc/ at 8954637 (4 patches)
+Hardware: keepLink KP-9000-9XHPML V1.2
+NIC reset
+Setting MAC to: 06:eb:00:b5:32:5d
+
+init_switch called
+
+RTL8224 not responding
+CPU revision: 6868
+leds_setup called
+Configuring custom LED-muxes:     0x08144040      0x10349309      0x12454391      0x19616555      0x1c79d65a     0x0002181d
+leds_setup done
+Flash information:
+  Manufacturer ID: 0xef
+  Memory Type:     0x40
+  Capacity:        0x15 = 2 MB
+
+rtl8373_init called
+
+sds_init done
+
+phy_config_8224 called
+RTL8224 ID: 0x00000000
+
+phy_config_8224 done
+
+RTL837X_REG_SDS_MODES: 0x00000bff
+
+RTL837X_REG_SDS_MODES: 0x00000bff
+sds_config sds: 00, mode: 0d
+
+RTL837X_REG_SDS_MODES: 0x00000bed
+
+rtl8224_phy_enable called
+
+rtl8224_phy_enable done
+EEE on for 1 speed 2g5
+EEE on for 2 speed 2g5
+EEE on for 3 speed 2g5
+EEE on for 4 speed 2g5
+EEE on for 5 speed 2g5
+EEE on for 6 speed 2g5
+EEE on for 7 speed 2g5
+EEE on for 8 speed 2g5
+EEE can't be enabled for SFP port 9
+
+rtl8373_init done
+Flash information:
+  Manufacturer ID: 0xef
+  Memory Type:     0x40
+  Capacity:        0x15 = 2 MB
+2 MB flash size detected.
+Updates are installed by the loader
+igmp_setup called
+bandwidth_setup called
+RTL837X_IGBW_CTRL: 0x0000003f
+RTL837X_EGBW_CTRL: 0x00000001
+bandwidth_setup done
+uip_arp_init called
+Configuring I2C for SFP idx=00 SCL=03, SDA=04
+
+A minimal prompt to explore the RTL8372:
+
+Clock register: 0x00001101
+Register 0x7b20/RTL837X_REG_SDS_MODES: 0x00000bed
+Verifying PHY settings:
+
+Port	State	Link	TxGood		TxBad		RxGood		RxBad		MACs
+1	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+2	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+3	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+4	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+5	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+6	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+7	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+8	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+9	NO SFP	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+GPIO MUX setup not implemented for pin=30
+Written default config to flash
+
+> version
+Software version: v0.1.0-063016e-dirty
+Build date: 2026-11-18 18:05:20
+Compiler: SDCC 4.6.0 #16555
+Toolchain: sdcc/ at 8954637 (4 patches)
+Hardware: keepLink KP-9000-9XHPML V1.2
+
+> health
+Error: Unknown command
+
+> ip
+Current IP: 192.168.2.2 (static)
+
+> stat
+
+Port	State	Link	TxGood		TxBad		RxGood		RxBad		MACs
+1	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+2	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+3	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+4	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+5	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+6	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+7	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+8	On	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+9	NO SFP	Down	0x00000000	0x00000000	0x00000000	0x00000000	0
+
+> 
+# --- driver script (python3 boot8x.py IMAGE version health ip stat > out) ---
+# import sys, time
+# sys.path.insert(0, "~/src/ovs-rtlpg/tests/fw")
+# from console import Console, PROMPT
+# img, cmds = sys.argv[1], sys.argv[2:]
+# c = Console("build/rtlsim", img, ["--board", "boards/keeplink_kp_9000_9xhpml_v1_2.json"])
+# t = time.time(); ok = c.expect(PROMPT, 120)
+# print(f"[boot to prompt: {time.time()-t:.1f} s{'' if ok else ', NO PROMPT'}]", file=sys.stderr)
+# for cmd in cmds if ok else []:
+#     t = time.time(); c.send(cmd); ok = c.expect(PROMPT, 60)
+#     print(f"[{cmd!r}: {time.time()-t:.1f} s{'' if ok else ', NO PROMPT'}]", file=sys.stderr)
+# c.close(); sys.stdout.write(c.log.decode(errors="replace"))
