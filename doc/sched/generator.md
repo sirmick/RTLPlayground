@@ -34,8 +34,8 @@ state L2_MORE       l2_more
   slot; the dynamic slots run at the highest `freq` any job asks for.
 - `sequence.def` may override the derived order with an explicit list of
   slot names (`sfp0`, not `sfp`) and `job` placeholders, whitespace
-  separated, `#` comments. Every fixed slot must appear, and there must be a
-  `job` per dynamic slot (they are dealt out in order).
+  separated, `#` comments. Every fixed slot must appear, and there must be
+  exactly one `job` per dynamic slot (they are dealt out in order).
 
 ## Output
 
@@ -84,7 +84,8 @@ directly.
   first state, or named in a `task_next(S_X)` / `task_claim(S_X)` in the
   scanned sources (the `.h`/`.c` beside the `.def` and its `source` lines).
 - More fixed slots than `SCHED_SLOTS`, or none left over when there are jobs;
-  two slots of one name.
+  two slots of one name, or a slot named `fixed`, `slots` or `job<N>` (its
+  enum would clash with `T_FIXED`, `T_SLOTS`, `T_JOB<N>`).
 - A `task_next(S_X)` in a module's source naming a state of another module
   (warning: cross-module jumps go through events).
 

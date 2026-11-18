@@ -131,7 +131,7 @@ internal RAM. `task_wait(m, ms)` is a macro for `task_mask(m); task_sleep(ms)`.
   at the slot index the generator assigned, so `run_seq` can name it.
 - Jobs: `task_claim()` takes the first free slot among those marked
   dynamic. A full table returns `SCHED_NONE`; the caller reports busy and
-  does not block. 24 slots: ~14 fixed, 10 dynamic.
+  does not block. 24 slots: 13 fixed, 11 dynamic (modules.md).
 
 ## Measurement
 
