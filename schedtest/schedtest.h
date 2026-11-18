@@ -44,6 +44,7 @@ void st_log(void) __banked;
 extern __xdata uint16_t st_print_req;	/* lines to print */
 extern __xdata uint8_t  st_jobs_req;
 extern __xdata uint8_t  st_slow_req;	/* 1 slow (25 ms), 2 hang */
+extern __xdata uint8_t  st_hot_on;	/* hot runs (yielding) */
 
 /* what the workers report */
 extern __xdata uint16_t st_print_done;	/* lines printed by the last print */

@@ -223,12 +223,15 @@ void cli_run(void) __banked
 #else
 		print_string("badflash: build with ST_NEG=bad_flash\n");
 #endif
+	} else if (word("hot")) {
+		st_hot_on = word("hot on");
+		event_post(EV_ST_GO);
 	} else if (word("deep")) {
 		st_deep_depth = number() ? num : 9;
 	} else if (word("reset")) {
 		crash_reset(CRASH_RESET_CMD);
 	} else {
-		print_string("health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | deep [N] | reset\n");
+		print_string("health [clear] | status | print [N] | jobs | slow | hang | flash | badflash | deep [N] | hot on|off | reset\n");
 	}
 }
 
