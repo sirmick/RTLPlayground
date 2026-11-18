@@ -1,0 +1,2 @@
+task lacp fixed freq=medium
+state LACP_STEP lacp_step

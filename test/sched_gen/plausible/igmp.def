@@ -1,0 +1,2 @@
+task igmp fixed
+state IGMP_TICK igmp_tick

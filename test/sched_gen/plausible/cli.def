@@ -1,0 +1,6 @@
+task cli fixed first=CLI_IDLE
+state CLI_IDLE cli_idle
+state CLI_RUN cli_run
+state CLI_PROMPT cli_prompt
+state L2_FIRST l2_first
+state L2_MORE l2_more

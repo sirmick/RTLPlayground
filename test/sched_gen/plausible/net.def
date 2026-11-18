@@ -1,0 +1,3 @@
+task net fixed
+state NET_TCP net_tcp
+state NET_UDP net_udp
