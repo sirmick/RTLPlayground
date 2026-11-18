@@ -14,7 +14,7 @@ unless every measured number is the same. Exit status 1 on any failure.
 Times: the firmware logs (tick, fine units) pairs; a fine unit is 64 Timer
 2 counts, 6.144 us, and sched_fine_per_tick (813) make a tick.
 """
-import argparse, glob, json, math, os, re, struct, sys, time
+import argparse, glob, json, math, os, re, shutil, struct, subprocess, sys, tempfile, time
 
 FINE_US = 6.144
 PROMPT = r"\n> $"
@@ -52,6 +52,8 @@ class Suite:
             i += 1
         self.slots = self.T["T_SLOTS"]
         self.results, self.failures = {}, []
+        self.covdir = tempfile.mkdtemp(prefix="sched-cov-")
+        self.steps = re.findall(r"^void (\w+)\(void\) __banked;", open(os.path.join(build, "sched", "sched_gen.c")).read(), re.M)
 
     # ---- plumbing ----
     def sim(self):
@@ -277,6 +279,7 @@ class Suite:
 
     def t_slow(self, sim):
         self.boot(sim)
+        self.cmd(sim, "hang", until=r"hang: build with ST_NEG=hang\n")   # SL_HANG, harmless here
         self.cmd(sim, "health clear")
         self.cmd(sim, "slow")
         sim.run(100)
@@ -342,6 +345,23 @@ class Suite:
         self.check(raw_hw == hw, f"st_stack_hw {hw:#x} agrees with the raw paint {raw_hw:#x}")
         self.check(0xff - hw >= 30, f"stack headroom {0xff - hw} B >= 30 (high-water {hw:#x}, deep's bottom SP {dsp:#x})")
 
+    def t_horizon(self, sim):
+        """170 s with no input: a wait without timeout (con, cli, ...) reaches its
+        horizon (0x7fff ticks, ~164 s) and is pushed on, without running."""
+        self.boot(sim)
+        sim.run(100)
+        runs0 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
+        t0 = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=1)
+        sim.run(170000)
+        t1 = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=1)
+        now = self.u(sim, "sched_now")
+        runs1 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
+        ahead = (t1["wake"] - now) & 0xffff
+        self.record(con_runs=runs1 - runs0, wake_before=t0["wake"], wake_after=t1["wake"])
+        self.check(t1["mask"] & 0x8000 and t1["wake"] != t0["wake"] and 0 < ahead <= MAX_WAIT,
+                   f"con's horizon was pushed on (wake {t0['wake']:#x} -> {t1['wake']:#x}, {ahead} ticks ahead)")
+        self.check(runs1 == runs0, f"and con did not run for it ({runs1 - runs0} runs)")
+
     def t_soak(self, sim):
         """10 minutes of firmware time, everything but hot (whose yield never
         lets the scheduler idle) running, stimuli every 10 s; the 16-bit tick
@@ -378,7 +398,8 @@ class Suite:
         self.check(0xff - hw >= 30, f"stack headroom {0xff - hw} B")
         self.checks_clean(sim, "soak")
 
-    TESTS = ["wake", "waiter", "isr_ev", "hot", "jobs", "printer", "flash", "slow", "paste", "invariants", "stack", "soak"]
+    TESTS = ["wake", "waiter", "isr_ev", "hot", "jobs", "printer", "flash", "slow", "paste", "invariants", "stack",
+             "horizon", "soak"]
 
     def run(self, only=None):
         for name in self.TESTS:
@@ -392,11 +413,48 @@ class Suite:
                     getattr(self, "t_" + name)(sim)
                     if name not in ("flash", "soak"):
                         self.checks_clean(sim, name)
+                    sim.cov_dump(os.path.join(self.covdir, name + ".cov"))
             except (Fail, self.ctl.SimError) as e:
                 self.failures.append(f"{name}: {e}")
                 print(f"    FAIL {e}")
             print(f"    ({time.time() - t0:.1f} s wall)")
+        if not only:
+            self.current = "coverage"
+            print("  coverage")
+            self.coverage()
         return self.results
+
+    def coverage(self):
+        """Over all the tests' dumps: every state's step function ran, and
+        every line of sched.c (the application: region 'loaded')."""
+        merged = {}
+        for f in sorted(glob.glob(os.path.join(self.covdir, "*.cov"))):
+            data = open(f, "rb").read()
+            p = 8
+            while p < len(data):
+                key, bits = data[p:p + 4], data[p + 4:p + 4 + 8192]
+                old = merged.get(key, bytes(8192))
+                merged[key] = bytes(a | b for a, b in zip(old, bits))
+                p += 4 + 8192
+        path = os.path.join(self.covdir, "all.cov.merged")
+        with open(path, "wb") as f:
+            f.write(b"RTLCOV1\n" + b"".join(k + v for k, v in sorted(merged.items())))
+        tool = [sys.executable, os.path.join(self.ovs, "tools", "cov_report.py"), path,
+                "--map", os.path.join(self.build, "rtlplayground.map"), "--region", "loaded"]
+        r = subprocess.run(tool + ["--require-functions"] + self.steps, capture_output=True, text=True)
+        self.check(r.returncode == 0, f"every state's step function ran ({len(self.steps)})", (r.stdout + r.stderr).strip()[-400:])
+        r = subprocess.run(tool + ["--require-lines", "sched.c"], capture_output=True, text=True)
+        last = (r.stdout + r.stderr).strip().splitlines()
+        self.record(sched_c=last[-1] if last else "")
+        self.check(r.returncode == 0, f"every line of sched.c ran: {last[-1] if last else ''}", (r.stdout + r.stderr).strip()[-400:])
+        for f in ("sched_bank.c", "crash.c", "con_ring.c"):     # not asserted: they have by-design dead lines
+            r = subprocess.run(tool + ["--require-lines", f], capture_output=True, text=True)
+            out = (r.stdout + r.stderr).strip().splitlines()
+            summary = out[-1] if out else ""
+            missed = [l.split(": didn't run")[0] for l in out if "didn't run" in l]
+            self.record(**{f: summary})
+            print(f"    info {summary}" + (f" (missed {', '.join(missed)})" if missed else ""))
+        shutil.rmtree(self.covdir, ignore_errors=True)
 
 
 def main(argv):
