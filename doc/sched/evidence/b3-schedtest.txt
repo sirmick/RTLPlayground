@@ -260,3 +260,19 @@ rtlsim, boot then 1.5 s idle; then deep 9 + a 150-char paste + print 200; then d
 Peak stack: 0x9f - 0x7c = 35 B idle/commands; 0xc2 - 0x7c = 70 B with the 9-deep chain under the console ISRs
 (61 B to 0xff). The RX overruns are the deep step's 5-10 ms spin with input flowing: a 64 B ring fills
 in 5.5 ms at 115200, as console.md's ~5 ms rule for con says.
+
+## Addendum: resources with the stack hook (2bb5254: deep task, stack paint/scan)
+
+    resources (output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest):
+      internal RAM: data 105 B, overlay 8 B, bits 3 B, stack 131 B
+      common area:  ends 0x3ee2 (158 B to the 0x3f80 gate)
+      xdata:        ends 0x504d
+      banks:        1: 48330 B (822 free), 2: 48973 B (179 free), 3: 48330 B (822 free)
+
+    run sequence: 44 positions, 24 slots (13 fixed, 11 dynamic), 2 between high groups
+
+Against B3 as first reported: one more fixed slot (13 fixed, 11 dynamic), common area
+0x3ede -> 0x3ee2 (+4 B: a 3-byte step_addr entry and a fixed_first byte; 162 -> 158 B to the gate),
+IRAM unchanged. place_banks.py re-packed the banked files (sched_gen_names and sched_health moved
+to bank 2), so the free bytes moved: 316/980/971 -> 822/179/822 (2267 -> 1823 B in all, -444 B: deep,
+the paint and scan, and the status fields). Bank 2 is now the tight one.
