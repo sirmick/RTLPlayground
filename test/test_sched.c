@@ -46,7 +46,7 @@ void itoa_short(uint16_t v) { char b[6]; snprintf(b, sizeof(b), "%u", v); print_
 static void out_reset(void) { out_len = 0; out[0] = 0; }
 
 /* ---- the steps ---- */
-enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_POST, A_NEXT, A_BURN, A_CLAIM, A_UNTIL };
+enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_POST, A_NEXT, A_BURN, A_CLAIM, A_UNTIL, A_TIMER };
 static struct { int kind; uint16_t a, b; } act[S_COUNT];
 static char trace[256];
 static int ntrace;
@@ -65,6 +65,7 @@ static void step(uint8_t s, char tag)
 	case A_BURN:  ticks += act[s].a; break;
 	case A_CLAIM: claimed = task_claim(act[s].a); break;
 	case A_UNTIL: task_until(act[s].a); break;
+	case A_TIMER: TH2 = act[s].a >> 8; TL2 = act[s].a; break;
 	}
 }
 void a_step(void) { step(S_A_STEP, 'a'); }
@@ -246,6 +247,12 @@ static void test_next_and_overrun(void)
 	CHECK(sched_st_max[S_A_STEP] < SCHED_OVERRUN_FINE, "the others are not");
 	CHECK(sched_pass_max >= sched_st_max[S_B_STEP], "the pass is at least as long");
 	CHECK(sched_now == 15, "the tick is renewed after the step");
+
+	reset_all(0);
+	TH2 = 0x33; TL2 = 0x69;		/* just started: counting up from 0, below the reload */
+	act[S_A_STEP].kind = A_TIMER; act[S_A_STEP].a = 0x356d;	/* and past it during the step */
+	pass();
+	CHECK(sched_st_max[S_A_STEP] < 100 && sched_pass_max < 100, "a count below the reload is the start of the tick, not a wrap");
 
 	reset_all(10);
 	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 200;	/* 1 s */
