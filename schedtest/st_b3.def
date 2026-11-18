@@ -1,0 +1,9 @@
+# schedtest dummies in BANK3 (st_b3.c)
+task sleep_c fixed
+state SLEEP_C    sleep_c
+task isr_ev fixed
+state ISR_EV     isr_ev
+task slow fixed first=SL_IDLE
+state SL_IDLE    sl_idle
+state SL_SLOW    sl_slow
+state SL_HANG    sl_hang

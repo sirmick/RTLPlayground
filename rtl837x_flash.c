@@ -320,6 +320,26 @@ void flash_sector_erase(void)
 }
 
 
+#ifdef ST_NEG_BAD_FLASH
+/* schedtest's bad_flash variant only: start a sector erase and return while
+ * it runs, which the scheduler's rules forbid (doc/sched/flash.md). */
+void flash_sector_erase_nowait(void)
+{
+	flash_configure_sio();
+	flash_write_enable();
+	SFR_FLASH_TCONF = 8;
+	SFR_FLASH_CMD = CMD_SECTOR_ERASE;
+
+	SFR_FLASH_ADDR16 = flash_region.addr >> 16;
+	SFR_FLASH_ADDR8 = flash_region.addr >> 8;
+	SFR_FLASH_ADDR0 = flash_region.addr;
+
+	SFR_FLASH_EXEC_GO = 1;
+	flash_configure_mmio();
+}
+#endif
+
+
 void flash_write_bytes(__xdata uint8_t *ptr)
 {
     flash_configure_sio();

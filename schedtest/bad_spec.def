@@ -1,0 +1,4 @@
+# schedtest's bad_spec variant (ST_NEG=bad_spec): the generator must fail
+# the build, because bad_step (bad_spec.c) is not __banked.
+task bad fixed
+state BAD_STEP   bad_step
