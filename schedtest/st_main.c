@@ -19,7 +19,11 @@ __xdata uint16_t st_aux;
 
 __xdata uint16_t st_print_req;
 __xdata uint8_t  st_jobs_req;
+#ifdef ST_NEG_OVERRUN
+__xdata uint8_t  st_slow_req = 3;	/* st_b3.c: slow, once, 2 s after boot */
+#else
 __xdata uint8_t  st_slow_req;
+#endif
 __xdata uint16_t st_con_rx_n, st_con_rx_sum;
 
 /* ---- the log ---- */
