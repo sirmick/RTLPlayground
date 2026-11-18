@@ -332,9 +332,22 @@
  * RANDOM
  */
 #define RTL837X_RLDP_RLPP		0x106C
-#define RLDP_RND_EN			3
+#define RLDP_EN				0x01	/* the loop detection engine */
+#define RLDP_COMP_ID			0x04	/* only count probes with our own ID */
+#define RLDP_RND_EN			3	/* bit 3: a new random number / ID */
+#define RLDP_PERIODIC			0x20	/* probe periodically, not on SA moves */
+#define RTL837X_RLDP_PERIOD		0x1074	/* 31:16 loop state, 15:0 check state, in ms */
+#define RTL837X_RLDP_TX_PMSK		0x1078	/* ports that send probes */
 #define RTL837X_RAND_NUM0		0x107C
 #define RTL837X_RAND_NUM1		0x1080
+/* Loop detection state, one bit per port. LOOPED is live; LOOP (has looped)
+ * and LEAVE_LOOP (the loop went away) latch and clear on a write of 1. */
+#define RTL837X_RLDP_LOOP		0x108C
+#define RTL837X_RLDP_LOOPED		0x1090
+#define RTL837X_RLDP_LEAVE_LOOP		0x1094
+/* The port each looped port's probe came back on, 4 bits a port, ports 0-7
+ * here and 8-9 at + 4. It keeps the last value after a loop has gone. */
+#define RTL837X_RLDP_LOOP_PAIR		0x1098
 
 /*
  * Bandwidth control
