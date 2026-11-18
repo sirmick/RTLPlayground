@@ -291,6 +291,12 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="stp_role">Role</th><th data-i18n="c_state">State</th><th data-i18n="stp_db">Designated bridge</th><th data-i18n="stp_dp">Designated port</th><th data-i18n="stp_dc">Designated cost</th><th data-i18n="stp_oedge">Oper. edge</th><th data-i18n="stp_op2p">Oper. P2P</th><th data-i18n="stp_proto">Protocol</th><th></th></tr></thead>
           <tbody></tbody></table></div>
       </div>
+      <div class="card"><h2><span data-i18n="loop_title">Loop detection</span> <span class="hint">RLDP</span></h2>
+        <label class="row"><span class="lb" data-i18n="c_enabled">Enabled</span>
+          <span class="switch"><input type="checkbox" id="loopen"><i></i></span></label>
+        <p class="small mut" data-i18n="loop_d">The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.</p>
+        <p class="small mono" id="loopst">-</p>
+      </div>
       <div class="card"><details id="stpcntd"><summary><h2 style="display:inline" data-i18n="stp_cnt">Counters</h2></summary>
         <div class="scrollx"><table class="t" id="stpcnt">
           <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="stp_crx">BPDUs received</th><th data-i18n="stp_ctx">BPDUs sent</th><th data-i18n="stp_ctrx">TC received</th><th data-i18n="stp_cttx">TC sent</th><th data-i18n="stp_cage">Last BPDU [s]</th></tr></thead>

@@ -20,8 +20,8 @@ extern __xdata uint8_t sfr_data[4];
 #define RLDP_PERIOD_MS	500
 
 __xdata uint8_t rldp_enabled;
-static __xdata uint16_t rldp_looped;	/* LOOPED at the last tick */
-static __xdata uint16_t rldp_blocked;	/* ports this module put in blocking */
+__xdata uint16_t rldp_looped;		/* LOOPED at the last tick */
+__xdata uint16_t rldp_blocked;		/* ports this module put in blocking */
 
 
 static uint16_t reg_read_u16(uint16_t reg)

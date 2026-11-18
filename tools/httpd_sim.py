@@ -44,6 +44,7 @@ l2_entries = [
 
 state = {
     "lldp_enabled": False,
+    "loop_enabled": False,
     "vlans": {
         1: {"active": True, "name": "", "untagged":[3,4,5,6,7,8], "tagged":[], "pvid":[3,4,5,6,7,8]},
         64: {"active": True, "name": "sixtyFour", "untagged": [1], "tagged": [2], "pvid":[1]}
@@ -94,6 +95,7 @@ class Handler(SimpleHTTPRequestHandler):
             "/traffic.json": self._api_traffic,
             "/storm.json": self._api_storm,
             "/stp.json": self._api_stp,
+            "/loop.json": self._api_loop,
             "/stpcnt.json": self._api_stpcnt,
             "/vlan.json": lambda: self._api_vlan(query),
             "/vlanlist.json": self._api_vlanlist,
@@ -317,6 +319,7 @@ class Handler(SimpleHTTPRequestHandler):
         return {
             "vlan": self._parse_vlan,
             "lldp": self._parse_lldp,
+            "loop": self._parse_loop,
             "pvid": self._parse_pvid,
             "dns": self._parse_dns,
             "ntp": self._parse_ntp,
@@ -371,6 +374,12 @@ class Handler(SimpleHTTPRequestHandler):
     def _parse_lldp(self, pieces):
         global state
         state.lldp_enabled = (pieces[0] == "on")
+
+    def _parse_loop(self, pieces):
+        global state
+        # pieces is the whole command: ["loop", "on"]
+        if len(pieces) > 1 and pieces[1] in ("on", "off"):
+            state["loop_enabled"] = pieces[1] == "on"
 
     def _parse_ntp(self, pieces):
         global state
@@ -570,6 +579,11 @@ class Handler(SimpleHTTPRequestHandler):
                     {"p":i,"lag":255,"a":"00","pt":"00","rs":0,"rx":"0000","psys":"000000000000"} ) for i in range(1, PORTS + 1)
                 ]
             }
+
+    def _api_loop(self):
+        on = state["loop_enabled"]
+        # with it on, an example loop between ports 5 and 6, port 6 blocked
+        return {"on": on, "stp": False, "looped": [5, 6] if on else [], "blocked": [6] if on else []}
 
     def _api_lldp(self):
         return {
