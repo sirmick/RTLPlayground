@@ -17,7 +17,9 @@ Four layers, cheapest first.
 
 ## Layer 2: the schedtest image in the simulator
 
-`make schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact`: a
+`make schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1`
+(built: `schedtest/README.md` has the commands, the symbols and the
+variants): a
 minimal image built with the **real** toolchain flow (crt, banking,
 `place_banks`, the generator, the 3-byte table). It has the scheduler, the
 UART rings, the software watchdog and the crash record, but no switch init.

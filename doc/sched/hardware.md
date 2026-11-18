@@ -38,7 +38,7 @@ Interrupt entry from a software-set flag to the handler: ~1.5 µs.
 | console character | **87 µs** (115200 baud; `write_char` busy-waits today) |
 | banked call | under ~1 µs |
 | sector erase (4 KiB) | ~35-40 ms |
-| page program (256 B) | ~1 ms (datasheet; to confirm) |
+| page program (256 B) | ~1 ms (datasheet; to confirm). But `flash_write_bytes()` programs 4 bytes per command and waits for each: ~1 ms per 4 bytes in rtlsim, so 256 B take ~66 ms (B3). Silicon to confirm in C |
 
 ## Today's longest main-loop pass
 
