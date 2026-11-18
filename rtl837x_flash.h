@@ -17,8 +17,10 @@ void flash_dump(uint8_t len);
 void flash_read_jedecid(void);
 void flash_read_security(void);
 void flash_sector_erase(void);
-#ifdef ST_NEG_BAD_FLASH
+#ifdef SCHEDTEST
 void flash_sector_erase_nowait(void);
+void flash_erase_peek(void);
+extern __xdata uint8_t flash_peek[128];	/* [0..63] busy; erasepeek reads [64..127] */
 #endif
 void flash_read_bulk(__xdata uint8_t *dst);
 void flash_write_bytes(__xdata uint8_t *ptr);

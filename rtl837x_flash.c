@@ -320,9 +320,10 @@ void flash_sector_erase(void)
 }
 
 
-#ifdef ST_NEG_BAD_FLASH
-/* schedtest's bad_flash variant only: start a sector erase and return while
- * it runs, which the scheduler's rules forbid (doc/sched/flash.md). */
+#ifdef SCHEDTEST
+/* schedtest only: start a sector erase and return while it runs, which the
+ * scheduler's rules forbid (doc/sched/flash.md): the bad_flash variant's
+ * step, and erasepeek below. */
 void flash_sector_erase_nowait(void)
 {
 	flash_configure_sio();
@@ -335,6 +336,33 @@ void flash_sector_erase_nowait(void)
 	SFR_FLASH_ADDR0 = flash_region.addr;
 
 	SFR_FLASH_EXEC_GO = 1;
+	flash_configure_mmio();
+}
+
+/* schedtest's erasepeek probe (silicon, C): what the bank window reads
+ * during a sector erase. THE ONE SANCTIONED READ OF THE BANK WINDOW WHILE
+ * THE FLASH IS BUSY: data only, movc from here in the common area; no
+ * banked code runs until the erase is over. Starts the erase of the sector
+ * at flash_region.addr, reads 64 bytes spread over the window (the bank
+ * PSBANK maps: the caller's), 0x4000 + 0x300 i, into flash_peek[0..63],
+ * and returns when the erase is done. rtlsim's checker reports the reads
+ * (flash-busy, movc from the window). */
+__xdata uint8_t flash_peek[128];
+static __xdata uint8_t pk_i;
+static __code const uint8_t * __xdata pk_p;
+
+void flash_erase_peek(void)
+{
+	flash_sector_erase_nowait();
+	pk_p = (__code const uint8_t *)0x4000;
+	pk_i = 0;
+	do {
+		flash_peek[pk_i] = *pk_p;
+		pk_p += 0x300;
+	} while (++pk_i & 63);
+	flash_configure_sio();
+	while (flash_read_status() & STATUS_REG_BUSY_MASK)
+		;
 	flash_configure_mmio();
 }
 #endif

@@ -24,10 +24,10 @@ endif
 
 # Resident: the core, the rings, the crash record, the dispatch tables.
 # Banked, placed by place_banks.py: the rest of the scheduler, the names,
-# st_main.c. Pinned (listed as resident so place_banks.py takes their bank
-# as given): one dummy file per bank.
+# st_main.c, st_report.c. Pinned (listed as resident so place_banks.py takes
+# their bank as given): one dummy file per bank.
 SRCS += sched.c sched_bank.c sched_health.c con_ring.c crash.c sched_gen.c sched_gen_names.c \
-	$(ST_DIR)/st_main.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
+	$(ST_DIR)/st_main.c $(ST_DIR)/st_report.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
 RESIDENT_SRCS += sched.c con_ring.c crash.c sched_gen.c \
 	$(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
 $(BUILDDIR)/$(ST_DIR)/st_b1.rel: BANK_FLAGS = --codeseg BANK1 --constseg BANK1
@@ -49,7 +49,7 @@ $(OBJS): | $(ST_GEN)/sched_gen.h
 # objects' header dependencies here, or a regenerated sched_gen.h (a slot
 # more) leaves them compiled against the old one.
 -include $(patsubst %.c,$(BUILDDIR)/%.d,sched.c sched_bank.c sched_health.c con_ring.c crash.c sched_gen.c \
-	sched_gen_names.c $(ST_DIR)/st_main.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c)
+	sched_gen_names.c $(ST_DIR)/st_main.c $(ST_DIR)/st_report.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c)
 
 # The PC in the crash record is only right if the push counts are
 $(BUILDDIR)/isr_frame.ok: $(BUILDDIR)/rtlplayground.rel tools/isr_frame.py
@@ -65,3 +65,9 @@ ST_BASELINE = doc/sched/baseline/gate-schedtest.json
 all: st-gate
 st-gate: $(OUTPUT)
 	python3 tools/resource_gate.py $(BUILDDIR) --baseline $(ST_BASELINE)
+
+# silicon.py with this build's constants (C): the symbol addresses, the
+# states, sl_hang, the bank window's bytes, the version. Copy it to the bench.
+all: $(BUILDDIR)/silicon.py
+$(BUILDDIR)/silicon.py: $(BUILDDIR)/rtlplayground-boot-$(FILENAME_EXTENSION).bin $(ST_DIR)/silicon.py
+	python3 $(ST_DIR)/silicon.py --embed $(BUILDDIR) > $@.tmp && chmod +x $@.tmp && mv $@.tmp $@
