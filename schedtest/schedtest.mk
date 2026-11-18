@@ -45,6 +45,11 @@ $(BUILDDIR)/sched_gen.rel: $(ST_GEN)/sched_gen.c $(BUILDDIR)/.ccflags | create_b
 $(BUILDDIR)/sched_gen_names.rel: $(ST_GEN)/sched_gen_names.c $(BUILDDIR)/.ccflags | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 $(OBJS): | $(ST_GEN)/sched_gen.h
+# The Makefile reads DEPS (:=) before this file adds to SRCS: read these
+# objects' header dependencies here, or a regenerated sched_gen.h (a slot
+# more) leaves them compiled against the old one.
+-include $(patsubst %.c,$(BUILDDIR)/%.d,sched.c sched_bank.c sched_health.c con_ring.c crash.c sched_gen.c \
+	sched_gen_names.c $(ST_DIR)/st_main.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c)
 
 # The PC in the crash record is only right if the push counts are
 $(BUILDDIR)/isr_frame.ok: $(BUILDDIR)/rtlplayground.rel tools/isr_frame.py

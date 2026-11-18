@@ -78,8 +78,9 @@ void jb_run(void) __banked
  * (rtl837x_flash.c), so no banked code runs while the flash is busy. ---- */
 
 #define FL_PAGES 16				/* 16 x 256 B = the 4 KiB sector */
-#define FL_CHUNK 32				/* bytes programmed per step: flash_write_bytes
-						 * issues one 4-byte program per ~1 ms */
+#define FL_CHUNK 128				/* bytes programmed per step: flash_write_bytes
+						 * issues one 4-byte program per ~70 us (rtlsim
+						 * 224393b), so ~2.3 ms a step */
 #define FL_HI	 (UPLOAD_START >> 16)		/* the sector at UPLOAD_START */
 static __xdata uint8_t fl_page, fl_off, fi;
 static __xdata uint8_t fl_buf[256];

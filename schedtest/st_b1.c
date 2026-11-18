@@ -37,9 +37,17 @@ void waiter(void) __banked
 	task_wait(EV_ST_POKE, 100);
 }
 
-/* freq=high, ~1 us of work: when it runs, and the stack at a step's entry */
+/* freq=high, ~1 us of work while `hot on`: when it runs, and the stack at
+ * a step's entry. Off by default: its yield keeps every pass busy, so the
+ * scheduler (and the simulator) never idles. */
+__xdata uint8_t st_hot_on;
+
 void hot(void) __banked
 {
+	if (!st_hot_on) {
+		task_wait(EV_ST_GO, SCHED_FOREVER);
+		return;
+	}
 	if (SP > st_sp_step_max)
 		st_sp_step_max = SP;
 	st_lp = &st_log_hot;
