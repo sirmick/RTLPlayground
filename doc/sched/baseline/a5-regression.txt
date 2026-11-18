@@ -1,0 +1,204 @@
+# A5 simulator regression - a green run (sim)
+# repo: ~/src/ovs-rtlpg, branch feat/sched-sim at fb7874f
+#   (7ed1d8e as assigned, + fb7874f: the musl build fix this regression found, below)
+# date: 2026-11-18T20:11Z, host devel; wall times on its cores
+# images: 8x = ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+#           sha256 26a7dbce5ccdb26cdb81f7ed3ec2ba69eafab67216699a511110293357bbf001 (the A0 image)
+#         SWGT024 (make test's FW_IMAGE) = ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin
+#           sha256 78b5a1dc71b8decc2f2189215fd52c7e88a9a662f963978f5482bea6639afab7
+#
+# == Every existing test ==
+#
+# make test -j                                   rc 0   11.9 s
+#   flash_dev, isa (12 runs), bank, flashbusy, test_busy_control, test_cov,
+#   test_boot, test_nic, test_flows, test_boot0, test_control: ALL PASS
+# (test-flash, test-powercut and check-banks ran on 7ed1d8e's binary, the rest on fb7874f's;
+#  fb7874f changes nothing a glibc build compiles)
+# make test-flash                                rc 0  131.4 s
+#   test_pse, test_migrate, test_loader, test_loader_update: ALL PASS
+# make test-powercut                             rc 0  108.9 s   test_powercut: ALL PASS
+# make check-banks                               rc 0    0.3 s   bank check: clean (902 banked constant reads)
+# make vm                                        rc 0   18 s     (after fb7874f; see below)
+# make test-vm                                   rc 0   12 s     test_vm: ALL PASS (6 checks), on the VM just built
+#
+# Not run here: make test-net and make test-update (they need sudo: network
+# namespaces, taps, a private OVS); tests/net/hardware (the bench).
+#
+# Found on the way: make vm builds rtlsim against musl (Alpine), which has no
+# REG_STARTEND; src/ctl/control.cpp (A1) didn't compile, so the first test-vm
+# ran the VM built on Nov 14. fb7874f uses REG_STARTEND only where it exists
+# (glibc: no change); make vm then built, and test-vm passed on the new VM.
+#
+# == The 8x boot, like for like with baseline/boot-8x.txt ==
+#
+# plain mode: the A0 driver (the script at the end of boot-8x.txt), same
+# image, same command line (build/rtlsim --image IMG --cycles 0 --quiet
+# --board boards/keeplink_kp_9000_9xhpml_v1_2.json; version health ip stat):
+#   boot to prompt 2.2 s wall; the output is byte-identical to boot-8x.txt's
+#   transcript (119 lines; that file adds one newline before its footer)
+# --control (script below): boot to the prompt (run until uart), 10 ms (the
+# firmware drops input before cmd_editor_init(), just after the prompt),
+# then each command, run until the next prompt:
+#   prompt at 11223.353 ms firmware time; version answered at 11250.876 ms,
+#   health 11254.262, ip 11258.004, stat 11309.713; 2.9 s wall
+#   the console text, unstamped, is byte-identical to the plain run's
+#   no flash-busy or uart-lost findings
+#
+# == Plain mode, old (ce3334c) vs new (7ed1d8e's binary; fb7874f compiles the same code with glibc), stdin "version\rstat\r" ==
+# (stdout, stderr and exit code compared; --stats' wall-clock rate text removed)
+#   SAME 8x-boot          rc 2, md5 out a7bcf3a22b15 err 82b10d7d3925  (--image ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin --board boards/keeplink_kp_9000_9xhpml_v1_2.json --cycles 400000000)
+#   SAME 8x-trace         rc 2, md5 out e3a8e62f2a6e err 7ff216a7613d  (--image ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin --board boards/keeplink_kp_9000_9xhpml_v1_2.json --cycles 2000000 --trace --trace-reg --trace-flash)
+#   SAME swgt-boot        rc 2, md5 out dda1934d58eb err e0b5b19f8924  (--image ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --cycles 300000000)
+#   SAME swgt-banks       rc 2, md5 out dda1934d58eb err 69ee0cbc663e  (--image ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --check-banks ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground.map --cycles 300000000 --quiet)
+#   SAME 8x-timing        rc 2, md5 out a5beb980637d err 23a530942e7f  (--image ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin --board boards/keeplink_kp_9000_9xhpml_v1_2.json --flash-timing --cycles 400000000 --quiet --stats)
+#   SAME swgt-timing-ops  rc 2, md5 out bf1fd61c34dc err 2c2c30a24f7c  (--image ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --flash-timing --flash-ops /dev/stdout --cycles 300000000 --quiet --stats)
+#   SAME 8x-sfr-reset     rc 2, md5 out a323f1b58971 err 8c69194bc7b6  (--image ~/src/rtlpg-sched/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-063016e-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin --board boards/keeplink_kp_9000_9xhpml_v1_2.json --cycles 50000000 --trace-sfr --trace-reset --trace-i2c)
+#   SAME swgt-sfp-link    rc 2, md5 out 0b0dd21fcc5b err 82580fe3115a  (--image ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --sfp 1=/tmp/sim-a0/sfp10g.bin --link 8=10g --link 4=2g5 --cycles 300000000 --quiet --print-flows --stats)
+#   (the swgt-sfp-link EEPROM: tools/mksfp.py --speed 10g)
+#
+# == The --control script ==
+#   # the A0 boot and commands under --control: the console text, unstamped
+#   import sys
+#   sys.path.insert(0, "~/src/ovs-rtlpg/tests")
+#   from rtlsim_ctl import Sim, fmt_us
+#   img, cmds = sys.argv[1], sys.argv[2:]
+#   out = []
+#   with Sim(img, board="boards/keeplink_kp_9000_9xhpml_v1_2.json", args=["--quiet"]) as s:
+#       t = s.run_until_uart(r"\n> $", max_ms=30000)
+#       print(f"[boot to prompt: {fmt_us(t)} ms firmware time]", file=sys.stderr)
+#       s.run(10)	# the firmware drops input before cmd_editor_init(), just after the prompt
+#       out.append(s.uart_text())
+#       for c in cmds:
+#           s.uart_write(c + "\r")
+#           t = s.run_until_uart(r"\n> $", max_ms=5000)
+#           print(f"[{c!r}: answered at {fmt_us(t)} ms]", file=sys.stderr)
+#           out.append(s.uart_text())
+#       checks = [c for c in s.checks() if c[1] in ("flash-busy", "uart-lost")]
+#       print(f"[flash-busy/uart-lost findings: {len(checks)}]", file=sys.stderr)
+#   sys.stdout.write("".join(out))
+#
+# == make test -j output ==
+#   build/test_flash_dev
+#   PASS  erased device reads 0xFF
+#   PASS  write to erased sector reads back, no fault
+#   PASS  write that sets a cleared bit is flagged
+#   PASS  write-without-erase is AND (0xFF & 0xDE = 0xDE)
+#   PASS  sector erase clears the whole 4 KiB sector
+#   PASS  erase past end wraps onto address 0 and is flagged (wrap-erase bug)
+#   PASS  power cut drops the operation past the cap
+#   
+#   flash_dev: ALL PASS
+#   make -C tests/isa RTLSIM=~/src/ovs-rtlpg/build/rtlsim SDCC_DIR=~/src/RTLPlayground/toolchain/sdcc-1397895099/bin
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_arith.small.bin --cycles 200000000 > out/t_arith.small.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_arith.medium.bin --cycles 200000000 > out/t_arith.medium.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_arith.large.bin --cycles 200000000 > out/t_arith.large.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_arith.stackauto.bin --cycles 200000000 > out/t_arith.stackauto.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_control.small.bin --cycles 200000000 > out/t_control.small.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_control.medium.bin --cycles 200000000 > out/t_control.medium.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_control.large.bin --cycles 200000000 > out/t_control.large.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_control.stackauto.bin --cycles 200000000 > out/t_control.stackauto.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_spaces.small.bin --cycles 200000000 > out/t_spaces.small.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_spaces.medium.bin --cycles 200000000 > out/t_spaces.medium.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_spaces.large.bin --cycles 200000000 > out/t_spaces.large.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/t_spaces.stackauto.bin --cycles 200000000 > out/t_spaces.stackauto.txt
+#   diff -u out/t_spaces.host.txt out/t_spaces.small.txt
+#   diff -u out/t_spaces.host.txt out/t_spaces.medium.txt
+#   diff -u out/t_spaces.host.txt out/t_spaces.stackauto.txt
+#   diff -u out/t_spaces.host.txt out/t_spaces.large.txt
+#   diff -u out/t_control.host.txt out/t_control.small.txt
+#   diff -u out/t_control.host.txt out/t_control.medium.txt
+#   diff -u out/t_control.host.txt out/t_control.stackauto.txt
+#   diff -u out/t_control.host.txt out/t_control.large.txt
+#   diff -u out/t_arith.host.txt out/t_arith.small.txt
+#   diff -u out/t_arith.host.txt out/t_arith.medium.txt
+#   diff -u out/t_arith.host.txt out/t_arith.stackauto.txt
+#   diff -u out/t_arith.host.txt out/t_arith.large.txt
+#   isa: 12 runs, all match the host
+#   make -C tests/bank RTLSIM=~/src/ovs-rtlpg/build/rtlsim SDCC_DIR=~/src/RTLPlayground/toolchain/sdcc-1397895099/bin
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/bank.bin --cycles 200000000 --check-banks out/bank.map > out/bank.txt
+#   ~/src/ovs-rtlpg/build/rtlsim --image out/constbug.bin --cycles 200000000 --check-banks out/constbug.map > /dev/null 2> out/constbug.err; \
+#   	test $? -eq 4 || { cat out/constbug.err; echo "bank check missed the misplaced constseg"; exit 1; }
+#   grep -q '_constbug_sum' out/constbug.err
+#   bank check: clean (2229 banked constant reads, 7707 listed bytes)
+#   diff -u out/bank.host.txt out/bank.txt
+#   bank: 3 banks, cross-bank calls and constants match the host; the bank check catches a misplaced constseg
+#   make -C tests/flashbusy RTLSIM=~/src/ovs-rtlpg/build/rtlsim SDCC_DIR=~/src/RTLPlayground/toolchain/sdcc-1397895099/bin
+#   ~/src/ovs-rtlpg/build/rtlsim --check-flash-busy --cycles 50000000 --image out/busy_bad.bin > out/busy_bad.txt 2> out/busy_bad.err; \
+#   	test $? -eq 6 || { cat out/busy_bad.err; echo "flashbusy: the call into BANK1 during the erase was not flagged"; exit 1; }
+#   ~/src/ovs-rtlpg/build/rtlsim --check-flash-busy --cycles 50000000 --image out/busy_good.bin > out/busy_good.txt 2> out/busy_good.err || { cat out/busy_good.err; exit 1; }
+#   ! grep -q 'flash busy' out/busy_good.err
+#   printf 'erase\nb1=00000031\npsbank=00000000\ndone\n' | diff -u - out/busy_good.txt
+#   grep -q 'flash busy (sector erase 070000.*instruction fetch.*psbank=01' out/busy_bad.err
+#   flashbusy: a call into a bank during an erase is flagged; waiting in the home bank first is clean
+#   python3 tests/flashbusy/test_busy_control.py --rtlsim build/rtlsim
+#   PASS  busy_bad: the call into BANK1 during the erase is a flash-busy finding at 0.592 ms: flash busy (sector erase 070000, 39.990 of 40.000 ms left): instruction fetch of 4000 (flash 004000) at pc=4000 psbank=01 sp=19, t=0.592 ms
+#   PASS  busy_bad: rtlsim exits 6 (6)
+#   PASS  busy_good: clean, exit 0, the same answer
+#   PASS  busy_good: BANK1 is called 40.557 ms after the erase began (a sector erase: 40 ms)
+#   PASS  a page program is timed by its bytes: busy seen 46 µs after 4 bytes (37.5), 37 µs after 1 (30); written 5aa53cc35aff
+#   PASS  a power cut 20 ms into the 40 ms erase leaves it done in part: 2048 of 4096 bytes erased, the rest as it was
+#   test_busy_control: ALL PASS
+#   python3 tests/cov/test_cov.py --rtlsim build/rtlsim
+#   PASS  --cov (plain) and cov dump (control) record the same functions; only out_c's TI wait differs (it spins under control's baud-rate UART): ['out_c']
+#   PASS  what ran ran, banked b1_value too, and program() didn't: ['b1_value', 'erase_start', 'go', 'halt', 'main', 'out_c', 'out_h16', 'out_h32', 'out_h4', 'out_h8', 'out_kv', 'out_s', 'status', 'wait_idle']
+#   PASS  t_busy.c line by line: 27 of 51 lines with code ran, program()'s 4 data lines didn't
+#   PASS  --require-lines and --require-functions fail on what didn't run, pass on what did
+#   PASS  two runs diff clean: no differences (14 functions ran in each)
+#   PASS  with do_program the diff is exactly ['main', 'mark_idle', 'mark_programmed', 'program'] (main: its if branch), and program()'s lines ran
+#   PASS  cov reset forgets what ran before it
+#   test_cov: ALL PASS
+#   python3 tests/fw/test_boot.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+#   PASS  boots to the prompt (0.1 s)
+#   PASS  the silicon boot log appears in order
+#   PASS  port table State/Link match silicon: [('6', 'NO SFP', 'Down'), ('1', 'On', '2.5G'), ('2', 'On', 'Down'), ('3', 'On', 'Down'), ('4', 'On', 'Down'), ('5', 'NO SFP', 'Down')]
+#   PASS  regget reads the chip id (RTL8372)
+#   PASS  vlan 10 1t 2 goes into the VLAN table
+#   PASS  the L2 table holds the CPU's MAC (static, VLAN 1)
+#   PASS  an SFP module in slot 1: its port is up at 10G, its LOS pin says light, the firmware reads its EEPROM
+#   PASS  the sfp command reads its identity and diagnostics
+#   PASS  a board file: another UUID gives another MAC (06:0f:00:12:34:56), and its module is in slot 1
+#   PASS  --flash persists the saved config across boots (default written: [True, False])
+#   test_boot: ALL PASS
+#   python3 tests/net/test_nic.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+#   switch IP 192.168.2.2, peer 192.168.2.1
+#   PASS  ARP: the switch answers with its MAC
+#   PASS  ARP tagged with VLAN 1: the reply leaves port 1 untagged
+#   PASS  ARP tagged with VLAN 10 (no such VLAN): the CPU never sees it
+#   PASS  ICMP echo: a reply with valid IP and ICMP checksums
+#   PASS  TCP SYN to port 80: a SYN-ACK with valid checksums
+#   test_nic: ALL PASS
+#   python3 tests/fabric/test_flows.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+#   PASS  boot: 24 flows
+#   PASS  vlans: 30 flows (vlan 10 2 3; pvid 2 10; pvid 3 10; vlan 20 1t 3t)
+#   PASS  isolate: 25 flows (isolate 1 3)
+#   PASS  ingress: 21 flows (ingress 1t 2u)
+#   PASS  igmp: 33 flows (igmp on)
+#   test_flows: ALL PASS
+#   python3 tests/flash/test_boot0.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+#   PASS  the install of rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin (v0.1.0-1be05b9): up on v0.1.0-1be05b9 in one power-on; resets: late (pc 0x1704)
+#   PASS  the install arms the record (op 1) and then erases the image area (cut before op 3 of 59567)
+#   PASS  the power cut at op 3 (E 039000) leaves the record armed
+#   PASS  after the cut, boot_resume finishes the copy: power-on 1: v0.1.0-1be05b9, resets early (pc 0x03b9)
+#   test_boot0: ALL PASS
+#   python3 tests/fw/test_control.py ~/src/RTLPlayground/output/SWGT024_V2_0_UNMANAGED-compact/rtlplayground-v0.1.0-1be05b9-SWGT024_V2_0_UNMANAGED-compact.bin --rtlsim build/rtlsim
+#   PASS  boots to the prompt under --control, paused until told (at 7942.536 ms)
+#   PASS  the boot prints what it prints without --control (68 lines)
+#   PASS  peek of a map symbol: ticks 1589 -> 1609 over 100 ms of firmware time
+#   PASS  run until ticks > 1629 stops at ticks 1630
+#   PASS  a typed command reaches cmd_parser (run until pc, banked) and answers
+#   PASS  a power cut and a chip reset boot it again, firmware time running on
+#   PASS  boots, saves its config and answers without reading a bank while the flash is busy (40 ms erases, 1 ms programs): []
+#   PASS  a line the power cut interrupted stays unfinished; the boot after it starts a line of its own
+#   PASS  the boot's coverage: 118 of 517 functions ran (main, print_string, flash_default_config; cmd_parser not yet), region boot
+#   PASS  and two boots' coverage is the same, function by function
+#   PASS  two runs give byte-identical stamped transcripts (438 lines)
+#   PASS  Timer 1 (baud generator, mode 2) keeps time with the cycles through idle: phase errors [0, 0, 0, 0]
+#   PASS  a queued command, advanced 4 ways, gives the same stamped output and state (8 lines over 73.641 ms)
+#   PASS  console output costs a character time a character: 89.00, 88.98, 88.96, 88.98, 88.96 µs (87.04 + handshake)
+#   PASS  a 40-byte paste while stat prints overruns the 16-byte serial ring: '> GHIJKLMN' echoed, '> GHIJKLMN' expected; 0 lost at the UART itself
+#   PASS  with interrupts off, bytes after the first are lost at the UART (RI still set): ['uart: received 0x79 lost, RI still set (the last byte unread)', 'uart: received 0x7a lost, RI still set (the last byte unread)']
+#   test_control: ALL PASS
+#   
+#   real	0m11.892s
+#   user	0m12.073s
+#   sys	0m0.147s
