@@ -146,6 +146,14 @@ bank_size:
 schedtest:
 	$(MAKE) SCHEDTEST=1
 
+# schedtest in rtlsim (doc/sched/testing.md layer 2): make schedtest-sim
+# MACHINE=... LAYOUT=compact [OVS=~/src/ovs-rtlpg] [SIM_ARGS=--twice] after
+# make schedtest. Deterministic, about 75 s.
+ST_BUILD ?= output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)-schedtest
+.PHONY: schedtest-sim
+schedtest-sim:
+	python3 schedtest/sim_tests.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(SIM_ARGS)
+
 # The resource gate on a build of $(MACHINE) (doc/sched/memory.md); the 8x
 # firmware has a baseline, other boards only get the absolute checks.
 GATE_BASELINE = $(wildcard doc/sched/baseline/gate-$(if $(filter KEEPLINK_KP_9000_9XHPML_V1_2,$(MACHINE)),8x,none).json)

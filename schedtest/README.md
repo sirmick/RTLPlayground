@@ -36,6 +36,33 @@ scheduler's.
 | `bad_flash` | the `badflash` command starts the flasher with an erase that returns while the flash is busy. rtlsim's checker reports the next fetch from a bank |
 | `bad_spec` | adds `bad_spec.def`, whose step is not `__banked`: the generator fails the build |
 
+## The sim tests (B4)
+
+    make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact [OVS=...] [SIM_ARGS=--twice]
+
+`schedtest/sim_tests.py` boots the `-boot` image in a fresh rtlsim per test.
+It drives it over the control socket (ovs-rtlpg `tests/rtlsim_ctl.py`, 120 s
+socket timeout) in firmware time, so a run is deterministic; `--twice`
+compares every measured number.
+
+| Test | Checks |
+|---|---|
+| wake | sleep_a/b/c (5, 37, 1000 ms): never early; late by at most a pass (+ the tick) |
+| waiter | post -> waiter within one pass; the 100 ms timeout path, never early |
+| isr_ev | each UART byte -> ISR -> `EV_CON_RX` -> isr_ev, within 2 ms; the ring head seen moving |
+| hot | worst gap <= spacing x (longest step + 60 us) |
+| jobs | claims fill the 11 dynamic slots, then `SCHED_NONE`; every job ends; slots reused |
+| printer | 3000 lines, all present in order; no printer or console step over 5 ms |
+| flash | erase + program + verify ok; program/verify steps < 5 ms; erase within its 40 ms; the checker clean |
+| slow | one overrun, state `SL_SLOW`, its length |
+| paste | 500 characters + CR all taken, no RX overrun (deep off) |
+| invariants | 30 pass ends: states valid, defined mask bits, wakes within the task's longest wait; `sched_posted` empty at the next pass's first step |
+| stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
+| soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
+
+Every test also requires the simulator's checks to be clean
+("unmodelled" register notes from the CPU setup excepted).
+
 ## Console
 
 The prompt is `> ` (the firmware's).
@@ -49,8 +76,9 @@ The prompt is `> ` (the firmware's).
 | `jobs` | the jobber claims jobs until the table is full (`task_claim` returns `SCHED_NONE`); each runs 5 steps and ends |
 | `slow` | one 25-30 ms step (`SL_SLOW`) |
 | `hang`, `badflash` | the negative variants above; otherwise they say how to build them |
-| `flash` | the flasher job: erase the 4 KiB sector at UPLOAD_START (0x40000), program it 32 B per step, verify it 256 B per step, then `flash: ok` or `flash: verify FAILED` (or `flash: no free slot`) |
+| `flash` | the flasher job: erase the 4 KiB sector at UPLOAD_START (0x40000), program it 128 B per step (~2.7 ms in rtlsim), verify it 256 B per step, then `flash: ok` or `flash: verify FAILED` (or `flash: no free slot`) |
 | `deep [N]` | every 20 ms, a step runs a chain of N (default 9; 0 stops) banked calls through banks 1, 2, 3, 1, ..., and at the bottom prints a line and spins 5-10 ms, so the console ISRs land on the deepest stack. Paste input meanwhile for RX |
+| `hot on`, `hot off` | the high-frequency task runs (yielding: the scheduler never idles) or waits; off at boot |
 | `reset` | `crash_reset(CRASH_RESET_CMD)` |
 
 Commands that print a lot (`health`, `status`) do it in one `CLI_RUN` step,
