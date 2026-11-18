@@ -32,13 +32,16 @@ scheduler's.
 | ST_NEG | Effect |
 |---|---|
 | `hang` | the `hang` command enters `SL_HANG`, which spins for ever (counting `st_hang_spins`). A jump-to-self would be taken by rtlsim as a halt. The watchdog resets after 5 s; the next boot prints `Last reset: watchdog in slow/SL_HANG ...` |
-| `overrun` | `slow` runs once by itself, 2 s after boot: one 30 ms step, counted as an overrun of `SL_SLOW` |
+| `overrun` | `slow` runs once by itself, 2 s after boot: one 25 ms step, counted as an overrun of `SL_SLOW` |
 | `bad_flash` | the `badflash` command starts the flasher with an erase that returns while the flash is busy. rtlsim's checker reports the next fetch from a bank |
 | `bad_spec` | adds `bad_spec.def`, whose step is not `__banked`: the generator fails the build |
 
 ## The sim tests (B4)
 
     make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact [OVS=...] [SIM_ARGS=--twice]
+
+runs these (layer 2), then the negative tests (layer 2b, below);
+`make schedtest-neg` runs the negative tests alone.
 
 `schedtest/sim_tests.py` boots the `-boot` image in a fresh rtlsim per test.
 It drives it over the control socket (ovs-rtlpg `tests/rtlsim_ctl.py`, 120 s
@@ -67,12 +70,32 @@ coverage. After a full run, the dumps are ORed together and
 ovs-rtlpg's `tools/cov_report.py` (region `loaded`, the application)
 requires every state's step function (the generated list) and every line of
 `sched.c` to have run. sched_bank.c, crash.c and con_ring.c are reported,
-not required: crash.c runs only when the image resets (B5), and sched_bank.c
+not required: crash.c runs only when the image resets (required by the
+negative tests), and sched_bank.c
 has two lines nothing here reaches (a step over 400 ms, `task_sleep(0)`).
 
 The poster keeps its 300 ms beat with the low-level `task_until`, so the
 API's every call runs; `hang` in a build without `ST_NEG=hang` enters
 `SL_HANG`, which only says so.
+
+## The negative tests (B5)
+
+    make schedtest-neg MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact [OVS=...] [NEG_ARGS=--twice]
+
+`schedtest/sim_neg.py` needs the `hang`, `overrun` and `bad_flash` builds
+(one at a time: they share the tree). Each variant must fail exactly as
+intended:
+
+| Test | Variant | Checks |
+|---|---|---|
+| hang | hang | `hang`, twice: the watchdog fires 5000 +/- 5 ms after SL_HANG began; after the reset, through the loader, the record at 0xbfe0 is valid (magic, sum): cause watchdog, slot slow, state SL_HANG, age 1000 ticks, PC inside `sl_hang` and its bank, SP on the stack, resets 0 then 1; the boot prints the `Last reset:` line; the record is cleared, kept in `crash_last` (`health`), `crash_prior` counts |
+| ctrl_r | hang | `^R ^R`: cause ^R ^R, the interrupted PC named from the .map; then `reset`: cause reset command, PC 0, cli/CLI_RUN, resets 1; both printed and cleared |
+| powercut | hang | a valid record in xdata, then a power cut instead of a reset: the next boot finds none, prints none |
+| overrun | overrun | one 25 ms step: `sched_overruns` 1, `sched_overrun_state` SL_SLOW; `health` says `overruns 1 last SL_SLOW` and lists SL_SLOW at ~25 ms |
+| bad_flash | bad_flash | `badflash`: exactly one check, flash-busy, a fetch from a bank in `fl_erase` with PC/PSBANK/SP/time; rtlsim exits 6 |
+| bad_spec | - | make's generator rule with `ST_NEG=bad_spec` exits 2 with `sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c` |
+
+Over the hang variant's tests every line of crash.c must run.
 
 ## Console
 

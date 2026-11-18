@@ -146,13 +146,18 @@ bank_size:
 schedtest:
 	$(MAKE) SCHEDTEST=1
 
-# schedtest in rtlsim (doc/sched/testing.md layer 2): make schedtest-sim
-# MACHINE=... LAYOUT=compact [OVS=~/src/ovs-rtlpg] [SIM_ARGS=--twice] after
-# make schedtest. Deterministic, about 75 s.
+# schedtest in rtlsim (doc/sched/testing.md layers 2 and 2b): make
+# schedtest-sim MACHINE=... LAYOUT=compact [OVS=~/src/ovs-rtlpg]
+# [SIM_ARGS=--twice] [NEG_ARGS=...] after make schedtest and make schedtest
+# ST_NEG=hang, overrun, bad_flash. schedtest-neg runs layer 2b alone.
+# Deterministic, about 2 min.
 ST_BUILD ?= output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)-schedtest
-.PHONY: schedtest-sim
+.PHONY: schedtest-sim schedtest-neg
 schedtest-sim:
 	python3 schedtest/sim_tests.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(SIM_ARGS)
+	python3 schedtest/sim_neg.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(filter --twice,$(SIM_ARGS)) $(NEG_ARGS)
+schedtest-neg:
+	python3 schedtest/sim_neg.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(NEG_ARGS)
 
 # The resource gate on a build of $(MACHINE) (doc/sched/memory.md); the 8x
 # firmware has a baseline, other boards only get the absolute checks.
