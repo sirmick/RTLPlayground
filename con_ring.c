@@ -26,7 +26,7 @@ void con_ring_init(void)
 uint8_t con_getc(void)
 {
 	uint8_t c = con_rx_buf[con_rx_tail];
-	con_rx_tail = (con_rx_tail + 1) & (CON_RX_SIZE - 1);
+	con_rx_tail++;			/* 8 bits: wraps at CON_RX_SIZE */
 	return c;
 }
 

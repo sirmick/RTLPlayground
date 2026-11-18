@@ -32,7 +32,7 @@ scheduler's.
 | ST_NEG | Effect |
 |---|---|
 | `hang` | the `hang` command enters `SL_HANG`, which spins for ever (counting `st_hang_spins`). A jump-to-self would be taken by rtlsim as a halt. The watchdog resets after 5 s; the next boot prints `Last reset: watchdog in slow/SL_HANG ...` |
-| `overrun` | `slow` runs once by itself, 2 s after boot: one 25-30 ms step, counted as an overrun of `SL_SLOW` |
+| `overrun` | `slow` runs once by itself, 2 s after boot: one 30 ms step, counted as an overrun of `SL_SLOW` |
 | `bad_flash` | the `badflash` command starts the flasher with an erase that returns while the flash is busy. rtlsim's checker reports the next fetch from a bank |
 | `bad_spec` | adds `bad_spec.def`, whose step is not `__banked`: the generator fails the build |
 
@@ -55,7 +55,7 @@ compares every measured number.
 | printer | 3000 lines, all present in order; no printer or console step over 5 ms |
 | flash | erase + program + verify ok; program/verify steps < 5 ms; erase within its 40 ms; the checker clean |
 | slow | one overrun, state `SL_SLOW`, its length |
-| paste | 500 characters + CR all taken, no RX overrun (deep off) |
+| paste | 500 characters + CR all taken, no RX overrun (deep off): quiet, and across a ~20 ms step (`slow 20`; ~230 B arrive meanwhile, the 256 B ring holds them). Across the 40 ms erase a paste may lose bytes (decision 19): recorded, not asserted |
 | invariants | 30 pass ends: states valid, defined mask bits, wakes within the task's longest wait; `sched_posted` empty at the next pass's first step |
 | stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
 | soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
@@ -74,7 +74,7 @@ The prompt is `> ` (the firmware's).
 | `status` | the dummies' counters |
 | `print [N]` | the printer prints N lines (default 3000), `P<n> the quick brown fox jumps`, one per step, only when the TX ring has room; then `print done` |
 | `jobs` | the jobber claims jobs until the table is full (`task_claim` returns `SCHED_NONE`); each runs 5 steps and ends |
-| `slow` | one 25-30 ms step (`SL_SLOW`) |
+| `slow [ms]` | one step of ms (default 30, up to 400) in `SL_SLOW`, timed on the fine clock |
 | `hang`, `badflash` | the negative variants above; otherwise they say how to build them |
 | `flash` | the flasher job: erase the 4 KiB sector at UPLOAD_START (0x40000), program it 128 B per step (~2.7 ms in rtlsim), verify it 256 B per step, then `flash: ok` or `flash: verify FAILED` (or `flash: no free slot`) |
 | `deep [N]` | every 20 ms, a step runs a chain of N (default 9; 0 stops) banked calls through banks 1, 2, 3, 1, ..., and at the bottom prints a line and spins 5-10 ms, so the console ISRs land on the deepest stack. Paste input meanwhile for RX |
@@ -144,6 +144,6 @@ measures it with `st_stack_hw` (all paths, ISRs included) and `deep`.
   the dispatch.
 - 3 of those 14 B are r5-r7, which the dispatcher keeps pushed for the
   length of each step (B2 evidence).
-- That leaves 117 B above a step's entry. The deepest ISR frame is 11 B
-  (isr_serial's 9 pushes plus the PC), so a step and everything it calls
-  have ~106 B.
+- That leaves 117 B above a step's entry. The deepest ISR frame is 10 B
+  (isr_timer2's 8 pushes plus the PC), so a step and everything it calls
+  have ~107 B.
