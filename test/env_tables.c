@@ -90,6 +90,9 @@ struct dhcp_state dhcp_state;
 bool     stp_enabled;
 bool lldp_enabled;
 uint16_t lldp_logical_port_status;
+uint8_t  leds_mode;
+uint8_t  rldp_enabled;
+uint16_t rldp_looped, rldp_blocked;
 
 
 uip_ipaddr_t uip_hostaddr, uip_draddr, uip_netmask;
