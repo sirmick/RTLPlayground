@@ -136,6 +136,8 @@ void task_sleep(uint16_t ms) __banked
 	cur->wake = sched_ticks() + sl_ms;
 }
 
+__xdata uint16_t sched_claim_arg;	/* task_claim_arg's argument, consumed by the claim */
+
 uint8_t task_claim(uint8_t first) __banked
 {
 	uint8_t i;
@@ -144,9 +146,12 @@ uint8_t task_claim(uint8_t first) __banked
 			sched_task[i].state = first;
 			sched_task[i].mask = 0;
 			sched_task[i].wake = sched_now;
+			sched_task[i].arg = sched_claim_arg;
+			sched_claim_arg = 0;
 			return i;
 		}
 	}
+	sched_claim_arg = 0;
 	return SCHED_NONE;
 }
 
@@ -172,6 +177,7 @@ void sched_init(void) __banked
 		sched_task[ii].state = ii < T_FIXED ? fixed_first[ii] : 0;
 		sched_task[ii].mask = 0;
 		sched_task[ii].wake = sched_now;
+		sched_task[ii].arg = 0;
 	}
 	sched_cur = SCHED_NONE;
 	sched_posted = 0;

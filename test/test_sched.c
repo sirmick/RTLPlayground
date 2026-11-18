@@ -46,8 +46,10 @@ void itoa_short(uint16_t v) { char b[6]; snprintf(b, sizeof(b), "%u", v); print_
 static void out_reset(void) { out_len = 0; out[0] = 0; }
 
 /* ---- the steps ---- */
-enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_POST, A_NEXT, A_BURN, A_CLAIM, A_UNTIL, A_TIMER };
-static struct { int kind; uint16_t a, b; } act[S_COUNT];
+enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_POST, A_NEXT, A_BURN, A_CLAIM, A_UNTIL, A_TIMER,
+       M_NEXT, M_SLEEP, M_WAIT, M_ARG, M_END, A_ARGINC, A_CLAIMARG };
+static struct { int kind; uint16_t a, b, c; } act[S_COUNT];
+static uint16_t seen_arg;
 static char trace[256];
 static int ntrace;
 static uint8_t claimed;
@@ -66,6 +68,13 @@ static void step(uint8_t s, char tag)
 	case A_CLAIM: claimed = task_claim(act[s].a); break;
 	case A_UNTIL: task_until(act[s].a); break;
 	case A_TIMER: TH2 = act[s].a >> 8; TL2 = act[s].a; break;
+	case M_NEXT:  STEP_NEXT(act[s].a);
+	case M_SLEEP: STEP_SLEEP(act[s].a, act[s].b);
+	case M_WAIT:  STEP_WAIT(act[s].a, act[s].b, act[s].c);
+	case M_ARG:   STEP_ARG(act[s].a, act[s].b);
+	case M_END:   STEP_END();
+	case A_ARGINC: seen_arg = task_arg(); task_set_arg(task_arg() + 1); break;
+	case A_CLAIMARG: claimed = task_claim_arg(act[s].a, act[s].b); break;
 	}
 }
 void a_step(void) { step(S_A_STEP, 'a'); }
@@ -262,6 +271,62 @@ static void test_next_and_overrun(void)
 	CHECK(sched_overruns == 0 && sched_st_max[S_B_STEP] == 0 && sched_passes_lo == 0, "clear");
 }
 
+static void test_step_macros(void)
+{
+	printf("step macros and the slot's arg\n");
+	reset_all(300);
+	int zero = 1;
+	for (int i = 0; i < SCHED_SLOTS; i++)
+		zero &= sched_task[i].arg == 0;
+	CHECK(zero, "every slot starts with arg 0");
+
+	act[S_B_STEP].kind = M_NEXT; act[S_B_STEP].a = S_B_ALT;
+	CHECK(!strcmp(pass(), "abaw"), "STEP_NEXT returns from the step");
+	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].wake == 300 && sched_task[T_B].mask == 0,
+	      "STEP_NEXT: the next state, and it yields");
+
+	reset_all(300);
+	act[S_B_STEP].kind = M_SLEEP; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = 20;
+	pass();
+	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].wake == 300 + 5, "STEP_SLEEP: next state, wake in ceil(20/5)+1 ticks");
+
+	reset_all(300);
+	act[S_B_STEP].kind = M_WAIT; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = EV_CFG; act[S_B_STEP].c = SCHED_FOREVER;
+	pass();
+	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].mask == (EV_CFG | EV_FOREVER)
+	      && sched_task[T_B].wake == (uint16_t)(300 + SCHED_MAX_WAIT), "STEP_WAIT: next state, events, no timeout");
+
+	reset_all(300);
+	act[S_B_STEP].kind = M_ARG; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = 0xbeef;
+	pass();
+	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].arg == 0xbeef, "STEP_ARG: next state and arg");
+
+	reset_all(300);
+	act[S_B_STEP].kind = M_END;
+	pass();
+	CHECK(sched_task[T_B].state == 0, "STEP_END: the slot is free");
+
+	reset_all(300);
+	act[S_A_STEP].kind = A_ARGINC;
+	pass();
+	pass();
+	CHECK(sched_task[T_A].arg == 4 && seen_arg == 3, "arg is kept across steps (a runs twice a pass: 4 after two passes)");
+
+	reset_all(300);
+	CHECK(task_claim_arg(S_J_STEP, 1234) == T_JOB0 && sched_task[T_JOB0].arg == 1234, "task_claim_arg: the job starts with its arg");
+	CHECK(task_claim(S_J_STEP) == T_JOB1 && sched_task[T_JOB1].arg == 0, "a plain claim after it starts with 0");
+	act[S_J_STEP].kind = M_END;
+	sched_task[T_JOB0].arg = 999;		/* as the job's own steps would leave it */
+	pass();
+	CHECK(sched_task[T_JOB0].state == 0, "the job ends");
+	CHECK(task_claim(S_J_STEP) == T_JOB0 && sched_task[T_JOB0].arg == 0, "a freed slot claimed again starts with arg 0");
+	act[S_A_STEP].kind = A_CLAIMARG; act[S_A_STEP].a = S_J_TWO; act[S_A_STEP].b = 77;
+	act[S_J_STEP].kind = A_NONE;
+	pass();
+	CHECK(claimed == T_JOB2 && sched_task[T_JOB2].arg == 77 && sched_task[T_JOB2].state == S_J_TWO, "task_claim_arg from inside a step");
+	CHECK(sched_claim_arg == 0, "the claim consumed the arg");
+}
+
 static void test_idle(void)
 {
 	printf("idle\n");
@@ -399,6 +464,7 @@ int main(void)
 	test_events();
 	test_claim();
 	test_next_and_overrun();
+	test_step_macros();
 	test_idle();
 	test_rings();
 	test_crash();

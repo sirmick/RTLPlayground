@@ -43,6 +43,7 @@ struct task {
 	uint8_t  state;		/* 0 = free; else a generated state ID */
 	uint16_t mask;		/* events that wake it */
 	uint16_t wake;		/* tick (5 ms) at which it is due */
+	uint16_t arg;		/* the step's own: a cursor, a count, a port */
 };
 
 extern __xdata struct task sched_task[SCHED_SLOTS];
@@ -67,7 +68,25 @@ extern __xdata uint16_t sched_f_tick, sched_f_cnt;	/* the last sched_fine_read()
 extern __xdata uint8_t  sched_st;		/* the state being measured */
 extern __xdata struct task * __xdata sched_cur_task;	/* &sched_task[sched_cur] */
 
-/* Steps: all act on the current slot. */
+/* A step ends with one of these: each sets what comes next and returns.
+ * A bare `return;` keeps the state and yields: it runs again at its next
+ * position. */
+#define STEP_NEXT(s)		do { task_next(s); return; } while (0)
+#define STEP_SLEEP(s, ms)	do { task_next(s); task_sleep(ms); return; } while (0)
+#define STEP_WAIT(s, ev, ms)	do { task_next(s); task_mask(ev); task_sleep(ms); return; } while (0)
+#define STEP_ARG(s, a)		do { task_next(s); task_set_arg(a); return; } while (0)
+#define STEP_END()		do { task_end(); return; } while (0)
+
+/* The slot's own 16 bits, kept across steps: 0 when a fixed task starts
+ * (a count=N task tells its instances apart by sched_cur - T_<NAME>0) and
+ * when a job is claimed, unless task_claim_arg() gives it one. */
+#define task_arg()		(sched_cur_task->arg)
+#define task_set_arg(a)		(sched_cur_task->arg = (a))
+extern __xdata uint16_t sched_claim_arg;
+#define task_claim_arg(s, a)	(sched_claim_arg = (a), task_claim(s))
+
+/* The low-level calls under the macros, for the rare step that needs them.
+ * All act on the current slot. */
 void task_next(uint8_t state);		/* the next step is `state` */
 #define task_yield()			/* the default: run again at the next position */
 void task_sleep(uint16_t ms) __banked;	/* due in at least ms (0: yield; SCHED_FOREVER: never) */

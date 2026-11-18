@@ -170,7 +170,7 @@ BROKEN = [
                         "n": ("task a fixed\nstate B_S b_s\n", None, "")}, 24,
      "task a also defined at"),
     ("unreachable", {"m": ("task a fixed\nstate A_S a_s\nstate A_T a_t\n", None, "")}, 24,
-     "state A_T is reached by no task_next/task_claim"),
+     "state A_T is reached by no task_next/STEP_*/task_claim"),
     ("too many tasks", {"m": ("task a fixed count=3\nstate A_S a_s\n", None, "")}, 2,
      "3 fixed slots, more than the 2 slots"),
     ("no slot left for jobs", {"m": ("task a fixed count=2\nstate A_S a_s\ntask j job\nstate J_S j_s\n", None, "")}, 2,
@@ -215,6 +215,24 @@ def test_broken():
         check(not os.path.exists(os.path.join(d, "sched_gen.h")), "a failed run writes no output")
 
 
+def test_step_macros_reach():
+    """The return macros and task_claim_arg reach states as task_next and task_claim do"""
+    with tempfile.TemporaryDirectory() as d:
+        body = ("void a_s(void) __banked { STEP_SLEEP(S_A_T, 5); }\n"
+                "void a_t(void) __banked { STEP_WAIT(S_A_U, 1, 2); }\n"
+                "void a_u(void) __banked { STEP_ARG(S_A_V, 3); }\n"
+                "void a_v(void) __banked { task_claim_arg(S_J_S, 4); STEP_NEXT(S_A_S); }\n")
+        write_module(d, "m", "task a fixed\nstate A_S a_s\nstate A_T a_t\nstate A_U a_u\nstate A_V a_v\n"
+                     "task j job\nstate J_S j_s\n", body=body)
+        r = gen([os.path.join(d, "m.def")])
+        check(not isinstance(r, str), f"STEP_* and task_claim_arg reach their states: {said(r)}")
+        write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="void a_s(void) __banked\n{\n\tSTEP_NEXT(S_B_T);\n}\n")
+        write_module(d, "n", "task b fixed\nstate B_S b_s\nstate B_T b_t\n")
+        r = gen([os.path.join(d, "m.def"), os.path.join(d, "n.def")])
+        check(not isinstance(r, str) and len(r[2]) == 1 and "STEP_NEXT(S_B_T) jumps into" in r[2][0],
+              f"a STEP_NEXT into another module warns: {r[2] if not isinstance(r, str) else r}")
+
+
 def test_cross_module_warning():
     with tempfile.TemporaryDirectory() as d:
         write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="void a_s(void) __banked\n{\n\ttask_next(S_B_T);\n}\n")
@@ -234,6 +252,7 @@ def main():
     test_spacing()
     test_sequence_def()
     test_broken()
+    test_step_macros_reach()
     test_cross_module_warning()
     print(f"sched_gen: {checks} checks, {fails} failed")
     return 1 if fails else 0

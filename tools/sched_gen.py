@@ -21,9 +21,10 @@ run sequence names them as job placeholders.
 The checks fail the build: a step function that has no prototype in the
 module's sources, isn't __banked, is static or isn't void f(void); two states
 of one name, or one function behind two states; a state nothing reaches (a
-task's first state, a task_next()/task_claim() in the scanned sources, or
-'entry'); more fixed slots than --slots. A task_next() naming another
-module's state is a warning.
+task's first state, a task_next()/task_claim() or a STEP_NEXT/SLEEP/WAIT/
+ARG() / task_claim_arg() in the scanned sources, or 'entry'); more fixed
+slots than --slots. A jump (task_next, STEP_*) naming another module's state
+is a warning.
 
 Writes OUTDIR/sched_gen.h, sched_gen.c (resident: step_addr, run_seq,
 fixed_first) and sched_gen_names.c (banked: state_name, slot_name), and
@@ -35,7 +36,7 @@ FREQS = ("high", "medium", "once")
 MEDIUM_TIMES = 3
 STATE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 IDENT_RE = re.compile(r"^[A-Za-z_]\w*$")
-TASK_REF = re.compile(r"\b(task_next|task_claim)\s*\(\s*S_([A-Z][A-Z0-9_]*)\b")
+TASK_REF = re.compile(r"\b(task_next|STEP_NEXT|STEP_SLEEP|STEP_WAIT|STEP_ARG|task_claim|task_claim_arg)\s*\(\s*S_([A-Z][A-Z0-9_]*)\b")
 
 
 class SpecError(Exception):
@@ -197,12 +198,12 @@ def load(defs, slots):
             for no, line in enumerate(text.splitlines(), 1):
                 for call, name in TASK_REF.findall(line):
                     reached.add(name)
-                    if call == "task_next" and name in seen and name not in own:
-                        warnings.append(f"{path}:{no}: warning: task_next(S_{name}) jumps into "
+                    if not call.startswith("task_claim") and name in seen and name not in own:
+                        warnings.append(f"{path}:{no}: warning: {call}(S_{name}) jumps into "
                                         f"{seen[name].module.path}; cross-module jumps go through events")
     for s in states:
         if s.name not in reached and not s.entry:
-            raise SpecError(f"{s.where}: state {s.name} is reached by no task_next/task_claim and is no task's first state (mark it 'entry' if task_claim reaches it some other way)")
+            raise SpecError(f"{s.where}: state {s.name} is reached by no task_next/STEP_*/task_claim and is no task's first state (mark it 'entry' if task_claim reaches it some other way)")
 
     fixed = []
     for t in tasks:
