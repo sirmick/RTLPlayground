@@ -13,6 +13,7 @@
 #include "rtl837x_trap.h"
 #include "rtl837x_nic.h"
 #include "rtl837x_stp.h"
+#include "rtl837x_rldp.h"
 #include "rtl837x_lacp.h"
 #include "rtl837x_igmp.h"
 #include "rtl837x_leds.h"
@@ -1207,6 +1208,8 @@ static void handle_tick(void)
 			arp_age_secs = 0;
 			uip_arp_timer();
 		}
+		if (rldp_enabled)
+			rldp_tick();
 
 #ifdef DEBUG
 		print_sfr_data();
@@ -1644,6 +1647,7 @@ void main(void)
 	stp_defaults();		/* 802.1D/w default config before any "stp ..." replay */
 	lacpEnabled = 0;
 	lacp_init();
+	rldp_enabled = 0;
 	nic_setup();
 	trap_init();
 	vlan_setup();
