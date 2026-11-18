@@ -88,7 +88,7 @@ intended:
 
 | Test | Variant | Checks |
 |---|---|---|
-| hang | hang | `hang`, twice: the watchdog fires 5000 +/- 5 ms after SL_HANG began; after the reset, through the loader, the record at 0xbfe0 is valid (magic, sum): cause watchdog, slot slow, state SL_HANG, age 1000 ticks, PC inside `sl_hang` and its bank, SP on the stack, resets 0 then 1; the boot prints the `Last reset:` line; the record is cleared, kept in `crash_last` (`health`), `crash_prior` counts |
+| hang | hang | `hang`, twice: the watchdog counts 1000 ticks from the kick at its pass's start, so it fires at the tick that ends the count, 4990-5000 ms after SL_HANG began (`swdt_cnt` at the step's entry says which); after the reset, through the loader, the record at 0xbfe0 is valid (magic, sum): cause watchdog, slot slow, state SL_HANG, age = that count, PC inside `sl_hang` and its bank, SP on the stack, resets 0 then 1; the boot prints the `Last reset:` line; the record is cleared, kept in `crash_last` (`health`), `crash_prior` counts |
 | ctrl_r | hang | `^R ^R`: cause ^R ^R, the interrupted PC named from the .map; then `reset`: cause reset command, PC 0, cli/CLI_RUN, resets 1; both printed and cleared |
 | powercut | hang | a valid record in xdata, then a power cut instead of a reset: the next boot finds none, prints none |
 | overrun | overrun | one 25 ms step: `sched_overruns` 1, `sched_overrun_state` SL_SLOW; `health` says `overruns 1 last SL_SLOW` and lists SL_SLOW at ~25 ms |
