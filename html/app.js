@@ -95,6 +95,13 @@ var LANG = {
         pt_name_err: "Port name: 1-15 characters, no spaces",
         pt_mtu_err: "MTU must be 64-16383",
         stp_title: "Spanning tree",
+        loop_title: "Loop detection",
+        loop_d: "The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.",
+        loop_none: "No loop",
+        loop_off: "Off",
+        loop_looped: "Looped ports: {p}",
+        loop_blocked: "blocked: {p}",
+        loop_stp: "spanning tree is on: reported only",
         stp_h: "RSTP, 802.1w",
         stp_version: "Version",
         stp_v_stp: "STP compatible",
@@ -2407,6 +2414,7 @@ var CONF_CMDS = [
     /^igmp\s+(on|off)$/,
     /^mtu\s+\d+\s+\d+$/,
     /^lldp\s+(on|off)$/,
+    /^loop\s+(on|off)$/,
     /^bw\s+(in|out)\s+\d+\s+\S+$/,
     /^storm\s+\d+\s+(bcast|mcast|ucast|umcast)\s+(off|\d+\s+(pps|kbps))$/,
 ];
@@ -3412,7 +3420,32 @@ $("stpen").addEventListener("change", function() {
 $("stpcntd").addEventListener("toggle", function() {
     if (this.open) stpLoad()
 });
-var stpPoller = new Poller(stpLoad, 3000);
+function loopLoad() {
+    return getJSON("/loop.json").then(function(s) {
+        var en = $("loopen");
+        if (document.activeElement !== en) en.checked = s.on;
+        var txt = t("loop_off");
+        if (s.on && !s.looped.length)
+            txt = t("loop_none");
+        else if (s.on) {
+            txt = t("loop_looped", {p: s.looped.join(" ")});
+            if (s.blocked.length)
+                txt += ", " + t("loop_blocked", {p: s.blocked.join(" ")});
+            if (s.stp)
+                txt += " (" + t("loop_stp") + ")";
+        }
+        $("loopst").textContent = txt;
+    }).catch(function() {});
+}
+
+$("loopen").addEventListener("change", function() {
+    postCmd("loop " + (this.checked ? "on" : "off")).then(loopLoad).catch(function() {});
+});
+
+var stpPoller = new Poller(function() {
+    loopLoad();
+    return stpLoad();
+}, 3000);
 tabHooks.stp = {
     enter: function() {
         stpPoller.start()
@@ -5022,7 +5055,7 @@ var CONF_OVERWRITE = [
     /^stp\s+(port\s+\d{1,2}|lag\s+[1-4])\s+(edge|cost|prio|guard|filter|p2p)\b/,
     /^igmp\b/, /^mtu\s+\d{1,2}\b/, /^storm\s+\d{1,2}\s+(bcast|mcast|ucast|umcast)\b/,
 ];
-var CONF_TOGGLE = [/^(syslog)\s+(on|off)$/, /^(ntp)\s+(on|off)$/, /^(stp)\s+(on|off)$/, /^(lldp)\s+(on|off)$/, /^(stp\s+(port\s+\d{1,2}|lag\s+[1-4]))\s+(on|off)$/];
+var CONF_TOGGLE = [/^(syslog)\s+(on|off)$/, /^(ntp)\s+(on|off)$/, /^(stp)\s+(on|off)$/, /^(lldp)\s+(on|off)$/, /^(loop)\s+(on|off)$/, /^(stp\s+(port\s+\d{1,2}|lag\s+[1-4]))\s+(on|off)$/];
 
 function mergeConf(base, texts) {
     var conf = base.slice();

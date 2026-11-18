@@ -8,5 +8,6 @@ void rldp_tick(void) __banked;
 void rldp_show(void) __banked;
 
 extern __xdata uint8_t rldp_enabled;
+extern __xdata uint16_t rldp_looped, rldp_blocked;
 
 #endif

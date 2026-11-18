@@ -15,6 +15,7 @@
 #include "machine.h"
 #include "rtl837x_stp.h"
 #include "rtl837x_lacp.h"
+#include "rtl837x_rldp.h"
 #include "page_impl.h"
 #include "syslog.h"
 #include "dhcp.h"
@@ -684,6 +685,37 @@ void send_lldp(void)
 			char_to_html(',');
 	}
 	char_to_html(']');
+	char_to_html('}');
+}
+
+static void port_list_to_json(__xdata uint16_t mask)
+{
+	__xdata uint8_t first = 1;
+
+	char_to_html('[');
+	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
+		if (!(mask & (1 << i)))
+			continue;
+		if (!first)
+			char_to_html(',');
+		first = 0;
+		itoa_html(machine.log_to_phys_port[i]);
+	}
+	char_to_html(']');
+}
+
+/* Loop detection: {"on":..,"stp":..,"looped":[ports],"blocked":[ports]} */
+void send_loop(void)
+{
+	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
+	str_code_to_html("{" JSONQUOTE("on") ":");
+	bool_to_json(rldp_enabled);
+	str_code_to_html("," JSONQUOTE("stp") ":");
+	bool_to_json(stp_enabled);
+	str_code_to_html("," JSONQUOTE("looped") ":");
+	port_list_to_json(rldp_enabled ? rldp_looped : 0);
+	str_code_to_html("," JSONQUOTE("blocked") ":");
+	port_list_to_json(rldp_enabled ? rldp_blocked : 0);
 	char_to_html('}');
 }
 
