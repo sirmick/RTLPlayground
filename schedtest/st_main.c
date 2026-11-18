@@ -2,6 +2,7 @@
  * st_main.c - schedtest's boot, the console editor (con), the command task
  * (cli) and the timestamp log. Banked; place_banks.py picks the bank.
  */
+#include <8051.h>
 #include <stdint.h>
 #include "rtl837x_common.h"
 #include "version.h"
@@ -163,7 +164,10 @@ static void status(void)
 	print_string(" sum ");
 	print_short(st_con_rx_sum);
 	print_string(" overruns ");
-	itoa_short(con_rx_overruns);
+	ES = 0;			/* the ISR writes it: read both bytes at once */
+	st_aux = con_rx_overruns;
+	ES = 1;
+	itoa_short(st_aux);
 	print_string(" step SP max ");
 	print_byte(st_sp_step_max);
 	print_string(" stack hw ");

@@ -3,6 +3,7 @@
  * the crash record. Banked: it reads state_name/slot_name directly, so
  * place_banks.py puts it in the bank with sched_gen_names.c.
  */
+#include <8051.h>
 #include <stdint.h>
 #include "rtl837x_common.h"
 #include "sched.h"
@@ -133,7 +134,10 @@ void sched_health_tasks(void) __banked
 		print_state();
 	}
 	print_string(", con rx overruns ");
-	itoa_short(con_rx_overruns);
+	ES = 0;			/* the ISR writes it: read both bytes at once */
+	u = con_rx_overruns;
+	ES = 1;
+	itoa_short(u);
 	write_char('\n');
 	if (crash_last.magic == CRASH_MAGIC) {
 		print_string("last reset: ");

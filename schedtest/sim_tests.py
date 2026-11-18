@@ -177,6 +177,10 @@ class Suite:
                     timeouts=len(timeouts), timeout_gap_min_us=round(min(timeouts), 1) if timeouts else None,
                     timeout_gap_max_us=round(max(timeouts), 1) if timeouts else None, pass_max_us=round(pm, 1))
         self.check(len(lat) >= 5, f"the waiter woke by EV_ST_POKE {len(lat)} times")
+        # One pass holds because the waiter comes before the poster in run_seq:
+        # the post's tail of pass N plus the head of N+1 up to the waiter run
+        # each slot once. In general (another order, an ISR post) it is up to
+        # ~2 passes.
         self.check(lat and max(lat) <= pm, f"post -> waiter within one pass: {max(lat):.0f} us <= {pm:.0f}")
         self.check(len(timeouts) >= 5, f"the timeout path: {len(timeouts)} timeouts")
         bound = (math.ceil(100 / 5) + 1) * 5000 + pm
