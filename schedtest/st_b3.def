@@ -3,6 +3,8 @@ task sleep_c fixed
 state SLEEP_C    sleep_c
 task isr_ev fixed
 state ISR_EV     isr_ev
+task deep fixed
+state DEEP       deep
 task slow fixed first=SL_IDLE
 state SL_IDLE    sl_idle
 state SL_SLOW    sl_slow

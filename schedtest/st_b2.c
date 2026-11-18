@@ -15,6 +15,14 @@ __xdata uint16_t st_jobs_claimed, st_jobs_full, st_jobs_done;
 __xdata uint8_t  st_fl_state;
 __xdata uint16_t st_fl_bad;
 
+void deep_2(void) __banked
+{
+	if (--st_deep_left)
+		deep_3();
+	else
+		st_deep_bottom();
+}
+
 void sleep_b(void) __banked
 {
 	st_lp = &st_log_sleep_b;

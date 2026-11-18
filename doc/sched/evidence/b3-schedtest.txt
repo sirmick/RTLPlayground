@@ -247,3 +247,16 @@ ovs-rtlpg build/rtlsim at 07c6457 ctl, test: the flash busy rule in control mode
        badflash |  | schedtest v0.1.0-42a6ea2-dirty | > 
 
 PC 0xfa31 bank 3 lies in sl_hang (0x3fa21 in the .map, so window 0xfa21): 16 B in, the spin loop.
+
+## Stack paint and deep (added after review, 2026-11-18)
+
+rtlsim, boot then 1.5 s idle; then deep 9 + a 150-char paste + print 200; then deep 0:
+
+    idle: paint_from 8a hw 9f step SP 8a
+    deep 9 + paste + print: hw c2 deep SP a8 runs 57, RX overruns 36
+    idata 0xa0-0xc0: 0900000600024ef90379f9c23203c00e000102b9c0c16c35c1656502007c0241
+    checks: []
+
+Peak stack: 0x9f - 0x7c = 35 B idle/commands; 0xc2 - 0x7c = 70 B with the 9-deep chain under the console ISRs
+(61 B to 0xff). The RX overruns are the deep step's 5-10 ms spin with input flowing: a 64 B ring fills
+in 5.5 ms at 115200, as console.md's ~5 ms rule for con says.

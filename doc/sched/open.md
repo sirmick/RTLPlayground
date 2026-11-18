@@ -27,6 +27,7 @@
 | # | Question | Leaning |
 |---|---|---|
 | O2 | `run_seq` length and the high/medium/once spacing numbers | B1 derived, for modules.md's set (4 high, 2 medium, 7 once, 11 dynamic slots): `--fill 2` (default) gives 72 positions, a high task at most 5 steps from its next run, medium every 24; fill 3: 56 / 6 / 20; fill 4: 48 / 7 / 16. Idle positions cost ~1 µs, so only the steps that run count: keep fill 2 until D2 measures the steps |
+| O8 | Hand-written dispatch asm (load r0-r2 from `step_addr`, `lcall __sdcc_banked_call`) instead of SDCC's, which keeps r5-r7 pushed for the whole step | an option to win back 3 B of stack per step if B4's measurement is tight; not done |
 | O3 | Does `uip_stop()`/`uip_restart()` throttle uploads cleanly with real browsers (Firefox, curl)? | test in E3 |
 | O4 | Should `EV_CON_TX` be "room for a line" (100 B) or any room? | a line |
 | O5 | The NIC RX ring's real capacity under a burst (sets how often `rx` must run) | measure in D0 on the 8x |

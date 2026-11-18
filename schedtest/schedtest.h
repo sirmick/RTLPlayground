@@ -54,6 +54,25 @@ extern __xdata uint16_t st_slow_runs;
 extern __xdata uint16_t st_con_rx_n, st_con_rx_sum;	/* console bytes taken, their sum */
 extern __xdata uint8_t  st_sp_step_max;	/* highest SP seen at a step's entry (hot) */
 
+/* The stack paint: at boot, idata from st_stack_paint_from to 0xff is
+ * filled with 0xa5; sleep_c rescans it each second. st_stack_hw is the
+ * highest idata address ever written since (0 = none), so the peak stack
+ * use is st_stack_hw - 0x7c. */
+#define ST_PAINT 0xa5
+extern __xdata uint8_t  st_stack_paint_from, st_stack_hw;
+void st_stack_paint(void) __banked;
+
+/* deep: a call chain of st_deep_depth banked calls through all three banks,
+ * every 20 ms while st_deep_depth != 0, spinning 5-10 ms at the bottom with
+ * the console busy so the ISRs land on top of it. st_deep_sp: the highest
+ * SP at the bottom. */
+extern __xdata uint8_t  st_deep_depth, st_deep_left, st_deep_sp;
+extern __xdata uint16_t st_deep_runs;
+void deep_1(void) __banked;
+void deep_2(void) __banked;
+void deep_3(void) __banked;
+void st_deep_bottom(void) __banked;
+
 void schedtest_main(void) __banked;	/* from main(): never returns */
 void st_flash_start(void) __banked;	/* claim the flasher job */
 

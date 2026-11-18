@@ -12,6 +12,14 @@
 __xdata uint16_t st_print_done;
 __xdata uint8_t  st_sp_step_max;
 
+void deep_1(void) __banked
+{
+	if (--st_deep_left)
+		deep_2();
+	else
+		st_deep_bottom();
+}
+
 void sleep_a(void) __banked
 {
 	st_lp = &st_log_sleep_a;
