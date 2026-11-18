@@ -96,6 +96,7 @@ class Neg(Suite):
         for n in (1, 2):
             sim.uart_write("hang\r")
             t0 = sim.run_until_pc("_sl_hang", max_ms=1000)
+            c = self.u(sim, "swdt_cnt")         # ticks left since the kick at the pass's start
             t1 = sim.run_until_pc("_crash_die", max_ms=8000)
             if t0 is None or t1 is None:
                 raise Fail(f"hang {n}: SL_HANG at {t0}, the watchdog at {t1}")
@@ -103,25 +104,27 @@ class Neg(Suite):
             self.to_crash_boot(sim, f"hang {n}")
             r = self.rec(sim)
             age = (r["tick"] - r["step_tick"]) & 0xffff
-            self.record(**{f"hang{n}_ms": round(dt, 3), f"hang{n}_pc": r["pc"], f"hang{n}_sp": r["sp"],
-                           f"hang{n}_age": age, f"hang{n}_resets": r["resets"]})
-            self.check(abs(dt - SWDT_TICKS * TICK_MS) <= TICK_MS,
-                       f"hang {n}: the watchdog fired {dt:.3f} ms after SL_HANG began (5000 +/- 5)")
+            self.record(**{f"hang{n}_ms": round(dt, 3), f"hang{n}_left": c, f"hang{n}_pc": r["pc"],
+                           f"hang{n}_sp": r["sp"], f"hang{n}_age": age, f"hang{n}_resets": r["resets"]})
+            self.check(SWDT_TICKS - 1 <= c <= SWDT_TICKS, f"hang {n}: SL_HANG began {SWDT_TICKS - c} tick(s) after the kick")
+            self.check((c - 1) * TICK_MS < dt <= c * TICK_MS,
+                       f"hang {n}: the watchdog fired at the {c}th tick, {dt:.3f} ms after SL_HANG began (5 s - a tick at most)")
             self.check(r["valid"], f"hang {n}: a valid record at 0xbfe0 after the loader (magic {r['magic']:#x}, sum ok {r['sum_ok']})")
             self.check(r["cause"] == CAUSE["watchdog"], f"hang {n}: cause watchdog ({r['cause']})")
             self.check(r["slot"] == self.T["T_SLOW"] and r["state"] == self.S["S_SL_HANG"],
                        f"hang {n}: slot slow, state SL_HANG ({r['slot']}, {r['state']})")
-            self.check(age == SWDT_TICKS, f"hang {n}: the step's age at the reset {age} ticks")
+            self.check(age == c, f"hang {n}: the step's age at the reset {age} ticks")
             self.check(a <= r["pc"] < a + size and r["bank"] == bank,
                        f"hang {n}: PC {r['pc']:#06x} bank {r['bank']} inside sl_hang ({a:#06x}+{size}, bank {bank})")
             self.plausible_sp(sim, r, f"hang {n}")
             self.check(r["resets"] == n - 1, f"hang {n}: resets before it {r['resets']}")
             line = self.boot_line(sim)
-            want = rf"Last reset: watchdog in slow/SL_HANG after 5000 ms, PC 0x{r['pc']:04x} bank {bank}, states( \w+){{8}}$"
+            want = (rf"Last reset: watchdog in slow/SL_HANG after {age * TICK_MS} ms, PC 0x{r['pc']:04x} bank {bank}, "
+                    r"states( \w+){8}$")
             self.check(line and re.match(want, line), f"hang {n}: the boot printed it", line)
             self.after_print(sim, f"hang {n}", n)
         h = self.say(sim, "health")
-        self.check("last reset: watchdog in slow/SL_HANG after 5000 ms" in h, "health shows it")
+        self.check(f"last reset: watchdog in slow/SL_HANG after {age * TICK_MS} ms" in h, "health shows it")
 
     # ---- ^R ^R and the reset command ----
     def t_ctrl_r(self, sim):
