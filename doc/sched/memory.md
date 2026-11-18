@@ -8,7 +8,7 @@ the B2 code linked in (`evidence/b2-resources.txt`).
 | Space | Size | Used | Free | Scheduler's share |
 |---|---|---|---|---|
 | internal RAM | 256 B | data 105 B, overlay 8, bits 3+1; stack 131 B, peak seen ~79 | **0**; ~50 B of stack headroom | **0 bytes** static. Stack: ~9-10 B more per step than today's direct call: r5-r7 kept pushed across the dispatch (+3), sched_pass's lcall (+2), sched_run's banked frame (+3-4), and the worst ISR frame 10 -> 11 (the serial ISR's rings). B4 measures it (schedtest's stack paint, `deep`) |
-| xdata | 48 KiB | 16.8 KiB (0x0001-0x41c8) | ~31 KiB | 540 B; crash record at 0xbfe0 |
+| xdata | 48 KiB | 16.8 KiB (0x0001-0x41c8) | ~31 KiB | 540 B at B2, +48 B for the slots' `arg` (decision 18); crash record at 0xbfe0 |
 | common area (code RAM) | 16 KiB | to 0x396a | 1558 B to the 0x3f80 gate | 1378 B with modules.md's task set: core 606, crash 266, rings 149, tables 172 (3 B per state + `run_seq`), ISRs +134, start-up +42 |
 | banks (compact) | 3 × 48 KiB | 46188 / 46202 / 45565 B | 8.5 KiB total | measurement, init, idle, health, names: ~3.4 KiB |
 
@@ -27,7 +27,8 @@ broke the link three times.
 3. 8- and 16-bit arithmetic only on scheduler and step paths. A 32-bit
    compare can be done by 16-bit halves.
 4. Step functions take no parameters (`void f(void)`); per-instance data
-   comes from `sched_cur`.
+   comes from the slot's `task_arg()` or from `sched_cur` (an index into the
+   module's xdata).
 5. ISRs set `__bit` flags only; no new bits beyond the event sources in
    chapter 6.
 6. No new `__bit` variables elsewhere (bit space is internal RAM too).
@@ -66,7 +67,7 @@ broke the link three times.
 
 | What | Bytes | Where |
 |---|---|---|
-| task table | 120 | XSEG |
+| task table | 168 (24 x 7 B) | XSEG |
 | scheduler globals, per-state stats (~40 states × 3) | ~140 | XSEG |
 | TX ring / RX ring growth | 128 / +48 | XSEG |
 | web command buffer | 128 | XSEG |

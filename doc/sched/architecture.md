@@ -18,14 +18,16 @@
 ## Tasks and steps
 
 - A **task** is a slot in a fixed table of 24 in xdata:
-  `struct task { uint8_t state; uint16_t mask; uint16_t wake; }`, 5 bytes.
+  `struct task { uint8_t state; uint16_t mask; uint16_t wake; uint16_t arg; }`,
+  7 bytes; `arg` is the step's own 16 bits (a cursor, a count, a port).
   `state == 0` means the slot is free.
 - A **state** is a one-byte ID. The generator (chapter 5) maps each ID to
   one step function, `void step(void)`, and emits a table of their 24-bit
   addresses (the bank is in bits 16-23, as SDCC encodes banked calls).
-- A step **does a bounded amount of work, then sets what comes next**: the
-  next state, and when it wants to run (chapter 4's API). If it sets nothing,
-  it runs again next pass (a yield).
+- A step **does a bounded amount of work, then sets what comes next** and
+  returns, with one macro: `STEP_NEXT`, `STEP_SLEEP`, `STEP_WAIT`,
+  `STEP_ARG` or `STEP_END` (chapter 4). A bare `return;` keeps the state:
+  it runs again at its next position (a yield).
 - A module's own data lives in the module, in static xdata ("the module
   context"), including any cursor a chunked job needs ("next param"). Steps
   find their instance through `sched_cur` (the slot index) where a module

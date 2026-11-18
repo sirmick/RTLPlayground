@@ -23,9 +23,10 @@ struct task {
 	uint8_t  state;     /* 0 = free; else a generated state ID */
 	uint16_t mask;      /* events that wake it (chapter 6) */
 	uint16_t wake;      /* tick (5 ms) at which it is due */
-};
+	uint16_t arg;       /* the step's own: a cursor, a count, a port */
+};                      /* 7 B */
 
-__xdata struct task sched_task[SCHED_SLOTS];  /* 120 B */
+__xdata struct task sched_task[SCHED_SLOTS];  /* 168 B */
 __xdata uint8_t  sched_cur;                   /* slot being run */
 __xdata uint16_t sched_now;                   /* tick snapshot */
 __xdata uint16_t sched_ev;                    /* this pass's events */
@@ -101,6 +102,37 @@ The tick (200 Hz) wakes it at least every 5 ms; that is the time resolution.
 
 ## API for steps
 
+A step ends with a **return macro**, which sets what comes next and
+returns (decision 18):
+
+| Macro | Next |
+|---|---|
+| `STEP_NEXT(S_FOO)` | `S_FOO`, at its next position (a yield) |
+| `STEP_SLEEP(S_FOO, ms)` | `S_FOO`, after `ms` (`task_sleep` below) |
+| `STEP_WAIT(S_FOO, ev, ms)` | `S_FOO`, on any of `ev`, or after `ms` (`SCHED_FOREVER`: no timeout) |
+| `STEP_ARG(S_FOO, a)` | `S_FOO` with the slot's `arg = a`, at its next position |
+| `STEP_END()` | nothing: the slot is free |
+| bare `return;` | the same state again, at its next position |
+
+Each slot has a 16-bit **`arg`**, kept across steps: `task_arg()` reads it,
+`task_set_arg(a)` sets it (macros on `sched_cur_task`). It is 0 when a fixed
+task starts and when a job is claimed; `task_claim_arg(S_FIRST, a)` claims
+with `arg = a`. A `count=N` fixed task tells its instances apart by
+`sched_cur - T_<NAME>0`: an index in `arg` would cost a table in the common
+area.
+
+```c
+void l2_more(void) __banked              /* chapter 7: arg is the next entry */
+{
+	if (!con_tx_room_line())
+		STEP_WAIT(S_L2_MORE, EV_CON_TX, SCHED_FOREVER);
+	if (!l2_print_entry(task_arg()))     /* one line */
+		STEP_NEXT(S_CLI_PROMPT);
+	task_set_arg(task_arg() + 1);       /* and stays in L2_MORE */
+}
+```
+
+Under the macros are the low-level calls, for the rare step that needs them.
 All act on the current slot (`sched_cur`) unless they name a slot.
 
 | Call | Effect |
@@ -113,17 +145,19 @@ All act on the current slot (`sched_cur`) unless they name a slot.
 | `task_wait(ev_mask, SCHED_FOREVER)` | as above, no timeout (`wake = now + 0x7fff` and `EV_FOREVER` in the mask; when that horizon comes the pass pushes it on instead of running the step) |
 | `task_end()` | free the slot (`state = 0`) |
 | `task_claim(S_FIRST)` | claim a free slot for a job; returns the slot or `SCHED_NONE` |
+| `task_claim_arg(S_FIRST, a)` | the same, the job's `arg = a` (a macro: `sched_claim_arg = a`, then the claim) |
 | `event_post(EV_x)` | set bits for the next pass (chapter 6) |
 
-Steps call `task_next()` and one wake call. Helpers are macros or common-area
-functions that touch only xdata. Arguments are 8 or 16 bits.
+The macros expand to these calls; they are common-area or banked functions
+that touch only xdata. Arguments are 8 or 16 bits.
 
 **Waits over 65 s** (ARP ageing, DHCP lease): the module counts down in its
 own context and sleeps ≤ 65 s at a time (or `task_until` up to 163 s).
 `SCHED_FOREVER` waits re-arm inside the scheduler.
 
 No API function takes two parameters: SDCC would put the second in
-internal RAM. `task_wait(m, ms)` is a macro for `task_mask(m); task_sleep(ms)`.
+internal RAM. `task_wait(m, ms)` is a macro for `task_mask(m); task_sleep(ms)`;
+the STEP_ macros and `task_claim_arg` are built the same way.
 
 ## Claiming slots
 
