@@ -45,6 +45,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_mdata_migrate \
         $(BUILDDIR)/test_sched_gen \
         $(BUILDDIR)/test_sched \
+        $(BUILDDIR)/test_resource_gate \
         $(BUILDDIR)/test_loader
 
 # The table tests link the register mock and one environment file; stub/
@@ -125,6 +126,14 @@ $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update
 # "binary" is a wrapper, so it runs and logs like the others.
 $(BUILDDIR)/test_sched_gen: test_sched_gen.py $(SRCROOT)/tools/sched_gen.py $(wildcard sched_gen/*/*) | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_sched_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+
+# The resource gate (tools/resource_gate.py) on fixtures, then on the 8x
+# schedtest and firmware builds against their baselines, when they exist.
+GATE_BUILDS = $(wildcard $(SRCROOT)/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground.mem \
+	$(SRCROOT)/output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest/rtlplayground.mem)
+$(BUILDDIR)/test_resource_gate: test_resource_gate.py $(wildcard gate/*) $(SRCROOT)/tools/resource_gate.py \
+		$(SRCROOT)/tools/resource_report.py $(wildcard $(SRCROOT)/doc/sched/baseline/gate-*.json) $(GATE_BUILDS) | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_resource_gate.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # The scheduler core, rings, watchdog and crash record, compiled UNMODIFIED,
 # over the tables the generator makes from sched_core/.

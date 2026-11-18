@@ -34,21 +34,33 @@ broke the link three times.
 
 ## The resource gate (B6)
 
-`tools/resource_gate.py BUILDDIR [--baseline FILE]`, run on every build of
-the test target:
+`tools/resource_gate.py BUILDDIR [--baseline FILE] [--update]`:
 
-- **internal RAM:** data, overlay and bits counted from the `.mem` map (the
-  `.map`'s DSEG size is the area's span from 0, 128, not its use, 105), and
-  the stack size from the `.mem`. Fail if the stack drops below 120 B, or if
-  the data grew against the baseline without the baseline being updated in
-  the same commit.
-- **Common area:** the end address from the `.map`. Fail above 0x3f80.
-- **Banks:** each bank's use. Warn above 47 KiB.
-- **Spills:** list every new `sloc` and `PARM` symbol in DSEG against the
-  baseline (the script `/tmp/ds-*.txt` diff from the probe work, made
-  permanent).
-- At runtime, the sim test reads the stack high-water (`health`'s paint) and
-  fails if headroom < 30 B.
+- **internal RAM:** data, overlay and bits, counted from the `.mem` map.
+  (The `.map`'s DSEG size is the area's span from 0, 128, not its use, 105.)
+  - **Fail** if any of them grew against the baseline. The message lists
+    every new DSEG symbol by name and kind (sloc, PARM, local).
+  - Growth that is meant needs the baseline updated in the same commit:
+    `--update` rewrites it from the build.
+  - New DSEG symbols are listed even when the total didn't grow.
+- **Stack:** the `.mem`'s stack size. **Fail** below 120 B.
+- **Common area:** the end address from the `.map` (XINIT's end). **Fail**
+  above 0x3f80.
+- **Banks:** each bank's use and free bytes. **Warn** above 47 KiB.
+- **Baselines** (JSON, in `baseline/`):
+  - `gate-8x.json`: the 8x firmware, taken from A0's build; equal to
+    `resources-8x.txt`.
+  - `gate-schedtest.json`: schedtest.
+- **Where it runs:**
+  - every `make schedtest` build, after the image (a FAIL fails the build);
+  - `make gate MACHINE=... [LAYOUT=compact]` on a firmware build (with the
+    8x baseline when MACHINE is the 8x);
+  - `make -C test quick`: `test_resource_gate` checks the gate on fixtures
+    (a real SDCC spill, `test/gate/spill.c`; a common-area overflow; a short
+    stack), then gates the 8x schedtest and firmware builds in `output/`
+    when they exist.
+- At runtime, B4 reads the stack high-water (schedtest's paint,
+  `st_stack_hw`) and fails if headroom < 30 B.
 
 ## xdata map additions
 
