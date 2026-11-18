@@ -25,7 +25,6 @@ uint16_t events_snapshot(void)
 	EA = 1;
 	if (con_rx_ready())                  ev |= EV_CON_RX;
 	if (con_tx_room() >= CON_TX_LINE)    ev |= EV_CON_TX;
-	if (!sched_flash_busy)               ev |= EV_FLASH_IDLE;
 	return ev;
 }
 ```
@@ -44,7 +43,7 @@ ISR register.
 | 1 | `EV_LINK` | INT0 (`link_irq`) | link |
 | 2 | `EV_CON_RX` | sampled: the UART RX ring is not empty (no new ISR bit) | con |
 | 3 | `EV_CON_TX` | sampled: TX ring has room for a line | con, cli dumps |
-| 4 | `EV_FLASH_IDLE` | sampled | flash job |
+| 4 | reserved | was `EV_FLASH_IDLE`. Dropped: a flash step waits for its operation in the common area before it returns (chapter 10), so the flash is never busy between steps and there is nothing to wake on. Don't build a start-and-return flash step on this bit | - |
 | 5 | `EV_LINE` | posted by con: a console line is complete | cli |
 | 6 | `EV_WEBCMD` | posted by httpd: a web command is queued | cli |
 | 7 | `EV_CMD_DONE` | posted by cli: a web command finished | httpd poll (net) |

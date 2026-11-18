@@ -18,6 +18,7 @@ extern volatile __bit rx_irq;
 /* ---- the fine clock: ticks + Timer 2 (counts from RCAP2 up to 0xffff) ---- */
 
 static __xdata uint16_t fine_per_tick;	/* units of 64 counts per tick (813) */
+static __xdata uint8_t fine_mid_h;	/* TH2 halfway between the reload and the overflow */
 static __xdata uint16_t f_tick, f_cnt;	/* the last fine_read() */
 static __xdata uint16_t s_tick, s_cnt;	/* step start */
 static __xdata uint16_t p_tick, p_cnt;	/* pass start */
@@ -34,7 +35,7 @@ static void fine_read(void)
 	}
 	f_tick = *(volatile __xdata uint16_t *)&ticks;
 	/* Overflowed with the ISR still pending: the count is past the reload */
-	if ((T2CON & 0x80) && h < 0x9a)
+	if ((T2CON & 0x80) && h < fine_mid_h)
 		f_tick++;
 	EA = 1;
 	f_cnt = ((((uint16_t)h << 8) | l) - (((uint16_t)RCAP2H << 8) | RCAP2L)) >> 6;
@@ -162,8 +163,8 @@ void sched_init(void) __banked
 	}
 	sched_cur = SCHED_NONE;
 	sched_posted = 0;
-	sched_flash_busy = 0;
 	fine_per_tick = (uint16_t)(0 - (((uint16_t)RCAP2H << 8) | RCAP2L)) >> 6;
+	fine_mid_h = ((uint16_t)RCAP2H + 0x100) >> 1;
 	sched_clear_stats();
 }
 
@@ -188,8 +189,6 @@ uint16_t sched_events(void) __banked
 		ev |= EV_CON_RX;
 	if (con_tx_room() >= CON_TX_LINE)
 		ev |= EV_CON_TX;
-	if (!sched_flash_busy)
-		ev |= EV_FLASH_IDLE;
 	return ev;
 }
 

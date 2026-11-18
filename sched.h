@@ -29,7 +29,7 @@
 #define EV_LINK		0x0002	/* INT0: the switch's interrupt tree */
 #define EV_CON_RX	0x0004	/* sampled: console RX ring not empty */
 #define EV_CON_TX	0x0008	/* sampled: console TX ring has room for a line */
-#define EV_FLASH_IDLE	0x0010	/* sampled: no flash operation under way */
+/*		0x0010	   reserved, was EV_FLASH_IDLE: no flash operation outlives its step */
 #define EV_LINE		0x0020	/* posted by con: a console line is complete */
 #define EV_WEBCMD	0x0040	/* posted by httpd: a web command is queued */
 #define EV_CMD_DONE	0x0080	/* posted by cli: a web command finished */
@@ -50,7 +50,6 @@ extern __xdata uint8_t  sched_cur;	/* slot being run */
 extern __xdata uint16_t sched_now;	/* tick snapshot, renewed after each step */
 extern __xdata uint16_t sched_ev;	/* this pass's events */
 extern __xdata uint16_t sched_posted;	/* posted by tasks, for the next pass */
-extern __xdata uint8_t  sched_flash_busy;	/* set by the flash job while it erases or programs */
 
 /* Measurement (health). Durations are in fine units of 64 Timer 2 counts,
  * 6.144 us; 16 bits saturate at ~400 ms. */
