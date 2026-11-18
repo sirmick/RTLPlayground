@@ -27,6 +27,13 @@ D0 sim P1 (NIC ring, LACP partner) + the old-vs-new harness + reference
 scenarios; D1 UART rings; D2 today's loop phases become fixed tasks; D3
 control-frame TX buffer, web command buffer, one cli task.
 
+Carried from B2's review, for D1 and the crash line:
+- `con_putc()` busy-waits on a full TX ring for the ISR to drain it, so it
+  must never run with interrupts (or ES) off: code that prints with EA = 0
+  today (the `if (EA)` debug prints) has to stay polled.
+- `crash_boot()`'s line can be longer than the 127 free bytes of the TX
+  ring: print it with interrupts on, or polled, before the rings take over.
+
 ## M3 (E): break up the blockers
 
 E1 chunked CLI dumps; E2 SFP slot tasks + DDM cache; E3 flash job for

@@ -195,10 +195,7 @@ static void test_events(void)
 	sched_task[T_W].mask = EV_CON_RX | EV_FOREVER;
 	CHECK(!strcmp(pass(), "w") && (sched_ev & EV_CON_RX), "a console byte wakes on EV_CON_RX");
 	CHECK(sched_ev & EV_CON_TX, "empty TX ring: EV_CON_TX");
-	CHECK(sched_ev & EV_FLASH_IDLE, "no flash job: EV_FLASH_IDLE");
-	sched_flash_busy = 1;
-	pass();
-	CHECK(!(sched_ev & EV_FLASH_IDLE), "flash busy: no EV_FLASH_IDLE");
+	CHECK(!(sched_ev & 0x0010), "bit 4 (was EV_FLASH_IDLE) stays clear");
 }
 
 static void test_claim(void)

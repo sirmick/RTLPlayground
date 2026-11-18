@@ -60,4 +60,4 @@ the test target:
 | web command buffer | 128 | XSEG |
 | control-frame TX buffer | 128 | XSEG |
 | upload stage | ~1,500 | XSEG |
-| crash record | 32 | fixed, ≥ 0x5000, outside XSEG |
+| crash record | 32 | fixed at 0xbfe0, outside every XSEG (chapter 11). Survival across a reset was measured at 0xbf00 (chapter 2); B5 confirms 0xbfe0 |
