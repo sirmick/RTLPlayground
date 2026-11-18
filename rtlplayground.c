@@ -1672,6 +1672,8 @@ void main(void)
 
 	early_boot_handle_button();
 
+	// Before the config, so a "led off" in it keeps the system LED dark
+	set_sys_led_state(SYS_LED_ON);
 	execute_config();
 	// After the config so the entry lands in the final management VLAN
 	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
@@ -1681,8 +1683,6 @@ void main(void)
 	timer_set(&second, SYS_TICK_HZ);
 	timer_set(&sfp_poll, SFP_TICK_STEP);
 	idle_ready = 1;
-
-	set_sys_led_state(SYS_LED_ON);
 
 	cmd_editor_init();
 

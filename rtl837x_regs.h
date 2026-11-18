@@ -37,6 +37,10 @@
 #define RTL837X_REG_LED_GLB_MUX_6	0x65F4
 #define RTL837X_REG_LED_GLB_ACTIVE	0x65D8
 #define RTL837X_REG_LED_GLB_IO_EN	0x65DC
+// Software control of the port LEDs (LED_PORT_SW_EN_CTRL in Realtek's SDK):
+// 4 bits per port, one per LED, ports 0-7 here and port 8 at + 4. A set bit
+// takes the LED off its link/activity conditions, which leaves it dark.
+#define RTL837X_REG_LED_PORT_SW_EN	0x6554
 #define RTL837X_REG_LED3_0_SET3		0x6524
 #define RTL837X_REG_LED3_0_SET1		0x6528
 #define RTL837X_REG_LED3_2_SET3		0x652C

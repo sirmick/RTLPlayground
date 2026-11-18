@@ -153,3 +153,22 @@ void leds_setup(void) __banked
 	}
 	print_string("leds_setup done\n");
 }
+
+
+/*
+ * Turns the port LEDs and/or the system LED off, or back to normal.
+ * The port LEDs go dark under software control and return to their
+ * link/activity conditions when it is released; the system LED returns to
+ * its running state (on).
+ */
+void leds_off(uint8_t ports, uint8_t sys) __banked
+{
+	if (ports) {
+		REG_SET(RTL837X_REG_LED_PORT_SW_EN, 0xffffffff);
+		REG_SET(RTL837X_REG_LED_PORT_SW_EN + 4, 0x0000000f);
+	} else {
+		REG_SET(RTL837X_REG_LED_PORT_SW_EN, 0);
+		REG_SET(RTL837X_REG_LED_PORT_SW_EN + 4, 0);
+	}
+	set_sys_led_state(sys ? SYS_LED_OFF : SYS_LED_ON);
+}

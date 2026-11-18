@@ -24,5 +24,6 @@
 #include <stdint.h>
 void leds_dump(void) __banked;
 void leds_setup(void) __banked;
+void leds_off(uint8_t ports, uint8_t sys) __banked;
 
 #endif

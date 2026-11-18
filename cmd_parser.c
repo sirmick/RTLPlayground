@@ -502,6 +502,22 @@ static uint8_t name_char(uint8_t c)
 }
 
 
+// "led off" turns every LED off, "led off ports" only the port LEDs (the
+// system LED stays on), "led on" restores them. Saved in the startup
+// config like any command, so it holds across reboots.
+void parse_led(void)
+{
+	if (cmd_words_len == 2 && cmd_compare(1, "on"))
+		leds_off(0, 0);
+	else if (cmd_words_len == 2 && cmd_compare(1, "off"))
+		leds_off(1, 1);
+	else if (cmd_words_len == 3 && cmd_compare(1, "off") && cmd_compare(2, "ports"))
+		leds_off(1, 0);
+	else
+		cmd_error("led on|off [ports]\n");
+}
+
+
 // Sets the management MAC from a "mac <aa:bb:cc:dd:ee:ff>" command (or prints
 // the current one with a bare "mac"). Refuses blank/multicast/all-zero-OUI
 // addresses so the running MAC stays reachable, and
@@ -2151,6 +2167,8 @@ void cmd_parser(void) __banked
 			print_gpio_status();
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
+		} else if (cmd_compare(0, "led")) {
+			parse_led();
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {
