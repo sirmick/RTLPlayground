@@ -25,7 +25,7 @@ void sleep_a(void) __banked
 	st_lp = &st_log_sleep_a;
 	st_aux = 0;
 	st_log();
-	task_sleep(5);
+	STEP_SLEEP(S_SLEEP_A, 5);
 }
 
 /* Woken by the poster's EV_ST_POKE, or after 100 ms */
@@ -34,7 +34,7 @@ void waiter(void) __banked
 	st_lp = &st_log_waiter;
 	st_aux = sched_ev & EV_ST_POKE ? 1 : 2;
 	st_log();
-	task_wait(EV_ST_POKE, 100);
+	STEP_WAIT(S_WAITER, EV_ST_POKE, 100);
 }
 
 /* freq=high, ~1 us of work while `hot on`: when it runs, and the stack at
@@ -44,10 +44,8 @@ __xdata uint8_t st_hot_on;
 
 void hot(void) __banked
 {
-	if (!st_hot_on) {
-		task_wait(EV_ST_GO, SCHED_FOREVER);
-		return;
-	}
+	if (!st_hot_on)
+		STEP_WAIT(S_HOT, EV_ST_GO, SCHED_FOREVER);
 	if (SP > st_sp_step_max)
 		st_sp_step_max = SP;
 	st_lp = &st_log_hot;
@@ -55,32 +53,26 @@ void hot(void) __banked
 	st_log();
 }
 
-/* One line per step, only when the TX ring has room for it */
-static __xdata uint16_t pr_n;
-
+/* One line per step, only when the TX ring has room for it; the slot's arg
+ * is the line number */
 void pr_idle(void) __banked
 {
-	if (!st_print_req) {
-		task_wait(EV_ST_GO, SCHED_FOREVER);
-		return;
-	}
-	pr_n = 0;
-	task_next(S_PR_LINE);
+	if (!st_print_req)
+		STEP_WAIT(S_PR_IDLE, EV_ST_GO, SCHED_FOREVER);
+	STEP_ARG(S_PR_LINE, 0);
 }
 
 void pr_line(void) __banked
 {
-	if (con_tx_room() < 40) {
-		task_wait(EV_CON_TX, SCHED_FOREVER);
-		return;
-	}
+	if (con_tx_room() < 40)
+		STEP_WAIT(S_PR_LINE, EV_CON_TX, SCHED_FOREVER);
 	print_string("P");
-	itoa_short(pr_n);
+	itoa_short(task_arg());
 	print_string(" the quick brown fox jumps\n");
-	if (++pr_n < st_print_req)
-		return;
-	st_print_done = pr_n;
+	if (++task_arg() < st_print_req)
+		return;			/* the next line at the next position */
+	st_print_done = task_arg();
 	st_print_req = 0;
 	print_string("print done\n");
-	task_next(S_PR_IDLE);
+	STEP_NEXT(S_PR_IDLE);
 }

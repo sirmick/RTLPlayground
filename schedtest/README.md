@@ -126,7 +126,7 @@ per tick.
 | `st_sp_step_max` | u8, the highest SP at a step's entry (sampled by `hot`) |
 | `st_stack_paint_from`, `st_stack_hw` | u8: idata from `paint_from` to 0xff is painted 0xa5 at boot; `st_stack_hw` is the highest address found changed since, rescanned by `sleep_c` each second (0: none). Peak stack use = `st_stack_hw` - 0x7c. The raw paint is readable too (`i:0x80`...) |
 | `st_deep_depth`, `st_deep_sp`, `st_deep_runs` | `deep`'s depth, the highest SP at the bottom of the chain, and its runs |
-| `sched_task[24]` | `{u8 state, u16 mask, u16 wake}` |
+| `sched_task[24]` | `{u8 state, u16 mask, u16 wake, u16 arg}`, 7 B each |
 | `sched_st_max[]`, `sched_st_runs[]` | u16 per state ID |
 | `sched_overruns`, `sched_overrun_state`, `sched_pass_max`, `sched_passes_lo/hi`, `sched_idle_lo/hi` | |
 | `sched_posted`, `sched_ev`, `sched_now`, `sched_cur` | |
