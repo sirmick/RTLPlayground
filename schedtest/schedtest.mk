@@ -23,6 +23,9 @@ endif
 # placed by place_banks.py: st_main.c, st_report.c. Pinned (listed as
 # resident so place_banks.py takes their bank as given): one dummy file per
 # bank.
+# The firmware's console editor isn't linked: schedtest has its own con,
+# and nothing else calls it (its tasks, tasks.c, are left out too).
+SRCS := $(filter-out cmd_editor.c,$(SRCS))
 ST_SRCS = $(ST_DIR)/st_main.c $(ST_DIR)/st_report.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
 SRCS += $(ST_SRCS)
 RESIDENT_SRCS += $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c

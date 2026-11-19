@@ -91,6 +91,7 @@ __xdata uint32_t now;
 #define TSTATE_MULTIPART	5
 #define TSTATE_POSTBODY		6
 #define TSTATE_HEADER		7
+#define TSTATE_WEBCMD		8	/* a /cmd queued for cli; the reply goes out on a poll */
 
 extern __xdata uint16_t crc_value;
 __xdata uint16_t crc_final;
@@ -672,6 +673,30 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 }
 
 
+/* /cmd (net.md item 2): the body is queued in the web command buffer
+ * (config_buf: one connection, which waits for the reply meanwhile), the rx
+ * task posts EV_WEBCMD, cli runs it (httpd_webcmd_run) and sets webcmd_done,
+ * and the connection's next poll sends the reply (U4: a web command no
+ * longer runs in the console's buffer). */
+__xdata uint8_t webcmd_pending, webcmd_done;
+
+static void webcmd_queue(__xdata uint8_t *body)
+{
+	if (body != config_buf)
+		memcpy(config_buf, body, content_length + 1);	/* with post_body_take's NUL */
+	webcmd_done = 0;
+	webcmd_pending = 1;
+	uip_conn->appstate.tstate = TSTATE_WEBCMD;
+}
+
+static void run_cmd_body(__xdata uint8_t *body);
+
+void httpd_webcmd_run(void) __banked
+{
+	run_cmd_body(config_buf);
+	webcmd_done = 1;
+}
+
 static void run_cmd_body(__xdata uint8_t *body)
 {
 	uint16_t hdr_len = strtox(outbuf, HTTP_RESPONSE_TXT);
@@ -758,7 +783,7 @@ static void post_body_continue(void)
 	config_buf[pre_acc] = NUL;
 	uip_conn->appstate.tstate = TSTATE_NONE;
 	if (postbody_endpoint == POSTBODY_CMD)
-		run_cmd_body(config_buf);
+		webcmd_queue(config_buf);
 	else
 		run_login_body(config_buf);
 }
@@ -942,7 +967,7 @@ void handle_post(uint16_t body_off)
 		postbody_endpoint = POSTBODY_CMD;
 		if (!post_body_take(p))
 			return;
-		run_cmd_body(p);
+		webcmd_queue(p);
 		return;
 	} else if (is_word(request_path, "login")) {
 		dbg_string("POST login\n");
@@ -972,6 +997,23 @@ static void tx_send(uint16_t len)
 }
 
 
+/* The response in outbuf: its first segment */
+static void send_outbuf(void)
+{
+	dbg_string("slen: "); dbg_short(slen); dbg_char('\n');
+	o_idx = 0;
+	if (slen > uip_mss()) {
+		dbg_string("Sending a: "); dbg_short(slen); dbg_char('\n');
+		tx_send(uip_mss());
+		dbg_string("Sending a done\n");
+	} else {
+		dbg_string("Sending b: "); dbg_short(slen); dbg_char('\n');
+		tx_send(slen);
+		dbg_string("Sending b done\n");
+	}
+	uip_conn->appstate.tstate = TSTATE_TX;
+}
+
 void httpd_appcall(void)
 {
 	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
@@ -998,7 +1040,10 @@ void httpd_appcall(void)
 		s->tstate = TSTATE_CLOSED;
 	} else if (uip_poll()) {
 		uip_len = 0;
-		if (s->tstate == TSTATE_ACKED) {
+		if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
+			webcmd_done = 0;
+			send_outbuf();
+		} else if (s->tstate == TSTATE_ACKED) {
 			dbg_string("Closing because everything has been transmitted\n");
 			uip_close();
 			s->tstate = TSTATE_CLOSED;
@@ -1096,7 +1141,7 @@ void httpd_appcall(void)
 			handle_post(body_off);
 			// If this is an ongoing post stream, then wait for the next packet
 			if (s->tstate == TSTATE_POST || s->tstate == TSTATE_MULTIPART
-			    || s->tstate == TSTATE_POSTBODY) {
+			    || s->tstate == TSTATE_POSTBODY || s->tstate == TSTATE_WEBCMD) {
 				uip_len = 0;
 				return;
 			}
@@ -1215,18 +1260,7 @@ void httpd_appcall(void)
 			slen += len_left;
 		}
 do_send:
-		dbg_string("slen: "); dbg_short(slen); dbg_char('\n');
-		o_idx = 0;
-		if (slen > uip_mss()) {
-			dbg_string("Sending a: "); dbg_short(slen); dbg_char('\n');
-			tx_send(uip_mss());
-			dbg_string("Sending a done\n");
-		} else {
-			dbg_string("Sending b: "); dbg_short(slen); dbg_char('\n');
-			tx_send(slen);
-			dbg_string("Sending b done\n");
-		}
-		s->tstate = TSTATE_TX;
+		send_outbuf();
 	} else if (uip_rexmit()) { // Connection established, need to rexmit?
 		dbg_string("RETRANSMIT requested\n");
 		if (sent_len) {

@@ -25,7 +25,6 @@ __xdata uint8_t          con_rx_buf[CON_RX_SIZE];
 volatile __xdata uint8_t con_rx_head;
 __xdata uint8_t          con_rx_tail;
 uint8_t                  cmd_buffer[CMD_BUF_SIZE];   /* ASan-instrumented: OOB caught */
-uint8_t                  cmd_available;
 uint8_t                  err_status;
 uint8_t                  cmd_history[CMD_HISTORY_SIZE];
 uint16_t                 cmd_history_ptr;
@@ -65,7 +64,6 @@ void env_reset(void) {
     t_memset(cmd_buffer, 0, sizeof(cmd_buffer));
     t_memset(cmd_history, 0, sizeof(cmd_history));
     cmd_history_ptr = 0;
-    cmd_available = 0;
     err_status = 0;
     out_reset();
     cmd_editor_init();          /* sets con_rx_tail = con_rx_head, clears cursor/len */
