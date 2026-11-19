@@ -7,6 +7,7 @@
 #include "rtl837x_sfr.h"
 #include "sched.h"
 #include "crash.h"
+#include "build_id.h"
 
 #ifndef CRASH_RESET
 #define CRASH_RESET()	CHIP_RESET_NOW()
@@ -42,6 +43,8 @@ void crash_die(void)
 	crash_rec.resets = crash_prior;
 	crash_rec.tick = sched_ticks();
 	crash_rec.bank = PSBANK;
+	crash_rec.image_lo = CRASH_IMAGE_LO;
+	crash_rec.image_hi = CRASH_IMAGE_HI;
 	if (crash_pc_sp) {
 		crash_rec.sp = crash_pc_sp - 2;
 		crash_rec.pc = (CRASH_IDATA(crash_pc_sp) << 8) | CRASH_IDATA(crash_pc_sp - 1);

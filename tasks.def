@@ -14,6 +14,8 @@ state CON_EDIT    con_task
 task cli fixed first=CLI_IDLE
 state CLI_IDLE    cli_idle
 state CLI_RUN     cli_run
+state CLI_NEXT    cli_next
+state CLI_MORE    cli_more
 state CLI_PROMPT  cli_prompt
 task net fixed first=NET_START
 state NET_START   net_start

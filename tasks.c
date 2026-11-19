@@ -26,6 +26,7 @@
 #include "machine.h"
 #include "timer.h"
 #include "sched.h"
+#include "con_ring.h"
 
 #define SEC_TICKS	200	/* 1 s */
 #define SFP_TICKS	10	/* the SFP pins every 50 ms */
@@ -92,10 +93,16 @@ void con_task(void) __banked
 }
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
- * The prompt only from CLI_PROMPT. */
+ * The prompt only from CLI_PROMPT. A dump runs as a job, a line a step in
+ * CLI_MORE (E1); a web /cmd a line a step in CLI_NEXT, each step with the
+ * capture on, so only cli's own output goes into the reply. */
 #define CLI_CON	1
 #define CLI_WEB	2
-static __xdata uint8_t cli_src;
+/* Free TX ring a command starts with: more than any unchunked command
+ * prints (the tour's most, lacp show, ~600 B), so it doesn't wait on the
+ * UART; a job's line needs CON_TX_LINE. */
+#define CLI_ROOM	1024
+static __xdata uint8_t cli_src, cli_web_more;
 
 void cli_idle(void) __banked
 {
@@ -112,16 +119,18 @@ void cli_idle(void) __banked
 
 void cli_run(void) __banked
 {
-	task_next(S_CLI_PROMPT);
 	if (cli_src == CLI_WEB) {
 		/* still queued: its connection may have ended since CLI_IDLE,
 		 * and then config_buf may hold the next request */
-		if (webcmd_pending) {
-			webcmd_pending = 0;
-			httpd_webcmd_run();
-		}
-		return;
+		if (!webcmd_pending)
+			STEP_NEXT(S_CLI_IDLE);
+		webcmd_pending = 0;
+		httpd_webcmd_begin();
+		STEP_NEXT(S_CLI_NEXT);
 	}
+	if (con_tx_room() < CLI_ROOM)
+		STEP_WAIT(S_CLI_RUN, EV_CON_TX, SCHED_FOREVER);
+	task_next(S_CLI_PROMPT);
 	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
 		if (!(cmd_buffer[ti] = con_line[ti]))
 			break;
@@ -130,6 +139,54 @@ void cli_run(void) __banked
 	cmd_tokenize();
 	if (err_status == ERR_OK)
 		cmd_parser();
+	if (cli_job)
+		STEP_NEXT(S_CLI_MORE);
+}
+
+/* A web command's connection ended: stop, nobody reads the reply, and
+ * config_buf may soon hold the next request. */
+static void cli_web_drop(void)
+{
+	cli_job = 0;
+	task_next(S_CLI_IDLE);
+}
+
+void cli_next(void) __banked
+{
+	if (!webcmd_busy) {
+		cli_web_drop();
+		return;
+	}
+	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
+		STEP_WAIT(S_CLI_NEXT, EV_CON_TX, SCHED_FOREVER);
+	WEBCMD_CAPTURE_ON();
+	cli_web_more = exec_line();
+	WEBCMD_CAPTURE_OFF();
+	if (cli_job)
+		STEP_NEXT(S_CLI_MORE);
+	if (!cli_web_more)
+		STEP_NEXT(S_CLI_PROMPT);
+	/* stays in CLI_NEXT: the next line at the next step */
+}
+
+void cli_more(void) __banked
+{
+	if (cli_src == CLI_WEB && !webcmd_busy) {
+		cli_web_drop();
+		return;
+	}
+	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
+		STEP_WAIT(S_CLI_MORE, EV_CON_TX, SCHED_FOREVER);
+	if (cli_src == CLI_WEB)
+		WEBCMD_CAPTURE_ON();
+	cli_job_more();
+	if (cli_src == CLI_WEB)
+		WEBCMD_CAPTURE_OFF();
+	if (cli_job)
+		return;			/* stays in CLI_MORE: its next line at the next step */
+	if (cli_src == CLI_WEB && cli_web_more)
+		STEP_NEXT(S_CLI_NEXT);
+	STEP_NEXT(S_CLI_PROMPT);
 }
 
 void cli_prompt(void) __banked
@@ -137,8 +194,10 @@ void cli_prompt(void) __banked
 	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
 		STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
-		if (webcmd_done)		/* not if its connection ended */
+		if (webcmd_busy) {		/* not if its connection ended */
+			httpd_webcmd_end();
 			event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
+		}
 	} else {
 		print_cmd_prompt();
 		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */

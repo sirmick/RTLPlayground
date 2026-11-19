@@ -121,6 +121,7 @@ static struct wire_pdu_out last_tx[10];
 static int tx_count[10];
 
 __xdata uint8_t ctl_buf[CTL_BUF_SIZE];
+__xdata uint8_t cli_job;		/* cmd_parser.c: lacp show sets it (E1) */
 __xdata uint16_t ctl_len;
 
 void tcpip_output(void) { uip_len = 0; }

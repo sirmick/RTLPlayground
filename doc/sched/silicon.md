@@ -128,14 +128,18 @@ fcf16cc and back again; logs `(bench notes, not published)`.
   itself); longest pass 87 ms. SFP_POLL and HOUSE_SEC are not in D2's list
   from the sim (no SFP module there; HOUSE_SEC's cost is unexplained):
   E2 owns the SFP read (slot tasks), and HOUSE_SEC needs measuring before E4.
+  E0 (sim): HOUSE_SEC's 40 ms is loader_confirm()'s one sector erase of the
+  boot-count mark, 15 s after each boot through the loader; owner E3 (the
+  flash job), evidence/e0-leftovers.txt.
 - **A crash record from another image is misreported.** The first boot of
   db07bb9 printed a record that schedtest had left at 0xbfe0 (fcf16cc never
   touches that address, and a web-update reset keeps xdata), decoded with
   db07bb9's state names (`rx/RX_IDLE ... ?`). The record needs the image's
   identity (e.g. the application CRC or the build hash); the boot ignores a
-  record from another image. To do (book: watchdog.md).
+  record from another image. Done in E0 (56ba466, watchdog.md).
 - **`health` is only in HEALTH=1 builds**, so the default firmware can't
   show the console RX overrun count (D1's evidence counted it in a HEALTH
-  build). To do: put the count in `health tasks` (always built).
+  build). E0: `health tasks` (always built) already shows it, on its
+  overruns line ("con rx overruns N").
 - A 500-character paste fills the line editor (127 characters, as in the
   sim); the overrun count wasn't visible (above).

@@ -1,0 +1,20 @@
+# old-vs-new (ovs-rtlpg tests/oldnew, 0fc788c, 17 scenarios) for E1 against
+# fork main b635486: D3's differences (d3-oldnew.expect) and E1's. E1's
+# console TX ring is 2 KiB, so the boot's ~2.4 KB of output no longer waits
+# on the UART: the 8x's prompt is 161.7 ms sooner (10999.8 vs 11161.5 ms),
+# SWGT024's 129 ms. And l2 is a cli job, a MAC a step.
+stp     002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
+stp     005 web GET /stp.json     # D1: tcs 0x16 for 0x15
+stp     006 web GET /stpcnt.json  # D1: the BPDU counters, one more
+vlan    frames * tcp/80           # U4: the /cmd's reply is sent on a later poll, not with the request's ACK: one TCP frame more (28 -> 29)
+config  frames * tcp/80           # 8x: U4's, 32 -> 33. SWGT024 32 -> 25: the old's FIN came after the bench's own, unacknowledged: 8 retransmits and a RST
+upload  reg 06f4                  # D1: SEC_COUNTER, the update's reset the other side of a second
+stp_upload reg 06f4               # the same as upload's
+*       reg 06f4                  # E1 (8x): SEC_COUNTER one more at the end: the boot ~162 ms sooner crosses a second
+web     010 web GET /information.json  # E1 (8x): its uptime one second more, the same second
+config  frames * rldp             # E1 (8x): one RLDP probe more in the window, the firmware ~162 ms ahead
+config  frames * stp              # E1 (8x): one BPDU more, the same
+lacp_l2 004 console               # E1: the LAG no longer flaps during l2: the old's LACP timed out in its 3.86 s dump (4 port_lag_members_set lines)
+lacp_l2 040 cli lacp show         # E1: rx 0x7e for 0x80 on the LAG ports: 2 LACPDUs fewer, below
+lacp_l2 041 lacp partner          # E1: in/out 129/132 for 131/134, the same
+lacp_l2 frames * lacp             # E1: 129 for 131: gaps a steady 1.01-1.03 s; the old's 3.86 s gap ended in a catch-up burst (3 ms apart)

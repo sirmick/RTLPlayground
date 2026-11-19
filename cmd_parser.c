@@ -97,6 +97,10 @@ __xdata uint8_t cmd_words_b[N_WORDS];
 
 __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
 __xdata uint16_t cmd_history_ptr;
+__xdata uint8_t cli_job;		/* a dump in progress (cli_job_more) */
+static void cmd_save(void);
+static __xdata uint16_t hist_p;		/* the history job's cursor */
+static __xdata uint8_t hist_begun, hist_n, hist_c;
 
 // Error set by commands
 __xdata uint8_t err_status;
@@ -2139,7 +2143,8 @@ void cmd_parser(void) __banked
 			stp_parse();
 #ifndef SCHEDTEST	/* schedtest has its own health */
 		} else if (cmd_compare(0, "health") && cmd_compare(1, "tasks")) {
-			sched_health_tasks();	/* the scheduler's slots and states */
+			sched_health_begin();	/* the scheduler's slots and states, a line a step */
+			cli_job = CLI_JOB_HEALTH;
 		} else if (cmd_compare(0, "health") && cmd_compare(1, "clear")) {
 			sched_health_clear();
 #endif
@@ -2216,18 +2221,9 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "version")) {
 			print_sw_version();
 		} else if (cmd_compare(0, "history")) {
-			__xdata uint16_t p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-			__xdata uint8_t found_begin = 0;
-//			print_string("History ptr: ");
-//			print_short(cmd_history_ptr); write_char('\n');
-			while (p != cmd_history_ptr) {
-//				print_short(p); write_char(' ');
-				if (!cmd_history[p] || cmd_history[p] == '\n')
-					found_begin = 1;
-				if (found_begin && cmd_history[p])
-					write_char(cmd_history[p]);
-				p = (p + 1) & CMD_HISTORY_MASK;
-			}
+			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
+			hist_begun = 0;
+			cli_job = CLI_JOB_HISTORY;
 		} else if (cmd_compare(0, "ingress")) {
 			parse_ingress();
 		} else if (cmd_compare(0, "session")) {
@@ -2250,24 +2246,29 @@ void cmd_parser(void) __banked
 		}
 
 
-		if (save_cmd && cmd_words_len && err_status == ERR_OK) {
-			// Find end of the cmd-buffer, looking for the NUL-byte.
-			uint8_t i = cmd_words_b[cmd_words_len - 1];
-			do {
-				i++;
-			} while(cmd_buffer[i] != NUL);
-
-			// Copy last cmd-buffer to history.
-			cmd_history_ptr = (cmd_history_ptr + i) & CMD_HISTORY_MASK;
-			__xdata uint16_t p = cmd_history_ptr;
-			cmd_history[cmd_history_ptr] = '\n';
-			cmd_history_ptr = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-			do {
-				i--;
-				cmd_history[--p & CMD_HISTORY_MASK] = cmd_buffer[i];
-			} while (i);
-		}
+		/* history's own line goes in when its job has printed the rest */
+		if (save_cmd && cmd_words_len && err_status == ERR_OK && cli_job != CLI_JOB_HISTORY)
+			cmd_save();
 	}
+}
+
+// Copy the command in cmd_buffer to the history.
+static void cmd_save(void)
+{
+	// Find end of the cmd-buffer, looking for the NUL-byte.
+	uint8_t i = cmd_words_b[cmd_words_len - 1];
+	do {
+		i++;
+	} while(cmd_buffer[i] != NUL);
+
+	cmd_history_ptr = (cmd_history_ptr + i) & CMD_HISTORY_MASK;
+	__xdata uint16_t p = cmd_history_ptr;
+	cmd_history[cmd_history_ptr] = '\n';
+	cmd_history_ptr = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
+	do {
+		i--;
+		cmd_history[--p & CMD_HISTORY_MASK] = cmd_buffer[i];
+	} while (i);
 }
 
 void clear_command_history(void) __banked
@@ -2344,8 +2345,10 @@ void execute_config(void) __banked
 					cmd_buffer[cmd_idx] = NUL;
 					if (cmd_idx) {
 						cmd_tokenize();
-						if (err_status == ERR_OK)
+						if (err_status == ERR_OK) {
 							cmd_parser();
+							cmd_finish();
+						}
 					}
 				}
 				if (c == 0 || c == 0xff)
@@ -2370,43 +2373,130 @@ config_done:
 	save_cmd = 1;
 }
 
-// Execute multiple commands
-// If a command is too long or can't be tokenized, remaining commands are not executed
-// Returns the status via `err_status`-variable.
-void execute_commands(__xdata uint8_t *p) __banked {
-	__xdata uint8_t failed = ERR_OK;
+/*
+ * Dumps as jobs (E1, console.md "Chunked output"). A command whose output
+ * grows with a table sets cli_job and its cursor instead of printing it all;
+ * cli_job_more() prints the next line. The cli task calls it one line a
+ * step (CLI_MORE); any other caller runs the job to its end at once
+ * (cmd_finish), as before.
+ */
+static __xdata uint8_t job_more;
+
+/* history: up to and including the next newline, at most 64 bytes looked at */
+static uint8_t history_line(void)
+{
+	hist_n = 64;
+	while (hist_p != cmd_history_ptr && hist_n--) {
+		hist_c = cmd_history[hist_p];
+		hist_p = (hist_p + 1) & CMD_HISTORY_MASK;
+		if (!hist_c || hist_c == '\n')
+			hist_begun = 1;
+		if (hist_begun && hist_c) {
+			write_char(hist_c);
+			if (hist_c == '\n')
+				break;
+		}
+	}
+	if (hist_p != cmd_history_ptr)
+		return 1;
+	if (save_cmd)
+		cmd_save();		/* the history command itself, as before: after the dump */
+	return 0;
+}
+
+void cli_job_more(void) __banked
+{
+	switch (cli_job) {
+	case CLI_JOB_HISTORY:
+		job_more = history_line();
+		break;
+	case CLI_JOB_L2:
+		job_more = port_l2_line();
+		break;
+	case CLI_JOB_STAT:
+		job_more = port_stats_line();
+		break;
+	case CLI_JOB_LACP:
+		job_more = lacp_show_line();
+		break;
+	case CLI_JOB_STPFDB:
+		job_more = stp_fdb_line();
+		break;
+#ifndef SCHEDTEST
+	case CLI_JOB_HEALTH:
+		job_more = sched_health_line();
+		break;
+#endif
+	default:
+		job_more = 0;
+	}
+	if (!job_more)
+		cli_job = 0;
+}
+
+void cmd_finish(void) __banked
+{
+	while (cli_job)
+		cli_job_more();
+}
+
+/*
+ * Several commands, one line at a time (a web /cmd's body; the config).
+ * If a command is too long or can't be tokenized, the remaining commands
+ * are not executed. exec_line() runs the next command and returns 1, or
+ * returns 0 when the text is done, with the status in err_status: the first
+ * failure, or the error that stopped it.
+ */
+static __xdata uint8_t * __xdata ec_p;
+static __xdata uint8_t ec_failed, ec_idx, ec_c;
+
+void exec_begin(__xdata uint8_t *p) __banked
+{
+	ec_p = p;
+	ec_failed = ERR_OK;
 	err_status = ERR_OK;
-	uint8_t cmd_idx = 0;
+}
+
+uint8_t exec_line(void) __banked
+{
+	ec_idx = 0;
 	while (1) {
-		if (*p == 0 || *p == '\n' || *p == '\r') {
-			if (cmd_idx) {
-				cmd_buffer[cmd_idx] = NUL;
+		ec_c = *ec_p;
+		if (!ec_c || ec_c == '\n' || ec_c == '\r') {
+			if (ec_idx) {
+				cmd_buffer[ec_idx] = NUL;
 				cmd_tokenize();
 				if (err_status != ERR_OK)
-					return;
+					return 0;
 				cmd_parser();
-				if (failed == ERR_OK)
-					failed = err_status;
+				if (ec_failed == ERR_OK)
+					ec_failed = err_status;
+				return 1;	/* at the separator: the next call goes on from it */
 			}
-			if (*p == 0) {
-				err_status = failed;
-				return;
+			if (!ec_c) {
+				err_status = ec_failed;
+				return 0;
 			}
-			cmd_idx = 0;
+		} else if (ec_idx < (CMD_BUF_SIZE - 1)) {
+			cmd_buffer[ec_idx++] = ec_c;
 		} else {
-			if (cmd_idx < (CMD_BUF_SIZE - 1)) {
-				cmd_buffer[cmd_idx++] = *p;
-			} else {
-				cmd_buffer[CMD_BUF_SIZE - 1] = NUL;
-				print_string("ERROR: Command too long: ");
-				print_string_x(cmd_buffer);
-				write_char('\n');
-				err_status = ERR_CMD_TOO_LONG;
-				return;
-			}
+			cmd_buffer[CMD_BUF_SIZE - 1] = NUL;
+			print_string("ERROR: Command too long: ");
+			print_string_x(cmd_buffer);
+			write_char('\n');
+			err_status = ERR_CMD_TOO_LONG;
+			return 0;
 		}
-		p++;
-	};
+		ec_p++;
+	}
+}
+
+// Execute multiple commands, each to its end
+// Returns the status via `err_status`-variable.
+void execute_commands(__xdata uint8_t *p) __banked {
+	exec_begin(p);
+	while (exec_line())
+		cmd_finish();
 }
 
 #ifdef HEALTH

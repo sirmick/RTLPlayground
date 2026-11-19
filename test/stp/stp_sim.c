@@ -25,6 +25,16 @@ uint8_t sfr_data[4];
 bool stp_enabled;
 uint16_t management_vlan;
 uint8_t cmd_buffer[CMD_BUF_SIZE];
+uint8_t cli_job;		/* cmd_parser.c: stp off's VLAN walk is a cli job (E1) */
+uint8_t stp_fdb_line(void);
+
+/* What the firmware's cli does a step at a time, all at once */
+static void sim_finish(void)
+{
+	while (cli_job)
+		if (!stp_fdb_line())
+			cli_job = 0;
+}
 uint8_t cmd_words_len;
 uint8_t cmd_words_b[15];
 char save_cmd;
@@ -113,6 +123,7 @@ static void sim_cmd(const char *line)
 			cmd_words_b[cmd_words_len++] = i;
 	err_status = ERR_OK;
 	stp_parse();
+	sim_finish();
 }
 
 void execute_config(void)
@@ -231,9 +242,18 @@ void reg_write_m(uint16_t addr)
 	}
 }
 
+/* BPDUs are built in ctl_buf and sent with ctl_output() since D3 (net.md) */
+uint8_t ctl_buf[CTL_BUF_SIZE];
+uint16_t ctl_len;
+
 void tcpip_output(void)
 {
-	struct sim_pkt_out *f = (struct sim_pkt_out *)&uip_buf[RTL_FRAME_DESC_SIZE];
+	uip_len = 0;
+}
+
+void ctl_output(void)
+{
+	struct sim_pkt_out *f = (struct sim_pkt_out *)&ctl_buf[RTL_FRAME_DESC_SIZE];
 	uint16_t pmask = HTONS(f->rtl_tag.pmask);
 	for (uint8_t p = 0; p < NPORTS; p++)
 		if (pmask & (1 << p)) {
@@ -244,7 +264,7 @@ void tcpip_output(void)
 				tc_frames[p]++;
 			memcpy(&last_tx[p], f, sizeof(*f));
 		}
-	uip_len = 0;
+	ctl_len = 0;
 }
 
 static uint8_t port_state(uint8_t port)
@@ -1968,6 +1988,7 @@ static void scen_bpdu_handling(void)
 	stp_enabled = 0;
 	l2mc_calls = 0;
 	stp_off();
+	sim_finish();
 	check(l2mc_calls && (l2mc_pmask & PMASK_9) == PMASK_9, "by default BPDUs are flooded when STP stops");
 	l2mc_calls = 0;
 	sim_cmd("stp bpdu filter");
@@ -1980,6 +2001,7 @@ static void scen_bpdu_handling(void)
 	check(l2mc_calls == 0, "while STP runs the setting only waits");
 	stp_enabled = 0;
 	stp_off();
+	sim_finish();
 	check((l2mc_pmask & PMASK_9) == PMASK_9, "and applies when STP stops");
 	sim_cmd("stp bpdu drop");
 	check(err_status != ERR_OK, "an unknown handling is refused");
