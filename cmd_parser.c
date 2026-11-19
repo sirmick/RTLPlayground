@@ -2439,7 +2439,7 @@ void cmd_finish(void) __banked
 }
 
 /*
- * Several commands, one line at a time (a web /cmd's body; the config).
+ * Several commands, one line at a time (a web /cmd's body, from cli).
  * If a command is too long or can't be tokenized, the remaining commands
  * are not executed. exec_line() runs the next command and returns 1, or
  * returns 0 when the text is done, with the status in err_status: the first
@@ -2489,13 +2489,6 @@ uint8_t exec_line(void) __banked
 	}
 }
 
-// Execute multiple commands, each to its end
-// Returns the status via `err_status`-variable.
-void execute_commands(__xdata uint8_t *p) __banked {
-	exec_begin(p);
-	while (exec_line())
-		cmd_finish();
-}
 
 #ifdef HEALTH
 /*

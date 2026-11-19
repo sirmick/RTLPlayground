@@ -38,7 +38,6 @@ void health_show(void) __banked;	/* "health" CLI dump */
 void cmd_tokenize(void) __banked;
 void cmd_parser(void) __banked;
 void execute_config(void) __banked;
-void execute_commands(__xdata uint8_t *p) __banked;
 
 /* Dumps as jobs (E1): cli_job set by the command, a line per cli_job_more() */
 #define CLI_JOB_HISTORY	1
@@ -47,6 +46,8 @@ void execute_commands(__xdata uint8_t *p) __banked;
 #define CLI_JOB_STAT	4
 #define CLI_JOB_LACP	5
 #define CLI_JOB_STPFDB	6
+/* A job with side effects runs to its end even if nobody reads it */
+#define CLI_JOB_KEEPS(j)	((j) == CLI_JOB_STPFDB)
 extern __xdata uint8_t cli_job;
 void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after its last */
 void cmd_finish(void) __banked;		/* the job to its end, at once */
