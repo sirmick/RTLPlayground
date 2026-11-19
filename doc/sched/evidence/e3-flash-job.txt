@@ -12,7 +12,7 @@ Commits:
 f7100d1 is the code boundary. Images: f7100d1 built clean in a worktree
 (tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1), 8x
 (KEEPLINK_KP_9000_9XHPML_V1_2) and SWGT024 (SWGT024_V2_0_UNMANAGED).
-rtlsim: ovs-rtlpg build/rtlsim (d3d1843: harness only, no sim change).
+rtlsim: ovs-rtlpg build/rtlsim at e2b1bd2.
 
 ## What E3 does
 
@@ -151,11 +151,13 @@ or a step at a time (job_defer). E3's scenarios:
 
 ## Old vs new (OLD = fork main b635486, ~/src/rtlpg-ref)
 
-Harness: ovs-rtlpg d3d1843 (committed; git archive) + the window-keeping
-client sim2 has uncommitted (asked to land it): in tests/oldnew/bench.py
-Host.http, keep the window from every ACK (`st["wnd"]`, from s[14:16]),
-send `min(mss, wnd)`, and only when `una >= snd and wnd > 0`. Without it the
-bench (which ignores the window) overruns NEW's stage. OLD always says 1460.
+Harness: ovs-rtlpg e2b1bd2 (feat/sched-sim, committed; a git archive of it,
+build/rtlsim rebuilt there): 7255e8b's bench client keeps to the switch's
+window (sends min(mss, wnd), only when wnd > 0; without it the bench
+overruns NEW's stage), plus the L2 table's 4-way index and l2_big's 1000
+sequential MACs. OLD always says 1460. The same run on d3d1843 with that
+client patched in by hand (before sim2 landed it) gave the same: 17 of 17,
+every check and number equal.
   python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <f7100d1 -boot> \
     --new-payload <f7100d1 application> --board boards/<board>.json --checks \
     --known doc/sched/evidence/e3-known --expect doc/sched/evidence/e3-oldnew.expect
@@ -194,7 +196,5 @@ stp_upload's hello and HOUSE_SEC, both fixed here):
   console's is, S3); same job.
 - EV_UPLOAD is unused (events.md); sched.h's comment left, to keep the
   merge with E0/E1 small.
-- The window-keeping bench client waits on sim2 committing it (d3d1843's
-  bench stalls NEW's upload).
 - gate-8x.json could be lowered to data 98 B (--update); left to the
   orchestrator.

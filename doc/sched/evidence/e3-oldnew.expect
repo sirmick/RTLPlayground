@@ -1,4 +1,4 @@
-# old-vs-new (ovs-rtlpg tests/oldnew, d3d1843 + the window-keeping client) for
+# old-vs-new (ovs-rtlpg tests/oldnew, e2b1bd2: the window-keeping client) for
 # E3 against fork main b635486: D1's timing and D3's queued web command, as in
 # d3-oldnew.expect, and the flash job's upload, slower and windowed.
 stp        002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
