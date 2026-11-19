@@ -305,6 +305,23 @@ void reg_read_m(uint16_t addr)
 	sfr_data[0] = SFR_DATA_24; sfr_data[1] = SFR_DATA_16; sfr_data[2] = SFR_DATA_8; sfr_data[3] = SFR_DATA_0;
 }
 
+/* The firmware's bounded polls (rtlplayground.c, E4): the mock's busy
+ * bits clear at once, so one read decides; a bit still set is a timeout. */
+uint16_t hw_timeouts, hw_timeout_reg;
+uint8_t hw_stuck;
+void hw_start(uint8_t n) { (void)n; }
+uint8_t hw_expired(void) { return 1; }
+void hw_timeout(uint16_t reg) { hw_timeouts++; hw_timeout_reg = reg; hw_stuck = 1; }
+
+uint8_t hw_poll(uint16_t reg)
+{
+	reg_read(reg);
+	if (!(SFR_DATA_0 & 0x01))
+		return 0;
+	hw_timeout(reg);
+	return 1;
+}
+
 void reg_write(uint16_t addr)
 {
 	reg_store(addr, sfr_word());

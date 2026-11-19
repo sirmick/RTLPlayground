@@ -271,9 +271,7 @@ uint8_t igmp_packet_handler(void) __banked
 	entry_to_ipmc();
 #endif
 	// Wait for any pending Table operations to end
-	do {
-		reg_read_m(RTL837X_TBL_CTRL);
-	} while (sfr_data[3] & 1);
+	hw_poll(RTL837X_TBL_CTRL);
 
 	reg_read_m(RTL837x_TBL_DATA_0);
 #ifdef DEBUG
@@ -288,9 +286,7 @@ uint8_t igmp_packet_handler(void) __banked
 #endif
 	// First try to find entry to see whether it needs to be updated
 	REG_WRITE(RTL837X_TBL_CTRL, 0x00, 0x00, TBL_L2_UNICAST, TBL_EXECUTE);
-	do {
-		reg_read_m(RTL837X_TBL_CTRL);
-	} while (sfr_data[3] & 0x1);
+	hw_poll(RTL837X_TBL_CTRL);
 #ifdef DEBUG
 	print_string("\nsearch done\n");
 	print_string("Table data searched:\n");
@@ -352,9 +348,7 @@ uint8_t igmp_packet_handler(void) __banked
 			sfr_data[1] |= 0x04;	// Clear entry
 			reg_write_m(RTL837x_TBL_DATA_0);
 			REG_WRITE(RTL837X_TBL_CTRL, idx >> 8, idx & 0xff, TBL_L2_UNICAST, TBL_WRITE | TBL_EXECUTE);
-			do {
-				reg_read_m(RTL837X_TBL_CTRL);
-			} while (sfr_data[3] & 0x1);
+			hw_poll(RTL837X_TBL_CTRL);
 			print_string("IGMP Entry deleted\n");
 			return 1;
 		}
@@ -382,9 +376,7 @@ uint8_t igmp_packet_handler(void) __banked
 #endif
 	reg_read_m(RTL837X_TBL_CTRL);
 	REG_WRITE(RTL837X_TBL_CTRL, sfr_data[0], sfr_data[1], TBL_L2_UNICAST, TBL_WRITE | TBL_EXECUTE);
-	do {
-		reg_read_m(RTL837X_TBL_CTRL);
-	} while (sfr_data[3] & 0x1);
+	hw_poll(RTL837X_TBL_CTRL);
 #ifdef DEBUG
 	print_string("\nupdate done\n");
 	print_string("Table data written:\n");

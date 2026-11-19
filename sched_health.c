@@ -151,6 +151,12 @@ uint8_t sched_health_line(void) __banked
 		u = con_rx_overruns;
 		ES = 1;
 		itoa_short(u);
+		print_string(", hw timeouts ");	/* E4: bounded polls that gave up */
+		itoa_short(hw_timeouts);
+		if (hw_timeouts) {
+			print_string(" last ");
+			print_short(hw_timeout_reg);
+		}
 		write_char('\n');
 		if (crash_last.magic == CRASH_MAGIC) {
 			print_string("last reset: ");

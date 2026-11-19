@@ -48,12 +48,22 @@ static void vlan_bit_put(uint16_t vlan)
 		*p &= ~m;
 }
 
-// Wait for the TABLE ready
+// Wait for the TABLE ready (bounded, E4)
 static void wait_table_ready(void)
 {
+	hw_poll(RTL837X_TBL_CTRL);
+}
+
+/* An L2 flush's end: FLUSH_CTRL bits 16-23 clear; bounded (E4) */
+static void l2_flush_wait(void)
+{
+	hw_start(HW_FLUSH_TICKS);
 	do {
-		reg_read(RTL837X_TBL_CTRL);
-	} while (SFR_DATA_0 & TBL_EXECUTE);
+		reg_read(RTL837x_L2_TBL_FLUSH_CTRL);
+		if (!SFR_DATA_16)
+			return;
+	} while (!hw_expired());
+	hw_timeout(RTL837x_L2_TBL_FLUSH_CTRL);
 }
 
 void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked
@@ -385,10 +395,7 @@ void port_l2_forget_port(uint8_t port) __banked
 {
 	REG_SET(RTL837x_L2_TBL_FLUSH_CNF, 0x0);	/* port-based, dynamic entries */
 	REG_SET(RTL837x_L2_TBL_FLUSH_CTRL, L2_TBL_FLUSH_EXEC | (((uint16_t)1) << port));
-
-	do {
-		reg_read(RTL837x_L2_TBL_FLUSH_CTRL);
-	} while (SFR_DATA_16);
+	l2_flush_wait();
 }
 
 
@@ -408,9 +415,7 @@ uint8_t port_l2_forget(void) __banked
 	REG_SET(RTL837x_L2_TBL_FLUSH_CTRL, L2_TBL_FLUSH_EXEC | mask);
 
 	// Wait for flush completed
-	do {
-		reg_read_m(RTL837x_L2_TBL_FLUSH_CTRL);
-	} while (sfr_data[1]);
+	l2_flush_wait();
 
 	return 0;
 }

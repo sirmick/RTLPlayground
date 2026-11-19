@@ -31,6 +31,8 @@ volatile uint8_t TL2, TH2, T2CON, RCAP2L = 0xad, RCAP2H = 0x34, PSBANK = 2;
 volatile uint32_t ticks;
 volatile bool link_irq, rx_irq;
 uint8_t host_idata[256];
+uint16_t hw_timeouts, hw_timeout_reg;	/* rtlplayground.c's poll bounds (E4) */
+uint8_t hw_stuck;
 static jmp_buf reset_jmp;
 static int resets;
 void host_reset(void) { resets++; longjmp(reset_jmp, 1); }

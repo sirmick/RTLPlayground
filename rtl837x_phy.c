@@ -659,20 +659,26 @@ void rtl8224_write_reg_u16(uint16_t reg, uint16_t val) __banked
 // }
 
 
+// Wait for command bit is cleared (bounded, E4)
+static void rtl8224_sds_wait(void)
+{
+	hw_start(HW_POLL_TICKS);
+	do {
+		rtl8224_read_reg_u16(RTL837X_SDS_INDACS_CMD);
+		if (!(SFR_DATA_8 & 0x80))
+			return;
+	} while (!hw_expired());
+	hw_timeout(RTL837X_SDS_INDACS_CMD);
+}
+
 // Write to the RTL8224 SDS registers.
 void rtl8224_sds_write(uint16_t sds_cmd, __xdata uint16_t value) __banked
 {
-	// Wait for command bit is cleared
-	do {
-		rtl8224_read_reg_u16(RTL837X_SDS_INDACS_CMD);
-	} while (SFR_DATA_8 & 0x80);
+	rtl8224_sds_wait();
 
 	rtl8224_write_reg_u16(RTL837X_SDS_INDACS_WRITE_DATA, value);
 
 	rtl8224_write_reg_u16(RTL837X_SDS_INDACS_CMD, sds_cmd);
 
-	// Wait for command bit is cleared
-	do {
-		rtl8224_read_reg_u16(RTL837X_SDS_INDACS_CMD);
-	} while (SFR_DATA_8 & 0x80);
+	rtl8224_sds_wait();
 }
