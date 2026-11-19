@@ -224,6 +224,46 @@ Rerun at 329c98a (clean images, both boards):
   boards, stp_upload hello 1.970..2.035 s (8x), 1.967..2.033 s (SWGT024),
   long steps PASS after uploads, the two reg 06f4 lines flagged as before.
 
+## Follow-ups after acceptance (d98a7b8, 1dc9745, a2e75aa)
+
+1. d98a7b8 uip: a zero-window probe answered. uIP 1.0 answered an
+   out-of-sequence segment only if it carried data, so Linux's probe (empty,
+   seq = rcv_nxt - 1) went unanswered, and it took any in-sequence segment,
+   even past the advertised window: a lost window update ended only by the
+   30 s abort. Now, on an established connection, an empty segment out of
+   sequence gets an ACK, and data past the advertised window isn't taken
+   but ACKed; both with the current window. Marked "RTLPlayground" in
+   uip.c; upstream-bugs.md U9 (uIP-wide, latent upstream).
+   - Host: "a zero-window probe gets an ACK with the window as it is (0, or
+     open once the job has written the stage)" - the second probe stands
+     for a lost update; "a segment past the window isn't taken; an ACK with
+     the window as it is" and its retransmission taken once the stage has
+     room. Both FAIL with uip.c as it was, PASS now.
+   - Sim: tools/flash_job_steps.py S6: a client that keeps to the window,
+     probes every 200 ms while it is shut (as Linux's persist timer) and
+     loses the first window update after a zero window: 53 zero windows, 1
+     update dropped, 1 probe, upload 7.08 s (8x) / 7.10 s (SWGT024), the
+     answer, every byte staged: PASS. On 329c98a (no uIP change): 149
+     probes unanswered, no answer by 120 s: FAIL.
+2. 1dc9745: up_active cleared as soon as a segment comes past the window or
+   the job can't start (not only at the end of the part or connection).
+3. a2e75aa: upload_done()'s window back to an MSS at the end of a config
+   save or boot-count erase, commented (harmless: one connection).
+
+Rerun at a2e75aa (clean images, 8x and SWGT024):
+  gate PASS: data 98 B, stack 138 B, common 0x3d7d; banks 830/462/843 and
+    811/830/453 free; xdata 18031 B; code 161062 / 161103 B (+75 B)
+  make -C test quick: PASSED; schedtest x4 built, schedtest-sim --twice 0
+    failures, deterministic
+  flash_job_steps S0-S6: PASS on both boards
+  curl_upload: PASS on both; SWGT024 3.91 / 5.13 s, no zero window; 8x
+    under the parallel old-vs-new load 11.19 / 22.99 s, 56 zero windows,
+    each followed by its update, no probe needed
+  old-vs-new, ovs-rtlpg e2b1bd2, --checks --known e3-known --expect
+    e3-oldnew.expect: 17 of 17 on both boards; stp_upload hello
+    1.971..2.036 s (8x), 1.967..2.033 s (SWGT024); the two reg 06f4 lines
+    flagged as before
+
 ## Open items
 
 - /loader and install-image uploads: their end (loader_stage_fits()'s
