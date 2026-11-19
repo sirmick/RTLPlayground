@@ -78,6 +78,10 @@ buffer is **`config_buf`**, the buffer httpd already holds each request in
   as commands (`tools/webcmd_abort.py`). If a new `/cmd` was queued in
   between, that one runs: it is the one in `config_buf`, and its connection
   is the one waiting.
+- Data that arrives on the `/cmd`'s own connection while it waits (a
+  trailing CRLF, a pipelined request) is dropped in `TSTATE_WEBCMD`, as
+  today's code drops data that arrives while a reply is sent; taking it
+  would copy it over the command (`tools/webcmd_abort.py` W3, W4).
 - `httpd.c` `#error`s if `UIP_CONNS != 1`. With more connections the web
   command and its reply need buffers of their own (the body limit is
   `CONFIG_UPLOAD_BUF`, 4480 B; the reply up to `TCP_OUTBUF_SIZE`, 2500 B).
