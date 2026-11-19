@@ -97,11 +97,9 @@ void gpio_output_setup(uint8_t pin, __xdata uint8_t initial_val) __banked{
 /*
  * Read up to 16 consecutive registers of the EEPROM via I2C into sfp_buf.
  * One transaction, ~2 ms at 100 kHz; a controller still busy after one to
- * two ticks (5-10 ms) fails the read (E2: a step's bound, not a hang).
+ * two ticks (5-10 ms) fails the read (E2: a step's bound, not a hang;
+ * counted since E4: hw_poll).
  */
-#define SFP_I2C_TICKS	1
-extern volatile __xdata uint32_t ticks;
-static __xdata uint8_t i2c_t0;
 bool sfp_read_block(uint8_t slot, uint8_t reg, uint8_t len) __banked __reentrant
 {
 	uint8_t dev;
@@ -121,12 +119,8 @@ bool sfp_read_block(uint8_t slot, uint8_t reg, uint8_t len) __banked __reentrant
 		  (dev >> 5) | machine.sfp_port[slot].i2c,
 		  ((dev << 3) & 0xff) | 0x1);
 
-	i2c_t0 = *(volatile __xdata uint8_t *)&ticks;	/* the low byte: one load, no carry */
-	do {
-		reg_read(RTL837X_REG_I2C_CTRL);
-		if ((uint8_t)(*(volatile __xdata uint8_t *)&ticks - i2c_t0) > SFP_I2C_TICKS)
-			return false;
-	} while (SFR_DATA_0 & 0x1);
+	if (hw_poll(RTL837X_REG_I2C_CTRL))
+		return false;
 
 	if (SFR_DATA_0 & 0x2)
 		return false;

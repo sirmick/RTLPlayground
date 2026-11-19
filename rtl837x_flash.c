@@ -96,7 +96,18 @@ static void flash_write_enable(void)
 
 	SFR_FLASH_EXEC_GO = 1;
 	while (SFR_FLASH_EXEC_BUSY);
+#ifdef LDR_BUILD
 	while (!(flash_read_status() & STATUS_REG_WEL_MASK));
+#else
+	/* a write-protected or absent flash never sets WEL (E4: bounded; the
+	 * erase or program that follows does nothing) */
+	hw_start(HW_POLL_TICKS);
+	while (!(flash_read_status() & STATUS_REG_WEL_MASK))
+		if (hw_expired()) {
+			hw_timeout(HW_TO_FLASH_WEL);
+			break;
+		}
+#endif
 }
 
 

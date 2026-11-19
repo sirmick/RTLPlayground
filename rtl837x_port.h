@@ -10,9 +10,7 @@
 
 #define STAT_GET(cnt, port) do { \
 	REG_WRITE(RTL837X_STAT_GET, 0x00, 0x00, cnt >> 3, (cnt << 5) | (port << 1) | 1); \
-	do { \
-		reg_read_m(RTL837X_STAT_GET); \
-	} while (sfr_data[3] & 0x1); \
+	hw_poll(RTL837X_STAT_GET);	/* bounded (E4) */ \
 	} while (0)
 
 // Possible values for ingress filter type

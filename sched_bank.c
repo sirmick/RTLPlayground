@@ -10,6 +10,8 @@
 #include "con_ring.h"
 #include "crash.h"
 
+extern __xdata uint8_t hw_stuck;	/* rtlplayground.c (E4) */
+
 extern volatile __xdata uint32_t ticks;
 extern volatile __bit link_irq;
 extern volatile __bit rx_irq;
@@ -77,6 +79,7 @@ void sched_m_pass_start(void) __banked
 
 void sched_m_step_start(void) __banked
 {
+	hw_stuck = 0;		/* each step may wait out one poll timeout (E4) */
 	fine_read();
 	s_tick = sched_f_tick;
 	s_cnt = sched_f_cnt;

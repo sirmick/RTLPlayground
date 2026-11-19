@@ -565,6 +565,57 @@ void reg_read(uint16_t reg_addr)
 }
 
 
+/*
+ * Bounded hardware polls (E4, modules.md "Hardware polls get timeouts"):
+ * hw_start(n), then poll until done or hw_expired(), n + 1 ticks at most
+ * (n to n + 1 whole ticks: the current one's rest first). A poll that
+ * gives up calls hw_timeout(): counted, with the register (or an HW_TO_
+ * pseudo-register), for `health tasks`; the caller moves on. After one,
+ * hw_stuck: the step's later polls give up at once (hw_expired() is 1),
+ * so a step waits out one timeout at most, whatever its loop; the
+ * scheduler clears it at each step's start. Common code: the flash's
+ * WEL wait uses them too.
+ */
+__xdata uint16_t hw_timeouts, hw_timeout_reg;
+__xdata uint8_t hw_stuck;
+static __xdata uint8_t hw_end;
+
+void hw_start(uint8_t n)
+{
+	hw_end = *(volatile __xdata uint8_t *)&ticks + n;	/* the low byte: one load, no carry */
+}
+
+uint8_t hw_expired(void)
+{
+	return hw_stuck || (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) > 0;
+}
+
+void hw_timeout(uint16_t reg)
+{
+	hw_timeouts++;
+	hw_timeout_reg = reg;
+	hw_stuck = 1;
+}
+
+/* reg until bit 0 of its low byte is clear (a table's execute, STAT_GET,
+ * I2C): 0; still set after HW_POLL_TICKS: counted, 1. reg_read() inline:
+ * a leaf, reg stays in registers. */
+uint8_t hw_poll(uint16_t reg)
+{
+	hw_start(HW_POLL_TICKS);
+	do {
+		SFR_REG_ADDR_U16 = reg;
+		SFR_EXEC_GO = SFR_EXEC_READ_REG;
+		do {
+		} while (SFR_EXEC_STATUS != 0);
+		if (!(SFR_DATA_0 & 0x01))
+			return 0;
+	} while (!hw_stuck && (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) <= 0);
+	hw_timeout(reg);
+	return 1;
+}
+
+
 void reg_read_m(uint16_t reg_addr)
 {
 #ifdef REGDBG

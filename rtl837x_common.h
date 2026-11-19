@@ -147,6 +147,16 @@ void phy_read(uint8_t phy_id, uint8_t dev_id, uint16_t reg);
 void phy_modify(uint8_t phy_id, uint8_t dev_id, uint16_t reg, uint16_t mask, uint16_t set);
 void reg_read(uint16_t reg_addr);
 void reg_read_m(uint16_t reg_addr);
+/* bounded polls (E4): rtlplayground.c */
+#define HW_POLL_TICKS	1		/* 5-10 ms */
+#define HW_FLUSH_TICKS	3		/* an L2 flush: 15-20 ms, the step limit (its time on silicon: unmeasured) */
+#define HW_TO_FLASH_WEL	0xff01		/* hw_timeout_reg: the flash never set WEL */
+extern __xdata uint16_t hw_timeouts, hw_timeout_reg;
+extern __xdata uint8_t hw_stuck;	/* this step had a timeout: later polls give up at once */
+void hw_start(uint8_t n);
+uint8_t hw_expired(void);
+void hw_timeout(uint16_t reg);
+uint8_t hw_poll(uint16_t reg);	/* bit 0 of reg's low byte clear: 0; 1 if it timed out */
 void reg_write(uint16_t reg_addr);
 void reg_write_m(uint16_t reg_addr);
 void sds_read(uint8_t sds_id, uint8_t page, uint8_t reg);
