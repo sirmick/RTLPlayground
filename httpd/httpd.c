@@ -600,13 +600,9 @@ uint8_t upload_prog(void) __banked
 	for (up_n = UP_PAGES; up_n; up_n--) {
 		if (!up_r)		/* kept across an FL_ERASE */
 			up_r = upload_fill();
-		if (up_r == UP_MORE) {	/* all of the stage written: it starts again */
+		if (up_r == UP_MORE) {	/* all of the stage written: upload_done() */
 			up_r = 0;
 			up_state = TSTATE_POST;
-			st_len = 0;
-			upload_settings.bptr = 0;
-			upload_settings.plen = 0;
-			uip_rcv_wnd = UIP_TCP_MSS;
 			return UP_DONE;
 		}
 		/* The staged image spans FIRMWARE_UPLOAD_START to _END (or the
@@ -687,6 +683,22 @@ uint8_t upload_verify(void) __banked
 		return UP_VERIFY;
 	upload_verdict();
 	return UP_DONE;
+}
+
+/* FL_DONE: 1 if more of the body has come since the job's last FL_PROG (rx
+ * can run several times before this step): FL_PROG again. Else the stage
+ * starts again, in the same step as the job ends, and the window opens. */
+uint8_t upload_done(void) __banked
+{
+	if (up_state == TSTATE_POST) {
+		if (upload_settings.bptr < upload_settings.plen)
+			return 1;
+		st_len = 0;
+		upload_settings.bptr = 0;
+		upload_settings.plen = 0;
+	}
+	uip_rcv_wnd = UIP_TCP_MSS;
+	return 0;
 }
 
 /* The stage, config_buf, from st_len on: the job starts if it has ended, or
