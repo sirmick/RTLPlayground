@@ -1,0 +1,17 @@
+# old-vs-new (ovs-rtlpg tests/oldnew, d3d1843 + the window-keeping client) for
+# E3 against fork main b635486: D1's timing and D3's queued web command, as in
+# d3-oldnew.expect, and the flash job's upload, slower and windowed.
+stp        002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
+stp        005 web GET /stp.json     # D1: tcs 0x16 for 0x15
+stp        006 web GET /stpcnt.json  # D1: the BPDU counters, one more
+upload     reg 06f4                  # D1: SEC_COUNTER, the update's reset the other side of a second (per build: no difference at 710523a)
+stp_upload reg 06f4                  # D1: the same (sim2; no difference at 710523a)
+vlan       frames * tcp/80           # U4: the /cmd's reply on a later poll, not with the request's ACK (28 -> 29)
+config     frames * tcp/80           # U4 +1 (D3), and E3: the config save's answer on the poll after the flash job, not with the request's ACK, +1 (32 -> 34)
+upload     frames * tcp/80           # E3: the stage's window: window updates once the job has written it (168 -> ~272)
+stp_upload frames * tcp/80           # E3: the same
+upload     003 console               # E3: the upload takes ~1 s longer, so the boot after it is split at another point between this
+upload     003 boot                  #     result and the next (their text, taken together, is the same)
+stp_upload 004 console               # E3: one '.' per segment after the first, as before; a client keeping to the window sends more, smaller ones
+stp_upload 004 boot                  # E3: the boot after the longer upload split at another point, as upload's
+stp_upload frames * stp              # E3: the upload ~1 s longer: one hello more in the scenario

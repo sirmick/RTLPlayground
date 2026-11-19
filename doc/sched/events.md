@@ -48,7 +48,7 @@ ISR register.
 | 6 | `EV_WEBCMD` | posted by httpd: a web command is queued | cli |
 | 7 | `EV_CMD_DONE` | posted by cli: a web command finished | httpd poll (net) |
 | 8 | `EV_LINKCHG` | posted by link: decoded link changes | stp, lacp, loop |
-| 9 | `EV_UPLOAD` | posted by httpd: upload data staged | flash job |
+| 9 | `EV_UPLOAD` | unused (E3): httpd claims the flash job for what it stages (`flash_job_start()`), and a job already running takes it from the stage; nothing waits on the bit | - |
 | 10 | `EV_UPLOAD_DONE` | posted by the flash job | httpd poll (net) |
 | 11 | `EV_CFG` | posted: the config changed | (spare, for save-on-change) |
 | 12-14 | spare | | |

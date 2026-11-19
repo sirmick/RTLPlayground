@@ -23,6 +23,7 @@
 | 17 | (was O7, settled in B3) schedtest shares `rtlplayground.c`'s ISRs: the whole firmware is linked, and `SCHEDTEST` swaps in another `main()` (no switch init) and the ISRs' ring, watchdog and crash paths. The firmware build is unchanged (`evidence/b3-schedtest.txt`) |
 | 18 | Steps end with return macros (`STEP_NEXT/SLEEP/WAIT/ARG/END`); a 16-bit per-slot `arg`. Michael, 2026-11-18 |
 | 19 | Console RX ring 256 B, 8-bit index; covers 20 ms steps; erase + paste may lose. Michael, 2026-11-18 |
+| 20 | (was O3, settled in E3) Uploads are flow-controlled by the advertised receive window (the stage's free space), not `uip_stop()`: Linux splits a 1-MSS window into two half segments and drops/RTOs the second (measured 2026-11-19: curl 0.5 KiB/s, then a reset). Chapter 8 item 1; `evidence/e3-flash-job.txt` |
 
 ## Open
 
@@ -30,7 +31,6 @@
 |---|---|---|
 | O2 | `run_seq` length and the high/medium/once spacing numbers | B1 derived, for modules.md's set (4 high, 2 medium, 7 once, 11 dynamic slots): `--fill 2` (default) gives 72 positions, a high task at most 5 steps from its next run, medium every 24; fill 3: 56 / 6 / 20; fill 4: 48 / 7 / 16. Idle positions cost ~1 µs, so only the steps that run count: keep fill 2 until D2 measures the steps |
 | O8 | Hand-written dispatch asm (load r0-r2 from `step_addr`, `lcall __sdcc_banked_call`) instead of SDCC's, which keeps r5-r7 pushed for the whole step | an option to win back 3 B of stack per step if B4's measurement is tight; not done |
-| O3 | Does `uip_stop()`/`uip_restart()` throttle uploads cleanly with real browsers (Firefox, curl)? | test in E3 |
 | O4 | Should `EV_CON_TX` be "room for a line" (100 B) or any room? | a line |
 | O5 | The NIC RX ring's real capacity under a burst (sets how often `rx` must run) | measure in D0 on the 8x |
 | O6 | Push branches, and when | local until Michael says |
