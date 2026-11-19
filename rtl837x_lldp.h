@@ -76,7 +76,8 @@
 #define LLDP_MGMT_ADDR_SUBTYPE_IPV4 1
 #define LLDP_MGMT_IF_NUMBERING_UNKNOWN 1
 
-#define LLDP_MAX_PAYLOAD 128
+/* the frame less dst, src, the RTL tag and the EtherType */
+#define LLDP_MAX_PAYLOAD (LLDP_MAX_FRAME - 6 - 6 - 8 - LLDP_ETHERTYPE_LENGTH)
 
 void lldp_init(void) __banked;
 void lldp_tick(void) __banked;
