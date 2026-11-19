@@ -80,6 +80,11 @@ ifeq ($(CI),1)
 	CC_FLAGS += --Werror
 endif
 CC_FLAGS += $(LAYOUT_DEFS)
+# UP_STAGE=n: an upload's stage (httpd.c) holds n bytes, not config_buf's
+# all: a test build, its window closes sooner (doc/sched/net.md item 1)
+ifneq ($(UP_STAGE),)
+CC_FLAGS += -DUP_STAGE_LEN=$(UP_STAGE)
+endif
 
 # The board definition being built: one file per MACHINE_* symbol in machine.h.
 MACHINE_SRC = machine/$(MACHINE).c

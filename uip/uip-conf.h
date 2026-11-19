@@ -144,6 +144,15 @@ typedef unsigned short uip_stats_t;
 #define UIP_CONF_BUFFER_EXTRA    30
 
 /**
+ * The receive window: an upload's stage, free space (httpd.c, net.md item 1);
+ * UIP_TCP_MSS otherwise.
+ *
+ * \hideinitializer
+ */
+extern __xdata unsigned short uip_rcv_wnd;
+#define UIP_CONF_RECEIVE_WINDOW  uip_rcv_wnd
+
+/**
  * CPU byte order.
  *
  * \hideinitializer

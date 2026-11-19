@@ -147,7 +147,8 @@ void cli_prompt(void) __banked
 }
 
 /* net: uIP's periodic calls, every tick; and on EV_UPLOAD_DONE a poll of
- * the connection at once, which reopens an upload's window (net.md item 1) */
+ * the connection at once, which sends an upload's answer, or a window update
+ * if its window was short (net.md item 1) */
 static __xdata uint16_t net_due;
 
 void net_start(void) __banked
