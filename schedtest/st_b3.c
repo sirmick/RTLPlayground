@@ -69,7 +69,7 @@ STEP(deep, step)
 		deep_1();
 		st_deep_runs++;
 	}
-	STEP_SLEEP(S_DEEP_STEP, 20);
+	return STEP_SLEEP(S_DEEP_STEP, 20);
 }
 volatile __xdata uint16_t st_hang_spins;
 
@@ -79,7 +79,7 @@ STEP(sleep_c, step)
 	st_lp = &st_log_sleep_c;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_SLEEP_C_STEP, 1000);
+	return STEP_SLEEP(S_SLEEP_C_STEP, 1000);
 }
 
 /* Woken by EV_CON_RX alone (con drains the ring) */
@@ -90,7 +90,7 @@ STEP(isr_ev, step)
 		st_aux = con_rx_head;
 		st_log();
 	}
-	STEP_WAIT(S_ISR_EV_STEP, EV_CON_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_ISR_EV_STEP, EV_CON_RX, SCHED_FOREVER);
 }
 
 /* slow: one step of st_slow_ms on request (default 30, an overrun;
@@ -110,15 +110,14 @@ STEP(sl, idle)
 #ifdef ST_NEG_OVERRUN
 	if (st_slow_req == 3) {		/* boot: slow in 2 s (st_main.c) */
 		st_slow_req = 1;
-		task_sleep(2000);	/* still SL_IDLE: a byte-saving STEP_SLEEP */
-		return;
+		return STEP_SLEEP(STEP_STAY, 2000);
 	}
 #endif
 	if (st_slow_req == 1)
-		STEP_ARG(S_SL_SLOW, st_slow_ms);
+		return STEP_ARG(S_SL_SLOW, st_slow_ms);
 	if (st_slow_req == 2)
-		STEP_NEXT(S_SL_HANG);
-	STEP_WAIT(S_SL_IDLE, EV_ST_GO, SCHED_FOREVER);
+		return S_SL_HANG;
+	return STEP_WAIT(S_SL_IDLE, EV_ST_GO, SCHED_FOREVER);
 }
 
 STEP(sl, slow)
@@ -136,7 +135,7 @@ STEP(sl, slow)
 	} while (sl_el < sl_n);
 	st_slow_runs++;
 	st_slow_req = 0;
-	STEP_NEXT(S_SL_IDLE);
+	return S_SL_IDLE;
 }
 
 STEP(sl, hang)
@@ -146,7 +145,7 @@ STEP(sl, hang)
 		st_hang_spins++;
 #else
 	print_string("hang: build with ST_NEG=hang\n");
-#endif
 	st_slow_req = 0;
-	STEP_NEXT(S_SL_IDLE);
+	return S_SL_IDLE;
+#endif
 }

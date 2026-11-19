@@ -1,1 +1,1 @@
-void con_edit(void) __banked;
+uint8_t con_edit(void) __banked;

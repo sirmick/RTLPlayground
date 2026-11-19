@@ -1,1 +1,1 @@
-void cable_step(void) __banked;
+uint8_t cable_step(void) __banked;

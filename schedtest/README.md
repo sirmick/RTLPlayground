@@ -35,6 +35,7 @@ scheduler's.
 | `overrun` | `sl` runs once by itself, 2 s after boot: one 25 ms step, counted as an overrun of `SL_SLOW` |
 | `bad_flash` | the `badflash` command starts the flasher with an erase that returns while the flash is busy. rtlsim's checker reports the next fetch from a bank |
 | `bad_spec` | adds `bad_spec.c` to the sweep: its state `BAD_LOST` is named by no step, so the generator fails the build |
+| `fall_through` | adds `fall_through.c`, whose step can fall off its end: SDCC's warning 59, an error for a step source, fails the build (decision 22) |
 
 ## The sim tests (B4)
 
@@ -94,7 +95,8 @@ intended:
 | powercut | hang | a valid record in xdata, then a power cut instead of a reset: the next boot finds none, prints none |
 | overrun | overrun | one 25 ms step: `sched_overruns` 1, `sched_overrun_state` SL_SLOW; `health` says `overruns 1 last SL_SLOW` and lists SL_SLOW at ~25 ms |
 | bad_flash | bad_flash | `badflash`: exactly one check, flash-busy, a fetch from a bank in `fl_erase` with PC/PSBANK/SP/time; rtlsim exits 6 |
-| bad_spec | - | make's generator rule with `ST_NEG=bad_spec` exits 2 with `sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no task_next/STEP_*/task_claim ...` |
+| bad_spec | - | make's generator rule with `ST_NEG=bad_spec` exits 2 with `sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no return/STEP_*/task_claim ...` |
+| fall_through | - | make of `schedtest/fall_through.rel` with `ST_NEG=fall_through` exits 2 with `schedtest/fall_through.c:12: error 59: function 'ft_step' must return value` |
 
 Over the hang variant's tests every line of crash.c must run.
 

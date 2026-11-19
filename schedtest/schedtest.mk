@@ -5,11 +5,12 @@
 
 ST_DIR = schedtest
 SCHED_STEP_SRCS = $(ST_DIR)/st_main.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c \
-	$(if $(filter bad_spec,$(ST_NEG)),$(ST_DIR)/bad_spec.c)
+	$(if $(filter bad_spec,$(ST_NEG)),$(ST_DIR)/bad_spec.c) \
+	$(if $(filter fall_through,$(ST_NEG)),$(ST_DIR)/fall_through.c)
 
 CC_FLAGS += -DSCHEDTEST
-ifneq ($(filter-out hang overrun bad_flash bad_spec,$(ST_NEG)),)
-$(error ST_NEG is one of hang, overrun, bad_flash, bad_spec)
+ifneq ($(filter-out hang overrun bad_flash bad_spec fall_through,$(ST_NEG)),)
+$(error ST_NEG is one of hang, overrun, bad_flash, bad_spec, fall_through)
 endif
 ifneq ($(ST_NEG),)
 CC_FLAGS += -DST_NEG_$(shell echo $(ST_NEG) | tr a-z A-Z)
@@ -26,7 +27,8 @@ endif
 # The firmware's console editor isn't linked: schedtest has its own con,
 # and nothing else calls it (its tasks, tasks.c, are left out too).
 SRCS := $(filter-out cmd_editor.c,$(SRCS))
-ST_SRCS = $(ST_DIR)/st_main.c $(ST_DIR)/st_report.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
+ST_SRCS = $(ST_DIR)/st_main.c $(ST_DIR)/st_report.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c \
+	$(if $(filter fall_through,$(ST_NEG)),$(ST_DIR)/fall_through.c)
 SRCS += $(ST_SRCS)
 RESIDENT_SRCS += $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c
 $(BUILDDIR)/$(ST_DIR)/st_b1.rel: BANK_FLAGS = --codeseg BANK1 --constseg BANK1

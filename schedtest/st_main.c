@@ -82,7 +82,7 @@ STEP(con, edit)
 {
 	while (con_rx_ready()) {
 		if (con_tx_room() < 4)		/* the echo must not wait */
-			STEP_WAIT(S_CON_EDIT, EV_CON_TX, SCHED_FOREVER);
+			return STEP_WAIT(S_CON_EDIT, EV_CON_TX, SCHED_FOREVER);
 		c = con_getc();
 		st_con_rx_n++;
 		st_con_rx_sum += c;
@@ -114,7 +114,7 @@ STEP(con, edit)
 			write_char(c);
 		}
 	}
-	STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
 }
 
 /* ---- cli ---- */
@@ -153,19 +153,18 @@ TASK(cli, fixed, once, first=idle)
 STEP(cli, idle)
 {
 	if (st_line_ready)
-		STEP_NEXT(S_CLI_RUN);
-	STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
+		return S_CLI_RUN;
+	return STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
 }
 
 STEP(cli, run)
 {
-	task_next(S_CLI_PROMPT);
 	if (!st_line[0])
-		return;
+		return S_CLI_PROMPT;
 	if (word("health")) {
 		if (word("health clear")) {
 			sched_health_clear();
-			return;
+			return S_CLI_PROMPT;
 		}
 		sched_health_tasks();
 	} else if (word("peek")) {	/* A N [A N ...]: all in this step, a snapshot */
@@ -228,13 +227,14 @@ STEP(cli, run)
 		print_string("health [clear] | peek A N [A N..] | clear | print [N] | jobs | slow [ms] | hang | flash | badflash"
 			     " | flashtime | erasepeek | deep [N] | hot on|off | reset\n");
 	}
+	return S_CLI_PROMPT;
 }
 
 STEP(cli, prompt)
 {
 	print_string("> ");
 	st_line_ready = 0;
-	STEP_NEXT(S_CLI_IDLE);
+	return S_CLI_IDLE;
 }
 
 /* ---- boot ---- */

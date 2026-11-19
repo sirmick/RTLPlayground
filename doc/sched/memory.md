@@ -26,9 +26,9 @@ broke the link three times.
 2. Step locals that would spill: `static __xdata`.
 3. 8- and 16-bit arithmetic only on scheduler and step paths. A 32-bit
    compare can be done by 16-bit halves.
-4. Step functions take no parameters (`void f(void)`); per-instance data
-   comes from the slot's `task_arg()` or from `sched_cur` (an index into the
-   module's xdata).
+4. Step functions take no parameters (`uint8_t f(void)`, the return is the
+   next state); per-instance data comes from the slot's `task_arg()` or
+   from `sched_cur` (an index into the module's xdata).
 5. ISRs set `__bit` flags only; no new bits beyond the event sources in
    chapter 6.
 6. No new `__bit` variables elsewhere (bit space is internal RAM too).

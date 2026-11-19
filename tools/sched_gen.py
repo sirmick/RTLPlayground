@@ -20,12 +20,13 @@ Every slot after them is dynamic: task_claim() hands those to jobs, and the
 run sequence names them as job placeholders.
 
 The checks fail the build: a step function that has no prototype in the
-module's sources, isn't __banked, is static or isn't void f(void); two states
-of one name, or one function behind two states; a state nothing reaches (a
-task's first state, a task_next()/task_claim() or a STEP_NEXT/SLEEP/WAIT/
-ARG() / task_claim_arg() in the scanned sources, or 'entry'); more fixed
-slots than --slots. A jump (task_next, STEP_*) naming another module's state
-is a warning.
+module's sources, isn't __banked, is static or isn't uint8_t f(void) (a step
+returns its next state, decision 22); two states of one name, or one
+function behind two states; a state nothing reaches (a task's first state, a
+`return S_X`, a STEP_SLEEP/WAIT/ARG(S_X, ...), task_claim() or
+task_claim_arg() in the scanned sources, or 'entry'); more fixed slots than
+--slots. A jump (return, STEP_*) naming another module's state is a
+warning.
 
 Writes OUTDIR/sched_gen.h, sched_gen.c (resident: step_addr, run_seq,
 fixed_first) and sched_gen_names.c (banked: state_name, slot_name), and
@@ -37,7 +38,7 @@ FREQS = ("high", "medium", "once")
 MEDIUM_TIMES = 3
 STATE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 IDENT_RE = re.compile(r"^[A-Za-z_]\w*$")
-TASK_REF = re.compile(r"\b(task_next|STEP_NEXT|STEP_SLEEP|STEP_WAIT|STEP_ARG|task_claim|task_claim_arg)\s*\(\s*S_([A-Z][A-Z0-9_]*)\b")
+TASK_REF = re.compile(r"\b(return|STEP_SLEEP|STEP_WAIT|STEP_ARG|task_claim|task_claim_arg)\s*\(?\s*S_([A-Z][A-Z0-9_]*)\b")
 
 
 class SpecError(Exception):
@@ -61,7 +62,7 @@ class Module:
     def __init__(self, path):
         self.path = path
         self.tasks = []
-        self.sources = []       # existing files scanned for prototypes and task_next
+        self.sources = []       # existing files scanned for prototypes and jumps
 
 
 def strip_comments(text):
@@ -161,8 +162,8 @@ def check_function(st, texts):
             raise SpecError(f"{st.where}: state {st.name}: {fn} is static in {path}; the table in sched_gen.c can't reach it")
         if "__banked" not in attr.split():
             raise SpecError(f"{st.where}: state {st.name}: {fn} is not __banked in {path}")
-        if [w for w in ret if w not in ("extern",)] != ["void"] or args != "void":
-            raise SpecError(f"{st.where}: state {st.name}: {fn} must be 'void {fn}(void) __banked' ({path})")
+        if [w for w in ret if w not in ("extern",)] != ["uint8_t"] or args != "void":
+            raise SpecError(f"{st.where}: state {st.name}: {fn} must be 'uint8_t {fn}(void) __banked' ({path})")
 
 
 def load(defs, slots):
@@ -193,7 +194,7 @@ def load(defs, slots):
     for s in states:
         check_function(s, texts[s.module.path])
 
-    # Who reaches whom: a task's first state, task_next/task_claim in the sources.
+    # Who reaches whom: a task's first state, return/STEP_*/task_claim in the sources.
     reached = {t.first for t in tasks}
     warnings = []
     for m in mods:
@@ -203,11 +204,11 @@ def load(defs, slots):
                 for call, name in TASK_REF.findall(line):
                     reached.add(name)
                     if not call.startswith("task_claim") and name in seen and name not in own:
-                        warnings.append(f"{path}:{no}: warning: {call}(S_{name}) jumps into "
+                        warnings.append(f"{path}:{no}: warning: " + (f"return S_{name}" if call == "return" else f"{call}(S_{name})") + " jumps into "
                                         f"{seen[name].module.path}; cross-module jumps go through events")
     for s in states:
         if s.name not in reached and not s.entry:
-            raise SpecError(f"{s.where}: state {s.name} is reached by no task_next/STEP_*/task_claim and is no task's first state (mark it 'entry', in a TASK line entry=<step>, if task_claim reaches it some other way)")
+            raise SpecError(f"{s.where}: state {s.name} is reached by no return/STEP_*/task_claim and is no task's first state (mark it 'entry', in a TASK line entry=<step>, if task_claim reaches it some other way)")
 
     fixed = []
     for t in tasks:
@@ -340,7 +341,7 @@ def generate(defs, slots, fill, sequence):
     h.append("enum {\n" + "".join(tl) + "};\n")
     h.append(f"#define SCHED_GEN_SLOTS {slots}")
     h.append(f"#define RUN_SEQ_LEN {len(seq)}\n")
-    h.append("typedef void (*sched_step_fn)(void) __banked;\n")
+    h.append("typedef uint8_t (*sched_step_fn)(void) __banked;\t/* returns the next state */\n")
     h.append("extern __code const sched_step_fn step_addr[S_COUNT];")
     h.append("extern __code const uint8_t run_seq[RUN_SEQ_LEN];")
     h.append("extern __code const uint8_t fixed_first[T_FIXED];")
@@ -350,7 +351,7 @@ def generate(defs, slots, fill, sequence):
     h.append("#endif")
 
     c = [head, "/*", " * " + "\n * ".join(report), " */", "", '#include "sched_gen.h"', ""]
-    c += [f"void {s.fn}(void) __banked;" for s in states]
+    c += [f"uint8_t {s.fn}(void) __banked;" for s in states]
     c.append("\n/* 24-bit address per state: low, high, bank (the linker fills in all three) */")
     c.append("__code const sched_step_fn step_addr[S_COUNT] = {\n\t0,\n"
              + "".join(f"\t{s.fn},\t/* {sname(s.name)} */\n" for s in states) + "};\n")

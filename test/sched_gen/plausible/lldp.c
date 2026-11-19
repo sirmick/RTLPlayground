@@ -1,6 +1,6 @@
 #include "lldp.h"
 
-void lldp_port(void) __banked
+uint8_t lldp_port(void) __banked
 {
 	
 }

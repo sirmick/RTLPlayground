@@ -22,12 +22,14 @@
   7 bytes; `arg` is the step's own 16 bits (a cursor, a count, a port).
   `state == 0` means the slot is free.
 - A **state** is a one-byte ID. The generator (chapter 5) maps each ID to
-  one step function, `void step(void)`, and emits a table of their 24-bit
+  one step function, `uint8_t step(void)`, and emits a table of their 24-bit
   addresses (the bank is in bits 16-23, as SDCC encodes banked calls).
-- A step **does a bounded amount of work, then sets what comes next** and
-  returns, with one macro: `STEP_NEXT`, `STEP_SLEEP`, `STEP_WAIT`,
-  `STEP_ARG` or `STEP_END` (chapter 4). A bare `return;` keeps the state:
-  it runs again at its next position (a yield).
+- A step **does a bounded amount of work, then returns the state it wants
+  next** (decision 22): `return S_FOO;`, `return STEP_STAY;` (the same
+  state), `return STEP_END;` (the slot is free), or `return STEP_SLEEP(...)`,
+  `STEP_WAIT(...)`, `STEP_ARG(...)`, which say when as well (chapter 4).
+  The scheduler stores it; nothing else sets a slot's state. A step that can
+  fall off its end fails the build.
 - A module's own data lives in the module, in static xdata ("the module
   context"), including any cursor a chunked job needs ("next param"). Steps
   find their instance through `sched_cur` (the slot index) where a module

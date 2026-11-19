@@ -146,7 +146,7 @@ bank_size:
 	tools/bank_occupancy.sh "$(MACHINE)"
 
 # The scheduler test image (doc/sched/testing.md, schedtest/README.md):
-# make schedtest MACHINE=... [LAYOUT=compact] [LOADER=1] [ST_NEG=hang|overrun|bad_flash|bad_spec]
+# make schedtest MACHINE=... [LAYOUT=compact] [LOADER=1] [ST_NEG=hang|overrun|bad_flash|bad_spec|fall_through]
 .PHONY: schedtest
 schedtest:
 	$(MAKE) SCHEDTEST=1

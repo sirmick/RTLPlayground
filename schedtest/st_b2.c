@@ -31,7 +31,7 @@ STEP(sleep_b, step)
 	st_lp = &st_log_sleep_b;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_SLEEP_B_STEP, 37);
+	return STEP_SLEEP(S_SLEEP_B_STEP, 37);
 }
 
 /* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out. A beat
@@ -51,6 +51,7 @@ STEP(poster, step)
 	if (po_n < LDR_CONFIRM_S * 10 / 3 && ++po_n == LDR_CONFIRM_S * 10 / 3)
 		loader_confirm();		/* booted: as the firmware's loop does */
 	task_until(po_due);
+	return STEP_STAY;
 }
 
 /* ---- jobber: on request, claim jobs until the table is full ---- */
@@ -61,20 +62,21 @@ TASK(jobber, fixed, once)
 STEP(jobber, step)
 {
 	if (!st_jobs_req)
-		STEP_WAIT(S_JOBBER_STEP, EV_ST_GO, SCHED_FOREVER);
+		return STEP_WAIT(S_JOBBER_STEP, EV_ST_GO, SCHED_FOREVER);
 	st_jobs_req = 0;
 	while (task_claim_arg(S_JB_RUN, JB_STEPS) != SCHED_NONE)	/* arg: its steps */
 		st_jobs_claimed++;
 	st_jobs_full++;
+	return STEP_STAY;
 }
 
 TASK(jb, job, once)
 STEP(jb, run)
 {
 	if (--task_arg())
-		return;			/* yields: runs again at its next position */
+		return STEP_STAY;	/* yields: runs again at its next position */
 	st_jobs_done++;
-	STEP_END();
+	return STEP_END;
 }
 
 /* ---- the flasher job: erase, program and verify a sector of the upload
@@ -116,7 +118,7 @@ STEP(fl, erase)
 #else
 	flash_sector_erase();
 #endif
-	STEP_NEXT(S_FL_PROG);
+	return S_FL_PROG;
 }
 
 STEP(fl, prog)
@@ -128,11 +130,12 @@ STEP(fl, prog)
 	flash_write_bytes(fl_buf);
 	fl_off += FL_CHUNK;
 	if (fl_off)
-		return;
+		return STEP_STAY;
 	if (++fl_page == FL_PAGES) {
 		fl_page = 0;
-		STEP_NEXT(S_FL_VERIFY);
+		return S_FL_VERIFY;
 	}
+	return STEP_STAY;
 }
 
 STEP(fl, verify)
@@ -147,12 +150,13 @@ STEP(fl, verify)
 			break;
 	}
 	if (++fl_page == FL_PAGES)
-		STEP_NEXT(S_FL_DONE);
+		return S_FL_DONE;
+	return STEP_STAY;
 }
 
 STEP(fl, done)
 {
 	st_fl_state = st_fl_bad ? 3 : 2;
 	print_string(st_fl_bad ? "flash: verify FAILED\n" : "flash: ok\n");
-	STEP_END();
+	return STEP_END;
 }

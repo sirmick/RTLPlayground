@@ -1,26 +1,29 @@
 #include "cli.h"
 
-void cli_idle(void) __banked
+uint8_t cli_idle(void) __banked
 {
-	task_next(S_CLI_RUN);
+	return S_CLI_RUN;
 }
 
-void cli_run(void) __banked
+uint8_t cli_run(void) __banked
 {
-	task_next(S_L2_FIRST); task_next(S_CLI_PROMPT); task_claim(S_FL_ERASE);
+	task_claim(S_FL_ERASE);
+	if (l2)
+		return S_L2_FIRST;
+	return S_CLI_PROMPT;
 }
 
-void cli_prompt(void) __banked
+uint8_t cli_prompt(void) __banked
 {
-	task_next(S_CLI_IDLE);
+	return S_CLI_IDLE;
 }
 
-void l2_first(void) __banked
+uint8_t l2_first(void) __banked
 {
-	task_next(S_L2_MORE);
+	return S_L2_MORE;
 }
 
-void l2_more(void) __banked
+uint8_t l2_more(void) __banked
 {
-	task_next(S_CLI_PROMPT);
+	return S_CLI_PROMPT;
 }

@@ -40,8 +40,8 @@ stack, no reentrancy, and nothing that needs internal RAM.
 
 ## Words used throughout
 
-- **Step:** a `void f(void)` function that does a bounded amount of work and
-  returns. Target under 5 ms, limit 20 ms (chapter 4).
+- **Step:** a `uint8_t f(void)` function that does a bounded amount of work and
+  returns the state it wants next. Target under 5 ms, limit 20 ms (chapter 4).
 - **State:** a one-byte ID naming a step. A task's state is the step it runs next.
 - **Task:** a slot in the task table: `{state, mask, wake}`.
 - **Fixed task:** claims its slot at init and keeps it (STP, LACP, the console...).

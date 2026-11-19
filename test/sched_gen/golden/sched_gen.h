@@ -70,7 +70,7 @@ enum {
 #define SCHED_GEN_SLOTS 24
 #define RUN_SEQ_LEN 72
 
-typedef void (*sched_step_fn)(void) __banked;
+typedef uint8_t (*sched_step_fn)(void) __banked;	/* returns the next state */
 
 extern __code const sched_step_fn step_addr[S_COUNT];
 extern __code const uint8_t run_seq[RUN_SEQ_LEN];

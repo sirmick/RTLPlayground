@@ -48,11 +48,6 @@ uint16_t sched_ticks(void)
 
 /* ---- the API for steps ---- */
 
-void task_next(uint8_t state)
-{
-	sched_cur_task->state = state;
-}
-
 void task_until(uint16_t tick)
 {
 	sched_cur_task->wake = tick;
@@ -61,11 +56,6 @@ void task_until(uint16_t tick)
 void task_mask(uint16_t ev_mask)
 {
 	sched_cur_task->mask |= ev_mask;
-}
-
-void task_end(void)
-{
-	sched_cur_task->state = 0;
 }
 
 /* ---- the loop ---- */
@@ -106,7 +96,9 @@ uint8_t sched_pass(void)
 		CRASH_NOTE(sched_cur, st);
 		sched_st = st;
 		sched_m_step_start();
-		step_addr[st]();
+		st = step_addr[st]();
+		if (st != STEP_STAY)		/* the state it returned (STEP_END: 0, free) */
+			sched_cur_task->state = st;
 		sched_m_step_end();
 		sched_now = sched_ticks();
 		ran = 1;

@@ -53,7 +53,7 @@ class Suite:
         self.slots = self.T["T_SLOTS"]
         self.results, self.failures = {}, []
         self.covdir = tempfile.mkdtemp(prefix="sched-cov-")
-        self.steps = re.findall(r"^void (\w+)\(void\) __banked;", open(os.path.join(build, "sched", "sched_gen.c")).read(), re.M)
+        self.steps = re.findall(r"^uint8_t (\w+)\(void\) __banked;", open(os.path.join(build, "sched", "sched_gen.c")).read(), re.M)
 
     # ---- plumbing ----
     def sim(self):

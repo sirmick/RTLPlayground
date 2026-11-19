@@ -1,11 +1,11 @@
 #include "stp.h"
 
-void stp_step(void) __banked
+uint8_t stp_step(void) __banked
 {
-	task_next(S_STP_SECOND);
+	return S_STP_SECOND;
 }
 
-void stp_second(void) __banked
+uint8_t stp_second(void) __banked
 {
-	task_next(S_STP_STEP);
+	return S_STP_STEP;
 }

@@ -1,1 +1,1 @@
-void loop_poll(void) __banked;
+uint8_t loop_poll(void) __banked;

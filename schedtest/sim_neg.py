@@ -6,9 +6,10 @@ sim_neg.py - schedtest's negative variants: doc/sched/testing.md, layer 2b (B5).
 
 BASE is the schedtest build directory without the variant suffix
 (output/<MACHINE>-compact-schedtest); the variants are BASE-hang,
-BASE-overrun and BASE-bad_flash (make schedtest ST_NEG=...). bad_spec is not
-built: the test runs make's generator rule for it, on the host, and expects
-it to fail. Each test must see its variant fail exactly as intended. As in
+BASE-overrun and BASE-bad_flash (make schedtest ST_NEG=...). bad_spec and
+fall_through are not built: the tests run make's generator rule, and the
+compile of the step that can fall off its end, on the host, and expect them
+to fail. Each test must see its variant fail exactly as intended. As in
 sim_tests.py, every sim test runs in a fresh rtlsim in firmware time, so a
 run is deterministic (--twice compares every number). Exit status 1 on any
 failure.
@@ -219,21 +220,31 @@ class Neg(Suite):
         self.check(m and fn == "_fl_erase", f"a fetch from a bank while busy, with PC/PSBANK/SP/time, in {fn} "
                    "(the step that returned with the erase running)", bad[0][2] if bad else None)
 
-    def t_bad_spec(self):
+    def make_fails(self, variant, target, msg, what):
+        """make of one target of the variant's build fails (2), with msg"""
         mk = re.search(r"-compact", self.build)
         machine = os.path.basename(self.build).split("-compact")[0]
-        target = os.path.join(os.path.dirname(self.build), f"{machine}{'-compact' if mk else ''}-schedtest-bad_spec",
-                              "sched", "sched_gen.h")
-        r = subprocess.run(["make", "-s", "SCHEDTEST=1", "ST_NEG=bad_spec", f"MACHINE={machine}"]
+        target = os.path.join(os.path.dirname(self.build), f"{machine}{'-compact' if mk else ''}-schedtest-{variant}",
+                              target)
+        r = subprocess.run(["make", "-s", "SCHEDTEST=1", f"ST_NEG={variant}", f"MACHINE={machine}"]
                            + (["LAYOUT=compact"] if mk else []) + [target], capture_output=True, text=True)
-        msg = "sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no task_next/STEP_*/task_claim"
         self.record(exit=r.returncode, message=msg in r.stdout + r.stderr)
         self.check(r.returncode == 2, f"make fails ({r.returncode})")
-        self.check(msg in r.stdout + r.stderr, "with the generator's message", (r.stdout + r.stderr).strip()[-300:])
+        self.check(msg in r.stdout + r.stderr, what, (r.stdout + r.stderr).strip()[-300:])
+
+    def t_bad_spec(self):
+        self.make_fails("bad_spec", os.path.join("sched", "sched_gen.h"),
+                        "sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no return/STEP_*/task_claim",
+                        "with the generator's message")
+
+    def t_fall_through(self):
+        self.make_fails("fall_through", os.path.join("schedtest", "fall_through.rel"),
+                        "schedtest/fall_through.c:12: error 59: function 'ft_step' must return value",
+                        "with SDCC's error: a step that can fall off its end (decision 22)")
 
     # variant, test, checker clean, coverage
     TESTS = [("hang", "hang"), ("hang", "ctrl_r"), ("hang", "powercut"), ("overrun", "overrun"),
-             ("bad_flash", "bad_flash"), (None, "bad_spec")]
+             ("bad_flash", "bad_flash"), (None, "bad_spec"), (None, "fall_through")]
 
 
 def run(base, ovs, only):
@@ -242,7 +253,7 @@ def run(base, ovs, only):
     for variant, name in Neg.TESTS:
         if only and name not in only:
             continue
-        v = variant or "hang"            # bad_spec needs no image: any suite will do
+        v = variant or "hang"            # bad_spec, fall_through need no image: any suite will do
         s = suites.get(v)
         if s is None:
             s = suites[v] = Neg(base, v, ovs)
@@ -251,7 +262,7 @@ def run(base, ovs, only):
         print(f"  {name}" + (f" ({os.path.basename(s.image)})" if variant else ""))
         try:
             if variant is None:
-                s.t_bad_spec()
+                getattr(s, "t_" + name)()
             else:
                 with s.sim() as sim:
                     getattr(s, "t_" + name)(sim)
@@ -320,7 +331,7 @@ def main(argv):
     ap.add_argument("--json", help="write the measured numbers here")
     a = ap.parse_args(argv)
     t0 = time.time()
-    print(f"sim_neg: {a.base}-{{hang,overrun,bad_flash,bad_spec}}")
+    print(f"sim_neg: {a.base}-{{hang,overrun,bad_flash,bad_spec,fall_through}}")
     with concurrent.futures.ProcessPoolExecutor(2) as pool:     # --twice: both runs at once
         runs = [pool.submit(_run, a.base, a.ovs, a.only) for _ in range(2 if a.twice else 1)]
         out, res, fails = runs[0].result()
