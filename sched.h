@@ -116,6 +116,8 @@ void sched_m_pass_end(void) __banked;
 
 /* health (banked, with the names) */
 void sched_health_tasks(void) __banked;
+void sched_health_begin(void) __banked;	/* health tasks as the cli's job (E1): */
+uint8_t sched_health_line(void) __banked;	/* a line a call, 0 after the last */
 void sched_health_clear(void) __banked;
 
 #endif

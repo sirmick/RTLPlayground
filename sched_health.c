@@ -80,10 +80,21 @@ static void crash_print(void)
 	write_char('\n');
 }
 
-void sched_health_tasks(void) __banked
+/* health tasks, a line per call (the cli's health job, E1): the header,
+ * each slot, the states' header, each state, then the totals. */
+static __xdata uint8_t hl;
+
+void sched_health_begin(void) __banked
 {
-	print_string("slot\ttask\tstate\tmask\twake\n");
-	for (i = 0; i < SCHED_SLOTS; i++) {
+	hl = 0;
+}
+
+uint8_t sched_health_line(void) __banked
+{
+	if (hl == 0) {
+		print_string("slot\ttask\tstate\tmask\twake\n");
+	} else if (hl <= SCHED_SLOTS) {
+		i = hl - 1;
 		itoa(i);
 		write_char('\t');
 		ps = i;
@@ -92,22 +103,23 @@ void sched_health_tasks(void) __banked
 		ps = sched_task[i].state;
 		if (!ps) {
 			print_string("free\n");
-			continue;
+		} else {
+			print_state();
+			write_char('\t');
+			print_short(sched_task[i].mask);
+			u = sched_task[i].wake - sched_now;
+			if ((int16_t)u <= 0) {
+				print_string("\tnow\n");
+			} else {
+				print_string("\t+");
+				itoa_short(u);
+				write_char('\n');
+			}
 		}
-		print_state();
-		write_char('\t');
-		print_short(sched_task[i].mask);
-		u = sched_task[i].wake - sched_now;
-		if ((int16_t)u <= 0) {
-			print_string("\tnow\n");
-			continue;
-		}
-		print_string("\t+");
-		itoa_short(u);
-		write_char('\n');
-	}
-	print_string("state\truns\tmax\n");
-	for (ps = 1; ps < S_COUNT; ps++) {
+	} else if (hl == SCHED_SLOTS + 1) {
+		print_string("state\truns\tmax\n");
+	} else if (hl < SCHED_SLOTS + 1 + S_COUNT) {
+		ps = hl - SCHED_SLOTS - 1;
 		print_state();
 		write_char('\t');
 		itoa_short(sched_st_runs[ps]);
@@ -115,35 +127,47 @@ void sched_health_tasks(void) __banked
 		u = sched_st_max[ps];
 		print_fine();
 		write_char('\n');
+	} else {
+		print_string("passes ");
+		u = sched_passes_hi;
+		lo = sched_passes_lo;
+		print_halves();
+		print_string(" idle ");
+		u = sched_idle_hi;
+		lo = sched_idle_lo;
+		print_halves();
+		print_string(" longest ");
+		u = sched_pass_max;
+		print_fine();
+		print_string("\noverruns ");
+		itoa_short(sched_overruns);
+		if (sched_overruns) {
+			print_string(" last ");
+			ps = sched_overrun_state;
+			print_state();
+		}
+		print_string(", con rx overruns ");
+		ES = 0;			/* the ISR writes it: read both bytes at once */
+		u = con_rx_overruns;
+		ES = 1;
+		itoa_short(u);
+		write_char('\n');
+		if (crash_last.magic == CRASH_MAGIC) {
+			print_string("last reset: ");
+			crash_print();
+		}
+		return 0;
 	}
-	print_string("passes ");
-	u = sched_passes_hi;
-	lo = sched_passes_lo;
-	print_halves();
-	print_string(" idle ");
-	u = sched_idle_hi;
-	lo = sched_idle_lo;
-	print_halves();
-	print_string(" longest ");
-	u = sched_pass_max;
-	print_fine();
-	print_string("\noverruns ");
-	itoa_short(sched_overruns);
-	if (sched_overruns) {
-		print_string(" last ");
-		ps = sched_overrun_state;
-		print_state();
-	}
-	print_string(", con rx overruns ");
-	ES = 0;			/* the ISR writes it: read both bytes at once */
-	u = con_rx_overruns;
-	ES = 1;
-	itoa_short(u);
-	write_char('\n');
-	if (crash_last.magic == CRASH_MAGIC) {
-		print_string("last reset: ");
-		crash_print();
-	}
+	hl++;
+	return 1;
+}
+
+/* All of it at once (schedtest, the host tests) */
+void sched_health_tasks(void) __banked
+{
+	hl = 0;
+	while (sched_health_line())
+		;
 }
 
 void sched_health_clear(void) __banked

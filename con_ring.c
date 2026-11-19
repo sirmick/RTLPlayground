@@ -6,15 +6,14 @@
 #include <8051.h>
 #include <stdint.h>
 #include "con_ring.h"
-#include "crash.h"
 
 __xdata uint8_t con_rx_buf[CON_RX_SIZE];
 volatile __xdata uint8_t con_rx_head;
 __xdata uint8_t con_rx_tail;
 volatile __xdata uint16_t con_rx_overruns;
 __xdata uint8_t con_tx_buf[CON_TX_SIZE];
-__xdata uint8_t con_tx_head;
-volatile __xdata uint8_t con_tx_tail;
+__xdata uint16_t con_tx_head;
+volatile __xdata uint16_t con_tx_tail;
 volatile __xdata uint8_t con_tx_busy;
 
 void con_ring_init(void)
@@ -32,40 +31,45 @@ uint8_t con_getc(void)
 	return c;
 }
 
-uint8_t con_tx_room(void)
-{
-	return (con_tx_tail - con_tx_head - 1) & (CON_TX_SIZE - 1);
-}
-
 static __xdata uint8_t con_es;
+static __xdata uint16_t con_t;
+
+uint16_t con_tx_room(void)
+{
+	con_es = ES;
+	ES = 0;			/* the ISR writes the tail: both bytes at once */
+	con_t = con_tx_tail;
+	ES = con_es;
+	return (con_t - con_tx_head - 1) & CON_TX_MASK;
+}
 
 /* Waits while the ring is full. If the serial interrupt can't run (EA or ES
  * off: code that prints with interrupts off), the wait does the ISR's part
  * itself, polling TI, so it never hangs. ES is left as it was found.
- * A wait that ends kicks the watchdog: output still moving is progress, so
- * a long unconverted dump (l2: ~3.1 ms a MAC) isn't taken for a hang
- * (watchdog.md). */
+ * The wait no longer kicks the watchdog (E1): a step waits only if it
+ * prints more than the free ring, and the dumps that can are cli jobs, a
+ * line a step (watchdog.md).
+ * One ES-off section a byte: the tail (the ISR's) read whole, the store, and
+ * the start of an idle transmitter, which the ISR must not see between. */
 void con_putc(uint8_t c)
 {
-	if (!con_tx_room()) {
-		while (!con_tx_room()) {
-			if ((!EA || !ES) && TI) {
-				TI = 0;
-				CON_ISR_TX();
-			}
-		}
-		swdt_kick();
-	}
-	con_tx_buf[con_tx_head] = c;
-	/* The ISR must not see the transmitter idle between the store and the
-	 * start: hold the serial interrupt off across both. */
+	con_t = (con_tx_head + 1) & CON_TX_MASK;	/* the head after this byte */
 	con_es = ES;
 	ES = 0;
-	con_tx_head = (con_tx_head + 1) & (CON_TX_SIZE - 1);
+	while (con_t == con_tx_tail) {		/* full: one byte has to go first */
+		ES = con_es;
+		if ((!EA || !con_es) && TI) {
+			TI = 0;
+			CON_ISR_TX();
+		}
+		ES = 0;
+	}
+	con_tx_buf[con_tx_head] = c;
+	con_tx_head = con_t;
 	if (!con_tx_busy) {
 		con_tx_busy = 1;
 		SBUF = con_tx_buf[con_tx_tail];
-		con_tx_tail = (con_tx_tail + 1) & (CON_TX_SIZE - 1);
+		con_tx_tail = (con_tx_tail + 1) & CON_TX_MASK;
 	}
 	ES = con_es;
 }
