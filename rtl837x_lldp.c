@@ -90,6 +90,23 @@ struct lldp_pkt {
 #define LLDP_O ((__xdata struct lldp_pkt *)&ctl_buf[RTL_FRAME_DESC_SIZE])
 typedef char lldp_fits_ctl_buf[sizeof(struct lldp_pkt) <= CTL_FRAME_MAX ? 1 : -1];
 
+/* The largest LLDPDU lldp_send_ports() builds: every TLV at its bound. The
+ * three strings are cut to their arrays (lldp_sysname(), lldp_sysdesc(),
+ * lldp_portdesc()), so this is a hard limit, whatever is in them. */
+#define LLDP_HOSTNAME_MAX	(sizeof(hostname) - 1)
+#define LLDP_MACHINE_NAME_MAX	(sizeof(((struct machine *)0)->machine_name) - 1)
+#define LLDP_PORT_NAME_MAX	(PORT_NAME_SIZE - 1)
+#define LLDP_TLV(len)		(2 + (len))
+#define LLDP_ORG_TLV(len)	LLDP_TLV(LLDP_ORG_TLV_HEADER_LENGTH + (len))
+#define LLDP_WORST_PAYLOAD (LLDP_TLV(LLDP_CHASSIS_ID_TLV_LENGTH) + LLDP_TLV(LLDP_PORT_ID_TLV_LENGTH) \
+	+ LLDP_TLV(LLDP_TTL_TLV_LENGTH) + LLDP_TLV(LLDP_HOSTNAME_MAX) \
+	+ LLDP_TLV(LLDP_MACHINE_NAME_MAX + 1 + sizeof(VERSION_SW) - 1) \
+	+ LLDP_TLV(LLDP_CAPABILITIES_TLV_LENGTH) + LLDP_TLV(LLDP_MGMT_ADDR_TLV_LENGTH) \
+	+ LLDP_TLV(LLDP_PORT_NAME_MAX) \
+	+ LLDP_ORG_TLV(5) + LLDP_ORG_TLV(2) + LLDP_ORG_TLV(5) + LLDP_ORG_TLV(2) \
+	+ 2)	/* MAC/PHY, PVID, link aggregation, max frame size; the end TLV */
+typedef char lldp_worst_fits[LLDP_WORST_PAYLOAD <= LLDP_MAX_PAYLOAD ? 1 : -1];
+
 // The type is 7 bits and the length is 9 bits
 // we can represent this as the 7 most significant
 // bits of the type bit and leave the least significant
@@ -230,6 +247,9 @@ uint8_t lldp_sysname(__xdata uint8_t *p) __banked
 {
     uint8_t hostname_length = strlen_x(hostname);
 
+    if (hostname_length > LLDP_HOSTNAME_MAX)
+        hostname_length = LLDP_HOSTNAME_MAX;
+
     *p++ = LLDP_TYPE(LLDP_SYSNAME_TLV_TYPE);
     *p++ = hostname_length;
     memcpy(p, hostname, hostname_length);
@@ -239,7 +259,10 @@ uint8_t lldp_sysname(__xdata uint8_t *p) __banked
 uint8_t lldp_sysdesc(__xdata uint8_t *p) __banked
 {
     uint8_t machine_name_length = strlen(machine.machine_name);
-    uint8_t version_length = strlen(VERSION_SW);
+    uint8_t version_length = sizeof(VERSION_SW) - 1;
+
+    if (machine_name_length > LLDP_MACHINE_NAME_MAX)
+        machine_name_length = LLDP_MACHINE_NAME_MAX;
 
     *p++ = LLDP_TYPE(LLDP_SYSDESC_TLV_TYPE);
     *p++ = machine_name_length + 1 + version_length;
@@ -254,6 +277,8 @@ uint8_t lldp_portdesc(__xdata uint8_t *p, uint8_t port) __banked
 {
     uint8_t name_length = strlen_x(port_names[port]);
 
+    if (name_length > LLDP_PORT_NAME_MAX)
+        name_length = LLDP_PORT_NAME_MAX;
     if (!name_length)
         return 0;
     *p++ = LLDP_TYPE(LLDP_PORT_DESC_TLV_TYPE);

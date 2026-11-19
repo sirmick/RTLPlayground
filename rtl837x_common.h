@@ -183,7 +183,7 @@ bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b);
 void tcpip_output(void) __banked;
 /* Control frames (STP, LACP, LLDP) are built at ctl_buf + RTL_FRAME_DESC_SIZE
  * and sent with ctl_output(), ctl_len long (net.md): not in uip_buf */
-#define CTL_FRAME_MAX	152	/* the largest: LLDP, 12 + 8 + 2 + LLDP_MAX_PAYLOAD */
+#define CTL_FRAME_MAX	256	/* the largest: LLDP, LLDP_MAX_FRAME (rtl837x_lldp.c bounds its worst case) */
 #define CTL_BUF_SIZE	(RTL_FRAME_DESC_SIZE + CTL_FRAME_MAX)
 extern __xdata uint8_t ctl_buf[CTL_BUF_SIZE];
 extern __xdata uint16_t ctl_len;
