@@ -40,7 +40,7 @@ $(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
 $(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c: $(SCHED_GEN)/gen.stamp ;
 # A step returns its next state (decision 22): one that can fall off its
 # end (SDCC's warning 59) fails the build.
-$(patsubst %.c,$(BUILDDIR)/%.rel,$(SCHED_STEP_SRCS)): CC_FLAGS += --Werror
+$(patsubst %.c,$(BUILDDIR)/%.rel,$(SCHED_STEP_SRCS)): OBJ_FLAGS += --Werror
 $(BUILDDIR)/sched_gen.rel: $(SCHED_GEN)/sched_gen.c $(BUILDDIR)/.ccflags | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 $(BUILDDIR)/sched_gen_names.rel: $(SCHED_GEN)/sched_gen_names.c $(BUILDDIR)/.ccflags | create_build_dir

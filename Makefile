@@ -289,6 +289,7 @@ ifneq ($(SCHEDTEST),)
 include schedtest/schedtest.mk
 endif
 include sched.mk
+include loopflags.mk
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)
 RESIDENT_OBJS = $(filter-out $(BANKED_OBJS),$(OBJS))
@@ -384,8 +385,11 @@ $(CCFLAGS_STAMP): FORCE | create_build_dir
 $(CONFIG_STAMP): FORCE | create_build_dir
 	@echo '$(CONFIG)' | cmp -s - $@ 2>/dev/null || echo '$(CONFIG)' > $@
 
+# OBJ_FLAGS: one object's own flags (loopflags.mk, sched.mk), target-specific
+# on the .rel; not CC_FLAGS, which the stamp above would then record in the
+# context of whichever object asked for it first.
 $(BUILDDIR)/%.rel: %.c $(CCFLAGS_STAMP) | create_build_dir html_data.h
-	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
+	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) $(OBJ_FLAGS) -o $@ -c $<
 
 $(BUILDDIR)/%.rel: %.asm $(CCFLAGS_STAMP) | create_build_dir
 	${ASM} ${AFLAGS} -o $@ $<
