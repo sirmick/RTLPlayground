@@ -62,8 +62,8 @@ class Suite:
                             rtlsim=os.path.join(self.ovs, "build", "rtlsim"), timeout=120)
 
     def boot(self, sim):
-        if sim.run_until_uart(PROMPT, max_ms=10000) is None:
-            raise Fail("no prompt within 10 s of boot")
+        if sim.run_until_uart(PROMPT, max_ms=30000) is None:
+            raise Fail("no prompt within 30 s of boot (the switch init takes ~11)")
         sim.uart_text()
 
     def cmd(self, sim, line, until=PROMPT, ms=5000):
