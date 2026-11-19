@@ -1,0 +1,308 @@
+ES: code-space options, measured (read-only)            2026-11-19, sim2
+=============================================================================
+
+What was measured:
+- Firmware: feat/sched 5f2b60e, built in my own worktree,
+  /tmp/sim2-es-5f2b60e (detached; nothing committed):
+    tools/docker-make.sh MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+    tools/docker-make.sh MACHINE=SWGT024_V2_0_UNMANAGED LAYOUT=compact
+- Toolchain: SDCC 4.6.0 #16555 (the tree's toolchain/sdcc-1397895099).
+- Banks free, from banks.txt; they match the node:
+    8x       538 / 109 / 485 B
+    SWGT024  103 / 519 / 468 B
+- Scripts, in /tmp/es-tools (not committed):
+    strings.py   code vs __code data per module
+    funcs.py     per function
+    opts.sh      flag variants of every banked C module, compiled outside the
+                 build tree
+- A note on the worktree: /tmp/es already existed (an unrelated repository
+  from Oct 29). My first tree, /tmp/es-5f2b, was checked out to main by
+  someone else at 18:59:34. Its compact images matched these byte for byte,
+  but all the numbers below come from /tmp/sim2-es-5f2b60e.
+
+-----------------------------------------------------------------------------
+1. Strings vs code
+-----------------------------------------------------------------------------
+
+Method:
+- Each module's area sizes come from its .rel.
+- Its __code data comes from the .asm: .ascii, .db and .dw under data
+  labels. String literals are SDCC's ___str_N; anything else is "other
+  const", such as tables.
+- code = area - data.
+- Banked totals leave out the pinned assembly modules: crc16 (bank 1) and
+  chacha_8051 (bank 3), about 0.5-0.7 KB each.
+
+Per bank, in bytes:
+
+                 8x                                 SWGT024
+         total  code   strings  other       total  code   strings  other
+BANK1    48096  42382  5393     321         48531  42772  5463     296
+BANK2    49043  41035  7388     620         48633  40651  7337     645
+BANK3    48149  44427  3524     198         48166  44444  3524     198
+HOME     15436  13829   947     660         (the same)
+loader   11504  10102  1378      24         (its own image; not in the banks)
+
+- String literals are 16.3 KB of the 145 KB banked: 11 %.
+  - Bank 2 has the most, 15 %, mostly cmd_parser's.
+  - Bank 2's "other const" includes sched_gen_names' state tables, 443 B.
+
+Usage and syntax text (a heuristic: literals with "usage", <arg>, [a|b] or
+on|off):
+- 2346 B in 35 literals:
+    bank 2  2066 B   cmd_parser, stp_cli, ntp_cli, dns_cli
+    bank 1   268 B
+    HOME      12 B
+- The rest of the literals are output: labels, JSON keys, HTML.
+
+Top modules by string bytes (8x; the SWGT024 differs by only a few bytes):
+
+  module             bank  total  code   strings
+  cmd_parser         2     20202  15794  4375
+  httpd/httpd        1     13463  11044  2419
+  httpd/page_impl    1     11361   9593  1735
+  rtl837x_port       3      8115   7170   945
+  rtl837x_phy        2      5375   4516   775
+  rtl837x_leds_dump  3      2819   2044   775
+  rtl837x_stp        3     17673  16842   716
+  boot               2      6896   6249   647
+  rtl837x_stp_cli    2      2658   2164   494
+  httpd/page_stp     3      2271   1898   373
+
+Top 20 string consumers, by function: bytes of literals the function loads.
+The 8x and the SWGT024 have the same list (send_basic_info is 452 B on the
+SWGT024).
+
+   926 cmd_parser:cmd_parser (the dispatcher)
+   775 rtl837x_leds_dump:leds_dump
+   743 httpd/httpd:upload_verdict
+   503 httpd/httpd:httpd_appcall
+   494 rtl837x_stp_cli:stp_parse
+   464 cmd_parser:parse_port
+   441 loader/loader:console (the loader image)
+   433 httpd/page_impl:send_basic_info
+   428 httpd/page_impl:send_ports
+   373 rtl837x_phy:phy_show
+   350 boot:loader_convert
+   349 cmd_parser:parse_syslog
+   336 httpd/page_stp:send_stp
+   301 cmd_parser:parse_flash
+   299 uip/uip:uip_process
+   289 update_apply:check_and_flash_update_image (HOME)
+   244 rtl837x_port:vlan_dump
+   225 httpd/httpd:handle_post
+   212 cmd_parser:parse_sfp
+   207 cmd_parser:parse_ingress
+
+Duplicate literals:
+- Equal strings across modules: 644 B. Within a module: 39 B; SDCC does not
+  merge equal literals.
+- The largest: "Written default config to flash" (flash_job and
+  rtlplayground), "off" (7 copies), "Flash busy, not reset", the speed names
+  "10M", "100M", "1000M", "10G" (page_impl, phy, port), and "on" (6 copies).
+- Sharing a literal across banks would need it in HOME, or both users in one
+  bank (place_banks groups by __code reads).
+
+-----------------------------------------------------------------------------
+2. A fourth 48 KiB code bank
+-----------------------------------------------------------------------------
+
+How the banks sit today:
+- imagebuilder packs bank n at 0x4000 + (n-1)*0xc000. Bank 1 is at 0x04000,
+  bank 2 at 0x10000, bank 3 at 0x1c000, and the code ends at 0x28000, which
+  is HTML_START.
+- A bank 4 would occupy 0x28000-0x34000.
+
+What it would need:
+- Linker: -Wl-bBANK4=0x44000 in the Makefile's link line, which today lists
+  only HOME and BANK1-3.
+- tools/place_banks.py: BANKS = 3 is a constant. It would have to come from
+  the layout.
+- imagebuilder: already generic; it derives nbanks from the file size.
+  bank_occupancy.sh already lists BANK4.
+- check_layout.py --code: the code must end below the new HTML_START.
+- The CPU and the sim: crtbank takes PSBANK & 0x1f, so up to 31 banks.
+  rtlsim maps (psbank-1)*0xc000 generically. Neither limits it.
+- The loader:
+  - alias_find() scans banks 1..0x3f, and load_slot() handles only the home
+    bank; neither depends on the bank count.
+  - But LDR_DATA (0x3a000), LDR_SLOT (0x3c000) and LDR_APP_A_END (=
+    LDR_DATA) are fixed, in both layouts. A compact image larger than
+    0x3a000 moves them.
+  - So that is a new loader layout (3), and a two-step update for every
+    installed unit: first the loader, then the application. An old loader
+    would install only up to 0x3a000 and read its slot at 0x3c000, which
+    would then be web UI.
+- The POE-2G040210GSM puts its PSE image at 0x34000, the end of bank 4. A
+  fifth bank would collide with it; bank 4 alone doesn't.
+
+The SWGT024 (512 KiB): it does not fit.
+- The compact budget on 0x80000: two images (running and staged), the
+  loader's data (0x6000), the loader stage (0x4000), the update progress
+  sector (0x1000) and the config (0x1000). So 2*I + 0xc000 <= 0x80000, and
+  I <= 0x3a000: today's IMAGE_SIZE exactly.
+- With four banks the code ends at 0x34000. That leaves 24 KiB for the web
+  UI and the 4 KiB default config.
+- The web UI uses 66,279 B of its 69,632 B region today.
+  - LANGS=en shrinks it to about 39.8 KB gzipped (app.js minified:
+    165,864 -> 90,427 B).
+  - It still needs about 44 KB with the config: about 20 KB too much.
+- Even if the loader stage and the progress sector were shared with the
+  upload area (+0x5000), I could only reach about 0x3c800. The web UI and
+  config would get about 34 KiB, still short of the 44 KB needed.
+
+The 8x (2 MiB): it fits, two ways.
+- (a) The standard layout with LOADER=1 (loader layout 1), which already
+  exists.
+  - The code may run to LDR_DATA (0x3a000), so four banks (ending at
+    0x34000) fit; a fifth does not.
+  - The web UI moves to 0x40000, and uploads are staged at 0x80000 (2 MiB
+    has room).
+  - Cost: the deployed 8x units run compact. Going compact -> standard is a
+    layout migration that has no tool yet; test_migrate covers only
+    standard -> compact.
+- (b) A compact layout for flashes of 1 MiB or more: HTML_START 0x34000,
+  IMAGE_SIZE 0x46000, and the loader data and staging moved up.
+  - Cost: the loader-layout change above.
+- Today's compact 8x map, for reference:
+    0x00000  loader
+    0x04000  banks
+    0x28000  web UI
+    0x39000  default config
+    0x3a000  loader data
+    0x40000  upload stage
+    0x7a000  loader stage
+    0x7e000  progress
+    0x7f000  config
+    0x80000  MDATA (to 0x8c000)
+  1.45 MiB above that is unused.
+- Either way, a fourth bank helps only the 8x. On the SWGT024 every feature
+  must still fit three banks, so the extra bank's code must be optional for
+  512 KiB boards.
+
+-----------------------------------------------------------------------------
+3. SDCC options per file
+-----------------------------------------------------------------------------
+
+Method:
+- Each module compiled with the build's own flags plus one switch, and the
+  BANKED area compared.
+- The base compile reproduces the build's .rel byte for byte.
+- All 44 banked C modules were done (sched_gen_names is generated, so left
+  out), on both boards.
+
+Results, in BANKED bytes:
+
+  variant                          8x total  saved    SWGT024 saved
+  base                             144654    0        0
+  --opt-code-size                  =         0        0
+  --opt-code-speed                 =         0        0
+  --max-allocs-per-node 25000      =         0        0
+  --max-allocs-per-node 100000     =         0        0
+  --max-allocs-per-node 1          =         0        0
+  --noinduction                    144249    405      404
+  --noinvariant                    144003    651      651
+  --noinduction --noinvariant      143632    1022     1021
+  --noloopreverse                  144660    -6       -6
+  --nogcse                         149679    -5025    -5024
+  --nolabelopt                     145540    -886     -882
+
+  (= means the output is byte-identical to base.)
+
+- --opt-code-size and --max-allocs-per-node have no effect at all on mcs51
+  with this SDCC. max-allocs tunes the newer register allocator, which mcs51
+  doesn't use.
+- --noinduction and --noinvariant help some files and grow others.
+  - noinduction grows httpd +166 and uip_arp +34.
+  - noinvariant grows httpd +5.
+  - So the best switch per file saves 1286 B on the 8x: bank 1 196, bank 2
+    540, bank 3 550. On the SWGT024 it saves 1285 B.
+
+  Per-file picks:
+    rtl837x_leds_dump  both            -323
+    cmd_parser         noinduction     -245
+    httpd/page_impl    both            -178
+    rtl837x_port       noinvariant     -140
+    dns                both            -126
+    ntp_cli            noinduction      -81
+    sfp                noinvariant      -71
+    uip/uiplib         noinduction      -25
+    rtl837x_lacp       noinvariant      -23
+    rtl837x_storm      noinvariant      -22
+    rtl837x_rldp       noinvariant      -14
+    others                         <= -11 each
+
+- RAM effect, all modules together:
+  - noinduction: DSEG 74->62, OSEG 41->31; XSEG +18 B.
+  - both switches: DSEG 74->61, OSEG 41->28.
+  So less internal RAM, and a little more xdata.
+- The cost: loops run slower in those files, because induction variables and
+  invariants are recomputed in the loop. They are CLI and print paths, plus
+  page_impl's JSON loops.
+
+-----------------------------------------------------------------------------
+4. Commands that could be build-optional on compact boards
+-----------------------------------------------------------------------------
+
+A command can be optional only if the web UI doesn't use it. app.js sends
+these through /cmd, so they must stay:
+  syslog, stp, ntp, lacp, bw, lag, mirror, led, storm, sfp, session, passwd,
+  mtu, loop, lldp, laghash, l2, isolate, ingress, igmp, eee, dns.
+
+CLI-only diagnostics. Sizes are code plus its literals; on top of each,
+about 40 B in the dispatcher (cmd_compare, the call and the name literal).
+
+  command                     function / module               bytes  bank
+  leds                        rtl837x_leds_dump (whole module)  2813  3
+  port <p> cabletest          rtl837x_cabletest (whole module)  1623  1
+  flash [s|...]               parse_flash                        962  2
+  physet / phyget             parse_physet, parse_phyget         646  2
+  sdsset / sdsget             parse_sdsset, parse_sdsget         578  2
+  regset / regget             parse_regset, parse_regget         437  2
+  gpio                        print_gpio_status                  344  2
+  temp                        print_temperature (with its caller) ~150  2
+  rnd                         parse_rnd                           81  2
+  sum                                                          ~7.6 KB,
+                                                          ~8 KB with the dispatch
+  (8x; on the SWGT024 leds_dump is 2807 B.)
+
+- "health" (sched_health, 1608 B) is meant to be always built
+  (silicon.md), so it isn't counted.
+- Whole features (STP: stp, stp_cli, page_stp, about 22.6 KB; NTP 4.2 KB;
+  DNS 3.2 KB; syslog 1.9 KB) are used by the web UI. Making one optional
+  means a board without the feature, web page included.
+
+-----------------------------------------------------------------------------
+Options ranked by bytes gained vs risk
+-----------------------------------------------------------------------------
+
+1. CLI-only diagnostic commands optional on compact boards (a make flag, as
+   HEALTH is).
+   - Gain: about 8 KB: bank 3 2.8 KB, bank 1 1.6 KB, bank 2 3.6 KB.
+   - Risk: low. Plain #ifdefs, and the web UI doesn't use these commands.
+   - Cost: no register, PHY, SerDes, LED or cable diagnostics in those
+     builds.
+2. Usage and syntax text cut to a short "Error: syntax" plus the command
+   name.
+   - Gain: about 1.5-2 KB of the 2.3 KB, nearly all in bank 2.
+   - Risk: low, in the code. Users get less help, and oldnew needs expect
+     lines for the changed replies.
+3. Per-file optimizer switches (--noinduction, --noinvariant, the best for
+   each file).
+   - Gain: about 1.3 KB, spread 196 / 540 / 550 B.
+   - It also uses 13 B less DSEG and 13 B less OSEG.
+   - Risk: low to medium. Loops in those files get slower, so oldnew and the
+     long-step checks need a re-run. There is less optimizer exposure, if
+     anything.
+4. Merging duplicate literals.
+   - Gain: at most 644 B, realistically 0.2-0.3 KB.
+   - Risk: low, but the effort is medium: a shared literal must be in HOME
+     or within one bank.
+5. A fourth bank: 8x only (standard layout with LOADER=1, or a new loader
+   layout). It does not fit the SWGT024.
+   - Gain: 48 KB on the 8x only.
+   - Risk: high. A layout migration of deployed units, a loader update,
+     build tooling, and any code placed there has to be optional on 512 KiB
+     boards.
+6. --opt-code-size and --max-allocs-per-node.
+   - Gain: 0 B. No effect on mcs51 with this toolchain.
