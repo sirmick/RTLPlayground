@@ -180,7 +180,14 @@ uint16_t strlen_x(__xdata const char *s);
 uint16_t strtox(__xdata uint8_t *dst, __code const char *s);
 bool strstart(__xdata const uint8_t *a, __code const uint8_t *b);
 bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b);
-void tcpip_output(void);
+void tcpip_output(void) __banked;
+/* Control frames (STP, LACP, LLDP) are built at ctl_buf + RTL_FRAME_DESC_SIZE
+ * and sent with ctl_output(), ctl_len long (net.md): not in uip_buf */
+#define CTL_FRAME_MAX	152	/* the largest: LLDP, 12 + 8 + 2 + LLDP_MAX_PAYLOAD */
+#define CTL_BUF_SIZE	(RTL_FRAME_DESC_SIZE + CTL_FRAME_MAX)
+extern __xdata uint8_t ctl_buf[CTL_BUF_SIZE];
+extern __xdata uint16_t ctl_len;
+void ctl_output(void) __banked;
 uint8_t read_flash(uint8_t bank, __code const uint8_t *addr);
 void get_random_32(void);
 void read_reg_timer(__xdata uint32_t * tmr);

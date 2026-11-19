@@ -87,7 +87,8 @@ struct lldp_pkt {
     uint8_t payload[LLDP_MAX_PAYLOAD];
 };
 
-#define LLDP_O ((__xdata struct lldp_pkt *)&uip_buf[RTL_FRAME_DESC_SIZE])
+#define LLDP_O ((__xdata struct lldp_pkt *)&ctl_buf[RTL_FRAME_DESC_SIZE])
+typedef char lldp_fits_ctl_buf[sizeof(struct lldp_pkt) <= CTL_FRAME_MAX ? 1 : -1];
 
 // The type is 7 bits and the length is 9 bits
 // we can represent this as the 7 most significant
@@ -177,7 +178,7 @@ static void lldp_send_ports(uint16_t ttl, uint16_t ports) __reentrant
                 *p++ = 0x00;
 
             /*
-             * uip_len is the Ethernet frame length excluding FCS.
+             * ctl_len is the Ethernet frame length excluding FCS.
              *
              * The frame consists of:
              *
@@ -187,9 +188,9 @@ static void lldp_send_ports(uint16_t ttl, uint16_t ports) __reentrant
              *     EtherType (2 bytes)
              *     payload (how far we've moved p pointer)
              */
-            uip_len = MAC_ADDR_LEN + MAC_ADDR_LEN + sizeof(struct rtl_tag) + LLDP_ETHERTYPE_LENGTH + (p - LLDP_O->payload);
+            ctl_len = MAC_ADDR_LEN + MAC_ADDR_LEN + sizeof(struct rtl_tag) + LLDP_ETHERTYPE_LENGTH + (p - LLDP_O->payload);
 
-            tcpip_output();
+            ctl_output();
         }
     }
 }

@@ -79,7 +79,8 @@ struct lacpdu_in {
 
 __xdata uint8_t lacp_rxbody;
 
-#define LACP_O ((__xdata struct lacpdu        *)&uip_buf[RTL_FRAME_DESC_SIZE])
+#define LACP_O ((__xdata struct lacpdu        *)&ctl_buf[RTL_FRAME_DESC_SIZE])
+typedef char lacp_fits_ctl_buf[sizeof(struct lacpdu) <= CTL_FRAME_MAX ? 1 : -1];
 #define LACP_H ((__xdata struct lacpdu_in_hdr *)&uip_buf[0])
 #define LACP_I ((__xdata struct lacpdu_in     *)&uip_buf[lacp_rxbody])
 
@@ -226,8 +227,8 @@ void lacp_send(uint8_t port) __banked
 	lacp_ntt[port] = 0;
 	saved_mgmt_vlan = management_vlan;
 	management_vlan = 0;
-	uip_len = sizeof(struct lacpdu);
-	tcpip_output();
+	ctl_len = sizeof(struct lacpdu);
+	ctl_output();
 	management_vlan = saved_mgmt_vlan;
 }
 

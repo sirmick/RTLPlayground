@@ -200,7 +200,8 @@ struct stp_pkt_in {
 	uint8_t version1_length;	/* RST BPDU only: length of the (empty) v1 part */
 };
 
-#define STP_O ((__xdata struct stp_pkt *)&uip_buf[RTL_FRAME_DESC_SIZE])
+#define STP_O ((__xdata struct stp_pkt *)&ctl_buf[RTL_FRAME_DESC_SIZE])
+typedef char stp_fits_ctl_buf[sizeof(struct stp_pkt) <= CTL_FRAME_MAX ? 1 : -1];
 #define STP_H ((__xdata struct stp_pkt_in_hdr *)&uip_buf[0])
 #define STP_I ((__xdata struct stp_pkt_in *)&uip_buf[stp_rxbody])
 
@@ -840,9 +841,9 @@ void stp_cnf_send(uint8_t port) __reentrant
 	STP_O->fwd_delay = FWD_S;
 	STP_O->version1_length = 0;	/* RST BPDU: no version-1 information */
 
-	uip_len = stp_tcn ? sizeof(struct stp_pkt) - 32
+	ctl_len = stp_tcn ? sizeof(struct stp_pkt) - 32
 			  : (SEND_RSTP(port) ? sizeof(struct stp_pkt) : sizeof(struct stp_pkt) - 1);
-	tcpip_output();
+	ctl_output();
 }
 
 
