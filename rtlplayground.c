@@ -587,7 +587,9 @@ void hw_start(uint8_t n)
 
 uint8_t hw_expired(void)
 {
-	return hw_stuck || (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) > 0;
+	if (hw_stuck)		/* an if, not ||: SDCC gave || a bit of internal RAM */
+		return 1;
+	return (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) > 0;
 }
 
 void hw_timeout(uint16_t reg)
