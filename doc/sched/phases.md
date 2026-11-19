@@ -30,12 +30,14 @@ control-frame TX buffer, web command buffer, one cli task.
 For D2: schedtest's bank 3 has 28 B free (5 B in the overrun variant), so
 M2 must move code.
 
-Carried from B2's review, for D1 and the crash line:
-- `con_putc()` busy-waits on a full TX ring for the ISR to drain it, so it
-  must never run with interrupts (or ES) off: code that prints with EA = 0
-  today (the `if (EA)` debug prints) has to stay polled.
+Carried from B2's review, for D1 and the crash line (done in D1):
+- `con_putc()` waits on a full TX ring for the ISR to drain it; with EA or
+  ES off the ISR can't, so the wait polls TI and sends the next byte itself:
+  it never hangs, and the `if (EA)` debug prints are safe either way. It
+  leaves ES as it found it.
 - `crash_boot()`'s line can be longer than the 127 free bytes of the TX
-  ring: print it with interrupts on, or polled, before the rings take over.
+  ring: it is printed with interrupts on (schedtest_main), and a full ring
+  only waits, polled if need be.
 
 ## M3 (E): break up the blockers
 

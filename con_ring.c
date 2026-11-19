@@ -1,6 +1,7 @@
 /*
- * con_ring.c - the console UART rings; see con_ring.h. Resident: the ISR
- * reads them and console output may come from any bank.
+ * con_ring.c - the console UART rings (doc/sched/console.md); see
+ * con_ring.h. Resident: the ISR reads them and console output may come from
+ * any bank.
  */
 #include <8051.h>
 #include <stdint.h>
@@ -35,13 +36,23 @@ uint8_t con_tx_room(void)
 	return (con_tx_tail - con_tx_head - 1) & (CON_TX_SIZE - 1);
 }
 
+static __xdata uint8_t con_es;
+
+/* Waits while the ring is full. If the serial interrupt can't run (EA or ES
+ * off: code that prints with interrupts off), the wait does the ISR's part
+ * itself, polling TI, so it never hangs. ES is left as it was found. */
 void con_putc(uint8_t c)
 {
-	while (!con_tx_room())
-		;
+	while (!con_tx_room()) {
+		if ((!EA || !ES) && TI) {
+			TI = 0;
+			CON_ISR_TX();
+		}
+	}
 	con_tx_buf[con_tx_head] = c;
 	/* The ISR must not see the transmitter idle between the store and the
 	 * start: hold the serial interrupt off across both. */
+	con_es = ES;
 	ES = 0;
 	con_tx_head = (con_tx_head + 1) & (CON_TX_SIZE - 1);
 	if (!con_tx_busy) {
@@ -49,5 +60,5 @@ void con_putc(uint8_t c)
 		SBUF = con_tx_buf[con_tx_tail];
 		con_tx_tail = (con_tx_tail + 1) & (CON_TX_SIZE - 1);
 	}
-	ES = 1;
+	ES = con_es;
 }

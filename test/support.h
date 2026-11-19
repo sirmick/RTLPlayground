@@ -31,7 +31,7 @@ void            out_reset(void);
 void env_reset(void);           /* clears ring, buffers, editor state */
 
 /* ---- drive the serial input ring exactly like the RX ISR would ----
- * Pushes bytes into the 16-byte sbuf ring, draining via cmd_edit() whenever the
+ * Pushes bytes into the 256-byte console RX ring, draining via cmd_edit() whenever the
  * ring would overflow, then a final drain. Mirrors real ISR→editor handoff.
  */
 void feed(const char *s);                 /* NUL-terminated */

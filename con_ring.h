@@ -16,6 +16,7 @@
 
 #define CON_RX_SIZE	256	/* 8-bit indexes wrap by themselves: ~22 ms of input at
 				 * 115200, more than a 20 ms step (decision 19) */
+#define CON_RX_MASK	(CON_RX_SIZE - 1)
 #define CON_TX_SIZE	128	/* a power of 2 */
 #define CON_TX_LINE	100	/* EV_CON_TX: room for a line */
 

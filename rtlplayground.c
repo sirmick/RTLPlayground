@@ -31,9 +31,9 @@
 #include "phy.h"
 #include "syslog.h"
 #include "dns.h"
+#include "con_ring.h"
 #ifdef SCHEDTEST
 #include "crash.h"
-#include "con_ring.h"
 #include "schedtest/schedtest.h"
 #endif
 #include "ntp.h"
@@ -109,13 +109,6 @@ static __xdata bool loader_confirmed;
 static __xdata struct timer sfp_poll;
 static __xdata struct timer delay_timer;
 
-/* Buffer for serial input, SBUF_SIZE must be power of 2 < 256
- * Writing to this buffer is under the sole control of the serial ISR
- * Note that key-presses such as <cursor-left> can create multiple
- * keys being sent via the serial line */
-__xdata volatile uint8_t sbuf_ptr;
-__xdata uint8_t sbuf[SBUF_SIZE];
-
 // Registry data in sfr is in *big endian* order, so sfr_data[0] is the MSB and sfr_data[3] the LSB
 __xdata uint8_t sfr_data[4];
 
@@ -162,7 +155,6 @@ __bit cmd_available;
 // Last known state of the SFP detection/Loss of Signal pins
 __xdata bool button_last;
 __xdata uint8_t button_sec_counter_last;
-volatile __bit tx_buf_empty;
 
 
 struct eth_in {
@@ -251,20 +243,11 @@ void isr_serial(void) __interrupt(4)
 			serial_reset_pending = 1;
 		}
 		serial_last_rx = c;
-#ifdef SCHEDTEST
 		CON_ISR_RX(c);
-#else
-		sbuf[sbuf_ptr] = c;
-		sbuf_ptr = (sbuf_ptr + 1) & (SBUF_SIZE - 1);
-#endif
 	}
 	if (TI == 1) {
 		TI = 0;
-#ifdef SCHEDTEST
 		CON_ISR_TX();
-#else
-		tx_buf_empty = 1;
-#endif
 	}
 }
 
@@ -288,22 +271,10 @@ void write_char_no_syslog(char c)
 			cmd_capture = 2;	/* out of room, httpd says so */
 	}
 
-#ifdef SCHEDTEST
+	/* Into the TX ring; waits only while it is full */
 	if (c == '\n')
 		con_putc('\r');
 	con_putc(c);
-#else
-	do {
-	} while (tx_buf_empty == 0);
-	if (c =='\n') {
-		tx_buf_empty = 0;
-		SBUF = '\r';
-		do {
-		} while (tx_buf_empty == 0);
-	}
-	tx_buf_empty = 0;
-	SBUF = c;
-#endif
 }
 
 void write_char(char c)
@@ -1513,7 +1484,7 @@ void setup_serial_timer1(void)
 	TI = 0; // Clear TI-interrupt flag
 	RI = 0; // Clear RI-interrupt flag
 
-	tx_buf_empty = 1; // Set tx `serial buffer is empty`-software flag.
+	con_ring_init();	// The console rings: empty, the transmitter idle
 
 	ES = 1; // Enable serial IRQ
 }
@@ -1528,7 +1499,6 @@ static void firmware_init(void)
 {
 	ticks = 0;
 	dhcp_state.state = DHCP_OFF;
-	sbuf_ptr = 0;
 
 	CKCON = 0;	// Initial Clock configuration
 
@@ -1716,11 +1686,9 @@ static void firmware_init(void)
 
 #ifdef SCHEDTEST
 /* The scheduler test image (schedtest/): the real boot, then the scheduler
- * over the dummy tasks instead of the main loop. The console's rings take
- * over from the start: write_char goes through them. */
+ * over the dummy tasks instead of the main loop. */
 void main(void)
 {
-	con_ring_init();
 	firmware_init();
 	schedtest_main();
 }

@@ -26,16 +26,7 @@
 #define LOOKUP_MISS_DROP_9  0x00015555
 #define LOOKUP_MISS_FLOOD   0x00000000
 
-/* Buffer for serial input, SBUF_SIZE must be power of 2 < 256
- * Writing to this buffer is under the sole control of the serial ISR
- * Note that key-presses such as <cursor-left> can create multiple
- * keys (3 to 4) being sent via the serial line, so this must be
- * sufficiently large */
-#define SBUF_SIZE 16
-#define SBUF_MASK (SBUF_SIZE - 1)
-
-extern __xdata volatile uint8_t sbuf_ptr;
-extern __xdata uint8_t sbuf[SBUF_SIZE];
+/* Serial input and output: the console rings in con_ring.h */
 
 // Define the command buffer size, Must be 2^x and <= 128
 #define CMD_BUF_SIZE 128

@@ -1,9 +1,8 @@
 #include "cmd_parser.h"
+#include "con_ring.h"
 #include "machine.h"
 
 
-// Position in the serial buffer
-__xdata uint8_t l;
 // Properties of currently edited command line in cmd_buffer[CMD_BUF_SIZE]
 __xdata uint8_t cursor;
 __xdata uint8_t cmd_line_len;
@@ -16,7 +15,7 @@ extern __xdata uint16_t cmd_history_ptr;
 
 void cmd_editor_init(void) __banked
 {
-	l = sbuf_ptr; // We have printed out entered characters until l
+	con_rx_tail = con_rx_head; // Drop what was typed during the boot
 	cursor = 0;
 	cmd_line_len = 0;
 	cmd_available = 0;
@@ -26,7 +25,8 @@ void cmd_editor_init(void) __banked
 /*
  * Allows editing the current command line held in cmd_buffer[CMD_BUF_SIZE] by
  * identifying new characters typed or up to 4-byte escape sequences in the
- * serial buffer ring sbuf[SBUF_SIZE].
+ * console RX ring con_rx_buf[CON_RX_SIZE] (con_ring.h), which the serial ISR
+ * fills; con_rx_tail is the editor's read position.
  * Upon detecting new characters or escape sequences, the cmd_buffer and the
  * representation of the command line in the terminal are updated.
  * To debug, the easist is to interpose a tty-interceptor between the physical
@@ -36,18 +36,18 @@ void cmd_editor_init(void) __banked
  */
 void cmd_edit(void) __banked
 {
-	while (l != sbuf_ptr) {
-		if (sbuf[l] >= ' ' && sbuf[l] < 127) { // A printable character, copy to command line
+	while (con_rx_tail != con_rx_head) {
+		if (con_rx_buf[con_rx_tail] >= ' ' && con_rx_buf[con_rx_tail] < 127) { // A printable character, copy to command line
 			// Reserve one byte for the terminating NUL written on Enter. When the
 			// line is full, drop the character but still fall through to advance the
 			// serial-ring read pointer below; a 'continue' here would spin forever.
 			if (cmd_line_len < CMD_BUF_SIZE - 1) {
-				write_char(sbuf[l]);
+				write_char(con_rx_buf[con_rx_tail]);
 				// Shift buffer to right
 				for (uint8_t i = cmd_line_len; i > cursor; i--)
 					cmd_buffer[i] = cmd_buffer[i-1];
 				// Insert char in comand buffer
-				cmd_buffer[cursor++] = sbuf[l];
+				cmd_buffer[cursor++] = con_rx_buf[con_rx_tail];
 				cmd_line_len++;
 				// Print rest of line
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
@@ -56,12 +56,12 @@ void cmd_edit(void) __banked
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
 					write_char('\010'); // BS works like cursor-left
 			}
-		} else if (sbuf[l] == '\033') { // ESC-Sequence
+		} else if (con_rx_buf[con_rx_tail] == '\033') { // ESC-Sequence
 			// Wait until we have at least 3 characters including the ESC character in the serial buffer
-			if (((sbuf_ptr + SBUF_SIZE - l) & SBUF_MASK) < 3)
+			if (((con_rx_head + CON_RX_SIZE - con_rx_tail) & CON_RX_MASK) < 3)
 				continue;
-			if (((sbuf_ptr > l ? sbuf_ptr - l : SBUF_SIZE + sbuf_ptr - l) >= 4)
-				   && sbuf[l] == '\033' && sbuf[(l + 1) & SBUF_MASK] == '[' && sbuf[(l + 2) & SBUF_MASK] == '3' && sbuf[(l + 3) & SBUF_MASK] == '~') { // DEL
+			if (((con_rx_head > con_rx_tail ? con_rx_head - con_rx_tail : CON_RX_SIZE + con_rx_head - con_rx_tail) >= 4)
+				   && con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == '3' && con_rx_buf[(con_rx_tail + 3) & CON_RX_MASK] == '~') { // DEL
 				if (cursor < cmd_line_len) {
 					write_char('\033'); write_char('['); write_char('1'); write_char('P'); // Delete to end of line
 					cmd_line_len--;
@@ -72,26 +72,26 @@ void cmd_edit(void) __banked
 					for (uint8_t i = cursor; i < cmd_line_len; i++)
 						write_char('\010');
 				}
-				l += 4;
-				l &= SBUF_MASK;
+				con_rx_tail += 4;
+				con_rx_tail &= CON_RX_MASK;
 				continue;
-			} else if (sbuf[l] == '\033' && sbuf[(l + 1) & SBUF_MASK] == '[' && sbuf[(l + 2) & SBUF_MASK] == 'D') { // <CURSOR-LEFT>
+			} else if (con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == 'D') { // <CURSOR-LEFT>
 				if (cursor) {
 					write_char('\010'); // BS works like cursor-left
 					cursor--;
 				}
-				l += 3;
-				l &= SBUF_MASK;
+				con_rx_tail += 3;
+				con_rx_tail &= CON_RX_MASK;
 				continue;
-			} else if (sbuf[l] == '\033' && sbuf[(l + 1) & SBUF_MASK] == '[' && sbuf[(l + 2) & SBUF_MASK] == 'C') { // <CURSOR-RIGHT>
+			} else if (con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == 'C') { // <CURSOR-RIGHT>
 				if (cursor < cmd_line_len) {
 					write_char('\033'); write_char('['); write_char('C');
 					cursor++;
 				}
-				l += 3;
-				l &= SBUF_MASK;
+				con_rx_tail += 3;
+				con_rx_tail &= CON_RX_MASK;
 				continue;
-			} else if (sbuf[l] == '\033' && sbuf[(l + 1) & SBUF_MASK] == '[' && sbuf[(l + 2) & SBUF_MASK] == 'A') { // <CURSOR-UP>
+			} else if (con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == 'A') { // <CURSOR-UP>
 				for (uint8_t i = 0; i < cmd_line_len; i++)
 					current_cmdline[i] = cmd_buffer[i];
 				current_cmdline[cmd_line_len] = 0;
@@ -121,10 +121,10 @@ void cmd_edit(void) __banked
 				} else {
 					print_string("\033[2C"); // Move 2 right to start of editing space
 				}
-				l += 3;
-				l &= SBUF_MASK;
+				con_rx_tail += 3;
+				con_rx_tail &= CON_RX_MASK;
 				continue;
-			} else if (sbuf[l] == '\033' && sbuf[(l + 1) & SBUF_MASK] == '[' && sbuf[(l + 2) & SBUF_MASK] == 'B') { // <CURSOR-DOWN>
+			} else if (con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == 'B') { // <CURSOR-DOWN>
 				if (history_editptr != 0xffff) {
 					__xdata uint16_t p = (history_editptr + 2) & CMD_HISTORY_MASK;
 					// Move cursor to beginning of line
@@ -164,13 +164,13 @@ void cmd_edit(void) __banked
 					}
 					cursor = cmd_line_len;
 				}
-				l += 3;
-				l &= SBUF_MASK;
+				con_rx_tail += 3;
+				con_rx_tail &= CON_RX_MASK;
 				continue;
 			} else { // An unknown or not yet complete Escape sequence: wait
 				continue;
 			}
-		} else if (sbuf[l] == 127 || sbuf[l] == 8) {  // Backspace DEL or BS/^H
+		} else if (con_rx_buf[con_rx_tail] == 127 || con_rx_buf[con_rx_tail] == 8) {  // Backspace DEL or BS/^H
 			if (cursor > 0) {
 				write_char('\010');
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
@@ -189,7 +189,7 @@ void cmd_edit(void) __banked
 		if (cmd_available)
 			break;
 		// Check whether return was pressed:
-		if (sbuf[l] == '\n' || sbuf[l] == '\r') {
+		if (con_rx_buf[con_rx_tail] == '\n' || con_rx_buf[con_rx_tail] == '\r') {
 			write_char('\n');
 			cmd_buffer[cmd_line_len] = NUL;
 //			write_char('>'); print_string_x(cmd_buffer); write_char('<');
@@ -203,7 +203,7 @@ void cmd_edit(void) __banked
 			cmd_line_len = 0;
 			history_editptr = 0xffff;
 		}
-		l++;
-		l &= SBUF_MASK;
+		con_rx_tail++;
+		con_rx_tail &= CON_RX_MASK;
 	}
 }
