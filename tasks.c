@@ -20,6 +20,9 @@
 #include "cmd_editor.h"
 #include "cmd_parser.h"
 #include "httpd/httpd.h"
+#include "flash_job.h"
+#include "uip/uip.h"
+#include "uip/uip_arp.h"
 #include "machine.h"
 #include "timer.h"
 #include "sched.h"
@@ -131,6 +134,8 @@ void cli_run(void) __banked
 
 void cli_prompt(void) __banked
 {
+	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
+		STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
 		if (webcmd_done)		/* not if its connection ended */
 			event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
@@ -141,11 +146,31 @@ void cli_prompt(void) __banked
 	STEP_NEXT(S_CLI_IDLE);
 }
 
-/* net: uIP's periodic calls, every tick */
+/* net: uIP's periodic calls, every tick; and on EV_UPLOAD_DONE a poll of
+ * the connection at once, which reopens an upload's window (net.md item 1) */
+static __xdata uint16_t net_due;
+
+void net_start(void) __banked
+{
+	net_due = sched_now;
+	STEP_NEXT(S_NET_TICK);
+}
+
 void net_task(void) __banked
 {
-	handle_tx();
-	task_until(sched_now + 1);
+	if (sched_ev & EV_UPLOAD_DONE) {
+		uip_poll_conn(&uip_conns[0]);
+		if (uip_len > 0) {
+			uip_arp_out();
+			tcpip_output();
+		}
+	}
+	if ((int16_t)(sched_now - net_due) >= 0) {
+		handle_tx();
+		net_due = sched_now + 1;
+	}
+	task_mask(EV_UPLOAD_DONE);
+	task_until(net_due);
 }
 
 /* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick */

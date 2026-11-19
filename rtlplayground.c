@@ -43,6 +43,7 @@
 #include "boot.h"
 #include "loader/layout.h"
 #include "sfp.h"
+#include "flash_job.h"
 #include "update_apply.h"
 
 extern __code const struct machine machine;
@@ -1015,9 +1016,9 @@ void handle_button(void)
 			if (diff_sec_counter > 10)
 			{
 				print_string(">10s button detected; reverting to default settings:\n");
-				flash_default_config();
-				print_string("Now resetting...\n");
-				reset_chip();
+				fl_req = FL_FACTORY_BTN;	/* the flash job writes it and resets */
+				if (!flash_job_start())
+					print_string("Flash busy, not reset\n");
 			}
 			else if (diff_sec_counter > 3)
 			{

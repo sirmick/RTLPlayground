@@ -16,7 +16,7 @@ CC_FLAGS += -I$(SCHED_GEN) -DISR_T2_PUSHES=$(ISR_T2_PUSHES) -DISR_SERIAL_PUSHES=
 # by place_banks.py: the rest of the scheduler, health and the names, the
 # tasks' steps.
 SCHED_SRCS = sched.c sched_bank.c sched_health.c crash.c sched_gen.c sched_gen_names.c \
-	$(if $(SCHEDTEST),,tasks.c)
+	$(if $(SCHEDTEST),,tasks.c flash_job.c)
 SRCS += $(SCHED_SRCS)
 RESIDENT_SRCS += sched.c crash.c sched_gen.c
 $(shell mkdir -p $(SCHED_GEN))
