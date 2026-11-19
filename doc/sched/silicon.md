@@ -108,3 +108,34 @@ review's open point). From `hang` to the line: 13.5 s (5 s + loader + init).
   seen (the bench host saw no packets), but a schedtest with the switch init up is a
   loop risk on this rig.
 - The 8x is on fcf16cc again after the run.
+
+## M2 firmware on the 8x (phase DB), 2026-11-19
+
+The real firmware on the scheduler, db07bb9 (D1-D3), web-updated over
+fcf16cc and back again; logs `(bench notes, not published)`.
+
+- **Works as before:** boots through the loader with the full switch init;
+  the SFP DAC links at 10G; loop detection finds the 5-6 cable within a
+  second and blocks port 6, before and after a reset; no storm (the bench
+  host saw ~2 packets/s); the web UI and a web `/cmd` (`version`, `loop`)
+  answer; web update works in both directions.
+- **The scheduler on silicon:** `health tasks` lists every fixed task in its
+  expected state; ^R ^R resets through the loader and the next boot prints
+  a correct record (`^R ^R in lacp/LACP_TICK ... PC 0x3302 bank 2`).
+- **Long steps seen on silicon** (`health tasks`, ~30 s after boot, one CLI
+  tour): RX_STEP 21.0 ms, **SFP_POLL 24.9 ms** (the module read after an
+  insert), **HOUSE_SEC 40.8 ms**, CLI_RUN 86 ms (printing `health tasks`
+  itself); longest pass 87 ms. SFP_POLL and HOUSE_SEC are not in D2's list
+  from the sim (no SFP module there; HOUSE_SEC's cost is unexplained):
+  E2 owns the SFP read (slot tasks), and HOUSE_SEC needs measuring before E4.
+- **A crash record from another image is misreported.** The first boot of
+  db07bb9 printed a record that schedtest had left at 0xbfe0 (fcf16cc never
+  touches that address, and a web-update reset keeps xdata), decoded with
+  db07bb9's state names (`rx/RX_IDLE ... ?`). The record needs the image's
+  identity (e.g. the application CRC or the build hash); the boot ignores a
+  record from another image. To do (book: watchdog.md).
+- **`health` is only in HEALTH=1 builds**, so the default firmware can't
+  show the console RX overrun count (D1's evidence counted it in a HEALTH
+  build). To do: put the count in `health tasks` (always built).
+- A 500-character paste fills the line editor (127 characters, as in the
+  sim); the overrun count wasn't visible (above).
