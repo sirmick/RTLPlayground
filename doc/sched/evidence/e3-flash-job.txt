@@ -1,0 +1,200 @@
+# E3 evidence: the flash job - upload, config save, factory reset (2026-11-19)
+
+Branch feat/sched-e3 (worktree ~/src/rtlpg-e3), off feat/sched f621897.
+Commits:
+  19fe58c E3: the flash job: upload, config save and factory reset in steps
+  3846853 E3: uploads keep to the receive window, not uip_stop()   (QA e3-o3-window)
+  942fea9 E3: the loader's boot-count erase is an FL_ERASE step
+  bd42603 E3: no crash record cause for an update
+  710523a tools: flash_job_steps.py and curl_upload.py, E3 in rtlsim
+  f7100d1 E3 fix: an upload's stage starts again only as its job ends
+  (then the book and this file)
+f7100d1 is the code boundary. Images: f7100d1 built clean in a worktree
+(tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1), 8x
+(KEEPLINK_KP_9000_9XHPML_V1_2) and SWGT024 (SWGT024_V2_0_UNMANAGED).
+rtlsim: ovs-rtlpg build/rtlsim (d3d1843: harness only, no sim change).
+
+## What E3 does
+
+1. The flash job (flash_job.c, tasks.def `flash`: FL_ERASE, FL_PROG,
+   FL_VERIFY, FL_DONE; flash.md "As built"). Each step's erase or program
+   waits in the common area (rtl837x_flash.c, unchanged) before it returns:
+   no banked code runs while the flash is busy. Requests: FL_UPLOAD,
+   FL_CONFIG, FL_BOOTCNT, FL_FACTORY(_BTN), through flash_job_start().
+2. Upload: httpd's stream_upload() split at its flash writes into
+   upload_prog() (FL_PROG: parse the stage, program up to 2 pages a step,
+   FL_ERASE before each sector's first page), upload_verify() (FL_VERIFY:
+   the read-back CRC 2 KiB a step, then the answer) and upload_done()
+   (FL_DONE: more came meanwhile -> FL_PROG again, else the stage starts
+   again). The answer and window updates go out on net's poll after
+   EV_UPLOAD_DONE (uip_poll_conn), at once.
+3. Flow control by the receive window (decision 20, net.md item 1): the
+   stage is config_buf (0 B: uIP has one connection, the #error at
+   webcmd_queue()); UIP_CONF_RECEIVE_WINDOW = uip_rcv_wnd = the stage's
+   room, at most an MSS. No uip_stop()/uip_restart() anywhere. While the job
+   writes for a connection that has ended, a new connection is reset.
+4. Config save (POST /config): the body is buffered whole as before, then
+   FL_ERASE + FL_PROG (512 B a step); data meanwhile dropped; the 200 on the
+   poll after the job. Same job, same one-connection argument.
+5. Factory reset (console `factory-reset`, the button): FL_ERASE + 8 x
+   FL_PROG from the default sector, then FL_DONE prints and resets; cli
+   shows no prompt meanwhile. Busy: "Flash busy, not reset".
+6. loader_confirm() (orchestrator, from E0): its boot-count erase is one
+   FL_ERASE (FL_BOOTCNT); house asks again next second if the job is busy.
+   HOUSE_SEC 40 ms -> 0.1 ms.
+7. CRASH_UPDATE (orchestrator, from E0): dropped, 4 reserved; watchdog.md
+   says why (the record would be read by another image; the loader's lines
+   report an update).
+
+## O3: uip_stop() against Linux (QA e3-o3-window)
+
+tools/curl_upload.py (rtlswitch Lab: curl -F from a netns on front port 1,
+tcpdump, rtlsim paced to the wall clock). At 19fe58c (the book's design,
+uip_stop() after each segment): config save fine; firmware uploads stall.
+uIP advertises 1460 B; Linux sends 2 x 730 B per window (half the largest
+window seen); after the first we stop, the ACK says 0, the second, in
+flight, is dropped without an ACK and comes back only on RTO, with backoff
+(0.2 ... 26 s): 0.5 KiB/s, uIP resets the connection at 82 s after 9
+segments. Approved: the window stage (3846853).
+
+Then, under CPU load (two old-vs-new runs in parallel), 710523a stalled
+too: segments that came between the job's last FL_PROG (which emptied the
+stage) and its FL_DONE went into the emptied stage while the job still
+counted as running; it ended with them unwritten and the window at 0; the
+poll's update said 0 (the room hadn't changed), and uIP doesn't answer
+Linux's zero-window probes: 30 s silences, then a reset. f7100d1: the stage
+starts again only in FL_DONE, which goes back to FL_PROG if more came.
+Host test scenario_upload_window_race reproduces it (FAIL on 710523a's
+logic, PASS at f7100d1).
+
+curl, 237568 B (the image's application), wall-clock paced:
+| image | config | refused (CRC) | accepted | zero windows | probes / rexmit |
+|---|---|---|---|---|---|
+| fork main b635486 (8x) | 0.01 s | 3.14 s | 4.27 s | 0 | 0 / 2 (FIN after the reset) |
+| 19fe58c uip_stop (8x) | 0.02 s | stall, uIP RST at 82 s | same | 9 | 16 rexmit |
+| f7100d1 8x | 0.01 s | 3.90 s | 5.12 s | 0 | 0 / 2 (FIN after the reset) |
+| f7100d1 SWGT024 | 0.02 s | 3.91 s | 5.13 s | 0 | 0 / 2 |
+| f7100d1 8x under load (3 runs) | 0.05 s | 9.49 / 6.12 / 3.90 s | 13.17 / 6.52 / 5.12 s | 4+9 / 0 / 0, each updated | 0 probes |
+Firefox not tried (no GUI here); it uses the same Linux TCP.
+
+## Zero windows: the update comes (QA condition 2)
+
+Linux doesn't fill a short window (below 730 B it waits for the update), so
+a client that fills it exactly: the old-vs-new bench's Host with the window
+patch below, a refused upload, /tmp/e3/zw.py (counts zero-window ACKs and
+how long each lasts until the next window):
+| build | zero windows | longest closed | staged image |
+|---|---|---|---|
+| f7100d1 8x, stage 4480 B | 53 | 161.5 ms | = the payload |
+| f7100d1 8x, make UP_STAGE=2000 | 118 | 79.0 ms | = the payload (2 runs, same numbers) |
+The bench never probes and never retransmits: an upload that ends proves
+every zero window got its update.
+
+## Host tests (make -C test quick: QUICK TESTS PASSED, test_loader skipped)
+
+test_httpd_tx (both layouts) drives httpd.c and uip.c unmodified; its flash
+job stand-in calls the same upload_prog/upload_verify/upload_done, at once
+or a step at a time (job_defer). E3's scenarios:
+- upload window: segments as Linux sends them (half an MSS) with the job
+  held, then run a step at a time between arrivals: every segment inside
+  the window taken; the window closes as the stage fills and the poll after
+  the job reopens it; no ACK moves the right edge (ack + window) left,
+  checked on every ACK the switch sends; a 5000 B image staged whole across
+  two sectors, each erased once before its first page; the answer after;
+  a segment past the window is refused (400).
+  Mutation check: closing a short window to 0 (uip_stop's effect) fails
+  "no ACK moves the window's right edge left".
+- upload window race: segments between the job's last write and its
+  FL_DONE fill the window; they are written and the window reopens.
+- flash busy: an upload refused at once when the job is busy; a new
+  connection reset while it runs.
+- the existing upload/config scenarios, through the stand-in (the poll sends
+  the config's 200).
+
+## Resources (f7100d1)
+
+  make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact: PASS
+    internal RAM: data 98 B (baseline 105), overlay 8 (8), bits 3 (3)
+      -7 B: stream_upload's two 4-B spills are gone (-8); httpd_appcall's
+      spills 2+4 -> 1+2+4 (+1). New 32-bit adds in flash_job.c are by
+      16-bit halves (FL_ADVANCE); a first version's plain ones spilled
+      (+2 B, the gate failed it).
+    stack 138 B (131); common area ends 0x3d7d (0x3d5b: +34 B, 515 B left)
+    banks 48661 / 48285 / 48231 B (491 / 867 / 921 free; f621897 47900 /
+      47761 / 47800): +1716 B banked
+    xdata (.mem EXTERNAL RAM) 18030 B (17973): +57 B; the stage 0 B
+    code (.mem ROM) 160900 B (159168): +1732 B
+  SWGT024: PASS, same internal RAM, stack, common area; banks 472/861/905
+  free; xdata 18030 (17973); code 160941 (159209): +1732 B.
+  The baseline (gate-8x.json, data 105) is left as it is.
+
+## schedtest (8x compact, f7100d1 + the same sources)
+
+  tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact [ST_NEG=hang|overrun|bad_flash]
+  make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS=--twice OVS=~/src/ovs-rtlpg
+    sim_tests: 0 failures, deterministic (81.5 s wall)
+    sim_neg: 0 failures, deterministic (60.1 s wall)
+  schedtest links no firmware tasks: st_main.c's flash_job_start() is always
+  busy. Gate: data 98 B (baseline 105), stack 138 B.
+
+## Steps (tools/flash_job_steps.py, health tasks / the scheduler's xdata)
+
+  python3 tools/flash_job_steps.py <f7100d1 -boot> --ovs <harness> --board <board>
+| case | 8x | SWGT024 |
+|---|---|---|
+| S0 loader's confirm (41 s after power-on) | FL_ERASE 1x 40.0 ms, HOUSE_SEC 0.1 ms | same |
+| S1 upload refused by CRC | FL_PROG 550x 8.1 ms, FL_ERASE 58x 40 ms; 6.99 s fw time; staged = payload | same, 7.01 s |
+| S2 config save | FL_ERASE 1x 40 ms, FL_PROG 0.2 ms; 200; sector = the text | same |
+| S3 factory reset | FL_ERASE 40 ms, FL_PROG 8x 5.2 ms; sector = default sector | same |
+| S4 upload accepted (stopped at "Checksum OK") | FL_VERIFY 116x 14.2 ms, FL_PROG 8.1 ms; 8.68 s to the verdict | same, 8.69 s |
+  No step over 20 ms but FL_ERASE in any case; PASS on both boards.
+
+## Old vs new (OLD = fork main b635486, ~/src/rtlpg-ref)
+
+Harness: ovs-rtlpg d3d1843 (committed; git archive) + the window-keeping
+client sim2 has uncommitted (asked to land it): in tests/oldnew/bench.py
+Host.http, keep the window from every ACK (`st["wnd"]`, from s[14:16]),
+send `min(mss, wnd)`, and only when `una >= snd and wnd > 0`. Without it the
+bench (which ignores the window) overruns NEW's stage. OLD always says 1460.
+  python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <f7100d1 -boot> \
+    --new-payload <f7100d1 application> --board boards/<board>.json --checks \
+    --known doc/sched/evidence/e3-known --expect doc/sched/evidence/e3-oldnew.expect
+| board | result |
+|---|---|
+| 8x | 17 of 17 match |
+| SWGT024 | 17 of 17 match |
+The expect lines (e3-oldnew.expect): D1's three stp lines and D3's /cmd
+frame (vlan), carried over; config tcp/80 +1 more (the config's 200 on the
+poll after the job); upload and stp_upload tcp/80 168 -> 272 (window
+updates); upload 003 console/boot and stp_upload 004 boot (the boot after a
+~1 s longer upload split at another point); stp_upload 004 console (one '.'
+per segment after the first, as before; a window-keeping client sends more,
+smaller ones); stp_upload frames * stp (+1 hello in the longer upload).
+`upload/stp_upload reg 06f4` (SEC_COUNTER, per build) matched nothing at
+f7100d1: flagged, kept.
+Flash: upload and stp_upload's `flash app|slot|staged|config` results equal
+(each said against its own uploaded image); with OLD's payload uploaded to
+both (no --new-payload; --only upload stp_upload config) all three match
+too on both boards: the flash regions byte for byte.
+New-only checks (--checks, e3-known = sim2's known-failures less
+stp_upload's hello and HOUSE_SEC, both fixed here):
+- stp_upload stp hello: PASS, 1.970..2.034 s (8x), 1.976..2.032 s (SWGT024);
+  OLD fails it (2.84 s silent during the upload).
+- long steps: PASS after upload, stp_upload, boot, igmp (none over 20 ms
+  but FL_ERASE); elsewhere only CLI_RUN and RX_STEP (E1, E4: known).
+- lacp_l2 lacp gap: KNOWN (E1).
+
+## Open items
+
+- /loader and install-image uploads: their end (loader_stage_fits()'s
+  bitwise CRC over 16 KiB, loader_stage_drop()'s four erases) and
+  loader_update() before the reset are still one step each (rare paths, not
+  measured; the plain firmware upload is all in steps).
+- The button's factory reset (FL_FACTORY_BTN) isn't driven in the sim (the
+  console's is, S3); same job.
+- EV_UPLOAD is unused (events.md); sched.h's comment left, to keep the
+  merge with E0/E1 small.
+- The window-keeping bench client waits on sim2 committing it (d3d1843's
+  bench stalls NEW's upload).
+- gate-8x.json could be lowered to data 98 B (--update); left to the
+  orchestrator.

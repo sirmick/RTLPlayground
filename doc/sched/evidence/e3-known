@@ -1,0 +1,7 @@
+# The new-only checks' failures left at E3 (oldnew.py --known, checks.py
+# --known), from ovs-rtlpg tests/oldnew/known-failures (d3d1843) less the two
+# E3 fixes: stp_upload stp hello (the upload's flash writes no longer hold the
+# loop) and HOUSE_SEC (the loader's confirm erase is an FL_ERASE step).
+lacp_l2 lacp gap		# `l2` prints 1000 entries in one go (3.86 s): E1
+* long step CLI_RUN		# a command's reply printed in one step: E1
+* long step RX_STEP		# ~34.7 ms in the sim (web, vlan, lldp: /vlanlist.json): E4

@@ -41,6 +41,38 @@ FL_DONE    post the requester's event, free the slot
   sector and programs ≤ 16 pages over a few steps.
 - **Factory reset:** the same, then a reset.
 
+### As built (E3)
+
+`flash_job.c` (banked), the job `flash` in `tasks.def`; `flash_job.h`
+carries the request so httpd can make one without `sched.h`. A requester
+sets `fl_req` (a config save also `fl_src`, `fl_len`) and calls
+`flash_job_start()`: 0 if the job is busy or no slot is free (the request
+is then refused: 400 for the web, "Flash busy, not reset" on the console).
+At its end the job sets `fl_finished` and posts `EV_UPLOAD_DONE`.
+
+| Kind | Steps |
+|---|---|
+| `FL_UPLOAD` | `FL_PROG`: httpd.c `upload_prog()`, today's `stream_upload()` split at its flash writes: it parses the stage into `flash_buf` and programs up to `UP_PAGES` (2) pages a step, ~8 ms, asking for `FL_ERASE` before the first page of each sector. When the part has ended: `FL_VERIFY`, the read-back CRC 2 KiB a step (`upload_verify()`, ~14 ms), then the answer is built. `FL_DONE`: `upload_done()` sends it back to `FL_PROG` if more of the body came meanwhile (the stage starts again only as the job ends) |
+| `FL_CONFIG` | `FL_ERASE` of the config sector, then `FL_PROG` copies 512 B a step from `config_buf` (`FL_CHUNK`; 0.2 ms for a short config) |
+| `FL_FACTORY`, `FL_FACTORY_BTN` | the same from `DEFAULT_CONFIG_START` (read into `flash_buf`, 5 ms a step), then `FL_DONE` prints and resets; the console's `factory-reset` shows no prompt meanwhile |
+| `FL_BOOTCNT` | `loader_confirm()`, 15 s after a boot through the loader: one `FL_ERASE` of the boot count sector (it was a 40 ms erase in the house task's step); house asks again next second if the job is busy |
+
+No new common-area helpers: `flash_sector_erase()` and
+`flash_write_bytes()` already return only when the flash is idle, so the
+steps call them as they are. `flash_write_bytes()` programs 4 bytes per
+command (~70 µs each in the sim), which is what sets `UP_PAGES` at 2 and
+`FL_CHUNK` at 512.
+
+The flow control of an upload is the receive window, not `uip_stop()`
+(chapter 8 item 1, decision 20). Upload time: see chapter 8. The longest
+steps, measured in the sim (`evidence/e3-flash-job.txt`): `FL_ERASE` 40 ms
+(the exception), `FL_VERIFY` 14.2 ms, `FL_PROG` 8.1 ms.
+
+Not through the job yet: the end of a `/loader` or install-image upload
+(`loader_stage_fits()`'s bitwise CRC over 16 KiB, `loader_stage_drop()`'s
+four erases) and `loader_update()` before the reset; all one step each,
+on the rare paths (open items in the E3 evidence).
+
 ## Unchanged
 
 - `rtl837x_flash.c` stays resident (common area). The new job states call

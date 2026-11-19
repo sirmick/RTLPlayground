@@ -13,12 +13,45 @@ httpd runs inside `uip_input()` (from `rx`) and `uip_periodic()` (from
 `net`). Generating one JSON page into `outbuf` takes ≤ 2 ms. That is fine in
 a step, with three exceptions that change:
 
-1. **Uploads (firmware and config).** The callback copies the segment into
-   a staging buffer (xdata, ~1.5 KiB), posts `EV_UPLOAD`, and calls
-   `uip_stop()`: the window closes, so the client stops sending. The flash
-   job (chapter 10) writes the staged data, then posts `EV_UPLOAD_DONE`. The
-   next `net` poll sees it and calls `uip_restart()`. One segment in flight;
-   the client's TCP waits.
+1. **Uploads (firmware and config).** The callback copies each segment of
+   the body into the stage, behind what the flash job (chapter 10) still
+   has to write, and claims the job if it isn't running. uIP's receive
+   window is the room left in the stage, at most an MSS
+   (`UIP_CONF_RECEIVE_WINDOW` is `uip_rcv_wnd`, set by httpd): the client
+   sends only what fits, and the window's right edge (ACK + window) never
+   moves left, so nothing it has sent inside the window is lost. The job
+   takes what has come; at its `FL_DONE` it goes back to `FL_PROG` if more
+   came meanwhile, else the stage starts again (in the same step) and it
+   posts `EV_UPLOAD_DONE`: `net` polls the connection at once, which sends
+   a window update if the window was short of an MSS, or the answer when
+   the part has ended. Decision 20.
+   - **Why not `uip_stop()`** (the first plan, O3): Linux bounds its
+     segments to half the largest window it has seen, so against uIP's
+     one-MSS window it sends two of 730 B. Stopping after the first shrank
+     the window under the second, already in flight; uIP drops it without
+     an ACK, and it came back only after a retransmission timeout, with
+     backoff (curl: 0.5 KiB/s, then uIP's reset at 82 s; 2026-11-19,
+     `tools/curl_upload.py`).
+   - **The stage is `config_buf`** (0 B of xdata), as the web command
+     buffer is, because uIP has one connection (`UIP_CONNS 1`; the `#error`
+     at `webcmd_queue()` in httpd.c): nothing else reaches it while the
+     upload's connection lives. While the job writes for a connection that
+     has ended, a new connection is reset, so no request lands in the stage
+     under it. 4480 B (`CONFIG_UPLOAD_BUF`); `make UP_STAGE=n` builds a
+     smaller one, to test a window that closes.
+   - **A config save** takes the same job: its body is buffered whole in
+     `config_buf` (as before), then the job erases the sector and copies it;
+     data that comes meanwhile is dropped, as behind a queued `/cmd`, and the
+     answer goes out on the poll after the job.
+   - Linux doesn't fill a short window (below half its segment size it
+     waits for the update), so its uploads in the sim never saw a zero
+     window unloaded; a client that fills it exactly (the old-vs-new bench)
+     sees many, each reopened by the update. uIP doesn't answer zero-window
+     probes, so that update must come: it does, from the poll after the job
+     (`tools/flash_job_steps.py`, the `UP_STAGE=2000` runs in
+     `evidence/e3-flash-job.txt`).
+   - Upload time in the sim (curl, 237568 B, wall-clock paced): 3.9 s
+     refused / 5.1 s accepted, against fork main's 3.1 s / 4.3 s.
 2. **`/cmd` (web commands).** The callback queues the command (copies it to
    the web command buffer) and posts `EV_WEBCMD`. On `uip_poll()` it checks
    for `EV_CMD_DONE`, then sends the captured output. The connection stays
