@@ -186,6 +186,44 @@ stp_upload's hello and HOUSE_SEC, both fixed here):
   but FL_ERASE); elsewhere only CLI_RUN and RX_STEP (E1, E4: known).
 - lacp_l2 lacp gap: KNOWN (E1).
 
+## Review fix: no other flash job between an upload's segments (7e30e5e)
+
+Reviewer: between two segments the upload's job has ended, so another kind
+(FL_BOOTCNT from loader_confirm() ~15 s after a boot, a console
+factory-reset) could start; a segment staged meanwhile was left to that
+job (upload_go()), whose FL_DONE ended without it: unwritten, and if last,
+no answer and no timeout (a factory reset would also overwrite flash_buf).
+Fix: (a) up_active, set from the first staged segment to the end of the
+part or of the connection; flash_job_start() refuses every other kind
+meanwhile (loader_confirm() asks again next second; factory-reset and the
+button: "Flash busy, not reset"); an upload whose body stops coming is
+aborted after 30 s (UPLOAD_TIMEOUT, the postbody timer) so it can't hold
+them off for ever. (b) FL_DONE of any kind but a factory reset goes on with
+the upload (FL_PROG) if the stage holds unwritten bytes.
+Code: xdata +1 B (18031), code +87 B (8x 160987); gate PASS as below
+(data 98, stack 138, common 0x3d7d; banks 902/462/846 free, SWGT024
+883/833/453).
+- Host: scenario_upload_during_other_job: with an upload between segments,
+  FL_BOOTCNT doesn't start; the last segment staged while an FL_BOOTCNT job
+  runs is written and answered. It FAILs with the old FL_DONE rule (the
+  stand-in's fl_end() going on only for FL_UPLOAD), PASSes with the fix.
+- Sim: tools/flash_job_steps.py S5: a refused upload started at 13.0 s
+  after power-on, over the loader's confirm (~17.6 s in the sim): answer
+  400, the staged image = the payload, the boot count erased after it
+  (FL_ERASE 58 at the answer, 59 three seconds later). PASS on both boards.
+  It passes on f7100d1 too: house found the upload's job running each
+  second, and the gaps between segments are too narrow to hit; the host
+  test is the one that shows the race.
+
+Rerun at 329c98a (clean images, both boards):
+  gate PASS; make -C test quick PASSED; schedtest x4 built, schedtest-sim
+  --twice 0 failures, deterministic; flash_job_steps S0-S5 PASS; curl_upload
+  PASS (8x: 3.9-12.7 s refused, 5.1-11.7 s accepted, the long ones with a
+  parallel old-vs-new load, every zero window updated, no probes; SWGT024
+  3.91 / 5.13 s); old-vs-new on ovs-rtlpg e2b1bd2 --checks: 17 of 17 on both
+  boards, stp_upload hello 1.970..2.035 s (8x), 1.967..2.033 s (SWGT024),
+  long steps PASS after uploads, the two reg 06f4 lines flagged as before.
+
 ## Open items
 
 - /loader and install-image uploads: their end (loader_stage_fits()'s
@@ -194,6 +232,8 @@ stp_upload's hello and HOUSE_SEC, both fixed here):
   measured; the plain firmware upload is all in steps).
 - The button's factory reset (FL_FACTORY_BTN) isn't driven in the sim (the
   console's is, S3); same job.
+- Behaviour change: an upload whose body pauses 30 s is aborted (today's
+  code waits for ever).
 - EV_UPLOAD is unused (events.md); sched.h's comment left, to keep the
   merge with E0/E1 small.
 - gate-8x.json could be lowered to data 98 B (--update); left to the

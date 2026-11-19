@@ -63,6 +63,16 @@ steps call them as they are. `flash_write_bytes()` programs 4 bytes per
 command (~70 µs each in the sim), which is what sets `UP_PAGES` at 2 and
 `FL_CHUNK` at 512.
 
+While an upload's body is coming (`up_active`, from its first staged
+segment to the end of the part or of its connection), no other kind of job
+starts between its segments: `loader_confirm()` asks again next second,
+`factory-reset` and the button answer busy. Otherwise a segment staged while
+that job ran would wait for a job that doesn't take it, and the other job
+would overwrite `flash_buf`, the upload's partial page. As a second line,
+`FL_DONE` of any kind but a factory reset goes on with the upload if the
+stage holds unwritten bytes. An upload whose body stops coming is aborted
+after 30 s (`UPLOAD_TIMEOUT`), so it can't hold the other jobs off for ever.
+
 The flow control of an upload is the receive window, not `uip_stop()`
 (chapter 8 item 1, decision 20). Upload time: see chapter 8. The longest
 steps, measured in the sim (`evidence/e3-flash-job.txt`): `FL_ERASE` 40 ms
