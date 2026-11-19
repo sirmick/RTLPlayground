@@ -108,14 +108,16 @@ void sfp_print(uint8_t sfp) __banked
 		print_string("I2C read failed on this slot\n");
 		return;
 	}
-	sp = sfp_diag[sfp] + 224 - SFP_DDM_FIRST;
-	print_string("Temp: "); print_byte(sp[0]); print_byte(sp[1]); write_char('\n');
-	print_string("Vcc: "); print_byte(sp[2]); print_byte(sp[3]); write_char('\n');
-	print_string("TX Bias: "); print_byte(sp[4]); print_byte(sp[5]); write_char('\n');
-	print_string("TX Power: "); print_byte(sp[6]); print_byte(sp[7]); write_char('\n');
-	print_string("RX Power: "); print_byte(sp[8]); print_byte(sp[9]); write_char('\n');
-	print_string("Laser: "); print_byte(sp[10]); print_byte(sp[11]); write_char('\n');
-	print_string("State: "); print_byte(sp[14]); write_char('\n');
+	sp = sfp_diag[sfp] + 224 - SFP_DDM_FIRST;	/* into sfp_buf: fixed addresses print shorter */
+	for (si = 0; si < 16; si++)
+		sfp_buf[si] = sp[si];
+	print_string("Temp: "); print_byte(sfp_buf[0]); print_byte(sfp_buf[1]); write_char('\n');
+	print_string("Vcc: "); print_byte(sfp_buf[2]); print_byte(sfp_buf[3]); write_char('\n');
+	print_string("TX Bias: "); print_byte(sfp_buf[4]); print_byte(sfp_buf[5]); write_char('\n');
+	print_string("TX Power: "); print_byte(sfp_buf[6]); print_byte(sfp_buf[7]); write_char('\n');
+	print_string("RX Power: "); print_byte(sfp_buf[8]); print_byte(sfp_buf[9]); write_char('\n');
+	print_string("Laser: "); print_byte(sfp_buf[10]); print_byte(sfp_buf[11]); write_char('\n');
+	print_string("State: "); print_byte(sfp_buf[14]); write_char('\n');
 }
 
 
