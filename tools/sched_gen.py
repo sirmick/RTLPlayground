@@ -4,7 +4,8 @@ sched_gen.py - generate the scheduler's tables from the modules' .def files.
 
   sched_gen.py [--slots N] [--fill K] [--sequence FILE] -o OUTDIR X.def...
 
-Each module has a .def next to its source (doc/sched/generator.md):
+Each module has a .def, written by tools/sched_sweep.py from the module's
+TASK/STEP lines (doc/sched/generator.md), or by hand:
 
   # task <name> fixed|job [freq=high|medium|once] [count=N] [first=<STATE>]
   # state <STATE> <step_function> [entry]
@@ -76,8 +77,11 @@ def parse_def(path):
     with open(path) as f:
         lines = f.read().splitlines()
     for no, raw in enumerate(lines, 1):
-        where = f"{path}:{no}"
-        line = raw.split("#", 1)[0].split()
+        line, _, note = raw.partition("#")
+        line = line.split()
+        # a line that says where it came from (tools/sched_sweep.py's
+        # "# tasks.c:48") is named by that in the errors
+        where = note.strip() if re.match(r"^\s*\S+:\d+\s*$", note) else f"{path}:{no}"
         if not line:
             continue
         kw, args = line[0], line[1:]
@@ -203,7 +207,7 @@ def load(defs, slots):
                                         f"{seen[name].module.path}; cross-module jumps go through events")
     for s in states:
         if s.name not in reached and not s.entry:
-            raise SpecError(f"{s.where}: state {s.name} is reached by no task_next/STEP_*/task_claim and is no task's first state (mark it 'entry' if task_claim reaches it some other way)")
+            raise SpecError(f"{s.where}: state {s.name} is reached by no task_next/STEP_*/task_claim and is no task's first state (mark it 'entry', in a TASK line entry=<step>, if task_claim reaches it some other way)")
 
     fixed = []
     for t in tasks:

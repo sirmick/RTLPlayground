@@ -20,21 +20,23 @@ void deep_1(void) __banked
 		st_deep_bottom();
 }
 
-void sleep_a(void) __banked
+TASK(sleep_a, fixed, once)
+STEP(sleep_a, step)
 {
 	st_lp = &st_log_sleep_a;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_SLEEP_A, 5);
+	STEP_SLEEP(S_SLEEP_A_STEP, 5);
 }
 
 /* Woken by the poster's EV_ST_POKE, or after 100 ms */
-void waiter(void) __banked
+TASK(waiter, fixed, once)
+STEP(waiter, step)
 {
 	st_lp = &st_log_waiter;
 	st_aux = sched_ev & EV_ST_POKE ? 1 : 2;
 	st_log();
-	STEP_WAIT(S_WAITER, EV_ST_POKE, 100);
+	STEP_WAIT(S_WAITER_STEP, EV_ST_POKE, 100);
 }
 
 /* freq=high, ~1 us of work while `hot on`: when it runs, and the stack at
@@ -42,10 +44,11 @@ void waiter(void) __banked
  * scheduler (and the simulator) never idles. */
 __xdata uint8_t st_hot_on;
 
-void hot(void) __banked
+TASK(hot, fixed, high)
+STEP(hot, step)
 {
 	if (!st_hot_on)
-		STEP_WAIT(S_HOT, EV_ST_GO, SCHED_FOREVER);
+		STEP_WAIT(S_HOT_STEP, EV_ST_GO, SCHED_FOREVER);
 	if (SP > st_sp_step_max)
 		st_sp_step_max = SP;
 	st_lp = &st_log_hot;
@@ -55,14 +58,15 @@ void hot(void) __banked
 
 /* One line per step, only when the TX ring has room for it; the slot's arg
  * is the line number */
-void pr_idle(void) __banked
+TASK(pr, fixed, once, first=idle)
+STEP(pr, idle)
 {
 	if (!st_print_req)
 		STEP_WAIT(S_PR_IDLE, EV_ST_GO, SCHED_FOREVER);
 	STEP_ARG(S_PR_LINE, 0);
 }
 
-void pr_line(void) __banked
+STEP(pr, line)
 {
 	if (con_tx_room() < 40)
 		STEP_WAIT(S_PR_LINE, EV_CON_TX, SCHED_FOREVER);

@@ -1,5 +1,5 @@
 /*
- * flash_job.c - the flash job (doc/sched/flash.md, tasks.def): an upload
+ * flash_job.c - the flash job (doc/sched/flash.md): an upload
  * segment, the config save, the factory reset. Each step's flash operation
  * waits for the flash in the common area (rtl837x_flash.c) before the step
  * returns, so no banked code runs while the flash is busy. FL_ERASE is the
@@ -59,7 +59,8 @@ uint8_t flash_job_start(void) __banked
 }
 
 /* the sector at fl_addr */
-void fl_erase(void) __banked
+TASK(fl, job, once, first=prog)
+STEP(fl, erase)
 {
 	flash_region.addr = fl_addr;
 	flash_sector_erase();
@@ -68,7 +69,7 @@ void fl_erase(void) __banked
 	STEP_NEXT(S_FL_PROG);
 }
 
-void fl_prog(void) __banked
+STEP(fl, prog)
 {
 	if (fl_kind == FL_UPLOAD) {
 		fl_n = upload_prog();
@@ -98,13 +99,13 @@ void fl_prog(void) __banked
 		STEP_NEXT(S_FL_DONE);
 }
 
-void fl_verify(void) __banked
+STEP(fl, verify)
 {
 	if (upload_verify() == UP_DONE)
 		STEP_NEXT(S_FL_DONE);
 }
 
-void fl_end(void) __banked
+STEP(fl, done)
 {
 	/* more of an upload came meanwhile, while this or another kind of job
 	 * ran (upload_go() leaves a running job to take it): FL_PROG */

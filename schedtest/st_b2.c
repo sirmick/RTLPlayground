@@ -25,19 +25,21 @@ void deep_2(void) __banked
 		st_deep_bottom();
 }
 
-void sleep_b(void) __banked
+TASK(sleep_b, fixed, once)
+STEP(sleep_b, step)
 {
 	st_lp = &st_log_sleep_b;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_SLEEP_B, 37);
+	STEP_SLEEP(S_SLEEP_B_STEP, 37);
 }
 
 /* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out. A beat
  * that doesn't drift: the low-level task_until, from the last due tick. */
 static __xdata uint16_t po_due;
 static __xdata uint8_t po_n;
-void poster(void) __banked
+TASK(poster, fixed, once)
+STEP(poster, step)
 {
 	event_post(EV_ST_POKE);
 	st_lp = &st_log_poster;
@@ -55,17 +57,19 @@ void poster(void) __banked
 
 #define JB_STEPS 5
 
-void jobber(void) __banked
+TASK(jobber, fixed, once)
+STEP(jobber, step)
 {
 	if (!st_jobs_req)
-		STEP_WAIT(S_JOBBER, EV_ST_GO, SCHED_FOREVER);
+		STEP_WAIT(S_JOBBER_STEP, EV_ST_GO, SCHED_FOREVER);
 	st_jobs_req = 0;
 	while (task_claim_arg(S_JB_RUN, JB_STEPS) != SCHED_NONE)	/* arg: its steps */
 		st_jobs_claimed++;
 	st_jobs_full++;
 }
 
-void jb_run(void) __banked
+TASK(jb, job, once)
+STEP(jb, run)
 {
 	if (--task_arg())
 		return;			/* yields: runs again at its next position */
@@ -101,7 +105,8 @@ void st_flash_start(void) __banked
 	st_fl_bad = 0;
 }
 
-void fl_erase(void) __banked
+TASK(fl, job, once, first=erase)
+STEP(fl, erase)
 {
 	fl_page = 0;
 	fl_off = 0;
@@ -114,7 +119,7 @@ void fl_erase(void) __banked
 	STEP_NEXT(S_FL_PROG);
 }
 
-void fl_prog(void) __banked
+STEP(fl, prog)
 {
 	for (fi = 0; fi < FL_CHUNK; fi++)
 		fl_buf[fi] = fl_page ^ (fl_off + fi);
@@ -130,7 +135,7 @@ void fl_prog(void) __banked
 	}
 }
 
-void fl_verify(void) __banked
+STEP(fl, verify)
 {
 	FL_SET_ADDR();
 	flash_region.len = 256;
@@ -145,7 +150,7 @@ void fl_verify(void) __banked
 		STEP_NEXT(S_FL_DONE);
 }
 
-void fl_done(void) __banked
+STEP(fl, done)
 {
 	st_fl_state = st_fl_bad ? 3 : 2;
 	print_string(st_fl_bad ? "flash: verify FAILED\n" : "flash: ok\n");

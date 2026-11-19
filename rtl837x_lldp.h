@@ -80,7 +80,7 @@
 #define LLDP_MAX_PAYLOAD (LLDP_MAX_FRAME - 6 - 6 - 8 - LLDP_ETHERTYPE_LENGTH)
 
 void lldp_init(void) __banked;
-void lldp_tick(void) __banked;
+void lldp_service(void) __banked;
 void lldp_send(void) __banked;
 void lldp_shutdown(uint16_t ports) __banked;
 void lldp_set_addresses(void) __banked;

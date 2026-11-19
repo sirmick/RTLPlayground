@@ -25,6 +25,7 @@
 | 19 | Console RX ring 256 B, 8-bit index; covers 20 ms steps; erase + paste may lose. Michael, 2026-11-18 |
 | 20 | (was O3, settled in E3) Uploads are flow-controlled by the advertised receive window (the stage's free space), not `uip_stop()`: Linux splits a 1-MSS window into two half segments and drops/RTOs the second (measured 2026-11-19: curl 0.5 KiB/s, then a reset). Chapter 8 item 1; `evidence/e3-flash-job.txt` |
 | 21 | Console **TX ring 2 KiB, 16-bit index**: most commands' cost was the UART wait, not their work (measured 2026-11-19, `tools/cli_steps.py`: with the 128 B ring `version` 5.1 ms ... `history` 186 ms; without the wait all but `history`, `health tasks` and a large `l2` under 5 ms). Only dumps that grow with a table, or whose work passes 5 ms, are chunked (cli jobs: `l2`, `stat`, `lacp show`, `history`, `health tasks`). Supersedes decision 9's "TX ring big enough for one line". Orchestrator, E1, QA e1-tx-ring |
+| 24 | Tasks and steps are **declared inline**: `TASK(name, fixed\|job, high\|medium\|once [, count=N] [, first=step])` and `STEP(task, step)` (the function `task_step`, state `S_TASK_STEP`). A sweep preprocesses each step source with the build's flags (`#ifdef`'d steps are right) and writes the `.def` files into the build directory; the generator runs on them with all its checks. The hand-written `.def` files are gone; `sequence.def` stays. Michael, 2026-11-19; E5, generator.md |
 
 ## Open
 

@@ -4,8 +4,9 @@
  * output (sched_health.c), compiled unmodified against a fake tick, fake
  * Timer 2 and fake ISR bits (doc/sched/testing.md, layer 1).
  *
- * The tasks come from sched_core/tasks.def through tools/sched_gen.py, with
- * the run sequence "a b a w job job job job job" (--slots 8). Every step
+ * The tasks are the TASK/STEP lines below, swept (tools/sched_sweep.py) and
+ * generated (tools/sched_gen.py) with the run sequence in
+ * sched_core/sequence.def, "a b a w job job job job job" (--slots 8). Every step
  * logs itself and then does what act[] says for its state.
  */
 #include <setjmp.h>
@@ -15,7 +16,6 @@
 #include "con_ring.h"
 #include "crash.h"
 #include "build_id.h"
-#include "sched_core/tasks.h"
 
 static int tests_run, tests_failed;
 #define CHECK(cond, msg) do { \
@@ -78,12 +78,16 @@ static void step(uint8_t s, char tag)
 	case A_CLAIMARG: claimed = task_claim_arg(act[s].a, act[s].b); break;
 	}
 }
-void a_step(void) { step(S_A_STEP, 'a'); }
-void b_step(void) { step(S_B_STEP, 'b'); }
-void b_alt(void)  { step(S_B_ALT, 'B'); }
-void w_step(void) { step(S_W_STEP, 'w'); }
-void j_step(void) { step(S_J_STEP, 'j'); }
-void j_two(void)  { step(S_J_TWO, 'J'); }
+TASK(a, fixed, once)
+STEP(a, step) { step(S_A_STEP, 'a'); }
+TASK(b, fixed, once, entry=alt)
+STEP(b, step) { step(S_B_STEP, 'b'); }
+STEP(b, alt)  { step(S_B_ALT, 'B'); }
+TASK(w, fixed, once)
+STEP(w, step) { step(S_W_STEP, 'w'); }
+TASK(j, job, once, entry=two)
+STEP(j, step) { step(S_J_STEP, 'j'); }
+STEP(j, two)  { step(S_J_TWO, 'J'); }
 
 static void reset_all(uint32_t t)
 {

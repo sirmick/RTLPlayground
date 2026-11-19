@@ -161,7 +161,7 @@ the STEP_ macros and `task_claim_arg` are built the same way.
 
 ## Claiming slots
 
-- Fixed tasks: `sched_init()` claims a slot for each, in `tasks.def` order,
+- Fixed tasks: `sched_init()` claims a slot for each, in the order of their `TASK` lines (generator.md),
   at the slot index the generator assigned, so `run_seq` can name it.
 - Jobs: `task_claim()` takes the first free slot among those marked
   dynamic. A full table returns `SCHED_NONE`; the caller reports busy and

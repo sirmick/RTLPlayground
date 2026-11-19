@@ -1,10 +1,12 @@
 # sched.mk - the cooperative scheduler (doc/sched/) in every build: its
-# sources, the tables generated from the tasks' .def files, the ISR frame
-# check. Included by the Makefile after schedtest.mk. The firmware's tasks
-# are tasks.def (tasks.c); schedtest.mk names its own dummies instead.
+# sources, the tables generated from the tasks' TASK/STEP markers, the ISR
+# frame check. Included by the Makefile after schedtest.mk. The firmware's
+# tasks are in tasks.c and flash_job.c; schedtest.mk names its own dummies
+# instead.
 
 SCHED_GEN = $(BUILDDIR)/sched
-SCHED_DEFS ?= tasks.def
+SCHED_STEP_SRCS ?= tasks.c flash_job.c
+SCHED_DEFS = $(patsubst %.c,$(SCHED_GEN)/%.def,$(notdir $(SCHED_STEP_SRCS)))
 
 # What the ISR prologues push before SWDT_ISR / CRASH_FROM_ISR read SP
 # (crash.h); checked against the compiled rtlplayground.asm below.
@@ -21,11 +23,18 @@ SRCS += $(SCHED_SRCS)
 RESIDENT_SRCS += sched.c crash.c sched_gen.c
 $(shell mkdir -p $(SCHED_GEN))
 
-# The generated tables, from the .def files
-$(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c &: $(SCHED_DEFS) $(SCHED_DEFS:.def=.c) tools/sched_gen.py
+# The generated tables (generator.md): the sweep preprocesses the step
+# sources with this build's flags into .def files (and the .i text the
+# generator checks), every make, rewriting only what changed; the generator
+# runs when those change, and rewrites only the tables that change, so an
+# edit that moves no task or state recompiles nothing else.
+$(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py FORCE
+	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' $(SCHED_STEP_SRCS) > /dev/null
+$(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
 	python3 tools/sched_gen.py -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
 	cat $(SCHED_GEN)/sequence.txt
-	touch $(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c
+	touch $@
+$(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c: $(SCHED_GEN)/gen.stamp ;
 $(BUILDDIR)/sched_gen.rel: $(SCHED_GEN)/sched_gen.c $(BUILDDIR)/.ccflags | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 $(BUILDDIR)/sched_gen_names.rel: $(SCHED_GEN)/sched_gen_names.c $(BUILDDIR)/.ccflags | create_build_dir

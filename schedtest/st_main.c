@@ -77,7 +77,8 @@ static __xdata uint8_t ed_len, ed_last, c;
 static __xdata char st_line[ST_LINE];
 static __xdata uint8_t st_line_ready;
 
-void con_edit(void) __banked
+TASK(con, fixed, high)
+STEP(con, edit)
 {
 	while (con_rx_ready()) {
 		if (con_tx_room() < 4)		/* the echo must not wait */
@@ -148,14 +149,15 @@ static uint8_t number(void)	/* a decimal at ap into num */
 	return 1;
 }
 
-void cli_idle(void) __banked
+TASK(cli, fixed, once, first=idle)
+STEP(cli, idle)
 {
 	if (st_line_ready)
 		STEP_NEXT(S_CLI_RUN);
 	STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
 }
 
-void cli_run(void) __banked
+STEP(cli, run)
 {
 	task_next(S_CLI_PROMPT);
 	if (!st_line[0])
@@ -228,7 +230,7 @@ void cli_run(void) __banked
 	}
 }
 
-void cli_prompt(void) __banked
+STEP(cli, prompt)
 {
 	print_string("> ");
 	st_line_ready = 0;

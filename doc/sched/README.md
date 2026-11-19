@@ -25,7 +25,7 @@ stack, no reentrancy, and nothing that needs internal RAM.
 | 2 | [hardware.md](hardware.md) | the measured facts the design rests on |
 | 3 | [architecture.md](architecture.md) | tasks, steps, slots, events, the run sequence |
 | 4 | [core.md](core.md) | the scheduler core: data, loop, API |
-| 5 | [generator.md](generator.md) | `tasks.def`, the generated tables, the checks |
+| 5 | [generator.md](generator.md) | `TASK`/`STEP`, the sweep, the generated tables, the checks |
 | 6 | [events.md](events.md) | the 16 event bits and where they come from |
 | 7 | [console.md](console.md) | UART rings, the `con` and `cli` tasks, chunked output, web commands |
 | 8 | [net.md](net.md) | rx, uIP, httpd, the control-frame TX buffer |

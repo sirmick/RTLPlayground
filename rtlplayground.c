@@ -1077,7 +1077,7 @@ void check_links(void)
 
 
 #ifndef SCHEDTEST
-/* The main loop's phases, run by the firmware's tasks (tasks.c, tasks.def)
+/* The main loop's phases, run by the firmware's tasks (tasks.c)
  * at the old loop's cadence. Resident, as the loop was. */
 
 /* Once a second: the uptime register, the loader confirm, the button, a
@@ -1583,7 +1583,7 @@ void main(void)
 	serial_reset_ok = 1;
 	if (serial_reset_pending)
 		CHIP_RESET_NOW();
-	/* The tasks (tasks.def) replace the old main loop; the watchdog runs
+	/* The tasks (tasks.c) replace the old main loop; the watchdog runs
 	 * from here on */
 	sched_init();
 	sched_run();

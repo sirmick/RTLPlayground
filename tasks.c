@@ -1,6 +1,7 @@
 /*
- * tasks.c - the firmware's fixed tasks (doc/sched/modules.md, tasks.def):
- * the old main loop's phases, at its cadence. The phases' bodies are
+ * tasks.c - the firmware's fixed tasks (doc/sched/modules.md), declared
+ * by their TASK/STEP lines (sched.h): the old main loop's phases, at its
+ * cadence. The phases' bodies are
  * rtlplayground.c's (resident, as the loop was); each step calls one and
  * says when it is due again. Periodic work runs at task_until(last +
  * period), which catches up after a long step as the old timer_reset() did
@@ -45,12 +46,13 @@ static __xdata uint16_t sfp_due[2];
 static __xdata uint8_t ti, tn;
 
 /* rx: woken by INT1 (EV_RX); up to RX_BUDGET frames a step */
-void rx_wait(void) __banked
+TASK(rx, fixed, high, first=idle)
+STEP(rx, idle)
 {
 	STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
 }
 
-void rx_task(void) __banked
+STEP(rx, step)
 {
 	tn = rx_service();
 	if (webcmd_pending)
@@ -61,21 +63,23 @@ void rx_task(void) __banked
 }
 
 /* link: woken by INT0, and by house once a second (link_irq) */
-void link_task(void) __banked
+TASK(link, fixed, high)
+STEP(link, read)
 {
 	link_service();
 	STEP_WAIT(S_LINK_READ, EV_LINK, SCHED_FOREVER);
 }
 
 /* loop: rldp_tick() once a second */
-void loop_start(void) __banked
+TASK(loop, fixed, high, first=start)
+STEP(loop, start)
 {
 	loop_due = sched_now + SEC_TICKS;
 	task_until(loop_due);
 	STEP_NEXT(S_LOOP_POLL);
 }
 
-void loop_task(void) __banked
+STEP(loop, poll)
 {
 	if (rldp_enabled)
 		rldp_tick();
@@ -84,7 +88,8 @@ void loop_task(void) __banked
 }
 
 /* con: today's line editor, on its own line; a complete line goes to cli */
-void con_task(void) __banked
+TASK(con, fixed, high)
+STEP(con, edit)
 {
 	cmd_edit();
 	if (con_line_ready)
@@ -106,7 +111,8 @@ static __xdata uint8_t cli_src, cli_web_more;
 static __xdata uint8_t cli_gen;		/* the web command this run serves (webcmd_gen) */
 static __xdata uint8_t cli_dropped;	/* its connection ended: no reply, no more lines */
 
-void cli_idle(void) __banked
+TASK(cli, fixed, once, first=idle)
+STEP(cli, idle)
 {
 	if (con_line_ready) {
 		cli_src = CLI_CON;
@@ -119,7 +125,7 @@ void cli_idle(void) __banked
 	STEP_WAIT(S_CLI_IDLE, EV_LINE | EV_WEBCMD, SCHED_FOREVER);
 }
 
-void cli_run(void) __banked
+STEP(cli, run)
 {
 	if (cli_src == CLI_WEB) {
 		/* still queued: its connection may have ended since CLI_IDLE,
@@ -164,7 +170,7 @@ static void cli_web_drop(void)
 		cli_job = 0;
 }
 
-void cli_next(void) __banked
+STEP(cli, next)
 {
 	if (!cli_web_live()) {
 		cli_web_drop();
@@ -182,7 +188,7 @@ void cli_next(void) __banked
 	STEP_NEXT(S_CLI_NEXT);			/* the next line at the next step */
 }
 
-void cli_more(void) __banked
+STEP(cli, more)
 {
 	if (cli_src == CLI_WEB && !cli_dropped && !cli_web_live()) {
 		cli_web_drop();
@@ -203,7 +209,7 @@ void cli_more(void) __banked
 	STEP_NEXT(S_CLI_PROMPT);
 }
 
-void cli_prompt(void) __banked
+STEP(cli, prompt)
 {
 	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
 		STEP_SLEEP(S_CLI_PROMPT, 100);
@@ -224,13 +230,14 @@ void cli_prompt(void) __banked
  * if its window was short (net.md item 1) */
 static __xdata uint16_t net_due;
 
-void net_start(void) __banked
+TASK(net, fixed, once, first=start)
+STEP(net, start)
 {
 	net_due = sched_now;
 	STEP_NEXT(S_NET_TICK);
 }
 
-void net_task(void) __banked
+STEP(net, tick)
 {
 	if (sched_ev & EV_UPLOAD_DONE) {
 		uip_poll_conn(&uip_conns[0]);
@@ -248,7 +255,8 @@ void net_task(void) __banked
 }
 
 /* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick */
-void stp_task(void) __banked
+TASK(stp, fixed, medium)
+STEP(stp, tick)
 {
 	if (stp_enabled) {
 		tn = STP_CATCH_UP;
@@ -260,7 +268,8 @@ void stp_task(void) __banked
 	task_until(sched_now + 1);
 }
 
-void lacp_task(void) __banked
+TASK(lacp, fixed, medium)
+STEP(lacp, tick)
 {
 	if (lacpEnabled)
 		lacp_timers();
@@ -268,15 +277,17 @@ void lacp_task(void) __banked
 }
 
 /* lldp, and the cable test's state machine (a job from E on), every tick */
-void lldp_task(void) __banked
+TASK(lldp, fixed, once)
+STEP(lldp, tick)
 {
-	lldp_tick();
+	lldp_service();
 	cabletest_tick();
 	task_until(sched_now + 1);
 }
 
 /* sfp0, sfp1: a slot's pins every 50 ms; none on a board without the slot */
-void sfp_start(void) __banked
+TASK(sfp, fixed, once, count=2, first=start)
+STEP(sfp, start)
 {
 	ti = sched_cur - T_SFP0;
 	if (ti >= machine.n_sfp)
@@ -286,7 +297,7 @@ void sfp_start(void) __banked
 	STEP_NEXT(S_SFP_POLL);
 }
 
-void sfp_task(void) __banked
+STEP(sfp, poll)
 {
 	ti = sched_cur - T_SFP0;
 	handle_sfp_slot(ti);
@@ -295,14 +306,15 @@ void sfp_task(void) __banked
 }
 
 /* house: once a second */
-void house_start(void) __banked
+TASK(house, fixed, once, first=start)
+STEP(house, start)
 {
 	house_due = sched_now + SEC_TICKS;
 	task_until(house_due);
 	STEP_NEXT(S_HOUSE_SEC);
 }
 
-void house_task(void) __banked
+STEP(house, sec)
 {
 	house_second();
 	house_due += SEC_TICKS;

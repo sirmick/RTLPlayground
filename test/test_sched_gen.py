@@ -9,6 +9,8 @@ Host tests for tools/sched_gen.py (doc/sched/generator.md).
   - spacing of the derived sequence
   - sequence.def overrides
   - every broken spec fails with its message; a cross-module task_next warns
+  - the sweep (tools/sched_sweep.py): TASK/STEP lines through cpp into the
+    .def the generator takes; its errors
 
   python3 test_sched_gen.py [--update]
 """
@@ -17,6 +19,7 @@ import contextlib, io, os, re, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tools"))
 import sched_gen                                        # noqa: E402
+import sched_sweep                                      # noqa: E402
 
 PLAUSIBLE = os.path.join(HERE, "sched_gen", "plausible")
 GOLDEN = os.path.join(HERE, "sched_gen", "golden")
@@ -244,6 +247,86 @@ def test_cross_module_warning():
             check(len(w) == 1 and "m.c:3: warning: task_next(S_B_T) jumps into" in w[0], f"warning: {w}")
 
 
+# The sweep (tools/sched_sweep.py): TASK/STEP lines through the host's cpp,
+# with sched.h itself (SCHED_SWEEP) and the host shim, as test/Makefile does.
+ROOT = os.path.join(HERE, "..")
+SWEEP_CPP = f"gcc -E -include {os.path.join(HERE, 'sdcc_shim.h')} -I{ROOT}"
+SWEEP_HEAD = '#include <stdint.h>\n#include "sched.h"\n'
+
+
+def sweep(d, files, expect_fail=False):
+    """Run the sweep over {name: C text} in d: (rc, stderr, [.def paths])."""
+    srcs = []
+    for name, text in files.items():
+        p = os.path.join(d, name)
+        open(p, "w").write(SWEEP_HEAD + text)
+        srcs.append(p)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
+        rc = sched_sweep.main(["-o", os.path.join(d, "gen"), "--cpp", SWEEP_CPP] + srcs)
+    return rc, err.getvalue(), out.getvalue().split()
+
+
+def test_sweep():
+    with tempfile.TemporaryDirectory() as d:
+        rc, err, defs = sweep(d, {"m.c": (
+            "TASK(stp, fixed, medium, first=second)\n"
+            "STEP(stp, step) { STEP_NEXT(S_STP_SECOND); }\n"
+            "#ifdef NOT_IN_THIS_BUILD\nSTEP(stp, gone) { }\n#endif\n"
+            "STEP(stp, second) { STEP_NEXT(S_STP_STEP); }\n"
+            "TASK(sfp, fixed, once, count=2)\nSTEP(sfp, poll) { }\n"
+            "TASK(j, job, high, entry=two)\nSTEP(j, one) { }\nSTEP(j, two) { }\n")})
+        check(rc == 0, f"sweep: rc {rc}: {err}")
+        text = open(defs[0]).read() if defs else ""
+        want = ["task stp fixed freq=medium first=STP_SECOND", "state STP_STEP stp_step", "state STP_SECOND stp_second",
+                "task sfp fixed freq=once count=2", "state SFP_POLL sfp_poll",
+                "task j job freq=high", "state J_ONE j_one", "state J_TWO j_two entry", "source m.i"]
+        got = [ln.split("\t#")[0] for ln in text.splitlines()[1:]]
+        check(got == want, f"sweep: the .def from the markers (an #ifdef'd step left out): {got}")
+        check(re.search(r"state STP_SECOND stp_second\t# \S*m\.c:8$", text, re.M) is not None,
+              "sweep: each line says where in the source it came from")
+        i = open(os.path.join(d, "gen", "m.i")).read() if defs else ""
+        check("__sched_" not in i and re.search(r"void stp_second\(void\) __banked", i),
+              "sweep: the .i keeps the prototypes, not the markers")
+        r = gen(defs)
+        check(not isinstance(r, str), f"sweep: the generator takes its .def: {said(r)}")
+        if not isinstance(r, str):
+            check("\tstp_second,\t/* S_STP_SECOND */" in r[0]["sched_gen.c"]
+                  and "\tS_STP_SECOND,\t/* T_STP */" in r[0]["sched_gen.c"], "sweep: first= is the fixed slot's start")
+        # unchanged output keeps its timestamp
+        t0 = os.stat(defs[0]).st_mtime_ns
+        os.utime(defs[0], ns=(t0 - 10**9, t0 - 10**9))
+        sweep(d, {"m.c": open(os.path.join(d, "m.c")).read()[len(SWEEP_HEAD):]})
+        check(os.stat(defs[0]).st_mtime_ns == t0 - 10**9, "sweep: an unchanged .def is not rewritten")
+        # a generator error names the C line
+        rc, err, defs = sweep(d, {"m.c": "TASK(a, fixed, once)\nSTEP(a, s) { }\nSTEP(a, lost) { }\n"})
+        r = gen(defs)
+        check(isinstance(r, str) and re.search(r"m\.c:5: state A_LOST is reached by no", r),
+              f"sweep: an unreached state is named by its STEP's line: {said(r)}")
+    for what, text, msg in SWEEP_BROKEN:
+        with tempfile.TemporaryDirectory() as d:
+            rc, err, _ = sweep(d, {"m.c": text})
+            check(rc == 1 and msg in err and re.search(r"m\.c:\d+: |has no TASK", err),
+                  f"sweep '{what}': want '{msg}', got rc {rc} {err.strip()!r}")
+    with tempfile.TemporaryDirectory() as d:
+        rc, err, _ = sweep(d, {"m.c": "TASK(a, fixed, once)\nSTEP(a, s) { }\n", "x.c": "#error broken\n"})
+        check(rc == 1 and "preprocessing" in err, f"sweep: a cpp error fails it: {err.strip()!r}")
+
+
+SWEEP_BROKEN = [
+    ("step without task", "STEP(a, s) { }\n", "STEP(a, s) has no TASK(a, ...) above it"),
+    ("task without step", "TASK(a, fixed, once)\n", "TASK(a) has no STEP(a, ...)"),
+    ("too few fields", "TASK(a, fixed)\nSTEP(a, s) { }\n", "needs a name, fixed|job and high|medium|once"),
+    ("bad kind", "TASK(a, fixd, once)\nSTEP(a, s) { }\n", "'fixd' is not fixed or job"),
+    ("bad freq", "TASK(a, fixed, often)\nSTEP(a, s) { }\n", "'often' is not high, medium or once"),
+    ("bad option", "TASK(a, fixed, once, prio=1)\nSTEP(a, s) { }\n", "bad option 'prio=1'"),
+    ("first unknown", "TASK(a, fixed, once, first=t)\nSTEP(a, s) { }\n", "first=t is no STEP(a, ...)"),
+    ("upper case task", "TASK(A, fixed, once)\nSTEP(A, s) { }\n", "must be lower case"),
+    ("two tasks", "TASK(a, fixed, once)\nSTEP(a, s) { }\nTASK(a, job, once)\n", "TASK(a) also at"),
+    ("no task at all", "int x;\n", "has no TASK"),
+]
+
+
 def main():
     update = "--update" in sys.argv
     os.chdir(HERE)
@@ -254,6 +337,7 @@ def main():
     test_broken()
     test_step_macros_reach()
     test_cross_module_warning()
+    test_sweep()
     print(f"sched_gen: {checks} checks, {fails} failed")
     return 1 if fails else 0
 

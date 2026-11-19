@@ -111,8 +111,8 @@ class Neg(Suite):
                        f"hang {n}: the watchdog fired at the {c}th tick, {dt:.3f} ms after SL_HANG began (5 s - a tick at most)")
             self.check(r["valid"], f"hang {n}: a valid record at 0xbfe0 after the loader (magic {r['magic']:#x}, sum ok {r['sum_ok']})")
             self.check(r["cause"] == CAUSE["watchdog"], f"hang {n}: cause watchdog ({r['cause']})")
-            self.check(r["slot"] == self.T["T_SLOW"] and r["state"] == self.S["S_SL_HANG"],
-                       f"hang {n}: slot slow, state SL_HANG ({r['slot']}, {r['state']})")
+            self.check(r["slot"] == self.T["T_SL"] and r["state"] == self.S["S_SL_HANG"],
+                       f"hang {n}: slot sl, state SL_HANG ({r['slot']}, {r['state']})")
             # Exact in the sim. On silicon a tick can land between sched.c's
             # sched_now = sched_ticks() and CRASH_NOTE (c = 999, age = 1000):
             # silicon.py accepts age in {c, c + 1}.
@@ -122,12 +122,12 @@ class Neg(Suite):
             self.plausible_sp(sim, r, f"hang {n}")
             self.check(r["resets"] == n - 1, f"hang {n}: resets before it {r['resets']}")
             line = self.boot_line(sim)
-            want = (rf"Last reset: watchdog in slow/SL_HANG after {age * TICK_MS} ms, PC 0x{r['pc']:04x} bank {bank}, "
+            want = (rf"Last reset: watchdog in sl/SL_HANG after {age * TICK_MS} ms, PC 0x{r['pc']:04x} bank {bank}, "
                     r"states( \w+){8}$")
             self.check(line and re.match(want, line), f"hang {n}: the boot printed it", line)
             self.after_print(sim, f"hang {n}", n)
         h = self.say(sim, "health")
-        self.check(f"last reset: watchdog in slow/SL_HANG after {age * TICK_MS} ms" in h, "health shows it")
+        self.check(f"last reset: watchdog in sl/SL_HANG after {age * TICK_MS} ms" in h, "health shows it")
 
     # ---- ^R ^R and the reset command ----
     def t_ctrl_r(self, sim):
@@ -226,7 +226,7 @@ class Neg(Suite):
                               "sched", "sched_gen.h")
         r = subprocess.run(["make", "-s", "SCHEDTEST=1", "ST_NEG=bad_spec", f"MACHINE={machine}"]
                            + (["LAYOUT=compact"] if mk else []) + [target], capture_output=True, text=True)
-        msg = "sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c"
+        msg = "sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no task_next/STEP_*/task_claim"
         self.record(exit=r.returncode, message=msg in r.stdout + r.stderr)
         self.check(r.returncode == 2, f"make fails ({r.returncode})")
         self.check(msg in r.stdout + r.stderr, "with the generator's message", (r.stdout + r.stderr).strip()[-300:])
