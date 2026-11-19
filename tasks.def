@@ -1,0 +1,27 @@
+# The firmware's fixed tasks (doc/sched/modules.md, D2): today's main loop's
+# phases at its cadence; tasks.c. The console editor and the command parser
+# stay today's code, in con, until D3.
+task rx fixed freq=high first=RX_IDLE
+state RX_IDLE     rx_wait
+state RX_STEP     rx_task
+task link fixed freq=high
+state LINK_READ   link_task
+task loop fixed freq=high first=LOOP_START
+state LOOP_START  loop_start
+state LOOP_POLL   loop_task
+task con fixed freq=high
+state CON_EDIT    con_task
+task net fixed
+state NET_TICK    net_task
+task stp fixed freq=medium
+state STP_TICK    stp_task
+task lacp fixed freq=medium
+state LACP_TICK   lacp_task
+task lldp fixed
+state LLDP_TICK   lldp_task
+task sfp fixed count=2 first=SFP_START
+state SFP_START   sfp_start
+state SFP_POLL    sfp_task
+task house fixed first=HOUSE_START
+state HOUSE_START house_start
+state HOUSE_SEC   house_task

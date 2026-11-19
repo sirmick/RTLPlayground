@@ -282,6 +282,7 @@ RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c boot0.c update_apply.
 ifneq ($(SCHEDTEST),)
 include schedtest/schedtest.mk
 endif
+include sched.mk
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)
 RESIDENT_OBJS = $(filter-out $(BANKED_OBJS),$(OBJS))

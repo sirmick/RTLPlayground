@@ -194,40 +194,48 @@ static bool sfp_module_read(uint8_t sfp)
 
 
 
-void handle_sfp(void) __banked
+/* One slot's detect and LOS pins: insertion, removal, the module read after
+ * the wake-up delay. The sfp tasks run it per slot (tasks.c). */
+static __xdata uint8_t sfp;
+void handle_sfp_slot(uint8_t slot) __banked
 {
-	for (uint8_t sfp = 0; sfp < machine.n_sfp; sfp++) {
-		if (!gpio_pin_test(machine.sfp_port[sfp].pin_detect)) {
-			if (sfp_pins_last & (0x1 << (sfp << 2))) {
-				sfp_pins_last &= ~(0x01 << (sfp << 2));
-				print_string("\n<MODULE INSERTED>  Slot: "); write_char('1' + sfp);
-				timer_set(&sfp_wake[sfp], SFP_WAKE_TICKS);
-				sfp_wake_pending[sfp] = 1;
-			} else if (sfp_wake_pending[sfp] && timer_expired(&sfp_wake[sfp])) {
-				sfp_wake_pending[sfp] = 0;
-				if (!sfp_module_read(sfp)) {
-					print_string("SFP: an I2C read failed, retrying on the next poll\n");
-					sfp_pins_last |= 0x01 << (sfp << 2);
-				}
-			}
-		} else {
-			if (!(sfp_pins_last & (0x1 << (sfp << 2)))) {
+	sfp = slot;
+	if (!gpio_pin_test(machine.sfp_port[sfp].pin_detect)) {
+		if (sfp_pins_last & (0x1 << (sfp << 2))) {
+			sfp_pins_last &= ~(0x01 << (sfp << 2));
+			print_string("\n<MODULE INSERTED>  Slot: "); write_char('1' + sfp);
+			timer_set(&sfp_wake[sfp], SFP_WAKE_TICKS);
+			sfp_wake_pending[sfp] = 1;
+		} else if (sfp_wake_pending[sfp] && timer_expired(&sfp_wake[sfp])) {
+			sfp_wake_pending[sfp] = 0;
+			if (!sfp_module_read(sfp)) {
+				print_string("SFP: an I2C read failed, retrying on the next poll\n");
 				sfp_pins_last |= 0x01 << (sfp << 2);
-				sfp_wake_pending[sfp] = 0;
-				print_string("\n<MODULE REMOVED>  Slot: "); write_char('1' + sfp); write_char('\n');
 			}
 		}
-
-		if (!gpio_pin_test(machine.sfp_port[sfp].pin_los)) {
-			if (sfp_pins_last & (0x2 << (sfp << 2))) { // 0x2 0x08
-				sfp_pins_last &= ~(0x02 << (sfp << 2));
-				print_string("\n<SFP-RX OK>  Slot: "); write_char('1' + sfp); write_char('\n');
-			}
-		} else {
-			if (!(sfp_pins_last & 0x2 << (sfp << 2))) {
-				sfp_pins_last |= 0x02 << (sfp << 2);
-				print_string("\n<SFP-RX LOS>  Slot: "); write_char('1' + sfp); write_char('\n');
-			}
+	} else {
+		if (!(sfp_pins_last & (0x1 << (sfp << 2)))) {
+			sfp_pins_last |= 0x01 << (sfp << 2);
+			sfp_wake_pending[sfp] = 0;
+			print_string("\n<MODULE REMOVED>  Slot: "); write_char('1' + sfp); write_char('\n');
 		}
 	}
+
+	if (!gpio_pin_test(machine.sfp_port[sfp].pin_los)) {
+		if (sfp_pins_last & (0x2 << (sfp << 2))) { // 0x2 0x08
+			sfp_pins_last &= ~(0x02 << (sfp << 2));
+			print_string("\n<SFP-RX OK>  Slot: "); write_char('1' + sfp); write_char('\n');
+		}
+	} else {
+		if (!(sfp_pins_last & 0x2 << (sfp << 2))) {
+			sfp_pins_last |= 0x02 << (sfp << 2);
+			print_string("\n<SFP-RX LOS>  Slot: "); write_char('1' + sfp); write_char('\n');
+		}
+	}
+}
+
+void handle_sfp(void) __banked
+{
+	for (uint8_t i = 0; i < machine.n_sfp; i++)
+		handle_sfp_slot(i);
 }
