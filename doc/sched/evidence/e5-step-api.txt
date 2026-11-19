@@ -94,7 +94,17 @@ At 133886d, 436af40 and 38ec166:
   Expect lines unused: as at the merge (8x: upload/stp_upload reg 06f4;
   SWGT024: web 010, config rldp/stp, loop rldp); at 38ec166 the 8x's
   `loop frames * rldp` is unused too: its loop scenario now equals the
-  old firmware's (one RLDP probe fewer than the merge, 99 -> 98).
+  old firmware's (one RLDP probe fewer than the merge, 99 -> 98). Why: the
+  chip's RLDP engine probes every 500 ms from `loop on` (port 0: 30.0030,
+  30.5030, ... s), and the scenario types `loop off` at its fixed time,
+  which takes effect right at the probe due at 79.0030 s. With 38ec166 con
+  wakes cli directly instead of an event for the next pass, so a typed
+  line reaches CLI_RUN ~0.15 ms sooner (rtlsim, typed at a fixed time:
+  2.71 -> 2.57 ms; rldp_enabled cleared 2.90 -> 2.75 ms after): `loop off`
+  now lands just before that probe, not just after it. Last probe 436af40
+  79.0030 s (99), 38ec166 78.5030 s (98), fork main 78.5040 s (98).
+  Measured with the bench's send times (bench.timed += rldp,
+  /tmp/e5/loop_times.py) and /tmp/e5/loop_probe.py.
 At 38ec166 also (/tmp/e5/tools.sh 38ec166), both boards:
 - console_bugs PASS; webcmd_abort W1-W6 PASS; lldp_overrun PASS;
   flash_job_steps S0-S6 PASS (S6 7.06 s, 53 zero windows, a dropped window
@@ -103,6 +113,19 @@ At 38ec166 also (/tmp/e5/tools.sh 38ec166), both boards:
 - curl_upload (alone): C1 config 200, C2 bad image 400 3.89 s, C3 image
   200 5.10 / 5.11 s, no zero windows (the merge: 3.92 / 5.14 s): the
   flash job's end now wakes net directly, at its next position.
+
+## Follow-ups after the review
+
+The sweep checks decision 22 (generator.md): a step's `return` calling a
+function fails unless marked `/* helper returns state: <fn> */` (only the
+host test's generic steps are); a STEP/TASK in a source of the build that
+isn't a step source fails (`--all $(SRCS)`). Tests: test_sched_gen.py
+(test_sweep_checks: rejected unmarked, inside STEP_SLEEP, marked for another
+function; accepted marked on the line or above, STEP_* with casts, calls
+before the return, braces in strings; --all with a stray STEP, and not for
+a comment or #define). Firmware sources unchanged; both boards and the four
+schedtest variants build, make -C test quick PASSED, schedtest-sim --twice
+0 failures.
 
 ## Open
 

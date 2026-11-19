@@ -313,6 +313,44 @@ def test_sweep():
         check(rc == 1 and "preprocessing" in err, f"sweep: a cpp error fails it: {err.strip()!r}")
 
 
+def test_sweep_checks():
+    """A step returning a helper's choice; a STEP outside the step sources."""
+    helper = "static uint8_t pick(void) { return S_A_S; }\nTASK(a, fixed, once)\n"
+    for what, body, ok in (
+        ("a helper's return", "STEP(a, s) { return pick(); }\n", False),
+        ("a helper's return inside a macro", "STEP(a, s) { return STEP_SLEEP(pick(), 5); }\n", False),
+        ("marked on its line", "STEP(a, s) { return pick(); }\t/* helper returns state: pick */\n", True),
+        ("marked above", "STEP(a, s)\n{\n\t/* helper returns state: pick */\n\treturn pick();\n}\n", True),
+        ("marked for another", "STEP(a, s) { return pick(); }\t/* helper returns state: other */\n", False),
+        ("STEP_* macros, a cast, a ternary", "STEP(a, s) { return (uint8_t)(1 ? STEP_WAIT(S_A_S, 1, 2) : STEP_ARG(S_A_S, 3)); }\n", True),
+        ("a call before the return", "STEP(a, s) { if (pick()) return STEP_STAY; return S_A_S; }\n", True),
+        ("a string with a brace", "static void p(const char *x) { (void)x; }\nSTEP(a, s) { p(\"}{\"); return S_A_S; }\n", True),
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            rc, err, _ = sweep(d, {"m.c": helper + body})
+            if ok:
+                check(rc == 0, f"sweep checks, {what}: accepted: rc {rc} {err.strip()!r}")
+            else:
+                check(rc == 1 and "returns what pick() says: a helper chooses the state" in err
+                      and re.search(r"m\.c:\d+: STEP\(a, s\)", err), f"sweep checks, {what}: rejected: rc {rc} {err.strip()!r}")
+    with tempfile.TemporaryDirectory() as d:
+        other = os.path.join(d, "other.c")
+        open(other, "w").write("/* STEP(a, s) in a comment */\nint x;\n#define STEP(t, s) nothing\n")
+        rc, err, _ = sweep(d, {"m.c": "TASK(a, fixed, once)\nSTEP(a, s) { return S_A_S; }\n"})
+        out, e = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stderr(e), contextlib.redirect_stdout(out):
+            rc = sched_sweep.main(["-o", os.path.join(d, "gen"), "--cpp", SWEEP_CPP, "--all", other,
+                                   os.path.join(d, "m.c"), "--", os.path.join(d, "m.c")])
+        check(rc == 0, f"--all: a comment or a #define naming STEP is no step: {e.getvalue().strip()!r}")
+        open(other, "a").write("STEP(b, s) { return 0; }\n")
+        e = io.StringIO()
+        with contextlib.redirect_stderr(e), contextlib.redirect_stdout(io.StringIO()):
+            rc = sched_sweep.main(["-o", os.path.join(d, "gen"), "--cpp", SWEEP_CPP, "--all", other,
+                                   "--", os.path.join(d, "m.c")])
+        check(rc == 1 and re.search(r"other\.c:4: STEP\(\.\.\.\) in a source that isn't a step source", e.getvalue()),
+              f"--all: a STEP outside the step sources fails: rc {rc} {e.getvalue().strip()!r}")
+
+
 SWEEP_BROKEN = [
     ("step without task", "STEP(a, s) { }\n", "STEP(a, s) has no TASK(a, ...) above it"),
     ("task without step", "TASK(a, fixed, once)\n", "TASK(a) has no STEP(a, ...)"),
@@ -338,6 +376,7 @@ def main():
     test_step_macros_reach()
     test_cross_module_warning()
     test_sweep()
+    test_sweep_checks()
     print(f"sched_gen: {checks} checks, {fails} failed")
     return 1 if fails else 0
 

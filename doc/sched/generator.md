@@ -46,6 +46,17 @@ changed and rewrites only the tables that changed, so an edit that moves no
 task or state recompiles nothing but its own file. The sweep's errors: a
 `STEP` with no `TASK` above it in its file, a `TASK` with no `STEP`, a bad
 field or option, two `TASK`s of one name, a step source with no `TASK`.
+Two more keep decision 22 checkable:
+
+- **No helper chooses a state.** A step's `return` whose expression calls a
+  function (other than `STEP_SLEEP/WAIT/ARG`, which stay as written in the
+  sweep) fails, unless that source line or the one above says
+  `/* helper returns state: <function> */` (the host test's generic steps
+  do). The state a step goes to is then written in the step itself.
+- **No STEP outside the step sources.** sched.mk passes every C source of
+  the build (`--all $(SRCS)`); a `STEP(` or `TASK(` line (not in a comment
+  or a `#define`) in one that isn't in `SCHED_STEP_SRCS` fails: it would
+  compile and silently not be a step.
 
 The host tests sweep `test_sched.c` the same way with gcc's preprocessor
 (test/Makefile). `sequence.def` stays a file.
