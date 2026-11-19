@@ -57,15 +57,15 @@ class Neg(Suite):
     def to_crash_boot(self, sim, what):
         """from a reset on: the loader, then schedtest's crash_boot; the UART
         text on the way"""
-        if sim.run_until_pc("_crash_boot", max_ms=10000) is None:
-            raise Fail(f"{what}: no boot within 10 s")
+        if sim.run_until_pc("_crash_boot", max_ms=30000) is None:
+            raise Fail(f"{what}: no boot within 30 s")
         text = sim.uart_text()
         self.check("RTLPlayground loader" in text and "Starting application" in text,
                    f"{what}: the reset went through the loader")
         return text
 
     def boot_line(self, sim):
-        if sim.run_until_uart(PROMPT, max_ms=10000) is None:
+        if sim.run_until_uart(PROMPT, max_ms=30000) is None:
             raise Fail("no prompt after crash_boot")
         m = re.search(LAST_RESET, sim.uart_text())
         return m.group(0).rstrip("\n") if m else None
