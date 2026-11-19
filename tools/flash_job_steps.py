@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""
+flash_job_steps.py - the flash job's steps (E3, doc/sched/flash.md) in rtlsim,
+on one firmware image, through ovs-rtlpg's old-vs-new bench (tests/oldnew).
+
+  tools/flash_job_steps.py BOOT_IMAGE [--payload APP_IMAGE] [--ovs DIR] [--board FILE]
+
+S0: past the loader's confirm (LDR_CONFIRM_S, 15 s after the boot), whose
+    boot-count erase is the flash job's: one FL_ERASE, HOUSE_SEC short.
+Then `health clear`, then each of these, each followed by
+the longest step per state (`health tasks`, or for the factory reset, which
+resets, the scheduler's per-state maxima read from xdata as it ends):
+S1: a firmware upload whose CRC is wrong (the payload with its last byte
+    flipped), so it is written, read back and refused, without a reset:
+    the answer is "checksum failed" and the staged image is the payload's
+    bytes (the flipped one too).
+S2: a config save (POST /config): 200, the text in the config sector.
+S3: `factory-reset` on the console: the default config sector copied to the
+    config sector, then the reset.
+S4: after a new boot, the payload uploaded as it is: written, read back and
+    accepted ("Checksum OK"); the per-state maxima read from xdata then,
+    before the client's ACK of the answer lets the switch reset.
+Each passes if no step but FL_ERASE took over 20 ms, and the flash holds what
+it should. The upload's firmware time is printed. Needs a bench whose client
+honours the switch's window (the upload closes it after each segment).
+Exit status 1 if any fails.
+"""
+import argparse, os, re, sys
+
+CONFIG_START, CONFIG_LEN = 0x7f000, 0x1000	# layout.h, compact
+DEFAULT_CONFIG_START = 0x39000
+UPLOAD_START = 0x40000
+LIMIT_US = 20000
+FINE_NS = 6144					# sched.h SCHED_FINE_NS
+
+
+def health(out):
+    """state -> (runs, longest µs) from `health tasks`"""
+    res = {}
+    for l in out.split("state\truns\tmax", 1)[-1].splitlines():
+        m = re.match(r"(\w+)\t(\d+)\t(>?)(\d+)(us|ms)$", l)
+        if m:
+            st, runs, over, v, unit = m.groups()
+            res[st] = (int(runs), int(v) * (1000 if unit == "ms" else 1) + (1 if over else 0))
+    return res
+
+
+def judge(name, steps):
+    long = {s: v for s, v in steps.items() if v[1] > LIMIT_US and s != "FL_ERASE"}
+    fl = " ".join(f"{s} {v[0]}x max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
+    top = max(((v[1], s) for s, v in steps.items() if s != "FL_ERASE"), default=(0, "-"))
+    hs = steps.get("HOUSE_SEC")
+    print(f"   {name}: {fl}; longest other {top[1]} {top[0] / 1000:.1f} ms"
+          + (f"; HOUSE_SEC {hs[0]}x max {hs[1] / 1000:.1f} ms" if hs else ""))
+    for s, v in long.items():
+        print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs)")
+    return not long and any(s.startswith("FL_") for s in steps)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("image")
+    ap.add_argument("--payload", default=None, help="the image to upload (default: the application next to IMAGE)")
+    ap.add_argument("--ovs", default=os.path.expanduser("~/src/ovs-rtlpg"))
+    ap.add_argument("--board", default=None)
+    a = ap.parse_args(argv)
+    board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
+    payload = a.payload or a.image.replace("rtlplayground-boot-", "rtlplayground-")
+    build = os.path.dirname(os.path.abspath(a.image))
+    sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
+    sys.path.insert(0, os.path.join(a.ovs, "tests"))
+    from oldnew import Run
+
+    gen = open(os.path.join(build, "sched", "sched_gen.h")).read()
+    names = re.search(r"enum\s*\{\s*S_NONE\s*,(.*?)S_COUNT", gen, re.S).group(1)
+    names = ["NONE"] + [n.strip()[2:] for n in names.split(",") if n.strip()]
+    xsym = {}
+    for l in open(os.path.join(build, "rtlplayground.map")):
+        m = re.match(r"\w*:?\s+([0-9A-F]{8})\s+(_sched_st_max|_sched_st_runs)\s", l)
+        if m:
+            xsym[m.group(2)] = int(m.group(1), 16)
+
+    def xsteps(r):
+        """state -> (runs, longest µs), from the scheduler's xdata"""
+        mx = r.b.sim.peek(f"x:{xsym['_sched_st_max']:#x}", 2 * len(names))
+        rn = r.b.sim.peek(f"x:{xsym['_sched_st_runs']:#x}", 2 * len(names))
+        steps = {}
+        for i, n in enumerate(names):
+            runs = rn[2 * i] | rn[2 * i + 1] << 8
+            if runs:
+                steps[n] = (runs, (mx[2 * i] | mx[2 * i + 1] << 8) * FINE_NS // 1000)
+        return steps
+
+    def upload_req(r, data, name):
+        bnd = "----flashjob0123456789"
+        body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"uploadedfile\"; filename=\"{name}\"\r\n"
+                f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{bnd}--\r\n".encode()
+        return (b"POST /upload HTTP/1.1\r\nCookie: session=" + r.cookie +
+                f"\r\nContent-Type: multipart/form-data; boundary={bnd}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+
+    fails = []
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    try:
+        r.boot()
+        r.login()
+        r.wait(8000)		# past the loader's confirm, LDR_CONFIRM_S after the boot
+        r._now()
+
+        def ask(line, ms=8000):
+            r.b.pending()
+            _, out = r.b.console(line, r.b.now + ms * 1000)
+            return out or ""
+
+        # S0
+        steps = health(ask("health tasks"))
+        hs = steps.get("HOUSE_SEC", (0, 0))
+        ok = judge("S0", steps) and hs[1] < 5000 and steps.get("FL_ERASE", (0, 0))[0] == 1
+        print(f"S0 the loader's confirm, {r.b.now / 1e6:.1f} s after power-on: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S0")
+
+        # S1
+        ask("health clear")
+        bad = bytearray(r.payload)
+        bad[-1] ^= 0xff
+        req = upload_req(r, bytes(bad), "bad.bin")
+        bnd = "----flashjob0123456789"
+        t0 = r.b.now
+        resp = r.host.http(req, r.b.now + 120 * 1000000)
+        t1 = r.b.now
+        staged = r.b.flash(UPLOAD_START, len(bad))
+        ok = isinstance(resp, bytes) and b"checksum failed" in resp and staged == bytes(bad)
+        print(f"   S1 upload of {len(bad)} B: {(t1 - t0) / 1e6:.3f} s firmware time; answer "
+              f"{resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; staged image "
+              f"{'= the payload' if staged == bytes(bad) else 'DIFFERS'}")
+        ok = judge("S1", health(ask("health tasks"))) and ok
+        print(f"S1 upload (refused by CRC): {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S1")
+
+        # S2: uIP has one connection, and the bench doesn't ACK the switch's
+        # FIN: S1's connection holds it in LAST_ACK for a while
+        r.b.advance(r.b.now + 20 * 1000000)
+        ask("health clear")
+        text = "hostname flashjob\nvlan 10 " + " ".join(f"{f}" for f in r.F[1:3]) + "\n"
+        body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
+                f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
+        req = (b"POST /config HTTP/1.1\r\nCookie: session=" + r.cookie +
+               f"\r\nContent-Type: multipart/form-data; boundary={bnd}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+        resp = r.host.http(req, r.b.now + 10 * 1000000)
+        saved = r.b.flash(CONFIG_START, len(text) + 1)
+        ok = isinstance(resp, bytes) and resp.startswith(b"HTTP/1.1 200") and saved == text.encode() + b"\0"
+        print(f"   S2 answer {resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; config sector "
+              f"{'= the text' if saved == text.encode() + b'\0' else repr(saved[:40])}")
+        ok = judge("S2", health(ask("health tasks"))) and ok
+        print(f"S2 config save: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S2")
+
+        # S3
+        ask("health clear")
+        r.b.pending()
+        r.b.sim.uart_write("factory-reset\r")
+        r.b.sim.run_until_uart("Written default config to flash", 5000)
+        steps = xsteps(r)
+        r.b.sim.run(3000)
+        default = r.b.flash(DEFAULT_CONFIG_START, CONFIG_LEN)
+        cfg = r.b.flash(CONFIG_START, CONFIG_LEN)
+        out = r.b.pending() + r.b.sim.uart_text()
+        ok = cfg == default
+        print(f"   S3 config sector {'= the default config sector' if ok else 'DIFFERS from the default'}")
+        ok = judge("S3", steps) and ok
+        print(f"S3 factory reset: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S3")
+    finally:
+        r.b.close()
+
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    try:
+        r.boot()
+        r.login()
+        r.wait(8000)
+        r._now()
+        r.b.pending()
+        r.b.console("health clear", r.b.now + 8000000)
+        adv = r.b.advance
+        r.b.advance = lambda until, stop=None: adv(until, lambda: (stop() if stop else False)
+                                                    or "Checksum OK" in r.b.take_uart())
+        t0 = r.b.now
+        r.host.http(upload_req(r, r.payload, "good.bin"), r.b.now + 120 * 1000000)
+        t1 = r.b.now
+        r.b.advance = adv
+        r.b.sim.run(20)		# the verdict's step ends (its print); the answer waits for our ACK
+        steps = xsteps(r)
+        staged = r.b.flash(UPLOAD_START, len(r.payload))
+        ok = "Checksum OK" in r.b.uart and staged == r.payload
+        print(f"   S4 upload of {len(r.payload)} B: {(t1 - t0) / 1e6:.3f} s firmware time to the verdict; "
+              f"{'Checksum OK' if 'Checksum OK' in r.b.uart else 'no Checksum OK'}; staged image "
+              f"{'= the payload' if staged == r.payload else 'DIFFERS'}")
+        ok = judge("S4", steps) and ok
+        print(f"S4 upload (accepted): {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S4")
+    finally:
+        r.b.close()
+    print("flash_job_steps:", "FAIL " + " ".join(fails) if fails else "PASS")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
