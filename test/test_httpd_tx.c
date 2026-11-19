@@ -30,6 +30,7 @@
 #include "page_impl.h"
 #include "html_data.h"
 #include "../loader/layout.h"
+#include "flash_job.h"
 
 /* Private to uip.c, and the client needs them to build segments. */
 #define TCP_FIN 0x01
@@ -83,7 +84,7 @@ static uint8_t written_config[CONFIG_LEN];
 static uint16_t written_config_len;
 static uint32_t config_erase_addr, config_write_addr;
 static int config_erases, config_writes;
-static uint8_t flash_written[1024];
+static uint8_t flash_written[8192];
 static size_t flash_written_len;
 static int flash_write_bad;
 
@@ -103,10 +104,15 @@ void flash_read_bulk(uint8_t *dst)
 }
 
 void flash_init(uint8_t enable_dio) { (void)enable_dio; }
+static uint32_t erase_log[8];
+static int erase_n;
+
 void flash_sector_erase(void)
 {
 	config_erases++;
 	config_erase_addr = flash_region.addr;
+	if (erase_n < 8)
+		erase_log[erase_n++] = flash_region.addr;
 }
 
 void flash_write_bytes(uint8_t *ptr)
@@ -134,11 +140,54 @@ void crc16_bank1(uint8_t *v) { (void)v; }
 static uint16_t readback_crc = 0xb001;
 uint32_t flash_crc16_from, flash_crc16_to;
 uint16_t flash_crc16_range(void) { return readback_crc; }
+uint16_t flash_crc16_more(void) { crc_value = readback_crc; return crc_value; }
 /* machine data: none in this (standard-layout) build */
 uint32_t mdata_at;
 uint32_t mdata_len_at(void) { return 0; }
 static unsigned reset_calls;
 void reset_chip(void) { reset_calls++; }
+
+/* The flash job (flash_job.c), the bench's: it runs at once, through the
+ * same calls (httpd.c's upload_prog() and upload_verify() for an upload; the
+ * sector erase and the copy for a config save). The connection's next poll
+ * finds it done and reopens the window. */
+uint8_t fl_req, fl_kind, fl_finished;
+uint8_t *fl_src;
+uint16_t fl_len;
+uint32_t fl_addr;
+static int job_busy;		/* a scenario's: the job refuses */
+
+static void job_upload(void)
+{
+	uint8_t r;
+
+	do {
+		r = upload_prog();
+		if (r == UP_ERASE) {
+			flash_region.addr = fl_addr;
+			flash_sector_erase();
+		}
+	} while (r == UP_PROG || r == UP_ERASE);
+	while (r == UP_VERIFY)
+		r = upload_verify();
+}
+
+uint8_t flash_job_start(void)
+{
+	if (job_busy)
+		return 0;
+	if (fl_req == FL_UPLOAD) {
+		job_upload();
+	} else if (fl_req == FL_CONFIG) {
+		flash_region.addr = CONFIG_START;
+		flash_sector_erase();
+		flash_region.addr = CONFIG_START;
+		flash_region.len = fl_len;
+		flash_write_bytes(fl_src);
+	}
+	fl_finished = 1;
+	return 1;
+}
 static bool loader_update_ok = true;
 static int loader_update_calls;
 bool loader_update(void) { loader_update_calls++; return loader_update_ok; }
@@ -232,6 +281,8 @@ static uint8_t stream[STREAM_MAX];	/* bytes accepted from the server */
 static int stream_len;
 
 static uint8_t last_tx[MSS_FULL + 64];	/* payload of the last server segment */
+static uint16_t srv_wnd;		/* the window the last server segment advertised */
+static uint8_t srv_flags;		/* and its flags */
 static int last_tx_len;
 
 static uint16_t hton16(uint16_t v)
@@ -273,6 +324,8 @@ static int harvest(void)
 	if (uip_len == 0)
 		return -1;
 
+	srv_wnd = (uint16_t)(TCPH->wnd[0] << 8 | TCPH->wnd[1]);
+	srv_flags = TCPH->flags;
 	seq = rd32(TCPH->seqno);
 	/* The SYNACK carries the MSS option, so the header is not always 20 B. */
 	hlen = (TCPH->tcpoffset >> 4) * 4;
@@ -690,9 +743,20 @@ enum { TSTATE_NONE = 0, TSTATE_TX = 1, TSTATE_POST = 4 };
 extern uint16_t slen, cont_len, sent_len, bindex, crc_final, write_len;
 extern uint8_t boundary[], verify_crc, outbuf[];
 extern struct { uint8_t *p; uint16_t bptr, plen; } upload_settings;
-extern uint8_t stream_upload(void);
 extern uint8_t upload_loader;
 extern uint32_t uptr;
+extern uint8_t up_state, up_reset;
+
+/* A staged segment through the job and the poll after it, at once: what the
+ * firmware did in one call before the flash job (E3). */
+static void stream_upload(void)
+{
+	up_reset = 0;
+	job_upload();
+	uip_conn->appstate.tstate = up_state;
+	if (up_reset)
+		uip_conn->appstate.fw_reset_pending = up_reset;
+}
 
 static void scenario_upload_reset_owner(void)
 {
@@ -1410,6 +1474,7 @@ static void scenario_config_upload(void)
 			client_send(TCP_ACK | TCP_PSH, request, split);
 		if (split < request_len)
 			client_send(TCP_ACK | TCP_PSH, request + split, request_len - split);
+		run_periodic(1);	/* the poll after the flash job sends the answer */
 		if (!stream_contains("HTTP/1.1 200 OK\r\n") && first_bad_response < 0)
 			first_bad_response = split;
 		if ((config_erases != 1 || config_writes != 1
@@ -1592,6 +1657,122 @@ static void scenario_upload_broken_matches(void)
 	      "upload: repeated partial delimiters are staged as payload");
 }
 
+/* E3: the flash job writes each staged segment while the connection is
+ * stopped. Its ACK closes the window; the poll after the job reopens it with
+ * a window update. A segment sent into the closed window isn't taken (uIP
+ * drops it), and the client's retransmission after the update is. A 5000 B
+ * image crosses a sector: both sectors erased, every byte staged in order. */
+#define WIN_LEN 5000
+
+static void scenario_upload_window(void)
+{
+	static uint8_t request[WIN_LEN + 512];
+	static const char closing[] = "\r\n--upload-boundary--\r\n";
+	int header_len, request_len, off, segs = 0, closed = 0, reopened = 0, dropped = 0;
+	uint32_t saved_flash_size = flash_size;
+
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	session_timeout = 200;
+	last_session_use[0] = 0;
+	flash_size = 0x100000;
+	flash_written_len = 0;
+	flash_write_bad = 0;
+	erase_n = 0;
+	static const char part[] = "--upload-boundary\r\n"
+		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
+		"Content-Type: application/octet-stream\r\n\r\n";
+	header_len = snprintf((char *)request, sizeof(request),
+		"POST /upload HTTP/1.1\r\nHost: sw\r\n"
+		"Cookie: session=0123456789ab\r\n"
+		"Content-Type: multipart/form-data; boundary=upload-boundary\r\n"
+		"Content-Length: %zu\r\n\r\n%s",
+		sizeof(part) - 1 + WIN_LEN + sizeof(closing) - 1, part);
+	for (int i = 0; i < WIN_LEN; i++)
+		request[header_len + i] = pattern(i);
+	memcpy(request + header_len + WIN_LEN, closing, sizeof(closing) - 1);
+	request_len = header_len + WIN_LEN + sizeof(closing) - 1;
+
+	for (off = 0; off < request_len; ) {
+		int n = request_len - off > MSS_FULL ? MSS_FULL : request_len - off;
+
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
+		off += n;
+		segs++;
+		if (srv_wnd == 0 && uip_conn->appstate.tstate == 9)
+			closed++;
+		if (off < request_len && segs == 2) {
+			/* into the closed window: not taken, not acknowledged */
+			size_t before = flash_written_len;
+			uint32_t seq = cli_seq;
+
+			srv_flags = 0;
+			client_send(TCP_ACK | TCP_PSH, (const char *)request + off, 1);
+			cli_seq = seq;
+			if (flash_written_len == before && !srv_flags)
+				dropped = 1;
+		}
+		srv_wnd = 0;
+		run_periodic(1);
+		if (srv_wnd > 0)
+			reopened++;
+	}
+	drain(MSS_FULL);
+	CHECK(closed == segs, "upload window: every segment's ACK closes the window while the job writes it");
+	CHECK(reopened >= segs - 1, "upload window: the poll after the job reopens it");
+	CHECK(dropped, "upload window: a segment sent into the closed window is dropped, its retransmission taken");
+	CHECK(!flash_write_bad && flash_written_len == WIN_LEN && !memcmp(flash_written, request + header_len, WIN_LEN),
+	      "upload window: the image is staged whole, in order, across the segments");
+	CHECK(erase_n == 2 && erase_log[0] == FIRMWARE_UPLOAD_START && erase_log[1] == FIRMWARE_UPLOAD_START + 0x1000,
+	      "upload window: each sector erased once, before its first page");
+	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12) && strstr((char *)stream, "checksum failed"),
+	      "upload window: the answer goes out once the part is written");
+	flash_size = saved_flash_size;
+}
+
+/* E3: the flash job is busy (or has no slot): an upload is answered 400 at
+ * once; and while it writes for a connection that has ended, a new
+ * connection is reset (config_buf, the stage, may not be written then). */
+static void scenario_flash_busy(void)
+{
+	static const char req[] =
+		"POST /upload HTTP/1.1\r\nHost: sw\r\n"
+		"Cookie: session=0123456789ab\r\n"
+		"Content-Type: multipart/form-data; boundary=upload-boundary\r\n"
+		"Content-Length: 300\r\n\r\n"
+		"--upload-boundary\r\n"
+		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
+		"Content-Type: application/octet-stream\r\n\r\nxyz";
+	uint32_t saved_flash_size = flash_size;
+
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	session_timeout = 200;
+	last_session_use[0] = 0;
+	flash_size = 0x100000;
+	flash_written_len = 0;
+	job_busy = 1;
+	client_send(TCP_ACK | TCP_PSH, req, (int)strlen(req));
+	drain(MSS_FULL);
+	job_busy = 0;
+	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12) && flash_written_len == 0,
+	      "flash busy: an upload is refused at once, nothing written");
+
+	fl_kind = FL_UPLOAD;
+	uip_init();
+	httpd_init();
+	fl_kind = FL_UPLOAD;		/* httpd_init frees it: the job still runs */
+	cli_seq = 5000;
+	cli_rcv_nxt = 0;
+	stream_len = 0;
+	srv_flags = 0;
+	client_send(TCP_SYN, NULL, 0);
+	client_ack(MSS_FULL);
+	CHECK(srv_flags & 0x04, "flash busy: a new connection is reset while the job runs");
+	fl_kind = 0;
+	flash_size = saved_flash_size;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc > 1 && !strcmp(argv[1], "-v"))
@@ -1631,6 +1812,8 @@ int main(int argc, char **argv)
 	scenario_upload_cr_before_boundary();
 	scenario_upload_last_byte();
 	scenario_upload_broken_matches();
+	scenario_upload_window();
+	scenario_flash_busy();
 
 	scenario_login_with_valid_cookie_reuses_its_slot();
 	scenario_login_without_cookie_replaces_least_recently_used();

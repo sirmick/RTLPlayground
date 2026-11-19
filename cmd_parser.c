@@ -38,6 +38,7 @@
 #include "phy.h"
 #include "con_ring.h"
 #include "sched.h"
+#include "flash_job.h"
 
 
 extern __code const struct machine machine;
@@ -2021,8 +2022,9 @@ void cmd_parser(void) __banked
 			reset_chip();
 		} else if (cmd_compare(0, "factory-reset")) {
 			print_string("\nFACTORY RESET\n\n");
-			flash_default_config();
-			reset_chip();
+			fl_req = FL_FACTORY;	/* the flash job writes it and resets */
+			if (!flash_job_start())
+				print_string("Flash busy, not reset\n");
 		} else if (cmd_compare(0, "sfp")) {
 			parse_sfp();
 		} else if (cmd_compare(0, "stat")) {

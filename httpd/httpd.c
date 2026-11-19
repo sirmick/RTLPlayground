@@ -12,6 +12,7 @@
 #include "boot.h"
 #include "loader/layout.h"
 #include "update_apply.h"
+#include "flash_job.h"
 
 // #define DEBUG
 #include "debug.h"
@@ -92,6 +93,7 @@ __xdata uint32_t now;
 #define TSTATE_POSTBODY		6
 #define TSTATE_HEADER		7
 #define TSTATE_WEBCMD		8	/* a /cmd queued for cli; the reply goes out on a poll */
+#define TSTATE_UPLOAD		9	/* stopped: the flash job writes what was staged */
 
 extern __xdata uint16_t crc_value;
 __xdata uint16_t crc_final;
@@ -110,6 +112,8 @@ void httpd_init(void) __banked
 	config_upload = 0; // xdata is not zeroed by the startup code
 	webcmd_pending = 0;
 	webcmd_done = 0;
+	fl_kind = 0;		/* the flash job (flash_job.c) */
+	fl_finished = 0;
 	// Start listening to port 80
 	uip_listen(HTONS(80));
 	// Not through uip_conn: it only points at a connection while uIP is
@@ -411,11 +415,8 @@ static uint8_t config_take(void)
 						return 2;
 				}
 				config_buf[cfg_end] = 0;
-				flash_region.addr = CONFIG_START;
-				flash_sector_erase();
-				flash_region.addr = CONFIG_START;
-				flash_region.len = cfg_end - cfg_body + 1;
-				flash_write_bytes(config_buf + cfg_body);
+				fl_src = config_buf + cfg_body;	/* for the flash job */
+				fl_len = cfg_end - cfg_body + 1;
 				return 1;
 			}
 			cfg_hdr++;
@@ -440,118 +441,47 @@ static uint16_t preamble_payload_start(uint16_t n)
 }
 
 
-// Source window for stream_upload(); filled by the caller before the call
+// The staged segment upload_prog() reads; filled by the caller before the job
 __xdata struct {
 	__xdata uint8_t *p;
 	uint16_t bptr;
 	uint16_t plen;
 } upload_settings;
 
-/*
- * Reads post data from the http stream and writes it into flash memory
- * Input: upload_settings, set by the caller
- * Returns 1: More data to read, 0: Upload complete, all parts reads
- */
-uint8_t stream_upload(void)
-{
-	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
+/* The upload is written by the flash job (flash_job.c, net.md item 1):
+ * httpd stages a segment in config_buf and stops the connection; the job's
+ * steps call upload_prog() and upload_verify(); once it has ended, the
+ * connection's poll takes up_state and up_reset and reopens the window. */
+#define UP_PAGES	2	/* pages an FL_PROG step parses and programs: ~10 ms */
+#define VF_CHUNK	2048	/* bytes an FL_VERIFY step reads back */
+#define UP_MORE		1	/* upload_fill(): the segment is used up */
+#define UP_PAGE		2	/* a page is in flash_buf */
+#define UP_END		3	/* the part has ended: write_len bytes left in flash_buf */
+__xdata uint8_t up_state;	/* the connection's tstate once the job has ended */
+__xdata uint8_t up_reset;	/* its fw_reset_pending, if not 0 */
+static __xdata uint8_t up_r, up_erased, up_n;
+static __xdata uint8_t up_dot;	/* a later segment: a '.' when it is written */
+#ifdef LAYOUT_COMPACT
+static __xdata uint8_t up_install;
+#endif
+static __xdata uint32_t vf_at, vf_end;
 
-	dbg_string("Stream_upload called: ");
+/*
+ * Reads post data from the staged segment into flash_buf, up to a page
+ * Input: upload_settings, set by the caller
+ * Returns UP_MORE, UP_PAGE or UP_END
+ */
+static uint8_t upload_fill(void)
+{
+	dbg_string("upload_fill called: ");
 	dbg_short(upload_settings.bptr); dbg_char('\n');
 
 	do {
-		if (upload_settings.bptr >= upload_settings.plen) {
-			s->tstate = TSTATE_POST;
-			return 1;
-		}
+		if (upload_settings.bptr >= upload_settings.plen)
+			return UP_MORE;
 		// Have we reached the end of the part?
-		if (!boundary[bindex]) {
-			s->tstate = TSTATE_NONE;
-			dbg_string("len 2: "); dbg_short(write_len); dbg_char(' ');
-			flash_region.addr = uptr;
-			if (write_len && !(uptr % FLASH_SECTOR_SIZE))
-				flash_sector_erase();	/* a last partial page opening a sector */
-			flash_region.addr = uptr;
-			flash_region.len = write_len;
-			flash_write_bytes(flash_buf);
-			uptr += write_len;
-			write_len = 0;
-			if (verify_crc) {
-				dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
-#ifdef LAYOUT_COMPACT
-				/* An install image: the application, then the loader at
-				 * LDR_STAGE, each with its own CRC. A board without the
-				 * loader converts at the next boot, then the loader
-				 * installs the application; one with it ignores the stage. */
-				if (!upload_mdata && !upload_loader && uptr == FIRMWARE_UPLOAD_END + LDR_LOADER_LEN)
-					crc_final = flash_crc16(FIRMWARE_UPLOAD_START, FIRMWARE_UPLOAD_END) == 0xb001
-						&& loader_stage_fits() ? 0xb001 : 0;
-				else
-#endif
-				/* the stream CRC alone doesn't catch a write that went wrong */
-				if (crc_final == 0xb001 && flash_crc16(upload_mdata ? MDATA_START : upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START, uptr) != 0xb001) {
-					print_string("Flash read-back does not match the upload\n");
-					crc_final = 0;		/* refused below as a bad checksum */
-				}
-				// Both bodies are 33 bytes; Content-Length lets the
-				// browser complete the response without waiting for
-				// the connection close (which a reset would swallow)
-				if (upload_mdata) {
-					/* in place, not needed to boot: no reset, and a bad
-					 * region only leaves the board's extra (PoE) off */
-					if (crc_final == 0xb001 && mdata_len(MDATA_START) == uptr - MDATA_START) {
-						print_string("Machine data written, applies at the next boot\n");
-						slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 36\r\n"
-							"Content-Type: text/plain\r\n\r\n"
-							"OK: machine data written, next boot\n");
-					} else {
-						print_string("Machine data not valid\n");
-						slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 27\r\n"
-							"Content-Type: text/plain\r\n\r\n"
-							"NO: not valid machine data\n");
-					}
-				} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_stage_fits()) {
-					print_string("Not a loader for this layout\n");
-					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 33\r\n"
-						"Content-Type: text/plain\r\n\r\n"
-						"NO: not a loader for this layout\n");
-#ifndef LAYOUT_COMPACT
-				/* a compact board without one is converted at the next boot
-				 * (boot.c loader_convert()); a standard image uses the
-				 * loader's area for itself */
-				} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_present()) {
-					print_string("No loader to update\n");
-					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 29\r\n"
-						"Content-Type: text/plain\r\n\r\n"
-						"NO: no loader on this switch\n");
-#endif
-				} else if (crc_final == 0xb001 && (!upload_loader || uptr == LDR_STAGE + LDR_LOADER_LEN)) {
-					print_string("Checksum OK.\nUpload to flash done, will reset!\n");
-					slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 33\r\n"
-						"Content-Type: text/plain\r\n\r\n"
-						"OK: checksum verified, rebooting\n");
-#ifdef LAYOUT_COMPACT
-					if (upload_loader || uptr == FIRMWARE_UPLOAD_END + LDR_LOADER_LEN)
-						loader_convert_arm();	/* a board without the loader */
-#endif
-					// Reset once the response is fully ACKed
-					s->fw_reset_pending = FW_UPDATE_PENDING;
-				} else {
-					print_string("Checksum incorrect! Aborting.\n");
-					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 33\r\n"
-						"Content-Type: text/plain\r\n\r\n"
-						"NO: checksum failed, not applied\n");
-				}
-				/* A refused /loader or install image may have left a whole
-				 * loader at LDR_STAGE: the next boot would convert to it. */
-				if (s->fw_reset_pending != FW_UPDATE_PENDING && !upload_mdata
-				    && (upload_loader || (uptr > LDR_STAGE && uptr <= LDR_STAGE + LDR_LOADER_LEN)))
-					loader_stage_drop();
-			}
-			if (upload_settings.bptr >= upload_settings.plen)
-				return 0;
-			return 1;
-		}
+		if (!boundary[bindex])
+			return UP_END;
 		if (upload_settings.p[upload_settings.bptr] == boundary[bindex]) {
 			if (!bindex)
 				crc_final = crc_value;
@@ -567,41 +497,190 @@ uint8_t stream_upload(void)
 				crc16_bank1(upload_settings.p + upload_settings.bptr);
 				flash_buf[write_len++] = upload_settings.p[upload_settings.bptr++];
 			}
-			if (write_len >= FLASH_PAGE_SIZE) {
-				/* The staged image spans FIRMWARE_UPLOAD_START to _END (or the
-				 * loader stage), the span that is read back. Nothing
-				 * else bounds uptr: a body whose closing boundary never arrives
-				 * keeps writing, and on a flash exactly this size the address
-				 * wraps onto the running image at zero. */
-				if (uptr >= upload_end) {
-					print_string("Upload runs past the image area! Aborting.\n");
-					slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 30\r\n"
-						"Content-Type: text/plain\r\n\r\n"
-						"NO: upload exceeds image area\n");
-					s->tstate = TSTATE_NONE;
-					return 0;
-				}
-				dbg_string("len: "); dbg_short(write_len); dbg_char(' ');
-				dbg_string("CRC16: "); dbg_short(crc_value); dbg_char('\n');
-				if (uptr % FLASH_SECTOR_SIZE == 0) {
-					flash_region.addr = uptr;
-					flash_sector_erase();
-				}
-				flash_region.addr = uptr;
-				flash_region.len = FLASH_PAGE_SIZE;
-				flash_write_bytes(flash_buf);
-				uptr += FLASH_PAGE_SIZE;
-				write_len -= FLASH_PAGE_SIZE;
-
-				// Copy the remaining byte for the next page to the beginning of the buffer.
-				if (write_len > 0) {
-					memcpy(flash_buf, flash_buf + FLASH_PAGE_SIZE, write_len);
-				}
-			}
 		}
-	} while(1);
+	} while (write_len < FLASH_PAGE_SIZE);
+	return UP_PAGE;
 }
 
+/* The answer to a written part, its read-back CRC in crc_value */
+static void upload_verdict(void)
+{
+	dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
+#ifdef LAYOUT_COMPACT
+	/* An install image: the application, then the loader at
+	 * LDR_STAGE, each with its own CRC. A board without the
+	 * loader converts at the next boot, then the loader
+	 * installs the application; one with it ignores the stage. */
+	if (up_install)
+		crc_final = crc_value == 0xb001 && loader_stage_fits() ? 0xb001 : 0;
+	else
+#endif
+	/* the stream CRC alone doesn't catch a write that went wrong */
+	if (crc_final == 0xb001 && crc_value != 0xb001) {
+		print_string("Flash read-back does not match the upload\n");
+		crc_final = 0;		/* refused below as a bad checksum */
+	}
+	// Both bodies are 33 bytes; Content-Length lets the
+	// browser complete the response without waiting for
+	// the connection close (which a reset would swallow)
+	if (upload_mdata) {
+		/* in place, not needed to boot: no reset, and a bad
+		 * region only leaves the board's extra (PoE) off */
+		if (crc_final == 0xb001 && mdata_len(MDATA_START) == uptr - MDATA_START) {
+			print_string("Machine data written, applies at the next boot\n");
+			slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 36\r\n"
+				"Content-Type: text/plain\r\n\r\n"
+				"OK: machine data written, next boot\n");
+		} else {
+			print_string("Machine data not valid\n");
+			slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 27\r\n"
+				"Content-Type: text/plain\r\n\r\n"
+				"NO: not valid machine data\n");
+		}
+	} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_stage_fits()) {
+		print_string("Not a loader for this layout\n");
+		slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 33\r\n"
+			"Content-Type: text/plain\r\n\r\n"
+			"NO: not a loader for this layout\n");
+#ifndef LAYOUT_COMPACT
+	/* a compact board without one is converted at the next boot
+	 * (boot.c loader_convert()); a standard image uses the
+	 * loader's area for itself */
+	} else if (crc_final == 0xb001 && upload_loader && uptr == LDR_STAGE + LDR_LOADER_LEN && !loader_present()) {
+		print_string("No loader to update\n");
+		slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 29\r\n"
+			"Content-Type: text/plain\r\n\r\n"
+			"NO: no loader on this switch\n");
+#endif
+	} else if (crc_final == 0xb001 && (!upload_loader || uptr == LDR_STAGE + LDR_LOADER_LEN)) {
+		print_string("Checksum OK.\nUpload to flash done, will reset!\n");
+		slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 33\r\n"
+			"Content-Type: text/plain\r\n\r\n"
+			"OK: checksum verified, rebooting\n");
+#ifdef LAYOUT_COMPACT
+		if (upload_loader || up_install)
+			loader_convert_arm();	/* a board without the loader */
+#endif
+		// Reset once the response is fully ACKed
+		up_reset = FW_UPDATE_PENDING;
+	} else {
+		print_string("Checksum incorrect! Aborting.\n");
+		slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 33\r\n"
+			"Content-Type: text/plain\r\n\r\n"
+			"NO: checksum failed, not applied\n");
+	}
+	/* A refused /loader or install image may have left a whole
+	 * loader at LDR_STAGE: the next boot would convert to it. */
+	if (up_reset != FW_UPDATE_PENDING && !upload_mdata
+	    && (upload_loader || (uptr > LDR_STAGE && uptr <= LDR_STAGE + LDR_LOADER_LEN)))
+		loader_stage_drop();
+}
+
+/*
+ * FL_PROG: up to UP_PAGES pages of the staged segment parsed and programmed
+ * Returns UP_PROG (more), UP_ERASE (the sector at fl_addr first), UP_VERIFY
+ * (the part has ended) or UP_DONE (the segment is used up, or the answer built)
+ */
+uint8_t upload_prog(void) __banked
+{
+	for (up_n = UP_PAGES; up_n; up_n--) {
+		if (!up_r)		/* kept across an FL_ERASE */
+			up_r = upload_fill();
+		if (up_r == UP_MORE) {
+			up_r = 0;
+			up_state = TSTATE_POST;
+			return UP_DONE;
+		}
+		/* The staged image spans FIRMWARE_UPLOAD_START to _END (or the
+		 * loader stage), the span that is read back. Nothing
+		 * else bounds uptr: a body whose closing boundary never arrives
+		 * keeps writing, and on a flash exactly this size the address
+		 * wraps onto the running image at zero. */
+		if (up_r == UP_PAGE && uptr >= upload_end) {
+			print_string("Upload runs past the image area! Aborting.\n");
+			slen = strtox(outbuf, "HTTP/1.1 400 Bad Request\r\nContent-Length: 30\r\n"
+				"Content-Type: text/plain\r\n\r\n"
+				"NO: upload exceeds image area\n");
+			up_r = 0;
+			up_state = TSTATE_NONE;
+			return UP_DONE;
+		}
+		/* a page opening a sector, or a last partial one */
+		if (!up_erased && !(uptr % FLASH_SECTOR_SIZE) && (up_r == UP_PAGE || write_len)) {
+			up_erased = 1;
+			fl_addr = uptr;
+			return UP_ERASE;
+		}
+		up_erased = 0;
+		flash_region.addr = uptr;
+		if (up_r == UP_PAGE) {
+			dbg_string("len: "); dbg_short(write_len); dbg_char(' ');
+			dbg_string("CRC16: "); dbg_short(crc_value); dbg_char('\n');
+			flash_region.len = FLASH_PAGE_SIZE;
+			flash_write_bytes(flash_buf);
+			uptr += FLASH_PAGE_SIZE;
+			write_len -= FLASH_PAGE_SIZE;
+			up_r = 0;
+			// Copy the remaining byte for the next page to the beginning of the buffer.
+			if (write_len > 0)
+				memcpy(flash_buf, flash_buf + FLASH_PAGE_SIZE, write_len);
+			continue;
+		}
+		dbg_string("len 2: "); dbg_short(write_len); dbg_char(' ');
+		flash_region.len = write_len;
+		flash_write_bytes(flash_buf);
+		uptr += write_len;
+		write_len = 0;
+		up_r = 0;
+		up_state = TSTATE_NONE;
+		if (!verify_crc)
+			return UP_DONE;
+		/* the read-back: of an install image its application, else of
+		 * what was written, if the stream CRC was good */
+#ifdef LAYOUT_COMPACT
+		up_install = !upload_mdata && !upload_loader && uptr == FIRMWARE_UPLOAD_END + LDR_LOADER_LEN;
+		if (up_install) {
+			vf_at = FIRMWARE_UPLOAD_START;
+			vf_end = FIRMWARE_UPLOAD_END;
+		} else
+#endif
+		{
+			vf_at = upload_mdata ? MDATA_START : upload_loader ? LDR_STAGE : FIRMWARE_UPLOAD_START;
+			vf_end = crc_final == 0xb001 ? uptr : vf_at;
+		}
+		crc_value = 0;
+		return UP_VERIFY;
+	}
+	return UP_PROG;
+}
+
+/* FL_VERIFY: VF_CHUNK bytes more of the read-back; at its end the answer.
+ * Returns UP_VERIFY (more) or UP_DONE */
+uint8_t upload_verify(void) __banked
+{
+	flash_crc16_from = vf_at;
+	vf_at += VF_CHUNK;
+	if (vf_at > vf_end)
+		vf_at = vf_end;
+	flash_crc16_to = vf_at;
+	flash_crc16_more();
+	if (vf_at != vf_end)
+		return UP_VERIFY;
+	upload_verdict();
+	return UP_DONE;
+}
+
+/* A segment staged in config_buf: into the flash job, the connection stopped
+ * (a zero window) until it has written it. 0 if the job is busy. */
+static uint8_t upload_stage(void)
+{
+	fl_req = FL_UPLOAD;
+	if (!flash_job_start())
+		return 0;
+	uip_stop();
+	uip_conn->appstate.tstate = TSTATE_UPLOAD;
+	return 1;
+}
 
 static void handle_config_fragment(__xdata uint8_t *p)
 {
@@ -630,7 +709,17 @@ static void handle_config_fragment(__xdata uint8_t *p)
 		send_bad_request();
 		return;
 	}
+	/* the job writes it; the poll after sends the OK */
 	send_ok();
+	fl_req = FL_CONFIG;
+	if (!flash_job_start()) {
+		send_bad_request();
+		return;
+	}
+	up_state = TSTATE_NONE;
+	up_reset = 0;
+	uip_stop();
+	s->tstate = TSTATE_UPLOAD;
 }
 
 
@@ -666,10 +755,17 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 	// clear any stale response so the completion check in the
 	// appcall POST branch cannot send leftovers
 	slen = 0;
+	up_reset = 0;
+	up_r = 0;
+	up_erased = 0;
+	up_dot = 0;
 	upload_settings.p = config_buf;
 	upload_settings.bptr = payload_start;
 	upload_settings.plen = pre_acc;
-	stream_upload();
+	if (!upload_stage()) {
+		s->tstate = TSTATE_NONE;
+		send_bad_request();
+	}
 
 	dbg_string("Done reading first fragment\n");
 }
@@ -1038,6 +1134,12 @@ void httpd_appcall(void)
 		dbg_string("Connected...\n");
 		s->tstate = TSTATE_NONE;
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
+		/* the job still writes from config_buf for a connection that has
+		 * ended: no request may land there until it is done */
+		if (fl_kind) {
+			uip_abort();
+			s->tstate = TSTATE_CLOSED;
+		}
 	} else if (uip_closed()) {
 		dbg_string("Connection closed\n");
 		if (s->tstate == TSTATE_WEBCMD)
@@ -1053,7 +1155,20 @@ void httpd_appcall(void)
 		s->tstate = TSTATE_CLOSED;
 	} else if (uip_poll()) {
 		uip_len = 0;
-		if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
+		if (s->tstate == TSTATE_UPLOAD && fl_finished) {
+			/* the flash job has written it: the window opens again */
+			fl_finished = 0;
+			s->tstate = up_state;
+			if (up_reset)
+				s->fw_reset_pending = up_reset;
+			uip_restart();
+			if (up_state == TSTATE_POST) {
+				if (up_dot)
+					write_char('.');
+			}
+			else if (slen)
+				send_outbuf();
+		} else if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
 			webcmd_done = 0;
 			send_outbuf();
 		} else if (s->tstate == TSTATE_ACKED) {
@@ -1116,15 +1231,19 @@ void httpd_appcall(void)
 		if (config_upload || uip_len <= max_upload) {
 			if (!config_upload)
 				max_upload -= uip_len;
-			upload_settings.p = uip_appdata;
+			/* the stage: config_buf, unused once the headers are read */
+			memcpy(config_buf, uip_appdata, uip_len);
+			upload_settings.p = config_buf;
 			upload_settings.bptr = 0;
 			upload_settings.plen = uip_len;
-			stream_upload();
-			// A completed part with a built verdict must go out
-			// through the normal TX path
-			if (s->tstate == TSTATE_NONE && slen)
-				goto do_send;
-			write_char('.');
+			up_dot = 1;
+			if (upload_stage()) {
+				uip_len = 0;
+				return;
+			}
+			s->tstate = TSTATE_NONE;
+			send_bad_request();
+			goto do_send;
 		} else {
 			send_bad_request();
 			goto do_send;
@@ -1159,7 +1278,8 @@ void httpd_appcall(void)
 			handle_post(body_off);
 			// If this is an ongoing post stream, then wait for the next packet
 			if (s->tstate == TSTATE_POST || s->tstate == TSTATE_MULTIPART
-			    || s->tstate == TSTATE_POSTBODY || s->tstate == TSTATE_WEBCMD) {
+			    || s->tstate == TSTATE_POSTBODY || s->tstate == TSTATE_WEBCMD
+			    || s->tstate == TSTATE_UPLOAD) {
 				uip_len = 0;
 				return;
 			}

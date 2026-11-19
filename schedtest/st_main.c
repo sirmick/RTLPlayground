@@ -9,6 +9,7 @@
 #include "con_ring.h"
 #include "crash.h"
 #include "schedtest/schedtest.h"
+#include "flash_job.h"
 
 extern __xdata uint8_t serial_reset_ok;
 
@@ -25,6 +26,18 @@ __xdata uint8_t  st_slow_req = 3;	/* st_b3.c: slow, once, 2 s after boot */
 __xdata uint8_t  st_slow_req;
 #endif
 __xdata uint16_t st_con_rx_n, st_con_rx_sum;
+
+/* The firmware's flash job (flash_job.c) isn't linked, as its tasks aren't:
+ * nothing here uploads or saves, so a request finds it busy. */
+__xdata uint8_t fl_req, fl_kind, fl_finished;
+__xdata uint8_t * __xdata fl_src;
+__xdata uint16_t fl_len;
+__xdata uint32_t fl_addr;
+
+uint8_t flash_job_start(void) __banked
+{
+	return 0;
+}
 
 /* ---- the log ---- */
 

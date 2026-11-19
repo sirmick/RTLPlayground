@@ -15,7 +15,8 @@ task cli fixed first=CLI_IDLE
 state CLI_IDLE    cli_idle
 state CLI_RUN     cli_run
 state CLI_PROMPT  cli_prompt
-task net fixed
+task net fixed first=NET_START
+state NET_START   net_start
 state NET_TICK    net_task
 task stp fixed freq=medium
 state STP_TICK    stp_task
@@ -29,3 +30,11 @@ state SFP_POLL    sfp_task
 task house fixed first=HOUSE_START
 state HOUSE_START house_start
 state HOUSE_SEC   house_task
+# The flash job (flash_job.c, doc/sched/flash.md): an upload segment, the
+# config save, the factory reset; claimed by flash_job_start().
+task flash job first=FL_PROG
+source flash_job.c
+state FL_ERASE    fl_erase
+state FL_PROG     fl_prog
+state FL_VERIFY   fl_verify
+state FL_DONE     fl_end
