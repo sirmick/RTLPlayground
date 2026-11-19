@@ -3,7 +3,7 @@
 stp     002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
 stp     005 web GET /stp.json     # D1: tcs 0x16 for 0x15
 stp     006 web GET /stpcnt.json  # D1: the BPDU counters, one more
-upload  reg 06f4                  # D1: SEC_COUNTER, the update's reset the other side of a second (SWGT024: some runs only)
+upload  reg 06f4                  # D1: SEC_COUNTER, the update's reset the other side of a second (per build: SWGT024 at f142690, not at 9462bdf)
 vlan    frames * tcp/80           # U4: the /cmd's reply is sent on a later poll, not with the request's ACK: one TCP frame more (28 -> 29)
 config  frames * tcp/80           # U4: the same, its one /cmd (32 -> 33)
 # (the reply itself is the same: "010 web POST /cmd" matches; D1's loop RLDP count doesn't shift in D3's phase)

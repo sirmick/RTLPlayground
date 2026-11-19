@@ -184,7 +184,7 @@ From ~/src/ovs-rtlpg:
 | board | with d3-oldnew.expect |
 |---|---|
 | 8x (keeplink_kp_9000_9xhpml_v1_2) | 14 of 14 match |
-| SWGT024 (swgt024_v2_0_unmanaged) | 14 of 14 match (its `upload reg 06f4` line matched nothing this run: flagged, not failed) |
+| SWGT024 (swgt024_v2_0_unmanaged) | 14 of 14 match (its `upload reg 06f4` line matches nothing at 9462bdf: flagged, not failed) |
 14 scenarios (boot cli web vlan stp lacp lacp_slow lldp loop igmp config
 upload sfp flaps), the console between steps compared, MAC learning on. The
 lldp scenario (307c230: a 23-character hostname, named VLANs, a 31-character
@@ -195,8 +195,11 @@ At f142690 on bb0ee65 (13 scenarios): 9 of 13 without the expect file, 13 of
 13 with it, on both boards. The differences (d3-oldnew.expect, one line each
 with its reason):
 - stp 002 cli stp status, 005 /stp.json, 006 /stpcnt.json: D1's timing
-- upload reg 06f4 (SEC_COUNTER): D1's timing; which side of a second the
-  reset falls on varies, so on SWGT024 it shows in some runs only
+- upload reg 06f4 (SEC_COUNTER): D1's timing, which side of a second the
+  update's reset falls on. It differs per build, not per run: on SWGT024
+  f142690 gives 0x56 for the old 0x57, 9462bdf gives 0x57 (no difference);
+  the 8x differs at both. Three saved runs of b635486 vs 9462bdf on SWGT024
+  (ovs 307c230) are identical, all 28 result files
 - vlan / config `frames * tcp/80`: 28 -> 29, 32 -> 33: the /cmd's reply goes
   out on a later poll, not with the request's ACK (one TCP frame more); the
   reply itself matches ("web POST /cmd" results equal)
