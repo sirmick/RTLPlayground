@@ -2417,6 +2417,9 @@ void cli_job_more(void) __banked
 	case CLI_JOB_LACP:
 		job_more = lacp_show_line();
 		break;
+	case CLI_JOB_STPFDB:
+		job_more = stp_fdb_line();
+		break;
 #ifndef SCHEDTEST
 	case CLI_JOB_HEALTH:
 		job_more = sched_health_line();
