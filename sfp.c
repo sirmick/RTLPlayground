@@ -75,21 +75,47 @@ static inline uint8_t sfp_rate_to_sds_config(uint8_t rate)
 
 
 
-bool sfp_print_info(uint8_t sfp) __banked
-{
-	// This loops over the Vendor-name, Vendor OUI, Vendor PN and Vendor rev ASCII fields
-	for (uint8_t i = 16; i < 64; i++) {
-		if (!(i & 0xf) && !sfp_read_block(sfp, i, 16))
-			return false;
-		if (i < 20 || i >= 60 || (i >= 36 && i < 40)) // Skip Non-ASCII codes
-			continue;
-		uint8_t c = sfp_buf[i & 0xf];
-		if (c)
-			write_char(c);
-	}
-	print_string("\n");
+/* The bytes `sfp` prints that no other cache keeps: encoding, rate (12,
+ * as read, not the speed setting's) and options (92, before the quirks) */
+static __xdata uint8_t sfp_raw[2][3];
+static __xdata uint8_t * __xdata sp;
+static __xdata uint8_t si, so;
 
-	return true;
+/* `sfp`'s lines for a present module, from the caches (E2 review): the
+ * read's bytes and the DDM cache (refreshed every 2 s), no I2C */
+void sfp_print(uint8_t sfp) __banked
+{
+	if (!sfp_ready[sfp]) {			/* not read (yet), or the read failed */
+		print_string(" - I2C read failed on this slot\n");
+		return;
+	}
+	sp = sfp_raw[sfp];
+	print_string(" - Rate: "); print_byte(sp[1]);
+	print_string("  Encoding: "); print_byte(sp[0]);
+	write_char('\n');
+	so = sp[2];
+	sp = sfp_id[sfp];
+	// The Vendor-name, Vendor OUI, Vendor PN and Vendor rev ASCII fields (20..59)
+	for (si = 0; si < SFP_ID_LEN; si++) {
+		if ((si >= 16 && si < 20) || !sp[si])	// Skip Non-ASCII codes (36..39)
+			continue;
+		write_char(sp[si]);
+	}
+	print_string("\nOptions: "); print_byte(so); write_char('\n');
+	if (!(sfp_options[sfp] & 0x40))
+		return;
+	if (!sfp_diag_ok[sfp]) {
+		print_string("I2C read failed on this slot\n");
+		return;
+	}
+	sp = sfp_diag[sfp] + 224 - SFP_DDM_FIRST;
+	print_string("Temp: "); print_byte(sp[0]); print_byte(sp[1]); write_char('\n');
+	print_string("Vcc: "); print_byte(sp[2]); print_byte(sp[3]); write_char('\n');
+	print_string("TX Bias: "); print_byte(sp[4]); print_byte(sp[5]); write_char('\n');
+	print_string("TX Power: "); print_byte(sp[6]); print_byte(sp[7]); write_char('\n');
+	print_string("RX Power: "); print_byte(sp[8]); print_byte(sp[9]); write_char('\n');
+	print_string("Laser: "); print_byte(sp[10]); print_byte(sp[11]); write_char('\n');
+	print_string("State: "); print_byte(sp[14]); write_char('\n');
 }
 
 
@@ -162,6 +188,8 @@ static uint8_t sfp_read_failed(void)
 {
 	print_string("SFP: an I2C read failed, retrying on the next poll\n");
 	sfp_pins_last |= 0x01 << (sfp << 2);
+	/* the caches hold nothing of a module that may be gone (E2 review) */
+	sfp_ready[sfp] = sfp_id_ok[sfp] = sfp_diag_ok[sfp] = 0;
 	return SFP_FAIL;
 }
 
@@ -183,7 +211,8 @@ uint8_t sfp_read_next(uint8_t slot) __banked
 	if (ri == 0) {
 		// Reg 11: Encoding, see SFF-8472 and SFF-8024
 		// Reg 12: Signalling rate (including overhead) in 100Mbit: 0xd: 1Gbit, 0x67:10Gbit
-		rc = sfp_buf[1];
+		sfp_raw[sfp][0] = sfp_buf[0];
+		rc = sfp_raw[sfp][1] = sfp_buf[1];
 		rj = sfp_speed[sfp];
 		if (rj == SFP_SPEED_100M)
 			rc = 0x1;
@@ -213,7 +242,7 @@ uint8_t sfp_read_next(uint8_t slot) __banked
 			print_string("\n\n");
 		}
 	} else if (ri == 4) {
-		sfp_options[sfp] = sfp_buf[0];
+		sfp_options[sfp] = sfp_raw[sfp][2] = sfp_buf[0];
 	} else {		/* vendor, model, serial: trimmed, for the pages and quirks */
 		fd = ri == 5 ? sfp_module_vendor[sfp] : ri == 6 ? sfp_module_model[sfp] : sfp_module_serial[sfp];
 		sfp_field();

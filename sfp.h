@@ -26,7 +26,7 @@ extern __xdata uint8_t sfp_diag[2][SFP_DDM_LEN];
 extern __xdata uint8_t sfp_id_ok[2], sfp_diag_ok[2];
 extern __xdata uint8_t sfp_ready[2];
 
-bool sfp_print_info(uint8_t sfp) __banked;
+void sfp_print(uint8_t sfp) __banked;	/* `sfp`'s lines for a present module, from the caches */
 void sfp_apply_quirks(uint8_t sfp) __banked __reentrant;
 void setup_sfp_gpio(void) __banked;
 /* the sfp tasks' steps (tasks.c), one slot each */
