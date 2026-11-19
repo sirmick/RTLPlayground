@@ -36,6 +36,7 @@
 #include "rtl837x_leds.h"
 #include "rtl837x_rldp.h"
 #include "phy.h"
+#include "con_ring.h"
 
 
 extern __code const struct machine machine;
@@ -2478,6 +2479,8 @@ static void ph_line(__code const char *name, uint8_t id)
 }
 
 
+static __xdata uint16_t health_con_ov;
+
 void health_show(void) __banked
 {
 	__xdata uint8_t i;
@@ -2492,6 +2495,11 @@ void health_show(void) __banked
 	print_long(health_loops);
 	print_string(" rx ");
 	print_short(health_rx_frames);
+	print_string(" con rx overruns ");
+	ES = 0;			/* the ISR writes it: read both bytes at once */
+	health_con_ov = con_rx_overruns;
+	ES = 1;
+	itoa_short(health_con_ov);
 	write_char('\n');
 
 	/* Phase timing: max duration seen (ticks of 5 ms) and slow-pass count */

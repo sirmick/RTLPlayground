@@ -213,6 +213,7 @@ SRCS = \
 	$(MACHINE_SRC) \
 	$(MACHINE_INIT_SRC) \
 	cmd_editor.c \
+	con_ring.c \
 	cmd_parser.c \
 	dhcp.c \
 	html_data.c \
@@ -274,7 +275,7 @@ DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
 # it in BANK1-3 after compiling (tools/place_banks.py, result in
 # $(BUILDDIR)/banks.txt): no bank placement in the sources or anywhere else.
 RESIDENT_SRCS = $(MACHINE_SRC) html_data.c rtlplayground.c boot0.c update_apply.c timer.c \
-	udp_apps.c rtl837x_flash.c rtl837x_nic.c httpd/html_out.c
+	udp_apps.c rtl837x_flash.c rtl837x_nic.c httpd/html_out.c con_ring.c
 # The scheduler test image adds its sources here (make schedtest).
 ifneq ($(SCHEDTEST),)
 include schedtest/schedtest.mk

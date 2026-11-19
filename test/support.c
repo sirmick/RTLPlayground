@@ -16,12 +16,14 @@
  * the firmware's own sleep() declaration in rtl837x_common.h. */
 extern unsigned int alarm(unsigned int);
 extern void _exit(int);
-#include "rtl837x_common.h"     /* SBUF_SIZE, CMD_BUF_SIZE, CMD_HISTORY_SIZE, decls */
+#include "rtl837x_common.h"     /* CMD_BUF_SIZE, CMD_HISTORY_SIZE, decls */
+#include "con_ring.h"           /* the console RX ring the editor reads */
 #include <test/support.h>
 
 /* --- symbols the editor/parser reference (extern in the firmware headers) --- */
-__xdata volatile uint8_t sbuf_ptr;
-__xdata uint8_t          sbuf[SBUF_SIZE];
+__xdata uint8_t          con_rx_buf[CON_RX_SIZE];
+volatile __xdata uint8_t con_rx_head;
+__xdata uint8_t          con_rx_tail;
 uint8_t                  cmd_buffer[CMD_BUF_SIZE];   /* ASan-instrumented: OOB caught */
 uint8_t                  cmd_available;
 uint8_t                  err_status;
@@ -29,8 +31,6 @@ uint8_t                  cmd_history[CMD_HISTORY_SIZE];
 uint16_t                 cmd_history_ptr;
 __xdata uint16_t         session_timeout = 200;   /* httpd global, referenced by page_impl.c */
 
-/* editor-internal read pointer (defined in cmd_editor.c, external linkage) */
-extern __xdata uint8_t l;
 
 /* the editor entry points under test */
 void cmd_editor_init(void);
@@ -60,23 +60,23 @@ void itoa(uint8_t v) {                       /* firmware prints a decimal number
 
 /* ------------------------------ environment -------------------------------- */
 void env_reset(void) {
-    sbuf_ptr = 0;
-    t_memset(sbuf, 0, sizeof(sbuf));
+    con_rx_head = 0;
+    t_memset(con_rx_buf, 0, sizeof(con_rx_buf));
     t_memset(cmd_buffer, 0, sizeof(cmd_buffer));
     t_memset(cmd_history, 0, sizeof(cmd_history));
     cmd_history_ptr = 0;
     cmd_available = 0;
     err_status = 0;
     out_reset();
-    cmd_editor_init();          /* sets l = sbuf_ptr, clears cursor/len */
+    cmd_editor_init();          /* sets con_rx_tail = con_rx_head, clears cursor/len */
 }
 
 /* Push one byte into the ring, draining first if it is full (leave 1 slot). */
 static void ring_push(uint8_t b) {
-    while (((sbuf_ptr + 1) & SBUF_MASK) == l)
+    while ((uint8_t)(con_rx_head + 1) == con_rx_tail)
         cmd_edit();                          /* drain; under the C4 bug this spins */
-    sbuf[sbuf_ptr] = b;
-    sbuf_ptr = (sbuf_ptr + 1) & SBUF_MASK;
+    con_rx_buf[con_rx_head] = b;
+    con_rx_head++;
 }
 
 void feed_n(const char *s, size_t n) {
