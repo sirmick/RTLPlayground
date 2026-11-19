@@ -108,6 +108,8 @@ inline uint8_t is_separator(uint8_t c)
 void httpd_init(void) __banked
 {
 	config_upload = 0; // xdata is not zeroed by the startup code
+	webcmd_pending = 0;
+	webcmd_done = 0;
 	// Start listening to port 80
 	uip_listen(HTONS(80));
 	// Not through uip_conn: it only points at a connection while uIP is
@@ -674,10 +676,17 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 
 
 /* /cmd (net.md item 2): the body is queued in the web command buffer
- * (config_buf: one connection, which waits for the reply meanwhile), the rx
- * task posts EV_WEBCMD, cli runs it (httpd_webcmd_run) and sets webcmd_done,
- * and the connection's next poll sends the reply (U4: a web command no
- * longer runs in the console's buffer). */
+ * (config_buf), the rx task posts EV_WEBCMD, cli runs it (httpd_webcmd_run)
+ * and sets webcmd_done, and the connection's next poll sends the reply (U4: a
+ * web command no longer runs in the console's buffer).
+ * config_buf and outbuf are safe to hold the command and its reply across
+ * steps because uIP has one connection: while it waits in TSTATE_WEBCMD no
+ * other request can arrive, and no command touches config_buf. If it ends
+ * first, the queued command is cancelled (webcmd_pending cleared) before the
+ * next connection can write config_buf (console.md). */
+#if UIP_CONNS != 1
+#error "/cmd queues its command in config_buf and its reply in outbuf: give it its own buffers for UIP_CONNS > 1"
+#endif
 __xdata uint8_t webcmd_pending, webcmd_done;
 
 static void webcmd_queue(__xdata uint8_t *body)
@@ -1031,11 +1040,15 @@ void httpd_appcall(void)
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
 	} else if (uip_closed()) {
 		dbg_string("Connection closed\n");
+		if (s->tstate == TSTATE_WEBCMD)
+			webcmd_pending = webcmd_done = 0;	/* nobody waits for it */
 		s->tstate = TSTATE_CLOSED;
 		if (s->fw_reset_pending && uip_acked())
 			reset_chip();
 	} else if (uip_aborted() || uip_timedout()) {
 		dbg_string("Connection aborted\n");
+		if (s->tstate == TSTATE_WEBCMD)
+			webcmd_pending = webcmd_done = 0;
 		uip_close();
 		s->tstate = TSTATE_CLOSED;
 	} else if (uip_poll()) {
