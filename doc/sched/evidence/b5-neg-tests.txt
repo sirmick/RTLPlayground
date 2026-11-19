@@ -141,3 +141,16 @@ exit 0, 4 s wall.
 - powercut: the test cuts power after the loader, with a valid record waiting
   at _crash_boot. That stands in for cutting instead of the reset: the
   record is in xdata either way, and a cut clears it.
+
+## Update 2026-11-19: rerun on firmware_init() images, the corrected rtlsim
+
+B5's reset tests (hang, ctrl_r, powercut) now run on images whose main()
+runs the firmware's own boot first (firmware_init(), 567ce3f): on the 8x a
+reset before the switch init hangs the chip, and rtlsim (ovs-rtlpg
+2b12fe6..05424fe) now models that early-reset hang (the application's
+resets only; the loader's boot), reads 0x00 from the busy bank window, and
+times flash programs as the 8x does. sim_tests' erasepeek expects 0x00.
+make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice ..."
+(base and hang 567ce3f, overrun and bad_flash d52fa0d): exit 0, 314 s;
+sim_tests 0 failures, deterministic (234 s); sim_neg 0 failures,
+deterministic (80 s). make -C test -j8 quick: 20 PASSED.

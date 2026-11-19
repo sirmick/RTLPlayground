@@ -406,7 +406,7 @@ class Suite:
     def t_probes(self, sim):
         """silicon.py's console commands: peek prints what the simulator reads;
         flashtime times and verifies its programs; erasepeek's busy row is
-        rtlsim's 0xff and its idle row the bank's code, and its reads are the
+        rtlsim's 0x00 and its idle row the bank's code, and its reads are the
         one flash-busy finding (the sanctioned bank-window read, a movc from
         flash_erase_peek in the common area), so rtlsim exits 6."""
         self.boot(sim)
@@ -434,7 +434,7 @@ class Suite:
         m = bad and re.search(r"movc of 4000 \(flash \w+\) at pc=([0-9a-f]+) psbank=([0-9a-f]+)", bad[0][2])
         fn = m and [n for a, n in funcs if a <= int(m.group(1), 16)][-1]
         self.record(peek_bank=bank, peek_checks=[c[1] for c in bad], peek_fn=fn)
-        self.check(peek[:64] == b"\xff" * 64, "erasepeek: the busy row reads 0xff (rtlsim's model)", peek[:64].hex())
+        self.check(peek[:64] == bytes(64), "erasepeek: the busy row reads 0x00 (rtlsim's model of the 8x)", peek[:64].hex())
         self.check(peek[64:] == code, f"erasepeek: the idle row is bank {bank}'s code", peek[64:].hex())
         self.check(len(bad) == 1 and bad[0][1] == "flash-busy" and m and int(m.group(2), 16) == bank
                    and fn == "_flash_erase_peek",

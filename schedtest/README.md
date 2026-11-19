@@ -63,7 +63,7 @@ compares every measured number.
 | stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
 | horizon | 170 s with no input: con's wait without timeout reaches its horizon (~164 s) and is pushed on, without running |
 | soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
-| probes | silicon.py's commands: `peek` prints what the simulator reads; `flashtime` verifies and times (erase ~40 ms); `erasepeek`'s busy row is rtlsim's 0xff, its idle row the bank's code, and its reads are the one checker finding (flash-busy, a movc in `flash_erase_peek`): rtlsim exits 6 |
+| probes | silicon.py's commands: `peek` prints what the simulator reads; `flashtime` verifies and times (erase ~40 ms); `erasepeek`'s busy row is rtlsim's 0x00, its idle row the bank's code, and its reads are the one checker finding (flash-busy, a movc in `flash_erase_peek`): rtlsim exits 6 |
 
 Every test also requires the simulator's checks to be clean
 ("unmodelled" register notes from the CPU setup excepted), and dumps its
