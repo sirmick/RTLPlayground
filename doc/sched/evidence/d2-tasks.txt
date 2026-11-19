@@ -125,3 +125,35 @@ tasks.c, and cmd_parser's health tasks/clear are #ifndef SCHEDTEST, which
 kept it at D1's packing: base 52 / 554 / 13 B free, common 632 B left).
 make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice ..."
   exit 0, 92 s: sim_tests 0 failures, deterministic; sim_neg 0 failures, deterministic.
+
+## The step criterion (QA d2-long-steps, agreed 2026-11-19)
+
+D2: no step > 20 ms except FL_ERASE and these pre-existing long steps, the
+old loop's own blocking, each owned by a later package (sched_tour run above,
+per command or page with health clear before each):
+
+| state | running | worst | owner |
+|---|---|---|---|
+| CON_EDIT | `stat` | 40.1 ms | D3 (one cli task) + E1 (chunked dumps) |
+| CON_EDIT | `vlan show` | 30.9 ms | D3 + E1 |
+| CON_EDIT | `lacp show` | 42.2 ms | D3 + E1 |
+| CON_EDIT | `storm` | 28.5 ms | D3 + E1 |
+| CON_EDIT | `history` | 80 ms | D3 + E1 |
+| RX_STEP | `GET /vlanlist.json` | 34.2 ms | E4 (VLAN bitmap) |
+
+Baseline, the worst step of everything else over the same tour (boot, CLI
+tour, web pages), for D3/E to compare against:
+
+| state | worst | what |
+|---|---|---|
+| CON_EDIT | 10.2 ms | the rest of the CLI tour (`stp`; `port` 6.5, `version` 5.5) |
+| RX_STEP | 15.9 ms | the rest of the pages (`/cmd_log`; index.html, login.html, app.js ~12.1; stp.json 8.1) |
+| LINK_READ | 36 us | |
+| LOOP_POLL | 12 us | (loop detection off) |
+| NET_TICK | 202 us | |
+| STP_TICK | 18 us | (STP off) |
+| LACP_TICK | 18 us | (LACP off) |
+| LLDP_TICK | 24 us | |
+| SFP_POLL | 42 us | (no module) |
+| HOUSE_SEC | 49 us | |
+| RX_IDLE, LOOP_START, SFP_START, HOUSE_START | - | run once, at the start (cleared by health clear) |
