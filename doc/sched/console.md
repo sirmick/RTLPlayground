@@ -36,10 +36,11 @@ frequency keeps `con` within a few steps of every byte.
 
 | State | Does | Next |
 |---|---|---|
-| `CON_EDIT` | drains the RX ring into the line editor (today's `cmd_edit`), echoes. On Enter: hands the line to cli (posts `EV_LINE`) and waits for cli to take it | `task_wait(EV_CON_RX | EV_CON_TX, FOREVER)` |
+| `CON_EDIT` | drains the RX ring into the line editor (today's `cmd_edit`, on its own `con_line`), echoes. On Enter: sets `con_line_ready`, posts `EV_LINE`, and reads nothing more until cli has taken the line (U2) | `task_wait(EV_CON_RX, FOREVER)` |
 
-If the echo doesn't fit the TX ring, `con` stops draining and waits for
-`EV_CON_TX`; the RX ring buffers meanwhile.
+As built (D3), `con` waits on `EV_CON_RX` only: the echo goes through
+`write_char`, which busy-waits while the TX ring is full, as every other
+print does. The RX ring buffers meanwhile.
 
 ## The `cli` task
 
@@ -55,6 +56,31 @@ Fixed, frequency **once**. One command at a time, from either source.
 buffer, and httpd a separate web command buffer. `CLI_RUN` copies the source
 into `cmd_buffer` and runs the parser on it. This fixes today's bug where a
 web `/cmd` overwrites a half-typed console line.
+
+As built (D3): the console line is `con_line`, copied into `cmd_buffer` in
+`CLI_RUN`; the prompt is printed only in `CLI_PROMPT`, which then clears
+`con_line_ready`, so type-ahead echoes after the prompt. The web command
+buffer is **`config_buf`**, the buffer httpd already holds each request in
+(no new bytes); `execute_commands()` copies it a line at a time into
+`cmd_buffer`, and the reply is captured into `outbuf`. That is safe because:
+
+- uIP has **one** TCP connection (`UIP_CONF_MAX_CONNECTIONS 1`,
+  `uip/uip-conf.h`; `health`'s tcp dump `#error`s otherwise). While the
+  `/cmd` connection waits in `TSTATE_WEBCMD` no other request can arrive,
+  so nothing else writes `config_buf` or `outbuf`.
+- No command touches `config_buf` (only `httpd.c` uses it; the config
+  upload is a request of its own, POST `/config`).
+- If the `/cmd`'s connection ends first (client reset, abort, timeout),
+  httpd clears `webcmd_pending` and `webcmd_done` before the next connection
+  can exist. `CLI_RUN` re-checks `webcmd_pending` right before parsing, and
+  `CLI_PROMPT` posts `EV_CMD_DONE` only if `webcmd_done`: a cancelled
+  command runs nothing, and the next request in `config_buf` is never run
+  as commands (`tools/webcmd_abort.py`). If a new `/cmd` was queued in
+  between, that one runs: it is the one in `config_buf`, and its connection
+  is the one waiting.
+- `httpd.c` `#error`s if `UIP_CONNS != 1`. With more connections the web
+  command and its reply need buffers of their own (the body limit is
+  `CONFIG_UPLOAD_BUF`, 4480 B; the reply up to `TCP_OUTBUF_SIZE`, 2500 B).
 
 ## Chunked output
 

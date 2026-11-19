@@ -7,9 +7,9 @@ proven on the sim, one bug each. None is filed yet; Michael decides when.
 | # | Bug | Where | Found by | Fixed here by |
 |---|---|---|---|---|
 | U1 | The boot prompt is printed before `cmd_editor_init()`, so console bytes arriving in between are dropped (`version` arrives as `ersion`) | `rtlplayground.c` (prompt), `cmd_editor.c:19` | sim, A1 | not yet (independent of the scheduler) |
-| U2 | `cmd_edit` copies a character into `cmd_buffer` before checking `cmd_available`, so a multi-line paste overwrites the command still waiting to run (`stat` runs as `v...`) | `cmd_editor.c` | sim, A2 | M2/D3 (separate console and web buffers, one cli task) |
+| U2 | `cmd_edit` copies a character into `cmd_buffer` before checking `cmd_available`, so a multi-line paste overwrites the command still waiting to run (`stat` runs as `v...`) | `cmd_editor.c` | sim, A2 | fixed in D3 (689e548: the editor's own `con_line`, read stops while a line waits; tools/console_bugs.py) |
 | U3 | The 16 B console RX ring laps silently: no overrun count | `rtlplayground.c` `isr_serial` | sim, A2 | fixed in D1 (256 B ring, overrun count in `health`, decision 19) |
-| U4 | A web `/cmd` overwrites a half-typed console line (one shared buffer) | `cmd_parser` / httpd | audit (os-audit) | M2/D3 |
+| U4 | A web `/cmd` overwrites a half-typed console line (one shared buffer) | `cmd_parser` / httpd | audit (os-audit) | fixed in D3 (689e548: the web command runs from its own buffer in the cli task; f142690 cancels one whose connection ends; tools/console_bugs.py) |
 | U5 | The CRC routine leaves `PSBANK` at 1 | `crc16_bank1` | audit | flash.md: fix on the way |
 | U6 | The health phase IDs clash | `health` | audit | phases.md, independent |
 | U8 | An unknown escape sequence (e.g. ESC O P) makes `cmd_edit` spin forever: two `continue`s don't advance the read position | `cmd_editor.c:61-62`, `:170-171` | review, D1 | not yet |

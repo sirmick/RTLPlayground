@@ -70,7 +70,7 @@ broke the link three times.
 | task table | 168 (24 x 7 B) | XSEG |
 | scheduler globals, per-state stats (~40 states × 3) | ~140 | XSEG |
 | TX ring / RX ring growth | 128 / +240 (RX 256 B from 16; +192 B over the 64 B first planned) | XSEG |
-| web command buffer | 128 | XSEG |
-| control-frame TX buffer | 128 | XSEG |
+| web command buffer | 0: `config_buf`, with uIP's one connection (console.md); its own buffer (up to 4480 B, today's `/cmd` body limit) only if connections ever grow above 1, or smaller with a deliberate, tested limit (E phase) | XSEG |
+| control-frame TX buffer | 164 (`RTL_FRAME_DESC_SIZE` 12 + `CTL_FRAME_MAX` 152, LLDP the largest) | XSEG |
 | upload stage | ~1,500 | XSEG |
 | crash record | 32 | fixed at 0xbfe0, outside every XSEG (chapter 11). Survival across a reset was measured at 0xbf00 (chapter 2); B5 confirms 0xbfe0 |

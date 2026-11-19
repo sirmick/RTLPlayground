@@ -1,0 +1,156 @@
+# D3 evidence: con on its own line, one cli task, control frames' own TX buffer (2026-11-19)
+
+Commits: 8eb7be5 the control-frame TX buffer, 689e548 con / cli / the web
+command, 50ccedb tools/console_bugs.py, f142690 a /cmd whose connection
+ends is cancelled (+ tools/webcmd_abort.py). f142690 is the old-vs-new
+boundary. rtlsim: ovs-rtlpg bb0ee65 (build/rtlsim up to date, make -q).
+Images: f142690 built clean in a worktree (tools/docker-make.sh
+MACHINE=<M> LAYOUT=compact LOADER=1), 8x (KEEPLINK_KP_9000_9XHPML_V1_2)
+and SWGT024 (SWGT024_V2_0_UNMANAGED).
+
+## What D3 does
+
+1. Control-frame TX buffer (8eb7be5, net.md). ctl_buf[RTL_FRAME_DESC_SIZE
+   12 + CTL_FRAME_MAX 152] and ctl_len, in banked frame_tx.c. STP, LACP and
+   LLDP build their frames there (compile-time size asserts) and send with
+   ctl_output(); tcpip_output() and ctl_output() set tx_buf/tx_len and call
+   the static frame_output(). RLDP builds no frames (the chip's engine);
+   IGMP replies stay in uip_buf. Common area -237 B.
+2. con / cli (689e548, console.md). cmd_editor.c edits its own
+   con_line[CMD_BUF_SIZE]; Enter sets con_line_ready (an empty line too),
+   and while it is set the editor reads nothing (U2). con posts EV_LINE and
+   waits on EV_CON_RX only (the echo busy-waits in write_char, as all
+   output does). The cli task (tasks.def: fixed, once): CLI_IDLE takes the
+   console line first, then a queued web command; CLI_RUN copies con_line
+   into cmd_buffer and tokenizes + parses, or runs httpd_webcmd_run();
+   CLI_PROMPT prints the prompt then clears con_line_ready (type-ahead
+   echoes after the prompt), or, for the web, posts EV_CMD_DONE.
+   cmd_service() and the cmd_available bit are gone.
+3. The web command (689e548, f142690; net.md item 2). The /cmd body is
+   queued in config_buf (webcmd_pending, TSTATE_WEBCMD); the rx task posts
+   EV_WEBCMD after rx_service() (httpd can't include sched.h: the host tests
+   have no sched_gen.h); cli runs it, the reply captured in outbuf, sets
+   webcmd_done; the connection's next uip_poll sends it (send_outbuf(),
+   factored out of do_send).
+
+## The web command buffer: config_buf, 0 bytes (QA d3-webcmd-buf)
+
+The book (memory.md, console.md) planned a separate ~128 B buffer. As
+built it is config_buf, and that is safe:
+- uIP has one TCP connection (uip/uip-conf.h UIP_CONF_MAX_CONNECTIONS 1;
+  cmd_parser.c's health tcp dump #errors otherwise; in rtlsim a second
+  concurrent connection is reset, "tcp: found no unused connections").
+  While the /cmd waits in TSTATE_WEBCMD no other request can arrive, so
+  nothing else writes config_buf or outbuf.
+- No command touches config_buf: only httpd.c uses it (the config save is
+  POST /config, a request of its own).
+- The one window: the /cmd's connection ends (reset, abort, timeout) after
+  the queue and before cli runs; the next request then lands in config_buf.
+  At 50ccedb the pending command still ran then (from config_buf, whatever
+  it held by then). f142690: closing or aborting a TSTATE_WEBCMD connection
+  clears webcmd_pending and webcmd_done; CLI_IDLE no longer clears
+  webcmd_pending, CLI_RUN re-checks and clears it right before running, and
+  CLI_PROMPT posts EV_CMD_DONE only if webcmd_done. Both flags are set in
+  httpd_init (xdata isn't zeroed at startup). A /cmd queued again in
+  between is the one that runs: it is what config_buf holds, and its
+  connection is the one waiting.
+- httpd.c #errors if UIP_CONNS != 1: with more connections the command and
+  its reply need buffers of their own (body up to CONFIG_UPLOAD_BUF 4480 B,
+  today's /cmd limit; the reply up to TCP_OUTBUF_SIZE 2500 B).
+A version with its own buffers (webcmd_buf 4480 B + webrep_buf 2500 B,
+xdata +6983 B) was built and dropped once the one-connection fact was
+found (the QA thread has the exchange).
+
+## Resources (f142690, clean worktree)
+
+  make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+    internal RAM: data 105 B (baseline 105), overlay 8 B (8), bits 3 B (3)
+    DSEG symbols: 54, none new; stack 131 B (at least 120)
+    common area: ends 0x3d5b (gate 0x3f80, 549 B left)
+    banks 47754 / 47893 / 47800 B used (1398 / 1259 / 1352 free)
+    PASS
+  SWGT024: PASS, same internal RAM and common area; banks 1246/1384/1338 free.
+  xdata (.mem EXTERNAL RAM): 17869 B on both boards, the same as 50ccedb:
+  f142690 adds 0 B.
+
+## Host tests
+
+  make -C test quick (in the f142690 worktree): QUICK TESTS PASSED, 20
+  tests (test_loader skipped), incl. the U2 unit test in test_cmd_editor.
+
+## schedtest (8x compact, f142690)
+
+  tools/docker-make.sh schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact [ST_NEG=hang|overrun|bad_flash]
+  make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS=--twice OVS=~/src/ovs-rtlpg
+    sim_tests: 0 failures, deterministic: yes, every number the same (108.8 s wall)
+    sim_neg: 0 failures, deterministic (92.2 s wall)
+    exit 0
+
+## Boot transcript (8x)
+
+  (from ~/src/ovs-rtlpg) python3 boot8x.py <f142690 8x -boot> version health ip stat
+  (the driver script at the end of doc/sched/baseline/boot-8x.txt)
+  Identical to boot-8x.txt with the version and build date masked (the only
+  diff is the extracted baseline's end-of-file newline). Boot to prompt
+  13.9 s wall (devel loaded with parallel sims).
+
+## sched_tour (8x)
+
+  python3 tools/sched_tour.py <f142690 8x -boot>
+    slots listed: 24
+    stack: SP at the prompt 0x84, painted 0x8c..0xff, high-water 0xb7, headroom 72 B
+    steps over 20 ms (but FL_ERASE): RX_STEP 34221us, CLI_RUN 41750us
+    sched_tour: FAIL (the long-step check, by design)
+  The long steps are D2's (d2-tasks.txt, QA d2-long-steps resolved): the
+  dumps (stat, vlan show, lacp show, storm, history) now run in CLI_RUN, not
+  CON_EDIT; vlanlist.json is RX_STEP. They move in E1/E4.
+
+## U2 and U4 (tools/console_bugs.py)
+
+  python3 tools/console_bugs.py <-boot image> --board ~/src/ovs-rtlpg/boards/<board>.json
+| image | 8x | SWGT024 |
+|---|---|---|
+| 9948af2 (D2) | FAIL U2 U4 | FAIL U4 (U2 PASS) |
+| 50ccedb | PASS | PASS |
+| f142690 | PASS | PASS |
+  U2 at D2: on the 8x the pasted "version" overwrites "ip" ("vError: Unknown
+  command" twice); on SWGT024 the paste happens to land after the first
+  line ran, so U2 doesn't show there (timing). U4 at D2: the console line
+  runs as "ip" ("sion" is echoed after the web command took the buffer).
+
+## The web command around config uploads, and cancelled (tools/webcmd_abort.py)
+
+  python3 tools/webcmd_abort.py <-boot image> --board ~/src/ovs-rtlpg/boards/<board>.json
+  W1: POST /config, /cmd "ip\nversion", POST /config, /cmd: each reply is
+      the commands' output, each upload in flash (0x7f000).
+  W2: /cmd "hostname aborted" and a client RST injected in the same instant
+      (both in the NIC ring; rx takes up to RX_BUDGET 4 frames a step, so the
+      RST is handled before cli's next step), then POST /config with body
+      "hostname cfgbody ..." on a new connection: hostname unchanged, the
+      console says only "tcp: got reset, aborting connection.", upload in
+      flash.
+| image | 8x | SWGT024 |
+|---|---|---|
+| 50ccedb | W1 PASS, W2 FAIL (hostname -> 'aborted') | W1 PASS, W2 FAIL (hostname -> 'aborted') |
+| f142690 | PASS | PASS |
+  At 50ccedb the cancelled command runs from config_buf before the next
+  connection exists, so W2 fails on the command running, not on the
+  upload's body being run; f142690 shows neither runs.
+
+## Old vs new (ovs-rtlpg bb0ee65 tests/oldnew; OLD = fork main b635486, ~/src/rtlpg-ref)
+From ~/src/ovs-rtlpg:
+  python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <f142690 -boot> --board boards/<board>.json [--expect d3-oldnew.expect]
+| board | without --expect | with d3-oldnew.expect |
+|---|---|---|
+| 8x (keeplink_kp_9000_9xhpml_v1_2) | 9 of 13 match | 13 of 13 match |
+| SWGT024 (swgt024_v2_0_unmanaged) | 9 of 13 match | 13 of 13 match |
+13 scenarios (boot cli web vlan stp lacp lacp_slow loop igmp config upload
+sfp flaps), the console between steps compared, MAC learning on. The
+differences (d3-oldnew.expect, one line each with its reason):
+- stp 002 cli stp status, 005 /stp.json, 006 /stpcnt.json: D1's timing
+- upload reg 06f4 (SEC_COUNTER, both boards in D3): D1's timing
+- vlan / config `frames * tcp/80`: 28 -> 29, 32 -> 33: the /cmd's reply goes
+  out on a later poll, not with the request's ACK (one TCP frame more); the
+  reply itself matches ("web POST /cmd" results equal)
+D1's loop RLDP +1 doesn't show in D3's phase. No console, health or history
+differences: the prompt and type-ahead order, `health` and `history` match.
