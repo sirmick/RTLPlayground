@@ -28,3 +28,5 @@ stp_upload frames * stp              # E3: the upload ~1 s longer: one hello mor
 sfp        reg 0418                  # E2: the I2C controller's last transaction is the DDM refresh (8 bytes from 232), not /ports.json's (1 byte, 238): the pages read the cache
 sfp        reg 0420                  #     its register (0x68 for 0x6e)
 sfp        reg 0424                  #     and the bytes it read
+web        reg 0418                  # E2: no module in this scenario: the old /information.json still tried the empty cage over I2C (a failed read of 16); the new page reads the cache, so no transaction at all
+web        reg 0420                  #     and the register address is never written

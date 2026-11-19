@@ -1,0 +1,73 @@
+# E2 evidence: the SFP slot tasks in steps, the DDM cache (2026-11-19)
+
+Branch feat/sched: 4cee50b (code and book: modules.md "As built (E2)",
+memory.md) on 2af6787 (the loop flags, 27d0ebf, evidence/es-loop-flags.txt).
+Built clean in /tmp/e5/wt-4cee50b, 8x and SWGT024 (both have an SFP cage
+in rtlsim); EXPECT=.../e2-oldnew.expect /tmp/e5/verify.sh 4cee50b tools
+(logs /tmp/e5/v-4cee50b/), rtlsim ovs-rtlpg 83efa85 (export).
+
+## What changed
+
+- sfp0/sfp1 (tasks.c, slot order unchanged): SFP_START, SFP_POLL (pins every
+  50 ms, the slot's arg its poll tick), SFP_WAKE (polling on through the
+  wake-up delay), SFP_READ (one transaction a step: rate+encoding, the ASCII
+  fields x3, options, vendor, model, serial, then the quirks' at most one;
+  the old output, in order), SFP_CONFIG (sds_config), SFP_DDM (4
+  transactions, 0x51 184..239, every 40 polls = 2 s).
+- sfp.c: sfp_pins() (the old pin logic; 1 when the wake-up delay is due,
+  where the old poll read the module), sfp_read_next(), sfp_configure(),
+  sfp_ddm_wanted(), sfp_ddm_next(): one slot each, one transaction, a
+  status; the steps choose the state (decision 22, the sweep's check).
+- httpd/page_impl.c: send_sfp_info() and sfp_send_data() read sfp_id and
+  sfp_diag. A cache not yet filled gives what a failed read gave (an empty
+  field). /information.json's module text is there once SFP_READ has read
+  it (~0.5 s after insertion), not at once.
+- rtl837x_pins.c sfp_read_block(): gives up when the controller is still
+  busy after 1-2 ticks (5-10 ms) instead of spinning. Not reachable in the
+  sim (its I2C answers at once).
+- cli `sfp N <speed>`: sfp_pins(slot) at once (was handle_sfp(), both
+  slots); `sfp` still reads the module live (a diagnostic).
+
+## Results
+
+- gate PASS both: IRAM data 90 B (baseline 90), overlay 8, bits 3, stack 146.
+  Banks free 8x 678/231/663 = 1572 B, SWGT024 656/232/641 = 1529 B (2394 /
+  2351 before: -822 / -822); common area 284 -> 272 B left (4 states x 3
+  in step_addr); xdata +231 B (the caches 2x40 + 2x56, flags, cursors,
+  statics). schedtest (8x): 380/746/239 free.
+- make -C test quick PASSED; make -C test/stp all passed; schedtest-sim
+  --twice 0 failures, deterministic.
+- old-vs-new --checks --known --expect doc/sched/evidence/e2-oldnew.expect:
+  17 of 17 on both boards. The new lines, each an intended difference:
+    sfp reg 0418/0420/0424: the I2C controller's last transaction is the
+      DDM refresh (8 bytes from 232) instead of /ports.json's (1 byte, 238).
+    web reg 0418/0420: no module; the old /information.json tried the empty
+      cage (a failed read), the new page doesn't touch I2C.
+  /ports.json (DDM values, vendor/model/serial, enabled, LOS) and the
+  console are equal in the sfp scenario.
+- SFP steps (the sfp scenario, then `health tasks`, /tmp/e5/sfp_health.py):
+    state       8x runs/max      SWGT024
+    SFP_START   2   12 us        2   12 us
+    SFP_POLL    1159 399 us      2371 399 us
+    SFP_WAKE    10  42 us        10  42 us
+    SFP_READ    9   264 us       9   264 us
+    SFP_CONFIG  1   540 us       1   546 us
+    SFP_DDM     36  104 us       36  104 us
+  None over 5 ms. The sim's I2C is instant; on silicon a step is one
+  transaction (16 bytes at 100 kHz ~2 ms), where the old SFP_POLL did the
+  whole read and sds_config at once (25 ms measured on silicon). The page's
+  rx step lost its up to 13 transactions (sfp scenario's longest RX_STEP
+  5.600 -> 5.538 ms on the 8x in the sim; on silicon ~25 ms less).
+- console_bugs, webcmd_abort W1-W6, lldp_overrun, flash_job_steps S0-S6
+  (S6 7.06-7.07 s), curl_upload (C3 5.10 / 5.11 s): PASS both;
+  cli_steps --web: cli states over 5000 us: 0, both.
+- (4cee50b's message gives banks free 1532 / 1489 B: from a build in the
+  working tree, whose -dirty version string places differently. The clean
+  numbers are the ones above.)
+
+## Open
+
+- sfp_read_block()'s timeout path, and the steps' time on silicon, are for
+  the bench (one transaction a step should be ~2 ms there).
+- /information.json shows a new module's text once it is read (~0.5 s),
+  not at the instant of insertion.
