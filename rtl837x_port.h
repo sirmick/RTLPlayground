@@ -52,6 +52,9 @@ uint16_t port_link_mask(void) __banked;
 void port_stats_print(void) __banked;
 void port_media_show(uint8_t port) __banked;
 int8_t vlan_get(uint16_t vlan) __banked;
+#define VLAN_BITS_SIZE	512	/* a bit per VLAN ID */
+extern __xdata uint8_t vlan_bits[VLAN_BITS_SIZE];
+uint16_t vlan_next(uint16_t vlan) __banked;
 __xdata uint16_t vlan_name(uint16_t vlan) __banked;
 void vlan_name_remove(uint16_t vlan) __banked;
 void vlan_setup(void) __banked;

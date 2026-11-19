@@ -1188,11 +1188,7 @@ void send_vlanlist(void)
 	itoa16_html(management_vlan);
 	str_code_to_html("," JSONQUOTE("vlan") ":[");
 
-	for (i = 1; i < 4095; i++) {
-		vlan_get(i);
-		if (!(sfr_data[0] & 0x02)) /* bit 1: VLAN table entry valid */
-			continue;
-
+	for (i = vlan_next(1); i < 4095; i = vlan_next(i + 1)) {	/* E4: the bitmap */
 		if (slen + 141 > TCP_OUTBUF_SIZE) /* comma + 138-byte worst-case entry + closing "]}" */
 			break;
 

@@ -29,6 +29,25 @@ __xdata	uint32_t l2_head;
 
 __xdata struct vlan_settings vlan_settings;
 
+/* The valid VLANs (E4): bit v of vlan_bits, kept by vlan_setup, vlan_create
+ * and vlan_delete, the table's only writers; /vlanlist.json reads it
+ * instead of the 4094 table entries. */
+__xdata uint8_t vlan_bits[VLAN_BITS_SIZE];
+static __xdata uint8_t vb_on;
+static __xdata uint16_t vb_v;
+
+/* vlan's bit to vb_on */
+static void vlan_bit_put(uint16_t vlan)
+{
+	__xdata uint8_t *p = &vlan_bits[vlan >> 3];
+	uint8_t m = 1 << (vlan & 7);
+
+	if (vb_on)
+		*p |= m;
+	else
+		*p &= ~m;
+}
+
 // Wait for the TABLE ready
 static void wait_table_ready(void)
 {
@@ -140,6 +159,8 @@ void vlan_delete(uint16_t vlan) __banked
 	vlan_name_remove(vlan);
 	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
+	vb_on = 0;
+	vlan_bit_put(vlan);
 }
 
 
@@ -197,17 +218,37 @@ int8_t vlan_get(uint16_t vlan) __banked
 
 __xdata uint16_t vlan_name(uint16_t vlan) __banked
 {
-	__xdata int16_t i = 0;
-	__xdata uint8_t begin = 1;
-	while (vlan_names[i]) {
-		if (begin && vlan_names[i] == hex[(vlan >> 8) & 0xf] && vlan_names[i + 1] == hex[(vlan >> 4) & 0xf] && vlan_names[i + 2] == hex[vlan & 0xf])
-			break;
-		begin = vlan_names[i++] == ' ' ? 1 : 0;
-	}
-	if (vlan_names[i])
-		return i + 3;
+	/* entries "<3 hex digits><name> ": a pointer from entry to entry (E4) */
+	__xdata uint8_t *p = vlan_names;
+	uint8_t a = hex[(vlan >> 8) & 0xf], b = hex[(vlan >> 4) & 0xf], c = hex[vlan & 0xf];
 
+	while (*p) {
+		if (p[0] == a && p[1] == b && p[2] == c)
+			return p - vlan_names + 3;
+		while (*p && *p++ != ' ')
+			;
+	}
 	return 0xffff;
+}
+
+
+/* The first valid VLAN from vlan on, from the bitmap; 4096 if none */
+uint16_t vlan_next(uint16_t vlan) __banked
+{
+	__xdata uint8_t *p = &vlan_bits[vlan >> 3];
+	uint8_t b = *p >> (vlan & 7);
+
+	while (!b) {
+		if (p == &vlan_bits[VLAN_BITS_SIZE - 1])
+			return 4096;
+		vlan = (vlan | 7) + 1;
+		b = *++p;
+	}
+	while (!(b & 1)) {
+		b >>= 1;
+		vlan++;
+	}
+	return vlan;
 }
 
 
@@ -244,7 +285,8 @@ void vlan_create(void) __banked
 	REG_WRITE(RTL837X_TBL_CTRL, vlan_settings.vlan >> 8, vlan_settings.vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
 
 	wait_table_ready();
-
+	vb_on = 1;
+	vlan_bit_put(vlan_settings.vlan);
 }
 
 
@@ -261,6 +303,7 @@ void vlan_setup(void) __banked
 	// No VLAN names set up so far
 	vlan_ptr = 0;
 	vlan_names[0] = 0;
+	vlan_bits[0] = 0x02;	/* VLAN 1, enabled below; the others from the table */
 
 	// Initialize VLAN table for VLAN 1, by disabling that entry
 	REG_SET(RTL837x_TBL_DATA_IN_A, machine_detected.isRTL8373? 0x0007ffff : 0x0007e3f8);
@@ -312,6 +355,14 @@ void vlan_setup(void) __banked
 	REG_SET(RTL837X_TBL_CTRL, 0x00010303);	// Write VLAN 1
 
 	wait_table_ready();
+
+	/* the bitmap from the table: entries a reset left valid stay listed */
+	vb_v = 2;
+	do {
+		vlan_get(vb_v);
+		vb_on = sfr_data[0] & 0x02;	/* bit 1: VLAN table entry valid */
+		vlan_bit_put(vb_v);
+	} while (++vb_v != 0xfff);
 
 #ifdef DEBUG
 	print_string("\nvlan_setup, REG 0x6738: "); print_reg(0x6738);
