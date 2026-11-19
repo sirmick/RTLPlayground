@@ -4,8 +4,8 @@
 # tasks (tasks.c); SCHEDTEST switches rtlplayground.c's main() to the dummies.
 
 ST_DIR = schedtest
-SCHED_DEFS = $(ST_DIR)/st_main.def $(ST_DIR)/st_b1.def $(ST_DIR)/st_b2.def $(ST_DIR)/st_b3.def \
-	$(if $(filter bad_spec,$(ST_NEG)),$(ST_DIR)/bad_spec.def)
+SCHED_STEP_SRCS = $(ST_DIR)/st_main.c $(ST_DIR)/st_b1.c $(ST_DIR)/st_b2.c $(ST_DIR)/st_b3.c \
+	$(if $(filter bad_spec,$(ST_NEG)),$(ST_DIR)/bad_spec.c)
 
 CC_FLAGS += -DSCHEDTEST
 ifneq ($(filter-out hang overrun bad_flash bad_spec,$(ST_NEG)),)
@@ -19,7 +19,7 @@ ifneq ($(ST_CRASH),)
 CC_FLAGS += -DCRASH_ADDR=0x$(ST_CRASH) -DST_POKE
 endif
 
-# The scheduler itself comes from sched.mk, with these .def files. Banked,
+# The scheduler itself comes from sched.mk, with these step sources. Banked,
 # placed by place_banks.py: st_main.c, st_report.c. Pinned (listed as
 # resident so place_banks.py takes their bank as given): one dummy file per
 # bank.

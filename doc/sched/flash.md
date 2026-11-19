@@ -43,7 +43,7 @@ FL_DONE    post the requester's event, free the slot
 
 ### As built (E3)
 
-`flash_job.c` (banked), the job `flash` in `tasks.def`; `flash_job.h`
+`flash_job.c` (banked), the job `fl` declared there (`TASK(fl, job, once, first=prog)`); `flash_job.h`
 carries the request so httpd can make one without `sched.h`. A requester
 sets `fl_req` (a config save also `fl_src`, `fl_len`) and calls
 `flash_job_start()`: 0 if the job is busy or no slot is free (the request

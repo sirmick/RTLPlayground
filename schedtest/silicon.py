@@ -552,7 +552,7 @@ class Silicon:
             ms, pc, bank = int(m["ms"]), int(m["pc"] or "0", 16), int(m["bank"])
             self.record(**{f"hang{n}_ms": ms, f"hang{n}_pc": pc, f"hang{n}_wall_s": round(wall, 2)})
             self.check(m["cause"] == "watchdog", f"hang {n}: cause watchdog ({m['cause']})")
-            self.check(m["slot"] == "slow" and m["state"] == "SL_HANG", f"hang {n}: slow/SL_HANG ({m['slot']}/{m['state']})")
+            self.check(m["slot"] == "sl" and m["state"] == "SL_HANG", f"hang {n}: sl/SL_HANG ({m['slot']}/{m['state']})")
             # c = 999 or 1000 ticks left at SL_HANG's entry, age = c or c + 1 (a tick before CRASH_NOTE)
             self.check(ms // TICK_MS in (999, 1000, 1001) and ms % TICK_MS == 0,
                        f"hang {n}: after {ms} ms (the step's age 999..1001 ticks)" + self.sim(f"hang{n}_ms"))
@@ -560,7 +560,7 @@ class Silicon:
                        f"hang {n}: PC {pc:#06x} bank {bank} inside sl_hang ({h['addr']:#06x}+{h['size']}, bank {h['bank']})")
             self.info(f"hang {n}: {wall:.1f} s from `hang` to the line (5 s + the loader)")
         t = self.con.cmd("health")
-        self.check("last reset: watchdog in slow/SL_HANG after" in t, "health shows it")
+        self.check("last reset: watchdog in sl/SL_HANG after" in t, "health shows it")
 
     def t_ctrl_r(self):
         line, _ = self.reset_line("^R ^R", b"\x12\x12")

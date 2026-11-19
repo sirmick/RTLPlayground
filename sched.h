@@ -16,7 +16,28 @@
 #define SCHED_H
 
 #include <stdint.h>
+
+/*
+ * Tasks and steps are declared where they are written (generator.md):
+ *
+ *   TASK(name, fixed|job, high|medium|once [, count=N] [, first=step] [, entry=step])
+ *   STEP(name, step) { ... }	is void name_step(void) __banked, state S_NAME_STEP
+ *
+ * A TASK has no semicolon. Tasks take their slots in the order of their
+ * TASK lines, a task's states the order of its STEPs; the first STEP is the
+ * entry unless first= names another. tools/sched_sweep.py preprocesses each
+ * scheduler source with the build's flags and SCHED_SWEEP, where the markers
+ * survive as strings, and writes the .def files sched_gen.py reads.
+ */
+#ifdef SCHED_SWEEP
+#undef __banked		/* the host tests' shim erases it: the generator checks it */
+#define TASK(...)	__sched_task__ #__VA_ARGS__
+#define STEP(t, s)	__sched_step__ #t #s void t##_##s(void) __banked
+#else
 #include "sched_gen.h"
+#define TASK(...)
+#define STEP(t, s)	void t##_##s(void) __banked
+#endif
 
 #define SCHED_SLOTS	SCHED_GEN_SLOTS	/* the generator's --slots */
 #define SCHED_NONE	0xff		/* task_claim(): no free slot */

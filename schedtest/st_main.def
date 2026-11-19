@@ -1,7 +1,0 @@
-# schedtest: the console editor and the command task (st_main.c)
-task con fixed freq=high
-state CON_EDIT   con_edit
-task cli fixed first=CLI_IDLE
-state CLI_IDLE   cli_idle
-state CLI_RUN    cli_run
-state CLI_PROMPT cli_prompt

@@ -58,35 +58,39 @@ void st_deep_bottom(void) __banked
 		;
 }
 
-void deep(void) __banked
+/* the slots in the order of these TASK lines: sleep_c, isr_ev, deep */
+TASK(sleep_c, fixed, once)
+TASK(isr_ev, fixed, once)
+TASK(deep, fixed, once)
+STEP(deep, step)
 {
 	if (st_deep_depth) {
 		st_deep_left = st_deep_depth;
 		deep_1();
 		st_deep_runs++;
 	}
-	STEP_SLEEP(S_DEEP, 20);
+	STEP_SLEEP(S_DEEP_STEP, 20);
 }
 volatile __xdata uint16_t st_hang_spins;
 
-void sleep_c(void) __banked
+STEP(sleep_c, step)
 {
 	stack_scan();
 	st_lp = &st_log_sleep_c;
 	st_aux = 0;
 	st_log();
-	STEP_SLEEP(S_SLEEP_C, 1000);
+	STEP_SLEEP(S_SLEEP_C_STEP, 1000);
 }
 
 /* Woken by EV_CON_RX alone (con drains the ring) */
-void isr_ev(void) __banked
+STEP(isr_ev, step)
 {
 	if (sched_ev & EV_CON_RX) {
 		st_lp = &st_log_isr_ev;
 		st_aux = con_rx_head;
 		st_log();
 	}
-	STEP_WAIT(S_ISR_EV, EV_CON_RX, SCHED_FOREVER);
+	STEP_WAIT(S_ISR_EV_STEP, EV_CON_RX, SCHED_FOREVER);
 }
 
 /* slow: one step of st_slow_ms on request (default 30, an overrun;
@@ -100,7 +104,8 @@ __xdata uint16_t st_slow_ms = 25;		/* testing.md: a 25 ms step */
 __xdata uint16_t st_slow_ms = 30;
 #endif
 
-void sl_idle(void) __banked
+TASK(sl, fixed, once, first=idle)
+STEP(sl, idle)
 {
 #ifdef ST_NEG_OVERRUN
 	if (st_slow_req == 3) {		/* boot: slow in 2 s (st_main.c) */
@@ -116,7 +121,7 @@ void sl_idle(void) __banked
 	STEP_WAIT(S_SL_IDLE, EV_ST_GO, SCHED_FOREVER);
 }
 
-void sl_slow(void) __banked
+STEP(sl, slow)
 {
 	sl_n = task_arg() * 163;		/* fine units (6.144 us): ms x 162.8 */
 	sched_fine_read();
@@ -134,7 +139,7 @@ void sl_slow(void) __banked
 	STEP_NEXT(S_SL_IDLE);
 }
 
-void sl_hang(void) __banked
+STEP(sl, hang)
 {
 #ifdef ST_NEG_HANG
 	for (;;)		/* busy, not a jump-to-self (which rtlsim takes for a halt) */

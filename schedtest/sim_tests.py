@@ -385,7 +385,7 @@ class Suite:
         ok = text.count("flash: ok")
         st_ok = [self.st_max_us(sim, s) < 20000 for s in self.S if s not in
                  ("S_NONE", "S_COUNT", "S_SL_SLOW", "S_FL_ERASE", "S_CLI_RUN", "S_SL_HANG",
-                  "S_POSTER")]       # the poster's one loader_confirm(), a sector erase, at 15 s
+                  "S_POSTER_STEP")]       # the poster's one loader_confirm(), a sector erase, at 15 s
         gaps = {n: self.log(sim, "st_log_" + n) for n in ("sleep_a", "sleep_b")}
         crash = self.u(sim, "crash_rec", 2)
         rx_ov = self.u(sim, "con_rx_overruns")

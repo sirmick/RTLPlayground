@@ -43,7 +43,7 @@ static uint16_t lldp_links(void) __reentrant
     return ((uint16_t)sfr_data[2] << 8) | sfr_data[1];
 }
 
-void lldp_tick(void) __banked
+void lldp_service(void) __banked
 {
     uint16_t links;
 

@@ -20,6 +20,9 @@ ifeq ($(findstring clang,$(shell $(CC) --version 2>/dev/null)),)
 CFLAGS  += -Wno-builtin-declaration-mismatch
 endif
 LDFLAGS  = -fsanitize=address,undefined
+# The preprocessor the scheduler sweep (tools/sched_sweep.py) runs: the
+# flags as set here, not a test binary's own additions.
+SWEEP_CPP := $(CC) -E $(CFLAGS)
 # After each link: the binary depends on every header its sources include
 # (build/<test>.d), so a firmware header change rebuilds the tests that use
 # it. Not -MMD: with several sources in one gcc call, the last source's
@@ -141,7 +144,8 @@ $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update
 
 # The scheduler table generator (tools/sched_gen.py) is tested in Python; its
 # "binary" is a wrapper, so it runs and logs like the others.
-$(BUILDDIR)/test_sched_gen: test_sched_gen.py $(SRCROOT)/tools/sched_gen.py $(wildcard sched_gen/*/*) | $(BUILDDIR)
+$(BUILDDIR)/test_sched_gen: test_sched_gen.py $(SRCROOT)/tools/sched_gen.py $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/sched.h \
+		$(wildcard sched_gen/*/*) | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_sched_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # The resource gate (tools/resource_gate.py) on fixtures, then on the 8x
@@ -153,10 +157,14 @@ $(BUILDDIR)/test_resource_gate: test_resource_gate.py $(wildcard gate/*) $(SRCRO
 	printf '#!/bin/sh\nexec python3 "%s/test_resource_gate.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # The scheduler core, rings, watchdog and crash record, compiled UNMODIFIED,
-# over the tables the generator makes from sched_core/.
+# over the tables the generator makes from test_sched.c's TASK/STEP lines
+# (swept with the host's preprocessor, as sched.mk does with SDCC's) and
+# sched_core/sequence.def.
 SCHED_T = $(BUILDDIR)/sched_core
-$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: sched_core/tasks.def sched_core/tasks.h sched_core/sequence.def $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) sched_core/tasks.def >/dev/null
+$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: test_sched.c sched_core/hw.h sched_core/sequence.def \
+		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -include sched_core/hw.h' test_sched.c >/dev/null
+	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
 $(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
 	'-DCRASH_RESET()=host_reset()' '-DCRASH_JUMP()=crash_die()' '-DCRASH_IDATA(a)=host_idata[(uint8_t)(a)]'
 $(BUILDDIR)/test_sched: test_sched.c $(SRCROOT)/sched.c $(SRCROOT)/sched_bank.c $(SRCROOT)/con_ring.c $(SRCROOT)/crash.c $(SRCROOT)/sched_health.c \

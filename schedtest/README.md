@@ -31,10 +31,10 @@ scheduler's.
 
 | ST_NEG | Effect |
 |---|---|
-| `hang` | the `hang` command enters `SL_HANG`, which spins for ever (counting `st_hang_spins`). A jump-to-self would be taken by rtlsim as a halt. The watchdog resets after 5 s; the next boot prints `Last reset: watchdog in slow/SL_HANG ...` |
-| `overrun` | `slow` runs once by itself, 2 s after boot: one 25 ms step, counted as an overrun of `SL_SLOW` |
+| `hang` | the `hang` command enters `SL_HANG`, which spins for ever (counting `st_hang_spins`). A jump-to-self would be taken by rtlsim as a halt. The watchdog resets after 5 s; the next boot prints `Last reset: watchdog in sl/SL_HANG ...` |
+| `overrun` | `sl` runs once by itself, 2 s after boot: one 25 ms step, counted as an overrun of `SL_SLOW` |
 | `bad_flash` | the `badflash` command starts the flasher with an erase that returns while the flash is busy. rtlsim's checker reports the next fetch from a bank |
-| `bad_spec` | adds `bad_spec.def`, whose step is not `__banked`: the generator fails the build |
+| `bad_spec` | adds `bad_spec.c` to the sweep: its state `BAD_LOST` is named by no step, so the generator fails the build |
 
 ## The sim tests (B4)
 
@@ -89,12 +89,12 @@ intended:
 
 | Test | Variant | Checks |
 |---|---|---|
-| hang | hang | `hang`, twice: the watchdog counts 1000 ticks from the kick at its pass's start, so it fires at the tick that ends the count, 4990-5000 ms after SL_HANG began (`swdt_cnt` at the step's entry says which); after the reset, through the loader, the record at 0xbfe0 is valid (magic, sum): cause watchdog, slot slow, state SL_HANG, age = that count, PC inside `sl_hang` and its bank, SP on the stack, resets 0 then 1; the boot prints the `Last reset:` line; the record is cleared, kept in `crash_last` (`health`), `crash_prior` counts |
+| hang | hang | `hang`, twice: the watchdog counts 1000 ticks from the kick at its pass's start, so it fires at the tick that ends the count, 4990-5000 ms after SL_HANG began (`swdt_cnt` at the step's entry says which); after the reset, through the loader, the record at 0xbfe0 is valid (magic, sum): cause watchdog, slot sl, state SL_HANG, age = that count, PC inside `sl_hang` and its bank, SP on the stack, resets 0 then 1; the boot prints the `Last reset:` line; the record is cleared, kept in `crash_last` (`health`), `crash_prior` counts |
 | ctrl_r | hang | `^R ^R`: cause ^R ^R, the interrupted PC named from the .map; then `reset`: cause reset command, PC 0, cli/CLI_RUN, resets 1; both printed and cleared |
 | powercut | hang | a valid record in xdata, then a power cut instead of a reset: the next boot finds none, prints none |
 | overrun | overrun | one 25 ms step: `sched_overruns` 1, `sched_overrun_state` SL_SLOW; `health` says `overruns 1 last SL_SLOW` and lists SL_SLOW at ~25 ms |
 | bad_flash | bad_flash | `badflash`: exactly one check, flash-busy, a fetch from a bank in `fl_erase` with PC/PSBANK/SP/time; rtlsim exits 6 |
-| bad_spec | - | make's generator rule with `ST_NEG=bad_spec` exits 2 with `sched_gen: error: schedtest/bad_spec.def:4: state BAD_STEP: bad_step is not __banked in schedtest/bad_spec.c` |
+| bad_spec | - | make's generator rule with `ST_NEG=bad_spec` exits 2 with `sched_gen: error: schedtest/bad_spec.c:10: state BAD_LOST is reached by no task_next/STEP_*/task_claim ...` |
 
 Over the hang variant's tests every line of crash.c must run.
 
@@ -154,9 +154,9 @@ so they show up as `CLI_RUN` overruns: the console takes 87 µs a byte.
 |---|---|---|---|
 | `con` | st_main.c (placed) | high | line editor: drains the RX ring, echoes, hands the line to cli (`EV_LINE`) |
 | `cli` | st_main.c | once | `CLI_IDLE` / `CLI_RUN` / `CLI_PROMPT` |
-| `sleep_a`, `waiter`, `hot`, `printer` | st_b1.c, BANK1 | once, once, **high**, once | 5 ms sleep; waits `EV_ST_POKE` with a 100 ms timeout; ~1 µs per run; the printer |
+| `sleep_a`, `waiter`, `hot`, `pr` (the printer) | st_b1.c, BANK1 | once, once, **high**, once | 5 ms sleep; waits `EV_ST_POKE` with a 100 ms timeout; ~1 µs per run; the printer |
 | `sleep_b`, `poster`, `jobber` + job `jb`, job `fl` | st_b2.c, BANK2 | once | 37 ms sleep; posts `EV_ST_POKE` every 300 ms; the jobber; the flasher |
-| `sleep_c`, `isr_ev`, `deep`, `slow` | st_b3.c, BANK3 | once | 1000 ms sleep (and the stack rescan); woken by `EV_CON_RX` (UART ISR -> event); the deep call chain; slow/hang |
+| `sleep_c`, `isr_ev`, `deep`, `sl` (slow) | st_b3.c, BANK3 | once | 1000 ms sleep (and the stack rescan); woken by `EV_CON_RX` (UART ISR -> event); the deep call chain; slow/hang |
 
 12 fixed slots, 12 dynamic. The generated sequence and its spacing are in
 `<builddir>/sched/sequence.txt`.
