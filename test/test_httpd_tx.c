@@ -177,7 +177,7 @@ static void job_upload(void)
 
 uint8_t flash_job_start(void)
 {
-	if (job_busy || fl_kind)
+	if (job_busy || fl_kind || (fl_req != FL_UPLOAD && up_active))
 		return 0;
 	fl_finished = 0;
 	if (job_defer) {
@@ -210,10 +210,12 @@ static void job_step(void)
 		return;
 	if (job_vf == 2) {
 		job_vf = 0;
-		if (!upload_done()) {
-			fl_kind = 0;
-			fl_finished = 1;
+		if (fl_kind < FL_FACTORY && upload_done()) {	/* as flash_job.c fl_end() */
+			fl_kind = FL_UPLOAD;
+			return;
 		}
+		fl_kind = 0;
+		fl_finished = 1;
 		return;
 	}
 	r = job_vf ? upload_verify() : upload_prog();
@@ -1885,6 +1887,65 @@ static void scenario_upload_window_race(void)
 	flash_size = saved_flash_size;
 }
 
+/* E3 review: the upload's job has ended between two segments and another
+ * kind (the loader's boot-count erase, 15 s after a boot) runs when the
+ * last segment comes. upload_go() leaves it to the running job; that job's
+ * FL_DONE must go on with the upload (flash_job.c fl_end()): the segment is
+ * written and the answer sent. */
+static void scenario_upload_during_other_job(void)
+{
+	static uint8_t request[WIN_LEN + 1024];
+	static const char closing[] = "\r\n--upload-boundary--\r\n";
+	static const char part[] = "--upload-boundary\r\n"
+		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
+		"Content-Type: application/octet-stream\r\n\r\n";
+	int header_len, request_len, off, n, before_ok;
+	uint32_t saved_flash_size = flash_size;
+
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	session_timeout = 200;
+	last_session_use[0] = 0;
+	flash_size = 0x100000;
+	flash_written_len = 0;
+	flash_write_bad = 0;
+	header_len = snprintf((char *)request, sizeof(request),
+		"POST /upload HTTP/1.1\r\nHost: sw\r\n"
+		"Cookie: session=0123456789ab\r\n"
+		"Content-Type: multipart/form-data; boundary=upload-boundary\r\n"
+		"Content-Length: %zu\r\n\r\n%s",
+		sizeof(part) - 1 + WIN_LEN + sizeof(closing) - 1, part);
+	for (int i = 0; i < WIN_LEN; i++)
+		request[header_len + i] = pattern(i);
+	memcpy(request + header_len + WIN_LEN, closing, sizeof(closing) - 1);
+	request_len = header_len + WIN_LEN + sizeof(closing) - 1;
+
+	/* all but the last segment, the job running at once */
+	job_defer = 0;
+	for (off = 0; off < request_len - 300; off += n) {
+		n = request_len - 300 - off > MSS_FULL / 2 ? MSS_FULL / 2 : request_len - 300 - off;
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
+		run_periodic(1);
+	}
+	before_ok = uip_conn->appstate.tstate == TSTATE_POST && !fl_kind && stream_len == 0;
+	/* another kind of job runs, its FL_DONE to come; the last segment */
+	job_defer = 1;
+	fl_req = FL_BOOTCNT;
+	CHECK(!flash_job_start(), "upload between segments: another kind of job doesn't start");
+	fl_kind = FL_BOOTCNT;		/* as if it had started just before the upload */
+	job_vf = 2;
+	client_send(TCP_ACK | TCP_PSH, (const char *)request + off, request_len - off);
+	job_run();
+	job_defer = 0;
+	run_periodic(1);
+	drain(MSS_FULL);
+	CHECK(before_ok && !flash_write_bad && flash_written_len == WIN_LEN
+	      && !memcmp(flash_written, request + header_len, WIN_LEN)
+	      && stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12),
+	      "upload between segments: the last one, staged while another job ran, is written and answered");
+	flash_size = saved_flash_size;
+}
+
 /* E3: the flash job is busy (or has no slot): an upload is answered 400 at
  * once; and while it writes for a connection that has ended, a new
  * connection is reset (config_buf, the stage, may not be written then). */
@@ -1969,6 +2030,7 @@ int main(int argc, char **argv)
 	scenario_upload_broken_matches();
 	scenario_upload_window();
 	scenario_upload_window_race();
+	scenario_upload_during_other_job();
 	scenario_flash_busy();
 
 	scenario_login_with_valid_cookie_reuses_its_slot();

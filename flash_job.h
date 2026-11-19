@@ -24,6 +24,12 @@ extern __xdata uint8_t * __xdata fl_src;
 extern __xdata uint16_t fl_len;
 extern __xdata uint32_t fl_addr;	/* FL_ERASE's sector; config, factory: the next byte */
 
+/* An upload's body is coming (httpd.c): between its segments no other kind
+ * of job may start (it would take the job, or flash_buf, from under the
+ * next segment); loader_confirm() asks again next second, the rest answer
+ * busy. Cleared when the part has ended, or its connection has. */
+extern __xdata uint8_t up_active;
+
 uint8_t flash_job_start(void) __banked;
 
 /* httpd's side of an upload (httpd.c), one call per FL_PROG / FL_VERIFY step */
@@ -33,6 +39,6 @@ uint8_t flash_job_start(void) __banked;
 #define UP_DONE		3	/* the segment is written, or the answer built */
 uint8_t upload_prog(void) __banked;
 uint8_t upload_verify(void) __banked;
-uint8_t upload_done(void) __banked;	/* FL_DONE: 1 if more has come (FL_PROG again) */
+uint8_t upload_done(void) __banked;	/* FL_DONE: 1 if the stage holds unwritten bytes (FL_PROG) */
 
 #endif
