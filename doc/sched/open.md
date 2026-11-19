@@ -12,7 +12,7 @@
 | 6 | **Round robin over a generated run sequence**; frequency (appearances in the sequence) instead of priority classes |
 | 7 | Step limit **20 ms** (target 5 ms); flash erase (~40 ms) the documented exception |
 | 8 | Shared globals stay global; modules coordinate; no step holds a shared buffer across steps |
-| 9 | TX ring big enough for one line; long prints chunk per line; per-module context carries the cursor |
+| 9 | TX ring big enough for one line; long prints chunk per line; per-module context carries the cursor (the TX ring part superseded by 21) |
 | 10 | **One cli task** serving console and web, one command at a time |
 | 11 | Granularity: module-level tasks; LLDP/SFP step per port/slot internally |
 | 12 | Simulator first (P0: control socket over a unix socket, lockstep clock, UART timing, flash busy, coverage); virtual time P0 |
@@ -24,6 +24,7 @@
 | 18 | Steps end with return macros (`STEP_NEXT/SLEEP/WAIT/ARG/END`); a 16-bit per-slot `arg`. Michael, 2026-11-18 |
 | 19 | Console RX ring 256 B, 8-bit index; covers 20 ms steps; erase + paste may lose. Michael, 2026-11-18 |
 | 20 | (was O3, settled in E3) Uploads are flow-controlled by the advertised receive window (the stage's free space), not `uip_stop()`: Linux splits a 1-MSS window into two half segments and drops/RTOs the second (measured 2026-11-19: curl 0.5 KiB/s, then a reset). Chapter 8 item 1; `evidence/e3-flash-job.txt` |
+| 21 | Console **TX ring 2 KiB, 16-bit index**: most commands' cost was the UART wait, not their work (measured 2026-11-19, `tools/cli_steps.py`: with the 128 B ring `version` 5.1 ms ... `history` 186 ms; without the wait all but `history`, `health tasks` and a large `l2` under 5 ms). Only dumps that grow with a table, or whose work passes 5 ms, are chunked (cli jobs: `l2`, `stat`, `lacp show`, `history`, `health tasks`). Supersedes decision 9's "TX ring big enough for one line". Orchestrator, E1, QA e1-tx-ring |
 
 ## Open
 

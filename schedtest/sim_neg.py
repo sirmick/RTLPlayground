@@ -25,7 +25,7 @@ SWDT_TICKS = 1000
 TICK_MS = 5
 REC = [("magic", "H"), ("cause", "B"), ("resets", "B"), ("tick", "H"), ("slot", "B"), ("state", "B"),
        ("step_tick", "H"), ("sp", "B"), ("bank", "B"), ("pc", "H"), ("ring", "8s"), ("ring_idx", "B"),
-       ("spare", "7s"), ("sum", "H")]
+       ("spare", "B"), ("image", "I"), ("spare2", "2s"), ("sum", "H")]
 LAST_RESET = r"Last reset: [^\n]*\n"
 
 
@@ -48,7 +48,7 @@ class Neg(Suite):
 
     def rec(self, sim):
         raw = sim.peek(f"x:{CRASH_ADDR:#x}", 32)
-        r = struct.unpack("<HBBHBBHBBH8sB7sH", raw)
+        r = struct.unpack("<" + "".join(f for _, f in REC), raw)
         r = dict(zip([f for f, _ in REC], r))
         r["sum_ok"] = r["sum"] == sum(raw[:30]) & 0xffff
         r["valid"] = r["magic"] == CRASH_MAGIC and r["sum_ok"]

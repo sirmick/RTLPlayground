@@ -11,6 +11,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_stp.h"
+#include "cmd_parser.h"
 #include "rtl837x_port.h"
 #include "rtl837x_trap.h"
 #include "uip.h"
@@ -1400,26 +1401,41 @@ void stp_defaults(void) __banked
 /*
  * Restore BPDU flooding when STP stops.
  */
+/* Unlike LACPDUs (always untagged, so per-PVID entries suffice), BPDUs
+ * can arrive VLAN-tagged and then classify into the tag's VID - cover
+ * every VLAN that exists in the VLAN table, plus every port's PVID for
+ * the untagged case. A duplicate VID just overwrites the same slot.
+ * The walk reads 4094 VLAN entries (~33 ms), so it is a cli job (E1):
+ * stp_fdb_line() goes on from the last VID, a step's budget at a time. */
+static __xdata uint16_t stp_fdb_vid, stp_fdb_pmask;
+static __xdata uint8_t stp_fdb_i;
+static __xdata uint16_t stp_fdb_budget;
+
+#define STP_FDB_BUDGET	256	/* a VID read costs 1, an entry written 16: ~2 ms */
+
 static void stp_fdb_update(__xdata uint16_t pmask)
 {
-	uint16_t stp_fdb_vid;
-	uint8_t  stp_fdb_i;
+	stp_fdb_pmask = pmask;
+	stp_fdb_vid = 1;
+	cli_job = CLI_JOB_STPFDB;
+}
 
-	/* Unlike LACPDUs (always untagged, so per-PVID entries suffice), BPDUs
-	 * can arrive VLAN-tagged and then classify into the tag's VID - cover
-	 * every VLAN that exists in the VLAN table, plus every port's PVID for
-	 * the untagged case. A duplicate VID just overwrites the same slot. */
-	for (stp_fdb_vid = 1; stp_fdb_vid < 4095; stp_fdb_vid++) {
-		if (vlan_get(stp_fdb_vid) < 0)
-			continue;
-		if (!(sfr_data[0] & 0x02))	/* bit 1: VLAN table entry valid */
-			continue;
-		port_l2mc_set(0x00, stp_fdb_vid, pmask);
+uint8_t stp_fdb_line(void) __banked
+{
+	stp_fdb_budget = STP_FDB_BUDGET;
+	while (stp_fdb_vid < 4095) {
+		if (!stp_fdb_budget)
+			return 1;
+		stp_fdb_budget--;
+		if (vlan_get(stp_fdb_vid) >= 0 && (sfr_data[0] & 0x02)) {	/* bit 1: VLAN table entry valid */
+			port_l2mc_set(0x00, stp_fdb_vid, stp_fdb_pmask);
+			stp_fdb_budget = stp_fdb_budget > 16 ? stp_fdb_budget - 16 : 0;
+		}
+		stp_fdb_vid++;
 	}
-	for (stp_fdb_i = MACHINE_MIN_PORT; stp_fdb_i <= MACHINE_MAX_PORT; stp_fdb_i++) {
-		stp_fdb_vid = port_pvid_get(stp_fdb_i);
-		port_l2mc_set(0x00, stp_fdb_vid, pmask);
-	}
+	for (stp_fdb_i = MACHINE_MIN_PORT; stp_fdb_i <= MACHINE_MAX_PORT; stp_fdb_i++)
+		port_l2mc_set(0x00, port_pvid_get(stp_fdb_i), stp_fdb_pmask);
+	return 0;
 }
 
 

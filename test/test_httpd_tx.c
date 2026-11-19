@@ -256,6 +256,7 @@ void set_sys_led_state(uint8_t state) { (void)state; }
 void cmd_parser(void) { }
 void execute_config(void) { }
 void execute_commands(uint8_t *p) { (void)p; }
+void exec_begin(uint8_t *p) { (void)p; }
 void clear_command_history(void) { }
 void udp_callbacks(void) { }
 void tcpip_output(void) { }

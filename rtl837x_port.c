@@ -11,6 +11,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_port.h"
+#include "cmd_parser.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
 #include "machine.h"
@@ -364,70 +365,79 @@ uint8_t port_l2_forget(void) __banked
 }
 
 
+/* l2: the header, then one table search per port_l2_line() (the cli's l2
+ * job, E1: ~3.1 ms an entry), from entry 0 until the search wraps */
+static __xdata uint16_t l2_entry, l2_first;
+
 void port_l2_learned(void) __banked
 {
 	// Whait for any table action to be finished
 	wait_table_ready();
 
 	print_string("\n\tMAC\t\tVLAN\ttype\tport\n");
-	__xdata uint16_t entry = 0x0000;
-	__xdata uint16_t first_entry = 0xffff; // Table does not have that many entries
+	l2_entry = 0x0000;
+	l2_first = 0xffff; // Table does not have that many entries
+	cli_job = CLI_JOB_L2;
+}
 
-	while (1) {
-		uint8_t port = 0;
-		uint8_t lag;
-		reg_read_m(RTL837x_TBL_DATA_0);
-		REG_WRITE(RTL837x_TBL_DATA_0, sfr_data[0], sfr_data[1],sfr_data[2] | 0xc0, sfr_data[3]);
+uint8_t port_l2_line(void) __banked
+{
+	uint8_t port = 0;
+	uint8_t lag;
 
-		REG_WRITE(RTL837X_TBL_CTRL, (entry >> 8) & 0xf, entry, TBL_L2_UNICAST, TBL_EXECUTE);
+	wait_table_ready();
+	reg_read_m(RTL837x_TBL_DATA_0);
+	REG_WRITE(RTL837x_TBL_DATA_0, sfr_data[0], sfr_data[1],sfr_data[2] | 0xc0, sfr_data[3]);
 
-		wait_table_ready();
+	REG_WRITE(RTL837X_TBL_CTRL, (l2_entry >> 8) & 0xf, l2_entry, TBL_L2_UNICAST, TBL_EXECUTE);
 
-		reg_read_m(RTL837x_TBL_DATA_0);
-		entry = (((uint16_t)sfr_data[2] & 0x0f) << 8) | sfr_data[3];
-		if (first_entry == 0xffff) {
-			first_entry = entry;
-		} else {
-			if (first_entry == entry)
-				break;
-		}
+	wait_table_ready();
 
-		// MAC
-		reg_read_m(RTL837x_L2_DATA_OUT_B);
-		if ((sfr_data[0] & 0x20)) {	// Check entry is valid
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char(':');
-			port = (sfr_data[0] >> 6) & 0x3;
-			reg_read_m(RTL837x_L2_DATA_OUT_A);
-			print_byte(sfr_data[0]); write_char(':');
-			print_byte(sfr_data[1]); write_char(':');
-			print_byte(sfr_data[2]); write_char(':');
-			print_byte(sfr_data[3]); write_char('\t');
-
-			// VLAN
-			reg_read_m(RTL837x_L2_DATA_OUT_B);
-			print_short( (((uint16_t) (sfr_data[0] & 0x0f)) << 8) | sfr_data[1]); // VLAN
-
-			// type
-			reg_read_m(RTL837x_L2_DATA_OUT_C);
-			if (sfr_data[1] & 0x1)
-				print_string("\tstatic\t");
-			else
-				print_string("\tlearned\t");
-
-			port |= (sfr_data[3] & 0x3) << 2;
-			lag = port_lag_of(port);
-			if (lag == PORT_LAG_NONE) {
-				print_phys_port(port);
-			} else {
-				print_string("LAG");
-				itoa(lag + 1);
-			}
-		}
-
-		entry++;
-		print_string("\n");
+	reg_read_m(RTL837x_TBL_DATA_0);
+	l2_entry = (((uint16_t)sfr_data[2] & 0x0f) << 8) | sfr_data[3];
+	if (l2_first == 0xffff) {
+		l2_first = l2_entry;
+	} else {
+		if (l2_first == l2_entry)
+			return 0;
 	}
+
+	// MAC
+	reg_read_m(RTL837x_L2_DATA_OUT_B);
+	if ((sfr_data[0] & 0x20)) {	// Check entry is valid
+		print_byte(sfr_data[2]); write_char(':');
+		print_byte(sfr_data[3]); write_char(':');
+		port = (sfr_data[0] >> 6) & 0x3;
+		reg_read_m(RTL837x_L2_DATA_OUT_A);
+		print_byte(sfr_data[0]); write_char(':');
+		print_byte(sfr_data[1]); write_char(':');
+		print_byte(sfr_data[2]); write_char(':');
+		print_byte(sfr_data[3]); write_char('\t');
+
+		// VLAN
+		reg_read_m(RTL837x_L2_DATA_OUT_B);
+		print_short( (((uint16_t) (sfr_data[0] & 0x0f)) << 8) | sfr_data[1]); // VLAN
+
+		// type
+		reg_read_m(RTL837x_L2_DATA_OUT_C);
+		if (sfr_data[1] & 0x1)
+			print_string("\tstatic\t");
+		else
+			print_string("\tlearned\t");
+
+		port |= (sfr_data[3] & 0x3) << 2;
+		lag = port_lag_of(port);
+		if (lag == PORT_LAG_NONE) {
+			print_phys_port(port);
+		} else {
+			print_string("LAG");
+			itoa(lag + 1);
+		}
+	}
+
+	l2_entry++;
+	print_string("\n");
+	return 1;
 }
 
 
@@ -512,10 +522,21 @@ uint16_t port_link_mask(void) __banked
 	return ((uint16_t)sfr_data[2] << 8) | sfr_data[1];
 }
 
+/* stat: the header, then a port per port_stats_line() (the cli's stat
+ * job, E1: ~0.6 ms a port of reads, as much again printed) */
+static __xdata uint8_t stat_port;
+
 void port_stats_print(void) __banked
 {
 	print_string("\nPort\tState\tLink\tTxGood\t\tTxBad\t\tRxGood\t\tRxBad\t\tMACs\n");
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
+	stat_port = MACHINE_MIN_PORT;
+	cli_job = CLI_JOB_STAT;
+}
+
+uint8_t port_stats_line(void) __banked
+{
+	uint8_t i = stat_port;
+	{
 		print_phys_port(i); write_char('\t');
 
 		if (!machine.is_sfp[i]) {
@@ -593,6 +614,7 @@ void port_stats_print(void) __banked
 		itoa_short(SFR_DATA_U16 & L2_LRN_PORT_CNT_MASK);
 		print_string("\n");
 	}
+	return ++stat_port <= MACHINE_MAX_PORT;
 }
 
 

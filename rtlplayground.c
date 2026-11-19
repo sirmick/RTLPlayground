@@ -1547,6 +1547,7 @@ static void firmware_init(void)
 	print_string("\nVerifying PHY settings:\n");
 //	p031f.a610:2058 p041f.a610:2058  p051f.a610:2058  r4f3c:00000000 p061f.a610:2058 p071f.a610:2058 
 	port_stats_print();
+	cmd_finish();		/* the stat job, all at once: no cli task yet */
 
 	early_boot_handle_button();
 

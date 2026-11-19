@@ -113,6 +113,8 @@ void httpd_init(void) __banked
 	config_upload = 0; // xdata is not zeroed by the startup code
 	webcmd_pending = 0;
 	webcmd_done = 0;
+	webcmd_busy = 0;
+	webcmd_cap = 0;
 	fl_kind = 0;		/* the flash job (flash_job.c) */
 	fl_finished = 0;
 	up_active = 0;
@@ -846,7 +848,8 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 
 
 /* /cmd (net.md item 2): the body is queued in the web command buffer
- * (config_buf), the rx task posts EV_WEBCMD, cli runs it (httpd_webcmd_run)
+ * (config_buf), the rx task posts EV_WEBCMD, cli runs it (httpd_webcmd_begin,
+ * a line a step, httpd_webcmd_end)
  * and sets webcmd_done, and the connection's next poll sends the reply (U4: a
  * web command no longer runs in the console's buffer).
  * config_buf and outbuf are safe to hold the command and its reply across
@@ -865,31 +868,34 @@ static void webcmd_queue(__xdata uint8_t *body)
 		memcpy(config_buf, body, content_length + 1);	/* with post_body_take's NUL */
 	webcmd_done = 0;
 	webcmd_pending = 1;
+	webcmd_busy = 1;
 	uip_conn->appstate.tstate = TSTATE_WEBCMD;
 }
 
-static void run_cmd_body(__xdata uint8_t *body);
+/* The command runs in the cli task over several steps (E1: a line a step,
+ * a long dump a line a step): begin, then each step with the capture on
+ * (WEBCMD_CAPTURE_ON/OFF: only cli's own output goes in the reply), then
+ * end, which completes the reply. */
+__xdata uint8_t webcmd_cap, webcmd_busy;
+static __xdata uint16_t webcmd_hdr;
 
-void httpd_webcmd_run(void) __banked
+void httpd_webcmd_begin(void) __banked
 {
-	run_cmd_body(config_buf);
-	webcmd_done = 1;
+	webcmd_hdr = strtox(outbuf, HTTP_RESPONSE_TXT);
+	slen = webcmd_hdr;
+	webcmd_cap = 1;
+	exec_begin(config_buf);
 }
 
-static void run_cmd_body(__xdata uint8_t *body)
+void httpd_webcmd_end(void) __banked
 {
-	uint16_t hdr_len = strtox(outbuf, HTTP_RESPONSE_TXT);
-
-	slen = hdr_len;
-	cmd_capture = 1;
-	execute_commands(body);
-	if (cmd_capture == 2)
+	if (webcmd_cap == 2)
 		slen += strtox(outbuf + slen, CMD_TRUNCATED);
-	cmd_capture = 0;
+	webcmd_cap = 0;
 	/* Commands that configure something print nothing at all. Saying
 	 * so beats an empty body, which reads the same as "nothing ran".
 	 * Only on success: a silent failure must not answer with "OK". */
-	if (err_status == ERR_OK && slen == hdr_len)
+	if (err_status == ERR_OK && slen == webcmd_hdr)
 		slen += strtox(outbuf + slen, "OK\n");
 	/* On a parse error keep what the parser printed, because that text
 	 * is the explanation, and only restate the status. "400 NO" is as
@@ -901,6 +907,7 @@ static void run_cmd_body(__xdata uint8_t *body)
 		outbuf[13] = 'N';
 		outbuf[14] = 'O';
 	}
+	webcmd_done = 1;
 }
 
 
@@ -1219,7 +1226,7 @@ void httpd_appcall(void)
 	} else if (uip_closed()) {
 		dbg_string("Connection closed\n");
 		if (s->tstate == TSTATE_WEBCMD)
-			webcmd_pending = webcmd_done = 0;	/* nobody waits for it */
+			webcmd_pending = webcmd_done = webcmd_busy = 0;	/* nobody waits for it */
 		up_active = 0;
 		s->tstate = TSTATE_CLOSED;
 		if (s->fw_reset_pending && uip_acked())
@@ -1227,7 +1234,7 @@ void httpd_appcall(void)
 	} else if (uip_aborted() || uip_timedout()) {
 		dbg_string("Connection aborted\n");
 		if (s->tstate == TSTATE_WEBCMD)
-			webcmd_pending = webcmd_done = 0;
+			webcmd_pending = webcmd_done = webcmd_busy = 0;
 		up_active = 0;
 		uip_close();
 		s->tstate = TSTATE_CLOSED;
@@ -1247,7 +1254,7 @@ void httpd_appcall(void)
 			if (up_state != TSTATE_POST && slen)
 				send_outbuf();
 		} else if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
-			webcmd_done = 0;
+			webcmd_done = webcmd_busy = 0;
 			send_outbuf();
 		} else if (s->tstate == TSTATE_ACKED) {
 			dbg_string("Closing because everything has been transmitted\n");
