@@ -1,0 +1,47 @@
+# E1 + E3 merged: feat/sched (E1, with its review fixes) into feat/sched-e3 (2026-11-19)
+
+Branch feat/sched-e3 (worktree ~/src/rtlpg-e3).
+  6336e34 Merge feat/sched (E1) into feat/sched-e3   (E1 at d6d079d)
+  d983b64 uip: say why the window check uses the window now
+  9340792 Merge feat/sched (E1 review fixes) into feat/sched-e3   (E1 at 9f83c58)
+The second merge brings 0ce4fc8 (a web command checks it is still the one
+waiting: webcmd_gen; KEEPS jobs; STEP exits; execute_commands gone) and its
+evidence; it merged without conflicts. httpd.c keeps both: webcmd_queue
+bumps webcmd_gen beside E3's state, the close/abort paths clear
+webcmd_pending/done/busy and up_active, the poll answers an upload
+(fl_finished) before a /cmd (webcmd_done).
+
+9340792 is the code boundary. Images built clean in a worktree of it
+(tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1), 8x
+(KEEPLINK_KP_9000_9XHPML_V1_2) and SWGT024 (SWGT024_V2_0_UNMANAGED).
+rtlsim: ovs-rtlpg 83efa85, from a git archive of it (tree clean, build
+current).
+
+## Results
+
+- gate PASS both: internal RAM data 98 B (8x baseline 105), overlay 8,
+  bits 3; stack 138 B; common area ends 0x3e58 (296 B left).
+  Free bytes per bank (1/2/3): 8x 473/20/404, SWGT024 1/390/464.
+  schedtest (8x), place_banks' packed best fit in each: base 15/107/276,
+  hang 15/107/305, overrun 15/107/253, bad_flash 18/4/412.
+  The banks are at the edge: E5 must not grow them.
+- make -C test quick: QUICK TESTS PASSED (test_loader skipped);
+  make -C test/stp: all scenarios passed.
+- make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+  SIM_ARGS=--twice: sim_tests 0 failures, sim_neg 0 failures, both
+  deterministic.
+- Both boards, tools/<t>.py <boot image> --ovs <83efa85 export> --board <b>:
+  console_bugs PASS; webcmd_abort W1-W6 PASS; lldp_overrun PASS;
+  flash_job_steps S0-S6 PASS (S6 7.09 s, 53 zero windows, a dropped window
+  update repaired by a probe); cli_steps --web: cli states over 5000 us: 0.
+- curl_upload (alone, both): C1 config 200, C2 bad image 400 3.92 s,
+  C3 image 200 5.14 s, no zero windows (as E3's).
+- oldnew (tests/oldnew/oldnew.py --checks --known
+  tests/oldnew/known-failures --expect e1e3-oldnew.expect): 17 of 17 on
+  both. stp hello 1.966..2.036 s (8x), 1.968..2.034 s (SWGT024); longest
+  CLI_RUN 1.42 / 1.39 ms; none over 20 ms but FL_ERASE.
+  Expect lines unused on one board (they are the other's): 8x upload and
+  stp_upload reg 06f4; SWGT024 web 010, config rldp/stp, loop rldp.
+  Stale known-failures (sim's file): CLI_RUN x2 (E1), HOUSE_SEC (E3).
+
+Logs: /tmp/e3/m/<board>/ (may vanish).
