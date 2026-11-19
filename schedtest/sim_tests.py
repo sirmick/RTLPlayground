@@ -384,7 +384,8 @@ class Suite:
         text = sim.uart_text()
         ok = text.count("flash: ok")
         st_ok = [self.st_max_us(sim, s) < 20000 for s in self.S if s not in
-                 ("S_NONE", "S_COUNT", "S_SL_SLOW", "S_FL_ERASE", "S_CLI_RUN", "S_SL_HANG")]
+                 ("S_NONE", "S_COUNT", "S_SL_SLOW", "S_FL_ERASE", "S_CLI_RUN", "S_SL_HANG",
+                  "S_POSTER")]       # the poster's one loader_confirm(), a sector erase, at 15 s
         gaps = {n: self.log(sim, "st_log_" + n) for n in ("sleep_a", "sleep_b")}
         crash = self.u(sim, "crash_rec", 2)
         rx_ov = self.u(sim, "con_rx_overruns")
@@ -394,7 +395,7 @@ class Suite:
                     stack_hw=hw, sleep_a_gap_min=gaps["sleep_a"]["gap_min"], sleep_b_gap_min=gaps["sleep_b"]["gap_min"])
         self.check(ok == flashes, f"every flash run verified ({ok} of {flashes})")
         self.check(self.u(sim, "st_jobs_done") == self.u(sim, "st_jobs_claimed"), "every claimed job ended")
-        self.check(all(st_ok), "no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing)")
+        self.check(all(st_ok), "no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing, the loader confirm)")
         self.check(gaps["sleep_a"]["gap_min"] * FINE_US >= 5000 and gaps["sleep_b"]["gap_min"] * FINE_US >= 37000,
                    "sleep_a/b never early across the whole soak (and both tick wraps)")
         self.check(crash != 0x5c4d and "Last reset" not in text, "no watchdog reset")
