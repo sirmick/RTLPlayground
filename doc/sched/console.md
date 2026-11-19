@@ -70,7 +70,7 @@ As built (D3): the console line is `con_line`, copied into `cmd_buffer` in
 `CLI_RUN`; the prompt is printed only in `CLI_PROMPT`, which then clears
 `con_line_ready`, so type-ahead echoes after the prompt. The web command
 buffer is **`config_buf`**, the buffer httpd already holds each request in
-(no new bytes); `execute_commands()` copies it a line at a time into
+(no new bytes); `exec_line()` copies it a line at a time into
 `cmd_buffer`, and the reply is captured into `outbuf`. That is safe because:
 
 - uIP has **one** TCP connection (`UIP_CONF_MAX_CONNECTIONS 1`,
@@ -117,7 +117,7 @@ whose work passes 5 ms, are chunked: a cli **job**.
 - The cli task: `CLI_RUN` parses; with a job set it goes to `CLI_MORE`,
   which waits for `EV_CON_TX` (room for a line), runs one line, and stays
   until the job ends, then `CLI_PROMPT`.
-- Any other caller (the config at boot, `execute_commands()`) runs the job
+- Any other caller (the config at boot, the boot's `stat`) runs the job
   to its end at once (`cmd_finish()`), as before.
 - `history`'s own line goes into the history after its job, as before
   (`cmd_save()` deferred), so the dump never shows itself.
@@ -125,12 +125,18 @@ whose work passes 5 ms, are chunked: a cli **job**.
   any unchunked command prints, so a paste or a multi-line `/cmd` doesn't
   wait on the UART mid-step.
 - **Web commands** run a line a step (`CLI_NEXT`: `exec_line()`, the old
-  `execute_commands()` split at each command; the same stop rules), and a
+  old `execute_commands()` split at each command; the same stop rules), and a
   job's lines in `CLI_MORE`, into the capture buffer. The capture is on only
   during cli's own steps (`WEBCMD_CAPTURE_ON/OFF`): another task's print
   between two steps isn't in the reply. The reply is completed in
   `CLI_PROMPT` (`httpd_webcmd_end`). If the connection ends meanwhile, cli
-  drops the command at its next step (`webcmd_busy`).
+  drops the command at its next step: it checks at every step that its
+  command's connection is still the one waiting (`webcmd_busy`, and
+  `webcmd_gen`, which each queued `/cmd` bumps: a new `/cmd` after the old
+  connection ended holds `config_buf` now). A dropped command parses no
+  more lines and sends no reply; a pure dump stops, a job with side effects
+  (`CLI_JOB_KEEPS`: stp off's entries) runs to its end, its output not
+  captured. Then cli serves the queued one.
 
 ## Rules
 
