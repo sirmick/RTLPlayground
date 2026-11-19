@@ -1725,6 +1725,20 @@ static void scenario_upload_broken_matches(void)
  * the window is refused. */
 #define WIN_LEN 5000
 
+/* A zero-window probe as Linux sends one: empty, one below what we have
+ * acknowledged. 1 if answered with an ACK whose window is open (want_open)
+ * or shut (!want_open). */
+static int probe(int want_open)
+{
+	uint32_t seq = cli_seq;
+
+	srv_flags = 0;
+	cli_seq--;
+	client_send(TCP_ACK, NULL, 0);
+	cli_seq = seq;
+	return (srv_flags & TCP_ACK) && (want_open ? srv_wnd > 0 : srv_wnd == 0);
+}
+
 static void scenario_upload_window(void)
 {
 	static uint8_t request[WIN_LEN + 1024];	/* the last case sends 4 MSS */
@@ -1732,7 +1746,7 @@ static void scenario_upload_window(void)
 	static const char part[] = "--upload-boundary\r\n"
 		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
 		"Content-Type: application/octet-stream\r\n\r\n";
-	int header_len, request_len, off, n, taken = 1, zero = 0, stuck = 0;
+	int header_len, request_len, off, n, taken = 1, zero = 0, stuck = 0, probe_bad = 0;
 	uint32_t saved_flash_size = flash_size;
 
 	session_start(MSS_FULL);
@@ -1771,7 +1785,11 @@ static void scenario_upload_window(void)
 			n = srv_wnd;
 		if (!n) {			/* closed: the job writes the stage, its poll */
 			zero++;
+			if (!probe(0))		/* a zero-window probe: answered, still 0 */
+				probe_bad++;
 			job_run();
+			if (zero == 1 && !probe(1))	/* the update lost: a probe repairs it */
+				probe_bad++;
 			run_periodic(1);
 			if (!srv_wnd)
 				stuck++;
@@ -1796,6 +1814,7 @@ static void scenario_upload_window(void)
 	CHECK(taken && off == request_len, "upload window: every segment inside the window is taken");
 	CHECK(zero > 0 && !stuck, "upload window: the window closes as the stage fills, and the poll after the job reopens it");
 	CHECK(!edge_bad, "upload window: no ACK moves the window's right edge left");
+	CHECK(!probe_bad, "upload window: a zero-window probe gets an ACK with the window as it is (0, or open once the job has written the stage)");
 	drain(MSS_FULL);
 	CHECK(!flash_write_bad && flash_written_len == WIN_LEN && !memcmp(flash_written, request + header_len, WIN_LEN),
 	      "upload window: the image is staged whole, in order, across the segments");
@@ -1804,19 +1823,33 @@ static void scenario_upload_window(void)
 	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12) && strstr((char *)stream, "checksum failed"),
 	      "upload window: the answer goes out once the part is written");
 
-	/* a client that ignores the window: refused, not written past */
+	/* a client that ignores the window: uIP doesn't take the segment past
+	 * it, and ACKs with the window as it is; once the job has written the
+	 * stage the retransmission is taken */
 	session_start(MSS_FULL);
 	strcpy(session_id, "0123456789ab");
 	last_session_use[0] = 0;
 	flash_written_len = 0;
 	job_defer = 1;
-	for (off = 0; off < 4 * MSS_FULL; off += MSS_FULL)
+	job_vf = 0;
+	for (off = 0; off < 3 * MSS_FULL; off += MSS_FULL)
 		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, MSS_FULL);
+	{
+		uint32_t seq = cli_seq, ack = srv_ack;
+		uint16_t wnd = srv_wnd;
+
+		srv_flags = 0;
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, MSS_FULL);
+		CHECK(wnd < MSS_FULL && (srv_flags & TCP_ACK) && srv_ack == ack && srv_wnd == wnd,
+		      "upload window: a segment past the window isn't taken; an ACK with the window as it is");
+		cli_seq = seq;
+		job_run();
+		run_periodic(1);
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, MSS_FULL);
+		CHECK(srv_ack == cli_seq && flash_written_len > 0,
+		      "upload window: its retransmission, once the stage has room, is taken");
+	}
 	job_defer = 0;
-	fl_kind = 0;
-	drain(MSS_FULL);
-	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12),
-	      "upload window: a segment past the window is refused");
 	flash_size = saved_flash_size;
 }
 

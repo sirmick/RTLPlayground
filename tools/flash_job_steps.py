@@ -24,6 +24,12 @@ S5: after a new boot, a refused upload started at once, so the loader's
     confirm comes during it: the confirm waits (its erase isn't run between
     two segments), the upload ends with its answer and every byte, and the
     boot count is erased after it (one FL_ERASE more than the image's).
+S6: a refused upload from a client that keeps to the window and, as Linux's
+    persist timer, sends a zero-window probe (empty, one below what was
+    ACKed) every 200 ms while the window is shut; the first window update
+    after a zero window is lost (the client ignores it). The probe's ACK
+    reopens the window: the upload ends with its answer, every byte staged,
+    in far less than the 30 s abort.
 Each passes if no step but FL_ERASE took over 20 ms, and the flash holds what
 it should. The upload's firmware time is printed. Needs a bench whose client
 honours the switch's window (the upload closes it after each segment).
@@ -60,6 +66,80 @@ def judge(name, steps):
     for s, v in long.items():
         print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs)")
     return not long and any(s.startswith("FL_") for s in steps)
+
+
+def probe_upload(r, req, until, probe_us=200000):
+    """req on a new connection from r.host, keeping to the window; while it is
+    shut, an empty probe one below what was ACKed every probe_us; the first
+    window update after a zero window ignored. -> (response, probes sent,
+    zero windows seen, updates dropped)"""
+    import struct
+    h, b = r.host, r.b
+    if not h.arp(until):
+        return None, 0, 0, 0
+    sport, h.next_port = h.next_port, h.next_port + 1
+    iss = 1000 + (sport - 40000) * 100000
+    st = {"snd": iss + 1, "una": iss, "rcv": None, "wnd": 1, "resp": b"", "mss": 536,
+          "zero": 0, "dropped": 0, "closed": False}
+    h.rx = []
+
+    def segs():
+        for sg in h.rx:
+            if struct.unpack("!H", sg[2:4])[0] != sport:
+                continue
+            seq, ack, off, fl, wnd = struct.unpack("!IIBBH", sg[4:16])
+            data = sg[(off >> 4) * 4:]
+            if fl & 0x02 and st["rcv"] is None:
+                st["rcv"] = seq + 1
+                o = sg[20:(off >> 4) * 4]
+                if len(o) >= 4 and o[0] == 2:
+                    st["mss"] = min(h.MSS, struct.unpack("!H", o[2:4])[0])
+                st["una"] = ack
+                st["wnd"] = wnd
+                continue
+            if fl & 0x10:
+                if wnd == 0 and not st["closed"]:
+                    st["zero"] += 1
+                    st["closed"] = True
+                elif wnd and st["closed"] and not data and ack == st["una"] and not st["dropped"]:
+                    st["dropped"] += 1		# the first window update: lost
+                    continue
+                if wnd:
+                    st["closed"] = False
+                st["una"] = max(st["una"], ack)
+                st["wnd"] = wnd
+            if st["rcv"] is not None and seq == st["rcv"] and data:
+                st["resp"] += data
+                st["rcv"] += len(data)
+                h._tcp(sport, st["snd"], st["rcv"], 0x10)
+        h.rx = []
+
+    def complete():
+        head, sep, body = st["resp"].partition(b"\r\n\r\n")
+        m = re.search(rb"(?im)^content-length: *(\d+)", head) if sep else None
+        return m is not None and len(body) >= int(m.group(1))
+
+    def run(cond, us):
+        return b.advance(min(until, b.now + us), lambda: (segs(), cond())[1])
+
+    h._tcp(sport, iss, 0, 0x02, mss=True)
+    run(lambda: st["rcv"] is not None, 1000000)
+    h._tcp(sport, st["snd"], st["rcv"], 0x10)
+    off, probes = 0, 0
+    while not complete() and b.now < until:
+        if off < len(req) and st["una"] >= st["snd"] and st["wnd"] > 0:
+            chunk = req[off:off + min(st["mss"], st["wnd"])]
+            h._tcp(sport, st["snd"], st["rcv"], 0x18, chunk)
+            st["snd"] += len(chunk)
+            off += len(chunk)
+            run(lambda: st["una"] >= st["snd"] or complete(), 1000000)
+        elif st["wnd"] == 0:
+            if not run(lambda: st["wnd"] > 0 or complete(), probe_us):
+                h._tcp(sport, st["snd"] - 1, st["rcv"], 0x10)	# the probe
+                probes += 1
+        else:
+            run(complete, 1000000)
+    return (st["resp"] if complete() else None), probes, st["zero"], st["dropped"]
 
 
 def main(argv):
@@ -241,6 +321,28 @@ def main(argv):
         print(f"S5 upload over the loader's confirm: {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S5")
+    finally:
+        r.b.close()
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    try:
+        r.boot()
+        r.login()
+        r.wait(8000)
+        r._now()
+        bad = bytearray(r.payload)
+        bad[-1] ^= 0xff
+        t0 = r.b.now
+        resp, probes, zero, dropped = probe_upload(r, upload_req(r, bytes(bad), "bad.bin"), r.b.now + 120 * 1000000)
+        t1 = r.b.now
+        staged = r.b.flash(UPLOAD_START, len(bad))
+        ok = (isinstance(resp, bytes) and b"checksum failed" in resp and staged == bytes(bad)
+              and dropped == 1 and probes >= 1 and t1 - t0 < 30 * 1000000)
+        print(f"   S6 upload {(t1 - t0) / 1e6:.3f} s; answer {resp.split(b'\r\n')[0] if resp else None!r}; staged image "
+              f"{'= the payload' if staged == bytes(bad) else 'DIFFERS'}; zero windows {zero}, window updates "
+              f"dropped {dropped}, probes sent {probes}")
+        print(f"S6 a lost window update, repaired by a probe: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S6")
     finally:
         r.b.close()
     print("flash_job_steps:", "FAIL " + " ".join(fails) if fails else "PASS")

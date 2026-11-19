@@ -1487,11 +1487,23 @@ uip_process(u8_t flag) __banked
      correct numbers in. */
   if(!(((uip_connr->tcpstateflags & UIP_TS_MASK) == UIP_SYN_SENT) &&
        ((BUF->flags & TCP_CTL) == (TCP_SYN | TCP_ACK)))) {
-    if((uip_len > 0 || ((BUF->flags & (TCP_SYN | TCP_FIN)) != 0)) &&
+    /* RTLPlayground: an empty segment out of sequence (a zero-window
+       probe, a keep-alive: seq = rcv_nxt - 1) is answered too, as RFC 793
+       asks for any unacceptable segment; uIP 1.0 dropped it silently, so a
+       lost window update was never repaired (doc/sched/upstream-bugs.md). */
+    if((uip_len > 0 || ((BUF->flags & (TCP_SYN | TCP_FIN)) != 0) ||
+	(uip_connr->tcpstateflags & UIP_TS_MASK) == UIP_ESTABLISHED) &&
        (BUF->seqno[0] != uip_connr->rcv_nxt[0] ||
 	BUF->seqno[1] != uip_connr->rcv_nxt[1] ||
 	BUF->seqno[2] != uip_connr->rcv_nxt[2] ||
 	BUF->seqno[3] != uip_connr->rcv_nxt[3])) {
+      goto tcp_send_ack;
+    }
+    /* RTLPlayground: data past the window we advertised (a probe into a
+       zero window, or a sender that ignores it) isn't taken: an ACK with
+       the window as it is now. uIP 1.0 took any in-sequence segment. */
+    if(uip_len > (UIP_RECEIVE_WINDOW) &&
+       (uip_connr->tcpstateflags & UIP_TS_MASK) == UIP_ESTABLISHED) {
       goto tcp_send_ack;
     }
   }
