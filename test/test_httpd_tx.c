@@ -163,14 +163,16 @@ static void job_upload(void)
 	uint8_t r;
 
 	do {
-		r = upload_prog();
-		if (r == UP_ERASE) {
-			flash_region.addr = fl_addr;
-			flash_sector_erase();
-		}
-	} while (r == UP_PROG || r == UP_ERASE);
-	while (r == UP_VERIFY)
-		r = upload_verify();
+		do {
+			r = upload_prog();
+			if (r == UP_ERASE) {
+				flash_region.addr = fl_addr;
+				flash_sector_erase();
+			}
+		} while (r == UP_PROG || r == UP_ERASE);
+		while (r == UP_VERIFY)
+			r = upload_verify();
+	} while (upload_done());
 }
 
 uint8_t flash_job_start(void)
@@ -195,8 +197,10 @@ uint8_t flash_job_start(void)
 	return 1;
 }
 
-/* one step of a deferred job, as the scheduler would run it */
-static uint8_t job_vf;
+/* one step of a deferred job, as the scheduler would run it: FL_PROG (or
+ * FL_ERASE), FL_VERIFY, then FL_DONE a step of its own, so a segment can
+ * come between the job's last write and its end */
+static uint8_t job_vf;		/* 0 FL_PROG, 1 FL_VERIFY, 2 FL_DONE */
 
 static void job_step(void)
 {
@@ -204,6 +208,14 @@ static void job_step(void)
 
 	if (!fl_kind)
 		return;
+	if (job_vf == 2) {
+		job_vf = 0;
+		if (!upload_done()) {
+			fl_kind = 0;
+			fl_finished = 1;
+		}
+		return;
+	}
 	r = job_vf ? upload_verify() : upload_prog();
 	if (r == UP_ERASE) {
 		flash_region.addr = fl_addr;
@@ -211,9 +223,7 @@ static void job_step(void)
 	} else if (r == UP_VERIFY) {
 		job_vf = 1;
 	} else if (r == UP_DONE) {
-		job_vf = 0;
-		fl_kind = 0;
-		fl_finished = 1;
+		job_vf = 2;
 	}
 }
 
@@ -1751,7 +1761,7 @@ static void scenario_upload_window(void)
 	edge_bad = 0;
 	off = 0;
 	srv_wnd = MSS_FULL;
-	for (int k = 0; off < request_len; k++) {
+	for (int k = 0; off < request_len && k < 200; k++) {
 		n = request_len - off;
 		if (n > MSS_FULL / 2)		/* as Linux: half the largest window seen */
 			n = MSS_FULL / 2;
@@ -1805,6 +1815,73 @@ static void scenario_upload_window(void)
 	drain(MSS_FULL);
 	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12),
 	      "upload window: a segment past the window is refused");
+	flash_size = saved_flash_size;
+}
+
+/* E3: segments that come after the job has written all of the stage but
+ * before its FL_DONE step (a pass can run rx several times in between): they
+ * fill the window to zero, and the job must not end with them unwritten (the
+ * window would stay closed: its update says zero, and uIP doesn't answer
+ * Linux's zero-window probes). Measured with curl, 2026-11-19. */
+static void scenario_upload_window_race(void)
+{
+	static uint8_t request[WIN_LEN + 1024];
+	static const char closing[] = "\r\n--upload-boundary--\r\n";
+	static const char part[] = "--upload-boundary\r\n"
+		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
+		"Content-Type: application/octet-stream\r\n\r\n";
+	int header_len, request_len, off, n, filled = 0, sends;
+	uint32_t saved_flash_size = flash_size;
+
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	session_timeout = 200;
+	last_session_use[0] = 0;
+	flash_size = 0x100000;
+	flash_written_len = 0;
+	flash_write_bad = 0;
+	header_len = snprintf((char *)request, sizeof(request),
+		"POST /upload HTTP/1.1\r\nHost: sw\r\n"
+		"Cookie: session=0123456789ab\r\n"
+		"Content-Type: multipart/form-data; boundary=upload-boundary\r\n"
+		"Content-Length: %zu\r\n\r\n%s",
+		sizeof(part) - 1 + WIN_LEN + sizeof(closing) - 1, part);
+	for (int i = 0; i < WIN_LEN; i++)
+		request[header_len + i] = pattern(i);
+	memcpy(request + header_len + WIN_LEN, closing, sizeof(closing) - 1);
+	request_len = header_len + WIN_LEN + sizeof(closing) - 1;
+
+	job_defer = 1;
+	job_vf = 0;
+	off = header_len + 100;			/* the headers and a little of the image */
+	client_send(TCP_ACK | TCP_PSH, (const char *)request, off);
+	for (int i = 0; i < 50 && job_vf != 2; i++)
+		job_step();			/* to its last write, FL_DONE to come */
+	for (sends = 0; sends < 12 && srv_wnd && off < request_len; sends++) {
+		n = request_len - off > MSS_FULL / 2 ? MSS_FULL / 2 : request_len - off;
+		if (n > srv_wnd)
+			n = srv_wnd;
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
+		off += n;
+	}
+	filled = srv_wnd == 0;
+	job_run();				/* FL_DONE, and what it does then */
+	run_periodic(1);
+	CHECK(filled && srv_wnd > 0,
+	      "upload window: segments before the job's FL_DONE are written, the window reopens");
+	job_defer = 0;
+	for (int i = 0; i < 40 && off < request_len && srv_wnd; i++) {
+		n = request_len - off > MSS_FULL / 2 ? MSS_FULL / 2 : request_len - off;
+		if (n > srv_wnd)
+			n = srv_wnd;
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
+		off += n;
+		run_periodic(1);
+	}
+	drain(MSS_FULL);
+	CHECK(off == request_len && !flash_write_bad && flash_written_len == WIN_LEN
+	      && !memcmp(flash_written, request + header_len, WIN_LEN),
+	      "upload window: and the image is staged whole, in order");
 	flash_size = saved_flash_size;
 }
 
@@ -1891,6 +1968,7 @@ int main(int argc, char **argv)
 	scenario_upload_last_byte();
 	scenario_upload_broken_matches();
 	scenario_upload_window();
+	scenario_upload_window_race();
 	scenario_flash_busy();
 
 	scenario_login_with_valid_cookie_reuses_its_slot();

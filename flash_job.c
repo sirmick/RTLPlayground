@@ -106,6 +106,8 @@ void fl_verify(void) __banked
 
 void fl_end(void) __banked
 {
+	if (fl_kind == FL_UPLOAD && upload_done())
+		STEP_NEXT(S_FL_PROG);	/* more came meanwhile */
 	if (fl_kind >= FL_FACTORY) {
 		print_string("Written default config to flash\n");
 		if (fl_kind == FL_FACTORY_BTN)
