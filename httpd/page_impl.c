@@ -7,6 +7,7 @@
 #include "rtl837x_port.h"
 #include "rtl837x_flash.h"
 #include "rtl837x_pins.h"
+#include "sfp.h"
 #include "uip.h"
 #include "html_data.h"
 #include <stdint.h>
@@ -183,32 +184,30 @@ void counter_to_html(void)
 }
 
 
+/* The module's Vendor-name, Vendor PN and Vendor rev ASCII fields, from the
+ * sfp task's cache (sfp.c, E2: no I2C in a page); nothing before it is read */
 void send_sfp_info(uint8_t sfp)
 {
-	// This loops over the Vendor-name, Vendor OUI, Vendor PN and Vendor rev ASCII fields
-	for (uint8_t i = 16; i < 64; i++) {
-		if (!(i & 0xf) && !sfp_read_block(sfp, i, 16))
-			return;
-		if (i < 20 || i >= 60 || (i >= 36 && i < 40)) // Skip Non-ASCII codes
+	if (!sfp_id_ok[sfp])
+		return;
+	for (uint8_t i = 0; i < SFP_ID_LEN; i++) {
+		if (i >= 36 - 20 && i < 40 - 20) // Skip Non-ASCII codes (the OUI)
 			continue;
-		uint8_t c = sfp_buf[i & 0xf];
-		if (c)
-			json_char_to_html(c);
+		if (sfp_id[sfp][i])
+			json_char_to_html(sfp_id[sfp][i]);
 	}
 }
 
 
+/* Diagnostics bytes reg.. (0x51, SFP_DDM_FIRST..), from the cache the sfp
+ * task refreshes every 2 s; nothing until it holds this module's */
 void sfp_send_data(uint8_t slot, uint8_t reg, uint8_t len)
 {
-	// maximum supported transfer size is 16 bytes
-	if (len > 16)
-		return;
-
-	if (!sfp_read_block(slot, reg, len))
+	if (!sfp_diag_ok[slot] || reg < SFP_DDM_FIRST || len > SFP_DDM_FIRST + SFP_DDM_LEN - reg)
 		return;
 
 	for (uint8_t i = 0; i < len; i++)
-		byte_to_html(sfp_buf[i]);
+		byte_to_html(sfp_diag[slot][reg - SFP_DDM_FIRST + i]);
 }
 
 

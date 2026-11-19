@@ -28,8 +28,17 @@ __xdata uint8_t sfp_options[2];
 __xdata uint8_t sfp_buf[16];	/* scratch for one I2C transaction, the controller reads at most 16 bytes */
 __xdata uint8_t sfp_speed[2];
 __xdata uint8_t sfp_quirks[2];
-__xdata struct timer sfp_wake[2];
+__xdata struct timer sfp_wake_timer[2];
 __xdata uint8_t sfp_wake_pending[2];
+
+/* The module's identity and diagnostics, read by the sfp tasks (tasks.c), a
+ * transaction a step, for the web pages (E2): they don't touch I2C. */
+__xdata uint8_t sfp_id[2][SFP_ID_LEN];		/* EEPROM bytes 20..59: vendor, OUI, PN, rev */
+__xdata uint8_t sfp_diag[2][SFP_DDM_LEN];	/* diagnostics, 0x51 bytes 184..239 */
+__xdata uint8_t sfp_id_ok[2], sfp_diag_ok[2];	/* the caches hold this module's */
+__xdata uint8_t sfp_ready[2];			/* read and configured: its DDM is kept */
+static __xdata uint8_t sfp_rate[2];		/* SFP_READ -> SFP_CONFIG */
+static __xdata uint8_t sfp_rd[2], sfp_dd[2];	/* the next transaction of a read, of a DDM refresh */
 
 
 __code enum sfp_quirk {
@@ -84,36 +93,23 @@ bool sfp_print_info(uint8_t sfp) __banked
 }
 
 
-// Normalize strings from EEPROM by removing any trailing spaces; this allows simpler comparisons
-bool sfp_read_field(__xdata char *dst, uint8_t sfp, uint8_t start, uint8_t length) __banked __reentrant
+// Normalize a 16-byte EEPROM field in sfp_buf into dst (17 bytes): unprintable
+// characters, quotes and backslashes become '.', trailing spaces go; this
+// allows simpler comparisons
+static __xdata char * __xdata fd;
+static __xdata uint8_t fi, fc;
+static void sfp_field(void)
 {
-	if (!sfp_read_block(sfp, start, length))
-		return false;
-
-	dst[length] = NUL;
-	for (uint8_t i = 0; i < length; i++) {
-		uint8_t c = sfp_buf[i];
-		if (c && (c < 0x20 || c > 0x7e || c == '"' || c == '\\'))
-			c = '.';
-		dst[i] = c;
+	fd[16] = NUL;
+	for (fi = 0; fi < 16; fi++) {
+		fc = sfp_buf[fi];
+		if (fc && (fc < 0x20 || fc > 0x7e || fc == '"' || fc == '\\'))
+			fc = '.';
+		fd[fi] = fc;
 	}
-
-	while (length-- > 0 && (dst[length] == ' ' || dst[length] == NUL))
-		dst[length] = NUL;
-
-	return true;
-}
-
-
-
-bool sfp_get_info(uint8_t sfp) __banked
-{
-	if (!sfp_read_field(sfp_module_vendor[sfp], sfp, 20, 16))
-		return false;
-	if (!sfp_read_field(sfp_module_model[sfp], sfp, 40, 16))
-		return false;
-
-	return sfp_read_field(sfp_module_serial[sfp], sfp, 68, 16);
+	fi = 16;
+	while (fi-- > 0 && (fd[fi] == ' ' || fd[fi] == NUL))
+		fd[fi] = NUL;
 }
 
 
@@ -154,88 +150,156 @@ void setup_sfp_gpio(void) __banked
 
 
 
-static bool sfp_module_read(uint8_t sfp)
+/* The module read after the wake-up delay, a transaction a call (SFP_READ):
+ * SFP_MORE, SFP_DONE, or SFP_FAIL (said, and the slot marked empty, so the
+ * next poll finds the module again and waits for it once more). The output
+ * is the old one-call read's, in its order. */
+static __xdata uint8_t sfp, ri, rj, rc, pm;	/* the slot, a transaction, a byte, the slot's pin bit */
+static __xdata uint8_t * __xdata rp;
+static __xdata uint8_t sfp_ddm_wait[2];	/* polls to the next DDM refresh */
+
+static uint8_t sfp_read_failed(void)
 {
-	uint8_t rate;
-
-	// Read Reg 11: Encoding, see SFF-8472 and SFF-8024
-	// Read Reg 12: Signalling rate (including overhead) in 100Mbit: 0xd: 1Gbit, 0x67:10Gbit
-	if (!sfp_read_block(sfp, 11, 2))
-		return false;
-
-	rate = sfp_buf[1];
-	if (sfp_speed[sfp] == SFP_SPEED_100M)
-		rate = 0x1;
-	else if (sfp_speed[sfp] == SFP_SPEED_1G)
-		rate = 0xc;
-	else if (sfp_speed[sfp] == SFP_SPEED_2G5)
-		rate = 0x19;
-	else if (sfp_speed[sfp] == SFP_SPEED_10G)
-		rate = 0x69;
-	print_string("  Rate: "); print_byte(rate);  // Normally 1, but 0 for DAC, can be ignored?
-	print_string("  Encoding: "); print_byte(sfp_buf[0]);
-	print_string("  Module: ");
-	if (!sfp_print_info(sfp))
-		return false;
-	print_string("\n");
-
-	if (!sfp_read_block(sfp, 92, 1))
-		return false;
-	sfp_options[sfp] = sfp_buf[0];
-	if (!sfp_get_info(sfp))
-		return false;
-
-	sfp_apply_quirks(sfp);
-	sds_config(machine.sfp_port[sfp].sds, sfp_rate_to_sds_config(rate));
-
-	return true;
+	print_string("SFP: an I2C read failed, retrying on the next poll\n");
+	sfp_pins_last |= 0x01 << (sfp << 2);
+	return SFP_FAIL;
 }
 
+/* the transactions of a module read: rate and encoding, the ASCII fields
+ * (3), the options, vendor, model, serial; then the quirks' (at most one) */
+static __code const uint8_t sfp_rd_reg[8] = { 11, 16, 32, 48, 92, 20, 40, 68 };
+static __code const uint8_t sfp_rd_len[8] = { 2, 16, 16, 16, 1, 16, 16, 16 };
 
-
-
-/* One slot's detect and LOS pins: insertion, removal, the module read after
- * the wake-up delay. The sfp tasks run it per slot (tasks.c). */
-static __xdata uint8_t sfp;
-void handle_sfp_slot(uint8_t slot) __banked
+uint8_t sfp_read_next(uint8_t slot) __banked
 {
 	sfp = slot;
+	ri = sfp_rd[sfp]++;
+	if (ri == 8) {
+		sfp_apply_quirks(sfp);
+		return SFP_DONE;
+	}
+	if (!sfp_read_block(sfp, sfp_rd_reg[ri], sfp_rd_len[ri]))
+		return sfp_read_failed();
+	if (ri == 0) {
+		// Reg 11: Encoding, see SFF-8472 and SFF-8024
+		// Reg 12: Signalling rate (including overhead) in 100Mbit: 0xd: 1Gbit, 0x67:10Gbit
+		rc = sfp_buf[1];
+		rj = sfp_speed[sfp];
+		if (rj == SFP_SPEED_100M)
+			rc = 0x1;
+		else if (rj == SFP_SPEED_1G)
+			rc = 0xc;
+		else if (rj == SFP_SPEED_2G5)
+			rc = 0x19;
+		else if (rj == SFP_SPEED_10G)
+			rc = 0x69;
+		sfp_rate[sfp] = rc;
+		print_string("  Rate: "); print_byte(rc);  // Normally 1, but 0 for DAC, can be ignored?
+		print_string("  Encoding: "); print_byte(sfp_buf[0]);
+		print_string("  Module: ");
+	} else if (ri <= 3) {	/* bytes 16..63: the ASCII fields printed, 20..59 kept */
+		rp = sfp_id[sfp];
+		for (rj = 0; rj < 16; rj++) {
+			rc = (ri << 4) + rj;
+			if (rc < 20 || rc >= 60)
+				continue;
+			rp[rc - 20] = sfp_buf[rj];
+			if ((rc >= 36 && rc < 40) || !sfp_buf[rj]) // Skip Non-ASCII codes
+				continue;
+			write_char(sfp_buf[rj]);
+		}
+		if (ri == 3) {
+			sfp_id_ok[sfp] = 1;
+			print_string("\n\n");
+		}
+	} else if (ri == 4) {
+		sfp_options[sfp] = sfp_buf[0];
+	} else {		/* vendor, model, serial: trimmed, for the pages and quirks */
+		fd = ri == 5 ? sfp_module_vendor[sfp] : ri == 6 ? sfp_module_model[sfp] : sfp_module_serial[sfp];
+		sfp_field();
+	}
+	return SFP_MORE;
+}
+
+/* SFP_CONFIG: the SerDes for the module's rate; its DDM is kept from now on */
+void sfp_configure(uint8_t slot) __banked
+{
+	sfp = slot;
+	sds_config(machine.sfp_port[sfp].sds, sfp_rate_to_sds_config(sfp_rate[sfp]));
+	sfp_ready[sfp] = 1;
+	sfp_dd[sfp] = 0;
+	sfp_ddm_wait[sfp] = 0;
+}
+
+/* A configured module with DDM (SFF-8472 option bit 6) whose cache is due,
+ * every SFP_DDM_POLLS polls (or at once after SFP_CONFIG): 1 */
+uint8_t sfp_ddm_wanted(uint8_t slot) __banked
+{
+	sfp = slot;
+	if (!sfp_ready[sfp] || !(sfp_options[sfp] & 0x40) || sfp_ddm_wait[sfp]--)
+		return 0;
+	sfp_ddm_wait[sfp] = SFP_DDM_POLLS;
+	return 1;
+}
+
+/* SFP_DDM: the next of the 4 transactions that refresh the slot's cache */
+uint8_t sfp_ddm_next(uint8_t slot) __banked
+{
+	sfp = slot;
+	ri = sfp_dd[sfp]++;
+	rc = ri == 3 ? SFP_DDM_LEN - 48 : 16;
+	if (!sfp_read_block(sfp, SFP_DDM_FIRST + (ri << 4), rc)) {
+		sfp_diag_ok[sfp] = 0;
+		sfp_dd[sfp] = 0;
+		return SFP_FAIL;
+	}
+	rp = sfp_diag[sfp] + (ri << 4);
+	for (rj = 0; rj < rc; rj++)
+		rp[rj] = sfp_buf[rj];
+	if (ri < 3)
+		return SFP_MORE;
+	sfp_diag_ok[sfp] = 1;
+	sfp_dd[sfp] = 0;
+	return SFP_DONE;
+}
+
+/* One slot's detect and LOS pins: insertion (the wake-up delay starts),
+ * removal, light. 1 when the delay has passed for a module still in: the
+ * read starts over (SFP_READ), before the LOS check as in the old poll,
+ * which read it right there. */
+uint8_t sfp_pins(uint8_t slot) __banked
+{
+	sfp = slot;
+	pm = 0x01 << (sfp << 2);
 	if (!gpio_pin_test(machine.sfp_port[sfp].pin_detect)) {
-		if (sfp_pins_last & (0x1 << (sfp << 2))) {
-			sfp_pins_last &= ~(0x01 << (sfp << 2));
+		if (sfp_pins_last & pm) {
+			sfp_pins_last &= ~pm;
 			print_string("\n<MODULE INSERTED>  Slot: "); write_char('1' + sfp);
-			timer_set(&sfp_wake[sfp], SFP_WAKE_TICKS);
+			timer_set(&sfp_wake_timer[sfp], SFP_WAKE_TICKS);
 			sfp_wake_pending[sfp] = 1;
-		} else if (sfp_wake_pending[sfp] && timer_expired(&sfp_wake[sfp])) {
+			sfp_ready[sfp] = sfp_id_ok[sfp] = sfp_diag_ok[sfp] = 0;
+		} else if (sfp_wake_pending[sfp] && timer_expired(&sfp_wake_timer[sfp])) {
 			sfp_wake_pending[sfp] = 0;
-			if (!sfp_module_read(sfp)) {
-				print_string("SFP: an I2C read failed, retrying on the next poll\n");
-				sfp_pins_last |= 0x01 << (sfp << 2);
-			}
+			sfp_rd[sfp] = 0;
+			return 1;
 		}
-	} else {
-		if (!(sfp_pins_last & (0x1 << (sfp << 2)))) {
-			sfp_pins_last |= 0x01 << (sfp << 2);
-			sfp_wake_pending[sfp] = 0;
-			print_string("\n<MODULE REMOVED>  Slot: "); write_char('1' + sfp); write_char('\n');
-		}
+	} else if (!(sfp_pins_last & pm)) {
+		sfp_pins_last |= pm;
+		sfp_wake_pending[sfp] = 0;
+		sfp_ready[sfp] = sfp_id_ok[sfp] = sfp_diag_ok[sfp] = 0;
+		print_string("\n<MODULE REMOVED>  Slot: "); write_char('1' + sfp); write_char('\n');
 	}
 
+	pm <<= 1;
 	if (!gpio_pin_test(machine.sfp_port[sfp].pin_los)) {
-		if (sfp_pins_last & (0x2 << (sfp << 2))) { // 0x2 0x08
-			sfp_pins_last &= ~(0x02 << (sfp << 2));
+		if (sfp_pins_last & pm) { // 0x2 0x08
+			sfp_pins_last &= ~pm;
 			print_string("\n<SFP-RX OK>  Slot: "); write_char('1' + sfp); write_char('\n');
 		}
-	} else {
-		if (!(sfp_pins_last & 0x2 << (sfp << 2))) {
-			sfp_pins_last |= 0x02 << (sfp << 2);
-			print_string("\n<SFP-RX LOS>  Slot: "); write_char('1' + sfp); write_char('\n');
-		}
+	} else if (!(sfp_pins_last & pm)) {
+		sfp_pins_last |= pm;
+		print_string("\n<SFP-RX LOS>  Slot: "); write_char('1' + sfp); write_char('\n');
 	}
+	return 0;
 }
 
-void handle_sfp(void) __banked
-{
-	for (uint8_t i = 0; i < machine.n_sfp; i++)
-		handle_sfp_slot(i);
-}

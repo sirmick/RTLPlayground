@@ -1204,8 +1204,8 @@ void parse_sfp(void)
 	} else {
 		goto err;
 	}
-	sfp_pins_last |= 0x1 << (slot << 2);
-	handle_sfp();
+	sfp_pins_last |= 0x1 << (slot << 2);	/* found again at once, then read */
+	sfp_pins(slot);
 	return;
 err:
 	cmd_error("\nUsage:\n\tsfp\n\tsfp [1|2] [1g|2g5|10g]\n");

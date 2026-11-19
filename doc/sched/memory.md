@@ -67,6 +67,7 @@ broke the link three times.
 
 | What | Bytes | Where |
 |---|---|---|
+| SFP caches (E2) | 231 in all: `sfp_id` 2 x 40, `sfp_diag` 2 x 56, the slots' flags and cursors, the helpers' statics | XSEG |
 | task table | 144 (24 x 6 B: the mask is 8 bits since E5, decision 23) | XSEG |
 | scheduler globals, per-state stats (~40 states × 3) | ~140 | XSEG |
 | TX ring / RX ring growth | 2048 / +240 (TX 2 KiB, 16-bit indexes, decision 21, E1: 128 B until then; RX 256 B from 16) | XSEG |

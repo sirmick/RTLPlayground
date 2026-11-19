@@ -42,7 +42,6 @@ void handle_tx(void);
 extern __code const struct machine machine;
 
 static __xdata uint16_t house_due, loop_due;
-static __xdata uint16_t sfp_due[2];
 static __xdata uint8_t ti, tn;
 
 /* rx: woken by INT1 (HW_RX); up to RX_BUDGET frames a step */
@@ -289,25 +288,82 @@ STEP(lldp, tick)
 	return STEP_STAY;
 }
 
-/* sfp0, sfp1: a slot's pins every 50 ms; none on a board without the slot */
+/* sfp0, sfp1 (E2, modules.md "SFP, per slot"): a slot's pins every 50 ms;
+ * none on a board without the slot. An inserted module waits out its
+ * wake-up delay in SFP_WAKE, is read a transaction a step in SFP_READ,
+ * configured in SFP_CONFIG; then SFP_DDM keeps its diagnostics in the
+ * cache the web pages read, every SFP_DDM_POLLS polls, 4 transactions. */
 TASK(sfp, fixed, once, count=2, first=start)
 STEP(sfp, start)
 {
 	ti = sched_cur - T_SFP0;
 	if (ti >= machine.n_sfp)
 		return STEP_END;
-	sfp_due[ti] = sched_now + SFP_TICKS;
-	task_until(sfp_due[ti]);
-	return S_SFP_POLL;
+	task_until(sched_now + SFP_TICKS);
+	return STEP_ARG(S_SFP_POLL, sched_now + SFP_TICKS);	/* arg: the slot's poll tick */
+}
+
+/* the next 50 ms point (the slot's arg); behind (after a read): now */
+static __xdata uint16_t sfp_t;
+static void sfp_next_poll(void)
+{
+	sfp_t = task_arg() + SFP_TICKS;
+	if ((int16_t)(sfp_t - sched_now) < 0)
+		sfp_t = sched_now;
+	task_set_arg(sfp_t);
+	task_until(sfp_t);
 }
 
 STEP(sfp, poll)
 {
 	ti = sched_cur - T_SFP0;
-	handle_sfp_slot(ti);
-	sfp_due[ti] += SFP_TICKS;
-	task_until(sfp_due[ti]);
+	if (sfp_pins(ti))
+		return S_SFP_READ;
+	if (sfp_ddm_wanted(ti))
+		return S_SFP_DDM;
+	sfp_next_poll();
+	if (sfp_wake_pending[ti])
+		return S_SFP_WAKE;
 	return STEP_STAY;
+}
+
+STEP(sfp, wake)
+{
+	ti = sched_cur - T_SFP0;
+	if (sfp_pins(ti))
+		return S_SFP_READ;
+	sfp_next_poll();
+	if (!sfp_wake_pending[ti])		/* out again */
+		return S_SFP_POLL;
+	return STEP_STAY;
+}
+
+STEP(sfp, read)
+{
+	ti = sched_cur - T_SFP0;
+	tn = sfp_read_next(ti);
+	if (tn == SFP_MORE)
+		return STEP_STAY;
+	if (tn == SFP_FAIL)			/* said; the next poll finds it again */
+		return S_SFP_POLL;
+	return S_SFP_CONFIG;
+}
+
+STEP(sfp, config)
+{
+	ti = sched_cur - T_SFP0;
+	sfp_configure(ti);
+	if (sfp_ddm_wanted(ti))			/* its first refresh at once */
+		return S_SFP_DDM;
+	return S_SFP_POLL;
+}
+
+STEP(sfp, ddm)
+{
+	ti = sched_cur - T_SFP0;
+	if (sfp_ddm_next(ti) == SFP_MORE)
+		return STEP_STAY;
+	return S_SFP_POLL;			/* done, or failed: again at the next refresh */
 }
 
 /* house: once a second */
