@@ -13,7 +13,7 @@ sim_tests.py, every sim test runs in a fresh rtlsim in firmware time, so a
 run is deterministic (--twice compares every number). Exit status 1 on any
 failure.
 """
-import argparse, glob, json, os, re, struct, subprocess, sys, tempfile, time, shutil
+import argparse, concurrent.futures, contextlib, glob, io, json, os, re, struct, subprocess, sys, tempfile, time, shutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sim_tests import Suite, Fail, PROMPT
@@ -303,6 +303,14 @@ def coverage(s, covdir):
     s.check(r.returncode == 0, "crash_boot, crash_die, crash_reset, crash_sum ran", (r.stdout + r.stderr).strip()[-400:])
 
 
+def _run(base, ovs, only):
+    """run(), its output captured"""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        res, fails = run(base, ovs, only)
+    return buf.getvalue(), res, fails
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description="schedtest's negative variants in rtlsim (B5)")
     ap.add_argument("base", help="output/<MACHINE>-compact-schedtest; the variants are BASE-<ST_NEG>")
@@ -313,11 +321,15 @@ def main(argv):
     a = ap.parse_args(argv)
     t0 = time.time()
     print(f"sim_neg: {a.base}-{{hang,overrun,bad_flash,bad_spec}}")
-    res, fails = run(a.base, a.ovs, a.only)
-    if a.twice:
-        print("second run:")
-        res2, fails2 = run(a.base, a.ovs, a.only)
-        fails += [f"(second run) {f}" for f in fails2]
+    with concurrent.futures.ProcessPoolExecutor(2) as pool:     # --twice: both runs at once
+        runs = [pool.submit(_run, a.base, a.ovs, a.only) for _ in range(2 if a.twice else 1)]
+        out, res, fails = runs[0].result()
+        sys.stdout.write(out)
+        if a.twice:
+            out, res2, fails2 = runs[1].result()
+            print("second run:")
+            sys.stdout.write(out)
+            fails += [f"(second run) {f}" for f in fails2]
         same = json.dumps(res, sort_keys=True) == json.dumps(res2, sort_keys=True)
         print(f"  deterministic: {'yes, every number the same' if same else 'NO'}")
         if not same:

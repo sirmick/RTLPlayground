@@ -150,12 +150,14 @@ schedtest:
 # schedtest-sim MACHINE=... LAYOUT=compact [OVS=~/src/ovs-rtlpg]
 # [SIM_ARGS=--twice] [NEG_ARGS=...] after make schedtest and make schedtest
 # ST_NEG=hang, overrun, bad_flash. schedtest-neg runs layer 2b alone.
-# Deterministic, about 2 min.
+# Deterministic; the tests run in parallel (sim_tests.py --jobs).
 ST_BUILD ?= output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)-schedtest
 .PHONY: schedtest-sim schedtest-neg
-schedtest-sim:
-	python3 schedtest/sim_tests.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(SIM_ARGS)
-	python3 schedtest/sim_neg.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(filter --twice,$(SIM_ARGS)) $(NEG_ARGS)
+schedtest-sim:	# both layers at once, 2b's output after 2's
+	python3 schedtest/sim_neg.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(filter --twice,$(SIM_ARGS)) $(NEG_ARGS) \
+		> $(ST_BUILD)/sim_neg.log 2>&1 & neg=$$!; \
+	python3 schedtest/sim_tests.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(SIM_ARGS); t=$$?; \
+	wait $$neg; n=$$?; grep -v '^unmodelled\|^flash busy' $(ST_BUILD)/sim_neg.log; [ $$t = 0 ] && [ $$n = 0 ]
 schedtest-neg:
 	python3 schedtest/sim_neg.py $(ST_BUILD) $(if $(OVS),--ovs $(OVS)) $(NEG_ARGS)
 
