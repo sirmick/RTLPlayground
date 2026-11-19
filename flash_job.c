@@ -9,7 +9,8 @@
  * staged segment into pages and programs them, asking for FL_ERASE at each
  * sector, and for FL_VERIFY (upload_verify(), the read-back CRC) when the
  * part has ended. A config save and a factory reset start in FL_ERASE
- * (CONFIG_START), then FL_PROG copies FL_CHUNK bytes a step.
+ * (CONFIG_START), then FL_PROG copies FL_CHUNK bytes a step; the loader's
+ * boot count (loader_confirm()) is one FL_ERASE.
  */
 #include <stdint.h>
 #include "rtl837x_common.h"
@@ -45,7 +46,9 @@ uint8_t flash_job_start(void) __banked
 		return 0;
 	fl_kind = fl_req;
 	fl_finished = 0;
-	if (fl_kind != FL_UPLOAD) {
+	if (fl_kind == FL_BOOTCNT) {
+		fl_addr = LDR_BOOTCNT;
+	} else if (fl_kind != FL_UPLOAD) {
 		fl_addr = CONFIG_START;
 		if (fl_kind != FL_CONFIG) {
 			fl_from = DEFAULT_CONFIG_START;
@@ -60,6 +63,8 @@ void fl_erase(void) __banked
 {
 	flash_region.addr = fl_addr;
 	flash_sector_erase();
+	if (fl_kind == FL_BOOTCNT)
+		STEP_NEXT(S_FL_DONE);
 	STEP_NEXT(S_FL_PROG);
 }
 
