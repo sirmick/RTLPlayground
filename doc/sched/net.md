@@ -23,6 +23,14 @@ a step, with three exceptions that change:
    the web command buffer) and posts `EV_WEBCMD`. On `uip_poll()` it checks
    for `EV_CMD_DONE`, then sends the captured output. The connection stays
    open meanwhile; uIP's poll keeps it alive.
+   As built (D3): the web command buffer is `config_buf` and the reply is
+   captured in `outbuf`, because uIP has one connection
+   (`UIP_CONF_MAX_CONNECTIONS 1`; `httpd.c` `#error`s otherwise); the rx
+   task posts `EV_WEBCMD` (httpd can't include `sched.h`), and the poll
+   checks `webcmd_done`. A `/cmd` whose connection ends before cli runs it
+   is cancelled (chapter 7, "Two input buffers, one parser"). The reply goes
+   out on a later poll, not with the request's ACK: one TCP frame more per
+   `/cmd` (d3-oldnew.expect).
 3. **Pages that do slow I/O.** `/ports.json` and `/information.json` read
    the SFP diagnostics cache (chapter 9), not I2C. `/vlanlist.json` reads a
    VLAN bitmap the VLAN code keeps, not 4094 table reads.

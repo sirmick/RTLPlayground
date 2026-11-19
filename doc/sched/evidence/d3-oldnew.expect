@@ -1,4 +1,4 @@
-# old-vs-new (ovs-rtlpg tests/oldnew, 09d712e) for D3 against fork main
+# old-vs-new (ovs-rtlpg tests/oldnew, bb0ee65) for D3 against fork main
 # b635486: D1's timing (d1-oldnew.expect) and the queued web command (U4).
 stp     002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
 stp     005 web GET /stp.json     # D1: tcs 0x16 for 0x15
