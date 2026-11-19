@@ -120,9 +120,15 @@ _Static_assert(sizeof(struct rtl_tag) == 8, "rtl tag must be 8");
 static struct wire_pdu_out last_tx[10];
 static int tx_count[10];
 
-void tcpip_output(void)
+__xdata uint8_t ctl_buf[CTL_BUF_SIZE];
+__xdata uint16_t ctl_len;
+
+void tcpip_output(void) { uip_len = 0; }
+
+/* LACP sends from the control-frame buffer (frame_tx.c) */
+void ctl_output(void)
 {
-	struct wire_pdu_out *p = (struct wire_pdu_out *)&uip_buf[RTL_FRAME_DESC_SIZE];
+	struct wire_pdu_out *p = (struct wire_pdu_out *)&ctl_buf[RTL_FRAME_DESC_SIZE];
 	uint16_t pmask = HTONS(p->rtl_tag.pmask);
 	for (int port = 0; port < 10; port++) {
 		if (pmask & (1u << port)) {
@@ -130,7 +136,7 @@ void tcpip_output(void)
 			tx_count[port]++;
 		}
 	}
-	uip_len = 0;
+	ctl_len = 0;
 }
 
 /* ---------- simulated partner ---------- */

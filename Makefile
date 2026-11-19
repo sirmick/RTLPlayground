@@ -216,6 +216,7 @@ SRCS = \
 	$(MACHINE_INIT_SRC) \
 	cmd_editor.c \
 	con_ring.c \
+	frame_tx.c \
 	cmd_parser.c \
 	dhcp.c \
 	html_data.c \
