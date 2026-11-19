@@ -82,6 +82,8 @@ uint8_t  sfp_options[2];
 char     sfp_module_vendor[2][17];
 char     sfp_module_model[2][17];
 char     sfp_module_serial[2][17];
+uint8_t  sfp_id[2][40], sfp_diag[2][56];	/* sfp.c's caches (E2): empty */
+uint8_t  sfp_id_ok[2], sfp_diag_ok[2];
 char     hostname[24] = "hosttest";
 char     port_names[9][PORT_NAME_SIZE];
 struct flash_region_t flash_region;

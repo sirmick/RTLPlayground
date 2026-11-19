@@ -34,6 +34,28 @@ on fork main 612116e, from `private notes: os-audit.md`).
 
 A removed module: back to `SFP_POLL`, cache cleared.
 
+**As built (E2).** The steps are in tasks.c (the slot order unchanged), the
+I2C and the caches in sfp.c; a helper does one transaction and says
+SFP_MORE / SFP_DONE / SFP_FAIL, the step chooses the state.
+
+| State | Does | Next |
+|---|---|---|
+| `SFP_POLL` | `sfp_pins()`: detect and LOS, the old messages; every 50 ms (the slot's `arg` is its poll tick) | inserted: `SFP_WAKE`; DDM due: `SFP_DDM` |
+| `SFP_WAKE` | polls the pins on, until the wake-up delay (`SFP_WAKE_TICKS`, as before) has passed | `SFP_READ`; removed: `SFP_POLL` |
+| `SFP_READ` | one transaction a step, the old read's 8 (rate and encoding, the ASCII fields x3, options, vendor, model, serial), then the quirks' (at most 1), printing as before | `SFP_CONFIG`; a failed read: said, and `SFP_POLL` finds the module again |
+| `SFP_CONFIG` | `sds_config()` for the rate | `SFP_DDM` (DDM modules), else `SFP_POLL` |
+| `SFP_DDM` | one of 4 transactions into the slot's diagnostics cache (0x51 bytes 184..239), every 40 polls (2 s) | `SFP_POLL` |
+
+`/ports.json` and `/information.json` read the caches (`sfp_diag`,
+`sfp_id`), never I2C: before, a page with a DDM module did up to 13
+transactions in one rx step (~25 ms on silicon). A cache not yet filled
+gives what a failed read gave (an empty field). `sfp_read_block()` gives up
+after 1-2 ticks (5-10 ms) instead of spinning. The cli's `sfp` still reads
+the module live; `sfp N <speed>` marks the slot empty and runs
+`sfp_pins()` at once, as `handle_sfp()` did. Measured in the sim
+(`evidence/e2-sfp.txt`): every SFP state under 1 ms; on silicon a step is
+one transaction, ~2 ms at 100 kHz.
+
 ## Jobs
 
 | Job | States | Claimed by |
