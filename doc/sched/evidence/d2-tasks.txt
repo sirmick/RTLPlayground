@@ -157,3 +157,14 @@ tour, web pages), for D3/E to compare against:
 | SFP_POLL | 42 us | (no module) |
 | HOUSE_SEC | 49 us | |
 | RX_IDLE, LOOP_START, SFP_START, HOUSE_START | - | run once, at the start (cleared by health clear) |
+
+## D2 fix: long console output kicks the watchdog
+con_putc() kicks the watchdog when a wait for TX room ends (watchdog.md).
+schedtest base image, `peek 0 49000` (98 KB of hex in one CLI_RUN step) in rtlsim:
+  with the kick:    49000 of 49000 bytes printed in 9.0 s; no reset
+  without (1f900eb): 27888 bytes, then "Last reset: watchdog in cli/CLI_RUN after 5000 ms"
+A non-printing hang still resets: sim_neg hang, the watchdog at the 1000th and
+999th tick. make schedtest-sim --twice: 0 failures, deterministic (64 s);
+host quick 20 PASS; 8x gate PASS (IRAM 0, common 0x3e5d, 291 B left).
+rtlsim's control mode doesn't learn MACs (learning lives in its OVS fabric),
+so an l2 table of ~2000 entries couldn't be built here; peek is the long print.
