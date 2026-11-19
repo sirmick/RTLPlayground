@@ -44,7 +44,7 @@ survives a chip reset, chapter 2), outside every XSEG: the app's ends at
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 2 | magic `0x5c4d` |
-| 2 | 1 | cause: 1 software watchdog, 2 `^R ^R`, 3 `reset` command, 4 update |
+| 2 | 1 | cause: 1 software watchdog, 2 `^R ^R`, 3 `reset` command (4 reserved: see below) |
 | 3 | 1 | resets since power-on (no magic before → 0) |
 | 4 | 2 | tick at the reset |
 | 6 | 1 | running slot (`sched_cur`) |
@@ -61,8 +61,15 @@ survives a chip reset, chapter 2), outside every XSEG: the app's ends at
 - `CRASH_NOTE(slot, state)` (in the loop, before each dispatch) keeps the
   slot, state, start tick and ring current: a few xdata writes, ~2 µs.
 - `crash_die()` (resident) fills the rest and the sum and resets. The tick
-  ISR and the `^R ^R` path jump to it; the `reset` command and an update
-  call `crash_reset(cause)`.
+  ISR and the `^R ^R` path jump to it; the `reset` command calls
+  `crash_reset(cause)`.
+- **No record for an update** (E3). Cause 4, "update", is dropped: the reset
+  that applies an upload boots the loader, which installs the new image, and
+  the record would be read by that image, not the one that wrote it (E0's
+  build check ignores it). An update reports itself through the loader's
+  own lines ("Installing application", "Installed") and the new version
+  string at boot; the reset after an accepted upload stays a plain
+  `reset_chip()`.
 - "Resets since power-on" counts recorded resets: the boot that consumes a
   valid record carries its count + 1 into the next record.
 - **Boot:** `crash_boot()`: if the magic and sum check out, print one line

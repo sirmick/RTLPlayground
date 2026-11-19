@@ -14,7 +14,7 @@ static __xdata uint8_t i, ps;
 static __xdata uint16_t u, lo;
 
 static __code const char * __code const cause_name[] = {
-	"?", "watchdog", "^R ^R", "reset command", "update"
+	"?", "watchdog", "^R ^R", "reset command"
 };
 
 /* A 32-bit count kept as two halves, in hex. */
@@ -53,7 +53,7 @@ static void print_slot(void)		/* slot ps */
  * watchdog in stp/STP_SECOND after 5000 ms, PC 0x1234 bank 2, states ... */
 static void crash_print(void)
 {
-	print_string(cause_name[crash_last.cause <= CRASH_UPDATE ? crash_last.cause : 0]);
+	print_string(cause_name[crash_last.cause <= CRASH_RESET_CMD ? crash_last.cause : 0]);
 	print_string(" in ");
 	ps = crash_last.slot;
 	print_slot();

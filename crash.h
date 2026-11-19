@@ -26,7 +26,9 @@
 #define CRASH_SWDT	1		/* software watchdog */
 #define CRASH_CTRL_R	2		/* ^R ^R on the console */
 #define CRASH_RESET_CMD	3		/* the reset command */
-#define CRASH_UPDATE	4		/* reset into an update */
+/*			4		   reserved, was an update: the image the update boots
+					   isn't the one that wrote the record; the loader
+					   reports an update (watchdog.md) */
 
 #define SWDT_TICKS	1000		/* 5 s */
 
