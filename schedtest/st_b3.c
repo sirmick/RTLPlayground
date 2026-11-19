@@ -82,15 +82,15 @@ STEP(sleep_c, step)
 	return STEP_SLEEP(S_SLEEP_C_STEP, 1000);
 }
 
-/* Woken by EV_CON_RX alone (con drains the ring) */
+/* Woken by HW_CON_RX alone (con drains the ring) */
 STEP(isr_ev, step)
 {
-	if (sched_ev & EV_CON_RX) {
+	if (sched_ev & HW_CON_RX) {
 		st_lp = &st_log_isr_ev;
 		st_aux = con_rx_head;
 		st_log();
 	}
-	return STEP_WAIT(S_ISR_EV_STEP, EV_CON_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_ISR_EV_STEP, HW_CON_RX, SCHED_FOREVER);
 }
 
 /* slow: one step of st_slow_ms on request (default 30, an overrun;
@@ -117,7 +117,7 @@ STEP(sl, idle)
 		return STEP_ARG(S_SL_SLOW, st_slow_ms);
 	if (st_slow_req == 2)
 		return S_SL_HANG;
-	return STEP_WAIT(S_SL_IDLE, EV_ST_GO, SCHED_FOREVER);
+	return STEP_SLEEP(S_SL_IDLE, SCHED_FOREVER);	/* woken by cli */
 }
 
 STEP(sl, slow)

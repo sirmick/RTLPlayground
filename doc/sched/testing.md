@@ -28,11 +28,11 @@ Dummy tasks are spread over **every bank**:
 | Dummy | Checks |
 |---|---|
 | `sleep_a/b/c`: 5 ms, 37 ms, 1000 ms periods; each logs `fine_now()` per run into an xdata ring | wake accuracy: never early, late by ≤ pass length |
-| `waiter`: waits on an event posted by `poster`, 100 ms timeout | event latency ≤ one pass (the waiter is before the poster in `run_seq`; in general up to ~2 passes); the timeout path |
-| `isr_ev`: waits on `EV_CON_RX`; the test writes UART bytes | ISR → event → task |
+| `waiter`: woken by `poster` (`task_wake`), 100 ms timeout | wake latency ≤ one pass (the waiter is before the poster in `run_seq`; in general up to ~2 passes); the timeout path |
+| `isr_ev`: waits on `HW_CON_RX`; the test writes UART bytes | ISR → event → task |
 | `hot`: `freq=high`, 1 µs work | spacing: worst gap ≤ its spacing × the longest step |
 | `jobber`: claims jobs that run N steps and end; claims until the table is full | claim, free, `SCHED_NONE` |
-| `printer`: prints a 3000-line dump, one line per step | TX ring, `EV_CON_TX`, nothing lost, no step > 5 ms |
+| `printer`: prints a 3000-line dump, one line per step | TX ring, `HW_CON_TX`, nothing lost, no step > 5 ms |
 | `flasher`: erases and programs a sector of the upload area, then verifies | the flash job; checker clean |
 | `slow`: one 25 ms step on command | the overrun counter and its state |
 | `paste`: the test pastes 500 characters | the RX ring and `con` frequency: nothing lost |
@@ -43,8 +43,7 @@ Assertions over the control socket:
   soaks):
   - every slot's state is 0 or a valid ID;
   - masks use only defined bits;
-  - no wake lies further ahead than its maximum wait;
-  - `sched_posted` is cleared by each snapshot.
+  - no wake lies further ahead than its maximum wait.
 - The xdata logs, read at the end, satisfy the table's timing checks.
 - Coverage: every state's step function ran; every line of `sched.c` ran.
 - `checks` is empty: no bank, flash-busy or stack violations.

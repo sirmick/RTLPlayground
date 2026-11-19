@@ -47,7 +47,7 @@ void itoa_short(uint16_t v) { char b[6]; snprintf(b, sizeof(b), "%u", v); print_
 static void out_reset(void) { out_len = 0; out[0] = 0; }
 
 /* ---- the steps ---- */
-enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_POST, A_NEXT, A_BURN, A_CLAIM, A_UNTIL, A_TIMER,
+enum { A_NONE, A_SLEEP, A_WAIT, A_END, A_WAKE, A_NEXT, A_BURN, A_CLAIM, A_UNTIL, A_TIMER,
        M_NEXT, M_SLEEP, M_WAIT, M_ARG, M_END, A_ARGINC, A_CLAIMARG };
 static struct { int kind; uint16_t a, b, c; } act[S_COUNT];
 static uint16_t seen_arg;
@@ -63,7 +63,7 @@ static uint8_t step(uint8_t s, char tag)
 	case A_SLEEP: task_sleep(act[s].a); break;
 	case A_WAIT:  task_wait(act[s].a, act[s].b); break;
 	case A_END:   return STEP_END;
-	case A_POST:  event_post(act[s].a); break;
+	case A_WAKE:  task_wake(act[s].a); break;
 	case A_NEXT:  return act[s].a;
 	case A_BURN:  ticks += act[s].a; break;
 	case A_CLAIM: claimed = task_claim(act[s].a); break;
@@ -173,45 +173,54 @@ static void test_wrap(void)
 
 static void test_events(void)
 {
-	printf("events: snapshot, post for the next pass, forever\n");
+	printf("events: snapshot, task_wake, forever\n");
 	reset_all(1000);
-	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = EV_CFG; act[S_W_STEP].b = SCHED_FOREVER;
+	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = HW_LINK; act[S_W_STEP].b = SCHED_FOREVER;
 	act[S_A_STEP].kind = A_WAIT; act[S_A_STEP].a = 0; act[S_A_STEP].b = SCHED_FOREVER;
 	act[S_B_STEP].kind = A_WAIT; act[S_B_STEP].a = 0; act[S_B_STEP].b = SCHED_FOREVER;
 	pass();
-	CHECK(sched_task[T_W].mask == (EV_CFG | EV_FOREVER), "a wait without timeout marks the mask");
+	CHECK(sched_task[T_W].mask == (HW_LINK | EV_FOREVER), "a wait without timeout marks the mask");
 	CHECK(sched_task[T_W].wake == (uint16_t)(1000 + SCHED_MAX_WAIT), "its wake is the horizon");
 	ticks = 1000 + SCHED_MAX_WAIT;
 	CHECK(!strcmp(pass(), ""), "at the horizon it does not run");
 	CHECK(sched_task[T_W].wake == (uint16_t)(1000 + 2 * SCHED_MAX_WAIT), "the horizon is pushed on");
 	CHECK(sched_task[T_W].mask & EV_FOREVER, "still waiting");
 
-	/* a (positions 0 and 2) posts; w (position 3) must not see it this pass */
-	act[S_A_STEP].kind = A_POST; act[S_A_STEP].a = EV_CFG;
+	/* a (positions 0 and 2) wakes w (position 3), waiting without timeout:
+	 * w runs at its next position, this pass */
+	act[S_A_STEP].kind = A_WAKE; act[S_A_STEP].a = T_W;
 	sched_task[T_A].mask = 0;
 	sched_task[T_A].wake = sched_now;
-	CHECK(!strcmp(pass(), "aa"), "the post's pass: w does not run");
-	CHECK(sched_posted == EV_CFG, "the post waits for the next snapshot");
-	act[S_A_STEP].kind = A_SLEEP; act[S_A_STEP].a = 60000;
-	CHECK(!strcmp(pass(), "aw"), "next pass: w runs");
-	CHECK(sched_posted == 0, "the snapshot took the post");
-	CHECK(!strcmp(pass(), ""), "an event lasts one pass");
+	CHECK(!strcmp(pass(), "aaw"), "task_wake: w runs at its next position, this pass");
+	CHECK(sched_task[T_W].mask == (HW_LINK | EV_FOREVER), "and waits again");
+	act[S_A_STEP].kind = A_WAIT; act[S_A_STEP].a = 0; act[S_A_STEP].b = SCHED_FOREVER;
+	CHECK(!strcmp(pass(), "a"), "a wake is not kept: w does not run again");
+	/* w (position 3) wakes a (0 and 2): after a's positions, the next pass */
+	act[S_W_STEP].kind = A_WAKE; act[S_W_STEP].a = T_A;
+	sched_task[T_W].mask = 0;
+	sched_task[T_W].wake = sched_now;
+	CHECK(!strcmp(pass(), "w"), "a woken slot whose positions have passed waits");
+	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = HW_LINK; act[S_W_STEP].b = SCHED_FOREVER;
+	CHECK(!strcmp(pass(), "aw"), "and runs the next pass, once (a waits again at its first position)");
+	CHECK(!strcmp(pass(), ""), "nothing more");
+	task_wake(T_JOB0);
+	CHECK(sched_task[T_JOB0].state == 0 && !strcmp(pass(), ""), "waking a free slot does nothing");
 
 	link_irq = 1;
-	act[S_W_STEP].a = EV_LINK;
-	sched_task[T_W].mask = EV_LINK | EV_FOREVER;
+	act[S_W_STEP].a = HW_LINK;
+	sched_task[T_W].mask = HW_LINK | EV_FOREVER;
 	CHECK(!strcmp(pass(), "w"), "ISR bit -> event -> task");
 	CHECK(!link_irq, "the snapshot cleared the ISR bit");
 	rx_irq = 1;
 	pass();
-	CHECK((sched_ev & EV_RX) && !rx_irq, "rx_irq -> EV_RX");
+	CHECK((sched_ev & HW_RX) && !rx_irq, "rx_irq -> HW_RX");
 
 	CON_ISR_RX('x');
-	act[S_W_STEP].a = EV_CON_RX;
-	sched_task[T_W].mask = EV_CON_RX | EV_FOREVER;
-	CHECK(!strcmp(pass(), "w") && (sched_ev & EV_CON_RX), "a console byte wakes on EV_CON_RX");
-	CHECK(sched_ev & EV_CON_TX, "empty TX ring: EV_CON_TX");
-	CHECK(!(sched_ev & 0x0010), "bit 4 (was EV_FLASH_IDLE) stays clear");
+	act[S_W_STEP].a = HW_CON_RX;
+	sched_task[T_W].mask = HW_CON_RX | EV_FOREVER;
+	CHECK(!strcmp(pass(), "w") && (sched_ev & HW_CON_RX), "a console byte wakes on HW_CON_RX");
+	CHECK(sched_ev & HW_CON_TX, "empty TX ring: HW_CON_TX");
+	CHECK(!(sched_ev & 0x10), "bit 4 (was EV_FLASH_IDLE) stays clear");
 }
 
 static void test_claim(void)
@@ -297,9 +306,9 @@ static void test_step_macros(void)
 	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].wake == 300 + 5, "STEP_SLEEP: next state, wake in ceil(20/5)+1 ticks");
 
 	reset_all(300);
-	act[S_B_STEP].kind = M_WAIT; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = EV_CFG; act[S_B_STEP].c = SCHED_FOREVER;
+	act[S_B_STEP].kind = M_WAIT; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = HW_LINK; act[S_B_STEP].c = SCHED_FOREVER;
 	pass();
-	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].mask == (EV_CFG | EV_FOREVER)
+	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].mask == (HW_LINK | EV_FOREVER)
 	      && sched_task[T_B].wake == (uint16_t)(300 + SCHED_MAX_WAIT), "STEP_WAIT: next state, events, no timeout");
 
 	reset_all(300);
@@ -345,13 +354,10 @@ static void test_idle(void)
 	PCON = 0; link_irq = 1;
 	sched_idle();
 	CHECK(!(PCON & 1), "link_irq pending: no sleep");
-	link_irq = 0; event_post(EV_CFG);
-	sched_idle();
-	CHECK(!(PCON & 1), "a post pending: no sleep");
-	sched_posted = 0; ticks++;
+	link_irq = 0; ticks++;
 	sched_idle();
 	CHECK(!(PCON & 1), "a tick since the pass: no sleep");
-	CHECK(sched_idle_lo == 4, "idle passes counted");
+	CHECK(sched_idle_lo == 3, "idle passes counted");
 }
 
 static void test_rings(void)
@@ -389,13 +395,13 @@ static void test_rings(void)
 	reset_all(1); con_putc('H');
 	for (int k = 0; k < CON_TX_SIZE - 1 - 99; k++) con_putc('x');
 	pass();
-	CHECK(con_tx_room() == 99 && !(sched_ev & EV_CON_TX), "under 100 free: no EV_CON_TX");
+	CHECK(con_tx_room() == 99 && !(sched_ev & HW_CON_TX), "under 100 free: no HW_CON_TX");
 	int sent = 0;
 	while (con_tx_busy && sent < 3000) { CON_ISR_TX(); sent++; }
 	CHECK(sent == CON_TX_SIZE - 99 && con_tx_room() == CON_TX_SIZE - 1,
 	      "TI drains the ring, then the transmitter goes idle");
 	pass();
-	CHECK(sched_ev & EV_CON_TX, "room for a line: EV_CON_TX");
+	CHECK(sched_ev & HW_CON_TX, "room for a line: HW_CON_TX");
 
 	/* E1: 16-bit indexes, across the wrap and full */
 	ok = 1;
@@ -500,12 +506,12 @@ static void test_health(void)
 	printf("health tasks\n");
 	reset_all(100);
 	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 5;
-	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = EV_CFG; act[S_W_STEP].b = SCHED_FOREVER;
+	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = HW_LINK; act[S_W_STEP].b = SCHED_FOREVER;
 	pass();
 	out_reset();
 	sched_health_tasks();
 	CHECK(strstr(out, "slot\ttask\tstate\tmask\twake\n0\ta\tA_STEP\t0x0000\tnow\n") != NULL, "a slot line");
-	CHECK(strstr(out, "2\tw\tW_STEP\t0x8800\t+32767\n") != NULL, "a waiting slot: mask and horizon");
+	CHECK(strstr(out, "2\tw\tW_STEP\t0x0082\t+32767\n") != NULL, "a waiting slot: mask and horizon");
 	CHECK(strstr(out, "1\tb\tB_STEP\t0x0000\tnow\n") != NULL, "a slot that is due");
 	CHECK(strstr(out, "7\tjob4\tfree\n") != NULL, "a free job slot");
 	CHECK(strstr(out, "passes 0x000000001 idle 0x000000000") == NULL && strstr(out, "passes 0x00000001 idle 0x00000000") != NULL, "32-bit counts as one hex number");

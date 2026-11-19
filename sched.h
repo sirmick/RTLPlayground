@@ -3,7 +3,7 @@
  *
  * A task is a slot {state, mask, wake}. Each pass walks the generated run
  * sequence; a slot whose wake tick has come, or whose mask meets this pass's
- * events, runs one step: the function behind its state, through the generated
+ * hardware events, runs one step: the function behind its state, through the generated
  * 3-byte table. A step does a bounded piece of work, says when it wants to
  * run again (one wake call; none: at its next position) and returns the
  * state it wants next (decision 22): the scheduler stores it.
@@ -45,24 +45,19 @@
 #define SCHED_TICK_MS	5
 #define SCHED_MAX_WAIT	0x7fff		/* ticks; a wake further ahead reads as past */
 
-/* Events (events.md). Bit 15 is the scheduler's own: a SCHED_FOREVER wait. */
-#define EV_RX		0x0001	/* INT1: NIC RX */
-#define EV_LINK		0x0002	/* INT0: the switch's interrupt tree */
-#define EV_CON_RX	0x0004	/* sampled: console RX ring not empty */
-#define EV_CON_TX	0x0008	/* sampled: console TX ring has room for a line */
-/*		0x0010	   reserved, was EV_FLASH_IDLE: no flash operation outlives its step */
-#define EV_LINE		0x0020	/* posted by con: a console line is complete */
-#define EV_WEBCMD	0x0040	/* posted by httpd: a web command is queued */
-#define EV_CMD_DONE	0x0080	/* posted by cli: a web command finished */
-#define EV_LINKCHG	0x0100	/* posted by link: decoded link changes */
-#define EV_UPLOAD	0x0200	/* posted by httpd: upload data staged */
-#define EV_UPLOAD_DONE	0x0400	/* posted by the flash job */
-#define EV_CFG		0x0800	/* posted: the config changed */
-#define EV_FOREVER	0x8000	/* in a mask: the wake is only a re-armed horizon */
+/* Hardware events (events.md, decision 23): 8 bits, sampled at each pass's
+ * start. One task waking another is task_wake(), not an event. Bit 7 is the
+ * scheduler's own: a SCHED_FOREVER wait. */
+#define HW_RX		0x01	/* INT1: NIC RX */
+#define HW_LINK		0x02	/* INT0: the switch's interrupt tree */
+#define HW_CON_RX	0x04	/* sampled: console RX ring not empty */
+#define HW_CON_TX	0x08	/* sampled: console TX ring has room for a line */
+/*		0x10	   reserved, was EV_FLASH_IDLE: no flash operation outlives its step */
+#define EV_FOREVER	0x80	/* in a mask: the wake is only a re-armed horizon */
 
 struct task {
 	uint8_t  state;		/* 0 = free; else a generated state ID */
-	uint16_t mask;		/* events that wake it */
+	uint8_t  mask;		/* hardware events that wake it */
 	uint16_t wake;		/* tick (5 ms) at which it is due */
 	uint16_t arg;		/* the step's own: a cursor, a count, a port */
 };
@@ -70,8 +65,7 @@ struct task {
 extern __xdata struct task sched_task[SCHED_SLOTS];
 extern __xdata uint8_t  sched_cur;	/* slot being run */
 extern __xdata uint16_t sched_now;	/* tick snapshot, renewed after each step */
-extern __xdata uint16_t sched_ev;	/* this pass's events */
-extern __xdata uint16_t sched_posted;	/* posted by tasks, for the next pass */
+extern __xdata uint8_t  sched_ev;	/* this pass's hardware events */
 
 /* Measurement (health). Durations are in fine units of 64 Timer 2 counts,
  * 6.144 us; 16 bits saturate at ~400 ms. */
@@ -98,7 +92,7 @@ extern __xdata struct task * __xdata sched_cur_task;	/* &sched_task[sched_cur] *
 #define STEP_STAY		0xff	/* the same state again (no state is 0xff) */
 #ifndef SCHED_SWEEP		/* swept, they stay as written: the generator sees their state */
 #define STEP_SLEEP(s, ms)	(task_sleep(ms), (s))
-#define STEP_WAIT(s, ev, ms)	(task_mask(ev), task_sleep(ms), (s))
+#define STEP_WAIT(s, hw, ms)	(task_mask(hw), task_sleep(ms), (s))
 #define STEP_ARG(s, a)		(task_set_arg(a), (s))
 #endif
 
@@ -114,17 +108,20 @@ extern __xdata uint16_t sched_claim_arg;
  * All act on the current slot; none chooses its state. */
 void task_sleep(uint16_t ms) __banked;	/* due in at least ms (0: yield; SCHED_FOREVER: never) */
 void task_until(uint16_t tick);		/* due at `tick` (at most SCHED_MAX_WAIT ahead) */
-void task_mask(uint16_t ev_mask);	/* also woken by any of these events */
-#define task_wait(ev_mask, ms)	do { task_mask(ev_mask); task_sleep(ms); } while (0)
+void task_mask(uint8_t hw_mask);	/* also woken by any of these hardware events */
+#define task_wait(hw_mask, ms)	do { task_mask(hw_mask); task_sleep(ms); } while (0)
 uint8_t task_claim(uint8_t first) __banked;	/* a free dynamic slot, starting in `first`; or SCHED_NONE */
-#define event_post(ev)		(sched_posted |= (ev))
+/* Another task, now (decision 23): slot (T_CLI, a job's claimed slot) runs at
+ * its next position, this pass or the next, whatever it waits for; its step
+ * re-checks why (a woken periodic task, that it is due). */
+void task_wake(uint8_t slot);
 
 uint16_t sched_ticks(void);		/* the low 16 bits of the 200 Hz tick */
 uint16_t sched_ms_to_ticks(uint16_t ms) __banked;	/* never early: ceil(ms / 5) + 1 */
 
 void sched_init(void) __banked;		/* fixed tasks into their slots, all due now */
 uint8_t sched_pass(void);		/* one pass over run_seq; 1 if any step ran */
-uint16_t sched_events(void) __banked;	/* this pass's events (events.md) */
+uint8_t sched_events(void) __banked;	/* this pass's hardware events (events.md) */
 void sched_idle(void) __banked;		/* sleep to the next interrupt, unless one is pending */
 void sched_run(void) __banked;		/* never returns */
 void sched_clear_stats(void) __banked;

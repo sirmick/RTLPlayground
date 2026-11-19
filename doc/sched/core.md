@@ -21,16 +21,15 @@ common area (B2 measured 2.1 KiB for `sched.c` alone; the resident half is
 
 struct task {
 	uint8_t  state;     /* 0 = free; else a generated state ID */
-	uint16_t mask;      /* events that wake it (chapter 6) */
+	uint8_t  mask;      /* hardware events that wake it (chapter 6) */
 	uint16_t wake;      /* tick (5 ms) at which it is due */
 	uint16_t arg;       /* the step's own: a cursor, a count, a port */
-};                      /* 7 B */
+};                      /* 6 B */
 
-__xdata struct task sched_task[SCHED_SLOTS];  /* 168 B */
+__xdata struct task sched_task[SCHED_SLOTS];  /* 144 B */
 __xdata uint8_t  sched_cur;                   /* slot being run */
 __xdata uint16_t sched_now;                   /* tick snapshot */
-__xdata uint16_t sched_ev;                    /* this pass's events */
-__xdata uint16_t sched_posted;                /* posted by tasks, for the next pass */
+__xdata uint8_t  sched_ev;                    /* this pass's hardware events */
 ```
 
 Per state, for `health`: longest step (fine-clock units, 16 bits,
@@ -48,7 +47,7 @@ void sched_run(void)                      /* never returns */
 	for (;;) {
 		swdt_kick();                          /* chapter 11 */
 		sched_now = ticks_lo();
-		sched_ev = events_snapshot();         /* chapter 6: ISR bits, sampled bits, sched_posted */
+		sched_ev = events_snapshot();         /* chapter 6: ISR bits, sampled bits */
 		ran = 0;
 		for (pos = 0; pos < RUN_SEQ_LEN; pos++) {
 			slot = run_seq[pos];
@@ -136,7 +135,7 @@ area.
 STEP(l2, more)                           /* chapter 7: arg is the next entry */
 {
 	if (!con_tx_room_line())
-		return STEP_WAIT(S_L2_MORE, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_L2_MORE, HW_CON_TX, SCHED_FOREVER);
 	if (!l2_print_entry(task_arg()))     /* one line */
 		return S_CLI_PROMPT;
 	task_set_arg(task_arg() + 1);
@@ -152,11 +151,11 @@ unless they name a slot; none chooses a state.
 |---|---|
 | `task_sleep(ms)` | `wake = tick + ceil(ms / 5) + 1`, the tick read at the call: never early, even when the call comes just before a tick; at most 5 ms late. Max 65,534 ms (16-bit argument); longer: `task_until` |
 | `task_until(tick)` | `wake = tick` |
-| `task_wait(ev_mask, timeout_ms)` | wake on any of `ev_mask`, or at the timeout |
-| `task_wait(ev_mask, SCHED_FOREVER)` | as above, no timeout (`wake = now + 0x7fff` and `EV_FOREVER` in the mask; when that horizon comes the pass pushes it on instead of running the step) |
+| `task_wait(hw_mask, timeout_ms)` | wake on any of the hardware events `hw_mask`, or at the timeout |
+| `task_wait(hw_mask, SCHED_FOREVER)` | as above, no timeout (`wake = now + 0x7fff` and `EV_FOREVER` in the mask; when that horizon comes the pass pushes it on instead of running the step) |
+| `task_wake(T_X)` | another slot (a fixed task's `T_X`, a job's claimed slot) runs at its next position, whatever it waits for (chapter 6) |
 | `task_claim(S_FIRST)` | claim a free slot for a job; returns the slot or `SCHED_NONE` |
 | `task_claim_arg(S_FIRST, a)` | the same, the job's `arg = a` (a macro: `sched_claim_arg = a`, then the claim) |
-| `event_post(EV_x)` | set bits for the next pass (chapter 6) |
 
 The macros expand to these calls; they are common-area or banked functions
 that touch only xdata. Arguments are 8 or 16 bits.

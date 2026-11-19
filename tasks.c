@@ -45,21 +45,21 @@ static __xdata uint16_t house_due, loop_due;
 static __xdata uint16_t sfp_due[2];
 static __xdata uint8_t ti, tn;
 
-/* rx: woken by INT1 (EV_RX); up to RX_BUDGET frames a step */
+/* rx: woken by INT1 (HW_RX); up to RX_BUDGET frames a step */
 TASK(rx, fixed, high, first=idle)
 STEP(rx, idle)
 {
-	return STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_RX_STEP, HW_RX, SCHED_FOREVER);
 }
 
 STEP(rx, step)
 {
 	tn = rx_service();
 	if (webcmd_pending)
-		event_post(EV_WEBCMD);	/* httpd queued a /cmd */
+		task_wake(T_CLI);	/* httpd queued a /cmd */
 	if (tn)
 		return STEP_STAY;	/* more waiting: again at the next position */
-	return STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_RX_STEP, HW_RX, SCHED_FOREVER);
 }
 
 /* link: woken by INT0, and by house once a second (link_irq) */
@@ -67,7 +67,7 @@ TASK(link, fixed, high)
 STEP(link, read)
 {
 	link_service();
-	return STEP_WAIT(S_LINK_READ, EV_LINK, SCHED_FOREVER);
+	return STEP_WAIT(S_LINK_READ, HW_LINK, SCHED_FOREVER);
 }
 
 /* loop: rldp_tick() once a second */
@@ -94,8 +94,8 @@ STEP(con, edit)
 {
 	cmd_edit();
 	if (con_line_ready)
-		event_post(EV_LINE);
-	return STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
+		task_wake(T_CLI);
+	return STEP_WAIT(S_CON_EDIT, HW_CON_RX, SCHED_FOREVER);
 }
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
@@ -123,7 +123,7 @@ STEP(cli, idle)
 		cli_src = CLI_WEB;
 		return S_CLI_RUN;
 	}
-	return STEP_WAIT(S_CLI_IDLE, EV_LINE | EV_WEBCMD, SCHED_FOREVER);
+	return STEP_SLEEP(S_CLI_IDLE, SCHED_FOREVER);	/* woken by con (a line) or rx (a /cmd) */
 }
 
 STEP(cli, run)
@@ -140,7 +140,7 @@ STEP(cli, run)
 		return S_CLI_NEXT;
 	}
 	if (con_tx_room() < CLI_ROOM)
-		return STEP_WAIT(S_CLI_RUN, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_RUN, HW_CON_TX, SCHED_FOREVER);
 	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
 		if (!(cmd_buffer[ti] = con_line[ti]))
 			break;
@@ -178,7 +178,7 @@ STEP(cli, next)
 		return S_CLI_PROMPT;
 	}
 	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
-		return STEP_WAIT(S_CLI_NEXT, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_NEXT, HW_CON_TX, SCHED_FOREVER);
 	WEBCMD_CAPTURE_ON();
 	cli_web_more = exec_line();
 	WEBCMD_CAPTURE_OFF();
@@ -197,7 +197,7 @@ STEP(cli, more)
 			return S_CLI_PROMPT;
 	}
 	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
-		return STEP_WAIT(S_CLI_MORE, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
 	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_ON();
 	cli_job_more();
@@ -215,10 +215,8 @@ STEP(cli, prompt)
 	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
 		return STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
-		if (!cli_dropped && cli_web_live()) {
-			httpd_webcmd_end();
-			event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
-		}
+		if (!cli_dropped && cli_web_live())
+			httpd_webcmd_end();	/* httpd sends the reply on a poll */
 	} else {
 		print_cmd_prompt();
 		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */
@@ -226,9 +224,10 @@ STEP(cli, prompt)
 	return S_CLI_IDLE;
 }
 
-/* net: uIP's periodic calls, every tick; and on EV_UPLOAD_DONE a poll of
- * the connection at once, which sends an upload's answer, or a window update
- * if its window was short (net.md item 1) */
+/* net: uIP's periodic calls, every tick; and, woken by the flash job's end
+ * (fl_poll), a poll of the connection at once, which sends an upload's
+ * answer, or a window update if its window was short (net.md item 1). Woken,
+ * the periodic part still waits until it is due. */
 static __xdata uint16_t net_due;
 
 TASK(net, fixed, once, first=start)
@@ -240,7 +239,8 @@ STEP(net, start)
 
 STEP(net, tick)
 {
-	if (sched_ev & EV_UPLOAD_DONE) {
+	if (fl_poll) {
+		fl_poll = 0;
 		uip_poll_conn(&uip_conns[0]);
 		if (uip_len > 0) {
 			uip_arp_out();
@@ -251,7 +251,6 @@ STEP(net, tick)
 		handle_tx();
 		net_due = sched_now + 1;
 	}
-	task_mask(EV_UPLOAD_DONE);
 	task_until(net_due);
 	return STEP_STAY;
 }

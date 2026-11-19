@@ -29,7 +29,7 @@ BUILD = None            # filled in by --embed
 FINE_US = 6.144
 LOG_N = 64
 LOG_SIZE = 6 + 6 * LOG_N
-TASK_SIZE = 7           # state, mask, wake, arg
+TASK_SIZE = 6           # state, mask (8 bits), wake, arg
 PROMPT = r"(?:^|\n)> "     # anything may follow (deep prints a line each run)
 LINE_MAX = 63           # schedtest's line editor
 LAST_RESET = r"Last reset: [^\n]*\n"
@@ -270,7 +270,7 @@ class Silicon:
         self.record(event_wakes=len(lat), latency_max_us=round(max(lat), 1) if lat else None, timeouts=len(timeouts),
                     timeout_gap_min_us=round(min(timeouts), 1) if timeouts else None,
                     timeout_gap_max_us=round(max(timeouts), 1) if timeouts else None, pass_max_us=round(pm, 1))
-        self.check(len(lat) >= 5, f"the waiter woke by EV_ST_POKE {len(lat)} times")
+        self.check(len(lat) >= 5, f"the waiter woken by the poster {len(lat)} times")
         # one pass: the waiter is before the poster in run_seq (sim_tests.py)
         self.check(lat and max(lat) <= pm, f"post -> waiter within one pass: {max(lat or [0]):.0f} us <= {pm:.0f}"
                    + self.sim("latency_max_us"))

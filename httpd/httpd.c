@@ -848,7 +848,7 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 
 
 /* /cmd (net.md item 2): the body is queued in the web command buffer
- * (config_buf), the rx task posts EV_WEBCMD, cli runs it (httpd_webcmd_begin,
+ * (config_buf), the rx task wakes cli, which runs it (httpd_webcmd_begin,
  * a line a step, httpd_webcmd_end)
  * and sets webcmd_done, and the connection's next poll sends the reply (U4: a
  * web command no longer runs in the console's buffer).

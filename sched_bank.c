@@ -180,34 +180,32 @@ void sched_init(void) __banked
 		sched_task[ii].arg = 0;
 	}
 	sched_cur = SCHED_NONE;
-	sched_posted = 0;
 	fine_reload = ((uint16_t)RCAP2H << 8) | RCAP2L;
 	sched_fine_per_tick = (uint16_t)(0 - fine_reload) >> 6;
 	fine_mid_h = ((uint16_t)RCAP2H + 0x100) >> 1;
 	sched_clear_stats();
 }
 
-/* ---- events (events.md) ---- */
+/* ---- hardware events (events.md) ---- */
 
-static __xdata uint16_t ev;
-uint16_t sched_events(void) __banked
+static __xdata uint8_t ev;
+uint8_t sched_events(void) __banked
 {
-	ev = sched_posted;
-	sched_posted = 0;
+	ev = 0;
 	EA = 0;
 	if (link_irq) {
 		link_irq = 0;
-		ev |= EV_LINK;
+		ev |= HW_LINK;
 	}
 	if (rx_irq) {
 		rx_irq = 0;
-		ev |= EV_RX;
+		ev |= HW_RX;
 	}
 	EA = 1;
 	if (con_rx_ready())
-		ev |= EV_CON_RX;
+		ev |= HW_CON_RX;
 	if (con_tx_room() >= CON_TX_LINE)
-		ev |= EV_CON_TX;
+		ev |= HW_CON_TX;
 	return ev;
 }
 
@@ -220,7 +218,7 @@ void sched_idle(void) __banked
 	if (!++sched_idle_lo)
 		sched_idle_hi++;
 	EA = 0;
-	if (link_irq || rx_irq || con_rx_ready() || sched_posted
+	if (link_irq || rx_irq || con_rx_ready()
 	    || *(volatile __xdata uint8_t *)&ticks != (uint8_t)sched_now) {
 		EA = 1;
 		return;

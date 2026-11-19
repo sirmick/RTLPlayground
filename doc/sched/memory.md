@@ -67,7 +67,7 @@ broke the link three times.
 
 | What | Bytes | Where |
 |---|---|---|
-| task table | 168 (24 x 7 B) | XSEG |
+| task table | 144 (24 x 6 B: the mask is 8 bits since E5, decision 23) | XSEG |
 | scheduler globals, per-state stats (~40 states × 3) | ~140 | XSEG |
 | TX ring / RX ring growth | 2048 / +240 (TX 2 KiB, 16-bit indexes, decision 21, E1: 128 B until then; RX 256 B from 16) | XSEG |
 | web command buffer | 0: `config_buf`, with uIP's one connection (console.md); its own buffer (up to 4480 B, today's `/cmd` body limit) only if connections ever grow above 1, or smaller with a deliberate, tested limit (E phase) | XSEG |

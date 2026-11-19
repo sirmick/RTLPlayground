@@ -13,9 +13,9 @@
 #include <stdint.h>
 #include "sched.h"
 
-/* schedtest's own events, in the spare bits */
-#define EV_ST_POKE	0x1000	/* poster -> waiter */
-#define EV_ST_GO	0x2000	/* cli -> printer, jobber, slow: look at your request */
+/* The poster wakes the waiter (task_wake) and says so here; cli wakes the
+ * printer, jobber, slow and hot for their requests. */
+extern __xdata uint8_t st_poked;
 
 /* A timestamp log: the time of each of the last ST_LOG_N runs, as the tick
  * and the fine units into it (sched_fine_read), plus one value per entry;
@@ -31,7 +31,7 @@ struct st_log {
 };
 
 extern __xdata struct st_log st_log_sleep_a, st_log_sleep_b, st_log_sleep_c;
-extern __xdata struct st_log st_log_waiter;	/* aux: 1 woken by EV_ST_POKE, 2 timed out */
+extern __xdata struct st_log st_log_waiter;	/* aux: 1 woken by the poster, 2 timed out */
 extern __xdata struct st_log st_log_poster;
 extern __xdata struct st_log st_log_isr_ev;	/* aux: con_rx_head at the run */
 extern __xdata struct st_log st_log_hot;

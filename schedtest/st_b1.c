@@ -29,14 +29,17 @@ STEP(sleep_a, step)
 	return STEP_SLEEP(S_SLEEP_A_STEP, 5);
 }
 
-/* Woken by the poster's EV_ST_POKE, or after 100 ms */
+/* Woken by the poster (st_poked), or after 100 ms */
+__xdata uint8_t st_poked;
+
 TASK(waiter, fixed, once)
 STEP(waiter, step)
 {
 	st_lp = &st_log_waiter;
-	st_aux = sched_ev & EV_ST_POKE ? 1 : 2;
+	st_aux = st_poked ? 1 : 2;
+	st_poked = 0;
 	st_log();
-	return STEP_WAIT(S_WAITER_STEP, EV_ST_POKE, 100);
+	return STEP_SLEEP(S_WAITER_STEP, 100);
 }
 
 /* freq=high, ~1 us of work while `hot on`: when it runs, and the stack at
@@ -48,7 +51,7 @@ TASK(hot, fixed, high)
 STEP(hot, step)
 {
 	if (!st_hot_on)
-		return STEP_WAIT(S_HOT_STEP, EV_ST_GO, SCHED_FOREVER);
+		return STEP_SLEEP(S_HOT_STEP, SCHED_FOREVER);	/* woken by cli */
 	if (SP > st_sp_step_max)
 		st_sp_step_max = SP;
 	st_lp = &st_log_hot;
@@ -63,14 +66,14 @@ TASK(pr, fixed, once, first=idle)
 STEP(pr, idle)
 {
 	if (!st_print_req)
-		return STEP_WAIT(S_PR_IDLE, EV_ST_GO, SCHED_FOREVER);
+		return STEP_SLEEP(S_PR_IDLE, SCHED_FOREVER);	/* woken by cli */
 	return STEP_ARG(S_PR_LINE, 0);
 }
 
 STEP(pr, line)
 {
 	if (con_tx_room() < 40)
-		return STEP_WAIT(S_PR_LINE, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_PR_LINE, HW_CON_TX, SCHED_FOREVER);
 	print_string("P");
 	itoa_short(task_arg());
 	print_string(" the quick brown fox jumps\n");

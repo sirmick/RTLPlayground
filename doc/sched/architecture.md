@@ -7,7 +7,7 @@
                                                   ┌────────────────────┐
   main loop (common area: sched.c)                │ task table [24]    │
   ┌─────────────────────────────────────────┐     │ {state,mask,wake}  │
-  │ pass start: snapshot events, kick swdt  │◄───►│ events (16 bits)   │
+  │ pass start: snapshot events, kick swdt  │◄───►│ hw events (8 bits) │
   │ for pos in run_sequence:                │     │ step maxima, ...   │
   │   slot = run_sequence[pos]              │     └────────────────────┘
   │   if ready(slot): time it, dispatch     │──► step_table[state] = 24-bit
@@ -45,8 +45,9 @@ ready = (int16_t)(now - t->wake) >= 0 || (t->mask & ev);
 
 - `now` is the 16-bit tick count (5 ms). Waits up to ~163 s; longer waits
   re-arm (chapter 4).
-- `ev` is the pass's event snapshot (chapter 6): taken at pass start, so
-  every task sees the same events, and several can wake on one.
+- `ev` is the pass's hardware event snapshot (chapter 6): taken at pass
+  start, so every task sees the same events, and several can wake on one.
+  One task wakes another directly (`task_wake`): the woken slot is due now.
 
 ## The run sequence
 

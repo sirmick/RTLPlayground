@@ -4,8 +4,8 @@
 
 | Task | Freq. | States | Wakes |
 |---|---|---|---|
-| `rx` | high | `RX_STEP`: up to `RX_BUDGET` (4) frames from the NIC ring. Each is dispatched as today (STP, LACP, IGMP, ARP, uIP). Ack `NIC_INT_STS`. If the ring still holds frames: `return STEP_STAY`, else re-arm EX1 and `task_wait(EV_RX, 1000)` (the timeout is a safety net for a lost edge, cf. #818) | `EV_RX` |
-| `net` | once | `NET_TCP`: `uip_periodic()` for the TCP connection. `NET_UDP`: one UDP connection per step, rotating (DHCP, DNS, NTP, syslog...). Then `task_sleep(5)` | 5 ms, `EV_CMD_DONE`, `EV_UPLOAD_DONE` |
+| `rx` | high | `RX_STEP`: up to `RX_BUDGET` (4) frames from the NIC ring. Each is dispatched as today (STP, LACP, IGMP, ARP, uIP). Ack `NIC_INT_STS`. If the ring still holds frames: `return STEP_STAY`, else re-arm EX1 and `task_wait(HW_RX, 1000)` (the timeout is a safety net for a lost edge, cf. #818) | `HW_RX` |
+| `net` | once | `NET_TCP`: `uip_periodic()` for the TCP connection. `NET_UDP`: one UDP connection per step, rotating (DHCP, DNS, NTP, syslog...). Then `task_sleep(5)` | 5 ms, woken by the flash job |
 
 ## httpd stays a uIP callback
 
@@ -22,7 +22,8 @@ a step, with three exceptions that change:
    moves left, so nothing it has sent inside the window is lost. The job
    takes what has come; at its `FL_DONE` it goes back to `FL_PROG` if more
    came meanwhile, else the stage starts again (in the same step) and it
-   posts `EV_UPLOAD_DONE`: `net` polls the connection at once, which sends
+   wakes `net` (`fl_poll`, `task_wake(T_NET)`; it was `EV_UPLOAD_DONE`
+   until E5): `net` polls the connection at once, which sends
    a window update if the window was short of an MSS, or the answer when
    the part has ended. Decision 20.
    - **Why not `uip_stop()`** (the first plan, O3): Linux bounds its
@@ -53,13 +54,13 @@ a step, with three exceptions that change:
    - Upload time in the sim (curl, 237568 B, wall-clock paced): 3.9 s
      refused / 5.1 s accepted, against fork main's 3.1 s / 4.3 s.
 2. **`/cmd` (web commands).** The callback queues the command (copies it to
-   the web command buffer) and posts `EV_WEBCMD`. On `uip_poll()` it checks
-   for `EV_CMD_DONE`, then sends the captured output. The connection stays
+   the web command buffer) and cli is woken. On `uip_poll()` it checks
+   that the command is done, then sends the captured output. The connection stays
    open meanwhile; uIP's poll keeps it alive.
    As built (D3): the web command buffer is `config_buf` and the reply is
    captured in `outbuf`, because uIP has one connection
    (`UIP_CONF_MAX_CONNECTIONS 1`; `httpd.c` `#error`s otherwise); the rx
-   task posts `EV_WEBCMD` (httpd can't include `sched.h`), and the poll
+   task wakes cli (`task_wake(T_CLI)`; httpd can't include `sched.h`), and the poll
    checks `webcmd_done`. A `/cmd` whose connection ends before cli runs it
    is cancelled (chapter 7, "Two input buffers, one parser"). The reply goes
    out on a later poll, not with the request's ACK: one TCP frame more per

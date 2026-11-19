@@ -22,7 +22,7 @@
 #define CON_RX_MASK	(CON_RX_SIZE - 1)
 #define CON_TX_SIZE	2048	/* a power of 2: most commands print without waiting */
 #define CON_TX_MASK	(CON_TX_SIZE - 1)
-#define CON_TX_LINE	100	/* EV_CON_TX: room for a line */
+#define CON_TX_LINE	100	/* HW_CON_TX: room for a line */
 
 extern __xdata uint8_t con_rx_buf[CON_RX_SIZE];
 extern volatile __xdata uint8_t con_rx_head;	/* written by the ISR */

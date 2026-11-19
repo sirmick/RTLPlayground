@@ -18,8 +18,7 @@ import argparse, concurrent.futures, contextlib, glob, io, json, math, os, re, s
 
 FINE_US = 6.144
 PROMPT = r"\n> $"
-EV_DEFINED = 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0020 | 0x0040 | 0x0080 | 0x0100 | 0x0200 | 0x0400 \
-    | 0x0800 | 0x1000 | 0x2000 | 0x8000     # sched.h's events, schedtest's two, EV_FOREVER
+EV_DEFINED = 0x01 | 0x02 | 0x04 | 0x08 | 0x80     # sched.h's hardware events, EV_FOREVER
 MAX_WAIT = 0x7fff
 LONGEST_SLEEP = 202      # ticks: sleep_c's 1000 ms, the longest finite wait in schedtest
 LATE_MAX = 100           # ticks a due task may wait for its position (a long CLI_RUN)
@@ -122,23 +121,19 @@ class Suite:
 
     def invariants(self, sim, what):
         """At a pass end: every slot's state valid, masks of defined bits only,
-        no wake beyond the horizon; then sched_posted empty at the next pass's
-        first step (the snapshot took it)."""
+        no wake beyond the horizon."""
         sim.run_until_pc("_sched_m_pass_end", max_ms=1000)
-        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=self.slots)
+        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=self.slots)
         now = self.u(sim, "sched_now")
         def wake_ok(t):
             ahead, behind = (t["wake"] - now) & 0xffff, (now - t["wake"]) & 0xffff
-            limit = MAX_WAIT if t["mask"] & 0x8000 else LONGEST_SLEEP
+            limit = MAX_WAIT if t["mask"] & 0x80 else LONGEST_SLEEP
             return not t["state"] or ahead <= limit or behind <= LATE_MAX
         bad = [(i, t) for i, t in enumerate(tasks)
                if t["state"] >= len(self.S) - 1 or t["mask"] & ~EV_DEFINED or not wake_ok(t)]
         self.check(not bad, f"{what}: slots valid at a pass end (state < S_COUNT, defined mask bits, "
                    "wake within the task's longest wait)", bad[:3])
-        sim.run_until_pc("_sched_m_step_start", max_ms=1000)
-        posted = self.u(sim, "sched_posted")
-        self.check(posted == 0, f"{what}: sched_posted empty at the next pass's first step", hex(posted))
-        return len(bad) == 0 and posted == 0
+        return len(bad) == 0
 
     # ---- the tests ----
     def t_wake(self, sim):
@@ -176,11 +171,11 @@ class Suite:
         self.record(event_wakes=len(lat), latency_max_us=round(max(lat), 1) if lat else None,
                     timeouts=len(timeouts), timeout_gap_min_us=round(min(timeouts), 1) if timeouts else None,
                     timeout_gap_max_us=round(max(timeouts), 1) if timeouts else None, pass_max_us=round(pm, 1))
-        self.check(len(lat) >= 5, f"the waiter woke by EV_ST_POKE {len(lat)} times")
+        self.check(len(lat) >= 5, f"the waiter woken by the poster {len(lat)} times")
         # One pass holds because the waiter comes before the poster in run_seq:
-        # the post's tail of pass N plus the head of N+1 up to the waiter run
-        # each slot once. In general (another order, an ISR post) it is up to
-        # ~2 passes.
+        # the wake's tail of pass N plus the head of N+1 up to the waiter run
+        # each slot once (task_wake: the woken slot's next position). In general
+        # (an ISR event) it is up to ~2 passes.
         self.check(lat and max(lat) <= pm, f"post -> waiter within one pass: {max(lat):.0f} us <= {pm:.0f}")
         self.check(len(timeouts) >= 5, f"the timeout path: {len(timeouts)} timeouts")
         bound = (math.ceil(100 / 5) + 1) * 5000 + pm
@@ -206,7 +201,7 @@ class Suite:
         heads = [e[2] for e in lg["entries"][-8:]]
         self.record(latency_us=lats, heads=heads)
         self.check(lg["n"] >= 8, f"isr_ev ran for each byte ({lg['n']} runs)")
-        self.check(max(lats) <= 2000, f"UART byte -> ISR -> EV_CON_RX -> isr_ev within 2 ms: {max(lats)} us")
+        self.check(max(lats) <= 2000, f"UART byte -> ISR -> HW_CON_RX -> isr_ev within 2 ms: {max(lats)} us")
         self.check(heads == sorted(heads), "and saw the ring head move forward", heads)
 
     def t_hot(self, sim):
@@ -232,7 +227,7 @@ class Suite:
         sim.run(300)
         dyn = self.slots - self.T["T_FIXED"]
         claimed, full, done = (self.u(sim, n) for n in ("st_jobs_claimed", "st_jobs_full", "st_jobs_done"))
-        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=self.slots)
+        tasks = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=self.slots)
         self.record(claimed=claimed, full=full, done=done)
         self.check(claimed == dyn and full == 1, f"claims take the {dyn} dynamic slots, then SCHED_NONE ({claimed} claimed, {full} full)")
         self.check(done == dyn, f"every job ran its 5 steps and ended ({done})")
@@ -355,14 +350,14 @@ class Suite:
         self.boot(sim)
         sim.run(100)
         runs0 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
-        t0 = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=1)
+        t0 = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=1)
         sim.run(170000)
-        t1 = sim.read_struct("sched_task", [("state", "B"), ("mask", "H"), ("wake", "H"), ("arg", "H")], count=1)
+        t1 = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=1)
         now = self.u(sim, "sched_now")
         runs1 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
         ahead = (t1["wake"] - now) & 0xffff
         self.record(con_runs=runs1 - runs0, wake_before=t0["wake"], wake_after=t1["wake"])
-        self.check(t1["mask"] & 0x8000 and t1["wake"] != t0["wake"] and 0 < ahead <= MAX_WAIT,
+        self.check(t1["mask"] & 0x80 and t1["wake"] != t0["wake"] and 0 < ahead <= MAX_WAIT,
                    f"con's horizon was pushed on (wake {t0['wake']:#x} -> {t1['wake']:#x}, {ahead} ticks ahead)")
         self.check(runs1 == runs0, f"and con did not run for it ({runs1 - runs0} runs)")
 
