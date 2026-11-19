@@ -1,6 +1,6 @@
 #include "lacp.h"
 
-void lacp_step(void) __banked
+uint8_t lacp_step(void) __banked
 {
 	
 }

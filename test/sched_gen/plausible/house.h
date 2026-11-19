@@ -1,1 +1,1 @@
-void house_sec(void) __banked;
+uint8_t house_sec(void) __banked;

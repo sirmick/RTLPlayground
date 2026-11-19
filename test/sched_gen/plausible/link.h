@@ -1,1 +1,1 @@
-void link_read(void) __banked;
+uint8_t link_read(void) __banked;

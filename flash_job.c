@@ -65,8 +65,8 @@ STEP(fl, erase)
 	flash_region.addr = fl_addr;
 	flash_sector_erase();
 	if (fl_kind == FL_BOOTCNT)
-		STEP_NEXT(S_FL_DONE);
-	STEP_NEXT(S_FL_PROG);
+		return S_FL_DONE;
+	return S_FL_PROG;
 }
 
 STEP(fl, prog)
@@ -74,12 +74,12 @@ STEP(fl, prog)
 	if (fl_kind == FL_UPLOAD) {
 		fl_n = upload_prog();
 		if (fl_n == UP_ERASE)
-			STEP_NEXT(S_FL_ERASE);
+			return S_FL_ERASE;
 		if (fl_n == UP_VERIFY)
-			STEP_NEXT(S_FL_VERIFY);
+			return S_FL_VERIFY;
 		if (fl_n == UP_DONE)
-			STEP_NEXT(S_FL_DONE);
-		return;
+			return S_FL_DONE;
+		return STEP_STAY;
 	}
 	fl_n = fl_len > FL_CHUNK ? FL_CHUNK : fl_len;
 	if (fl_kind != FL_CONFIG) {
@@ -96,13 +96,15 @@ STEP(fl, prog)
 	fl_src += fl_n;
 	fl_len -= fl_n;
 	if (!fl_len)
-		STEP_NEXT(S_FL_DONE);
+		return S_FL_DONE;
+	return STEP_STAY;
 }
 
 STEP(fl, verify)
 {
 	if (upload_verify() == UP_DONE)
-		STEP_NEXT(S_FL_DONE);
+		return S_FL_DONE;
+	return STEP_STAY;
 }
 
 STEP(fl, done)
@@ -111,7 +113,7 @@ STEP(fl, done)
 	 * ran (upload_go() leaves a running job to take it): FL_PROG */
 	if (fl_kind < FL_FACTORY && upload_done()) {
 		fl_kind = FL_UPLOAD;
-		STEP_NEXT(S_FL_PROG);
+		return S_FL_PROG;
 	}
 	if (fl_kind >= FL_FACTORY) {
 		print_string("Written default config to flash\n");
@@ -122,5 +124,5 @@ STEP(fl, done)
 	fl_kind = 0;
 	fl_finished = 1;
 	event_post(EV_UPLOAD_DONE);
-	STEP_END();
+	return STEP_END;
 }

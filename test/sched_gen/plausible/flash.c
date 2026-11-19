@@ -1,21 +1,21 @@
 #include "flash.h"
 
-void fl_erase(void) __banked
+uint8_t fl_erase(void) __banked
 {
-	task_next(S_FL_PROG);
+	return S_FL_PROG;
 }
 
-void fl_prog(void) __banked
+uint8_t fl_prog(void) __banked
 {
-	task_next(S_FL_VERIFY);
+	return S_FL_VERIFY;
 }
 
-void fl_verify(void) __banked
+uint8_t fl_verify(void) __banked
 {
-	task_next(S_FL_DONE);
+	return S_FL_DONE;
 }
 
-void fl_done(void) __banked
+uint8_t fl_done(void) __banked
 {
-	task_end();
+	return STEP_END;
 }

@@ -4,7 +4,7 @@
 
 | Task | Freq. | States | Wakes |
 |---|---|---|---|
-| `rx` | high | `RX_STEP`: up to `RX_BUDGET` (4) frames from the NIC ring. Each is dispatched as today (STP, LACP, IGMP, ARP, uIP). Ack `NIC_INT_STS`. If the ring still holds frames: `task_yield()`, else re-arm EX1 and `task_wait(EV_RX, 1000)` (the timeout is a safety net for a lost edge, cf. #818) | `EV_RX` |
+| `rx` | high | `RX_STEP`: up to `RX_BUDGET` (4) frames from the NIC ring. Each is dispatched as today (STP, LACP, IGMP, ARP, uIP). Ack `NIC_INT_STS`. If the ring still holds frames: `return STEP_STAY`, else re-arm EX1 and `task_wait(EV_RX, 1000)` (the timeout is a safety net for a lost edge, cf. #818) | `EV_RX` |
 | `net` | once | `NET_TCP`: `uip_periodic()` for the TCP connection. `NET_UDP`: one UDP connection per step, rotating (DHCP, DNS, NTP, syslog...). Then `task_sleep(5)` | 5 ms, `EV_CMD_DONE`, `EV_UPLOAD_DONE` |
 
 ## httpd stays a uIP callback

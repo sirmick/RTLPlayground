@@ -72,7 +72,7 @@ def test_compiles():
         for name, text in out.items():
             open(os.path.join(d, name), "w").write(text)
         main = ['#include <stdio.h>', '#include "sched_gen.h"']
-        main += [f"void {s.fn}(void) {{ }}" for s in states]
+        main += [f"uint8_t {s.fn}(void) {{ return 0; }}" for s in states]
         main.append("int main(void)\n{\n\tint bad = 0;")
         main.append("\tbad |= step_addr[S_NONE] != 0;")
         main += [f"\tbad |= step_addr[S_{s.name}] != {s.fn};" for s in states]
@@ -125,7 +125,7 @@ def write_module(d, name, deftext, protos=None, body=""):
     open(os.path.join(d, name + ".def"), "w").write(deftext)
     fns = re.findall(r"^state \S+ (\S+)", deftext, re.M)
     if protos is None:
-        protos = "".join(f"void {f}(void) __banked;\n" for f in fns)
+        protos = "".join(f"uint8_t {f}(void) __banked;\n" for f in fns)
     open(os.path.join(d, name + ".h"), "w").write(protos)
     open(os.path.join(d, name + ".c"), "w").write(body)
 
@@ -156,14 +156,14 @@ BROKEN = [
     # (what, {module: (def, header or None for matching prototypes, .c body)}, slots, message)
     ("no prototype", {"m": ("task a fixed\nstate A_S a_s\n", "", "")}, 24,
      "function a_s has no prototype or definition"),
-    ("not __banked", {"m": ("task a fixed\nstate A_S a_s\n", "void a_s(void);\n", "")}, 24,
+    ("not __banked", {"m": ("task a fixed\nstate A_S a_s\n", "uint8_t a_s(void);\n", "")}, 24,
      "a_s is not __banked"),
-    ("static", {"m": ("task a fixed\nstate A_S a_s\n", "", "static void a_s(void) __banked\n{\n}\n")}, 24,
+    ("static", {"m": ("task a fixed\nstate A_S a_s\n", "", "static uint8_t a_s(void) __banked\n{\n}\n")}, 24,
      "a_s is static"),
-    ("takes a parameter", {"m": ("task a fixed\nstate A_S a_s\n", "void a_s(uint8_t p) __banked;\n", "")}, 24,
-     "must be 'void a_s(void) __banked'"),
-    ("returns a value", {"m": ("task a fixed\nstate A_S a_s\n", "uint8_t a_s(void) __banked;\n", "")}, 24,
-     "must be 'void a_s(void) __banked'"),
+    ("takes a parameter", {"m": ("task a fixed\nstate A_S a_s\n", "uint8_t a_s(uint8_t p) __banked;\n", "")}, 24,
+     "must be 'uint8_t a_s(void) __banked'"),
+    ("returns no state", {"m": ("task a fixed\nstate A_S a_s\n", "void a_s(void) __banked;\n", "")}, 24,
+     "must be 'uint8_t a_s(void) __banked'"),
     ("duplicate state", {"m": ("task a fixed\nstate A_S a_s\n", None, ""),
                          "n": ("task b fixed\nstate A_S b_s\n", None, "")}, 24,
      "state A_S also defined at"),
@@ -173,7 +173,7 @@ BROKEN = [
                         "n": ("task a fixed\nstate B_S b_s\n", None, "")}, 24,
      "task a also defined at"),
     ("unreachable", {"m": ("task a fixed\nstate A_S a_s\nstate A_T a_t\n", None, "")}, 24,
-     "state A_T is reached by no task_next/STEP_*/task_claim"),
+     "state A_T is reached by no return/STEP_*/task_claim"),
     ("too many tasks", {"m": ("task a fixed count=3\nstate A_S a_s\n", None, "")}, 2,
      "3 fixed slots, more than the 2 slots"),
     ("no slot left for jobs", {"m": ("task a fixed count=2\nstate A_S a_s\ntask j job\nstate J_S j_s\n", None, "")}, 2,
@@ -209,7 +209,7 @@ def test_broken():
                 check(re.match(r"^\S+\.def:\d+: |^\d+ ", r) is not None, f"'{what}': message names no place: {r}")
     # the command line: exit 1 and the message on stderr
     with tempfile.TemporaryDirectory() as d:
-        write_module(d, "m", "task a fixed\nstate A_S a_s\n", "void a_s(void);\n")
+        write_module(d, "m", "task a fixed\nstate A_S a_s\n", "uint8_t a_s(void);\n")
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             rc = sched_gen.main(["-o", d, os.path.join(d, "m.def")])
@@ -221,30 +221,30 @@ def test_broken():
 def test_step_macros_reach():
     """The return macros and task_claim_arg reach states as task_next and task_claim do"""
     with tempfile.TemporaryDirectory() as d:
-        body = ("void a_s(void) __banked { STEP_SLEEP(S_A_T, 5); }\n"
-                "void a_t(void) __banked { STEP_WAIT(S_A_U, 1, 2); }\n"
-                "void a_u(void) __banked { STEP_ARG(S_A_V, 3); }\n"
-                "void a_v(void) __banked { task_claim_arg(S_J_S, 4); STEP_NEXT(S_A_S); }\n")
+        body = ("uint8_t a_s(void) __banked { return STEP_SLEEP(S_A_T, 5); }\n"
+                "uint8_t a_t(void) __banked { return STEP_WAIT(S_A_U, 1, 2); }\n"
+                "uint8_t a_u(void) __banked { return STEP_ARG(S_A_V, 3); }\n"
+                "uint8_t a_v(void) __banked { task_claim_arg(S_J_S, 4); return (S_A_S); }\n")
         write_module(d, "m", "task a fixed\nstate A_S a_s\nstate A_T a_t\nstate A_U a_u\nstate A_V a_v\n"
                      "task j job\nstate J_S j_s\n", body=body)
         r = gen([os.path.join(d, "m.def")])
-        check(not isinstance(r, str), f"STEP_* and task_claim_arg reach their states: {said(r)}")
-        write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="void a_s(void) __banked\n{\n\tSTEP_NEXT(S_B_T);\n}\n")
+        check(not isinstance(r, str), f"return, STEP_* and task_claim_arg reach their states: {said(r)}")
+        write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="uint8_t a_s(void) __banked\n{\n\treturn STEP_WAIT(S_B_T, 1, 2);\n}\n")
         write_module(d, "n", "task b fixed\nstate B_S b_s\nstate B_T b_t\n")
         r = gen([os.path.join(d, "m.def"), os.path.join(d, "n.def")])
-        check(not isinstance(r, str) and len(r[2]) == 1 and "STEP_NEXT(S_B_T) jumps into" in r[2][0],
-              f"a STEP_NEXT into another module warns: {r[2] if not isinstance(r, str) else r}")
+        check(not isinstance(r, str) and len(r[2]) == 1 and "STEP_WAIT(S_B_T) jumps into" in r[2][0],
+              f"a STEP_WAIT into another module warns: {r[2] if not isinstance(r, str) else r}")
 
 
 def test_cross_module_warning():
     with tempfile.TemporaryDirectory() as d:
-        write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="void a_s(void) __banked\n{\n\ttask_next(S_B_T);\n}\n")
+        write_module(d, "m", "task a fixed\nstate A_S a_s\n", body="uint8_t a_s(void) __banked\n{\n\treturn S_B_T;\n}\n")
         write_module(d, "n", "task b fixed\nstate B_S b_s\nstate B_T b_t\n")
         r = gen([os.path.join(d, "m.def"), os.path.join(d, "n.def")])
         check(not isinstance(r, str), f"cross-module jump fails the build: {r}")
         if not isinstance(r, str):
             w = r[2]
-            check(len(w) == 1 and "m.c:3: warning: task_next(S_B_T) jumps into" in w[0], f"warning: {w}")
+            check(len(w) == 1 and "m.c:3: warning: return S_B_T jumps into" in w[0], f"warning: {w}")
 
 
 # The sweep (tools/sched_sweep.py): TASK/STEP lines through the host's cpp,
@@ -271,9 +271,9 @@ def test_sweep():
     with tempfile.TemporaryDirectory() as d:
         rc, err, defs = sweep(d, {"m.c": (
             "TASK(stp, fixed, medium, first=second)\n"
-            "STEP(stp, step) { STEP_NEXT(S_STP_SECOND); }\n"
+            "STEP(stp, step) { return S_STP_SECOND; }\n"
             "#ifdef NOT_IN_THIS_BUILD\nSTEP(stp, gone) { }\n#endif\n"
-            "STEP(stp, second) { STEP_NEXT(S_STP_STEP); }\n"
+            "STEP(stp, second) { return STEP_WAIT(S_STP_STEP, 1, 2); }\n"
             "TASK(sfp, fixed, once, count=2)\nSTEP(sfp, poll) { }\n"
             "TASK(j, job, high, entry=two)\nSTEP(j, one) { }\nSTEP(j, two) { }\n")})
         check(rc == 0, f"sweep: rc {rc}: {err}")
@@ -286,7 +286,7 @@ def test_sweep():
         check(re.search(r"state STP_SECOND stp_second\t# \S*m\.c:8$", text, re.M) is not None,
               "sweep: each line says where in the source it came from")
         i = open(os.path.join(d, "gen", "m.i")).read() if defs else ""
-        check("__sched_" not in i and re.search(r"void stp_second\(void\) __banked", i),
+        check("__sched_" not in i and re.search(r"uint8_t stp_second\(void\) __banked", i),
               "sweep: the .i keeps the prototypes, not the markers")
         r = gen(defs)
         check(not isinstance(r, str), f"sweep: the generator takes its .def: {said(r)}")

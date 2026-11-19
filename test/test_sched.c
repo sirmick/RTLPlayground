@@ -55,39 +55,40 @@ static char trace[256];
 static int ntrace;
 static uint8_t claimed;
 
-static void step(uint8_t s, char tag)
+static uint8_t step(uint8_t s, char tag)
 {
 	if (ntrace < (int)sizeof(trace) - 1)
 		trace[ntrace++] = tag;
 	switch (act[s].kind) {
 	case A_SLEEP: task_sleep(act[s].a); break;
 	case A_WAIT:  task_wait(act[s].a, act[s].b); break;
-	case A_END:   task_end(); break;
+	case A_END:   return STEP_END;
 	case A_POST:  event_post(act[s].a); break;
-	case A_NEXT:  task_next(act[s].a); break;
+	case A_NEXT:  return act[s].a;
 	case A_BURN:  ticks += act[s].a; break;
 	case A_CLAIM: claimed = task_claim(act[s].a); break;
 	case A_UNTIL: task_until(act[s].a); break;
 	case A_TIMER: TH2 = act[s].a >> 8; TL2 = act[s].a; break;
-	case M_NEXT:  STEP_NEXT(act[s].a);
-	case M_SLEEP: STEP_SLEEP(act[s].a, act[s].b);
-	case M_WAIT:  STEP_WAIT(act[s].a, act[s].b, act[s].c);
-	case M_ARG:   STEP_ARG(act[s].a, act[s].b);
-	case M_END:   STEP_END();
+	case M_NEXT:  return act[s].a;		/* return S_X */
+	case M_SLEEP: return STEP_SLEEP(act[s].a, act[s].b);
+	case M_WAIT:  return STEP_WAIT(act[s].a, act[s].b, act[s].c);
+	case M_ARG:   return STEP_ARG(act[s].a, act[s].b);
+	case M_END:   return STEP_END;
 	case A_ARGINC: seen_arg = task_arg(); task_set_arg(task_arg() + 1); break;
 	case A_CLAIMARG: claimed = task_claim_arg(act[s].a, act[s].b); break;
 	}
+	return STEP_STAY;
 }
 TASK(a, fixed, once)
-STEP(a, step) { step(S_A_STEP, 'a'); }
+STEP(a, step) { return step(S_A_STEP, 'a'); }
 TASK(b, fixed, once, entry=alt)
-STEP(b, step) { step(S_B_STEP, 'b'); }
-STEP(b, alt)  { step(S_B_ALT, 'B'); }
+STEP(b, step) { return step(S_B_STEP, 'b'); }
+STEP(b, alt)  { return step(S_B_ALT, 'B'); }
 TASK(w, fixed, once)
-STEP(w, step) { step(S_W_STEP, 'w'); }
+STEP(w, step) { return step(S_W_STEP, 'w'); }
 TASK(j, job, once, entry=two)
-STEP(j, step) { step(S_J_STEP, 'j'); }
-STEP(j, two)  { step(S_J_TWO, 'J'); }
+STEP(j, step) { return step(S_J_STEP, 'j'); }
+STEP(j, two)  { return step(S_J_TWO, 'J'); }
 
 static void reset_all(uint32_t t)
 {
@@ -231,7 +232,7 @@ static void test_claim(void)
 	CHECK(!strcmp(pass(), "jjjjj"), "each claimed job runs at its position");
 	act[S_J_STEP].kind = A_END;
 	sched_task[T_JOB2].wake = sched_now;
-	CHECK(!strcmp(pass(), "j") && sched_task[T_JOB2].state == 0, "task_end frees the slot");
+	CHECK(!strcmp(pass(), "j") && sched_task[T_JOB2].state == 0, "STEP_END frees the slot");
 	CHECK(task_claim(S_J_STEP) == T_JOB2, "and it can be claimed again");
 
 	reset_all(500);
@@ -241,13 +242,13 @@ static void test_claim(void)
 	CHECK(!strcmp(pass(), "abawjj"), "claimed from a step: runs at its positions later in the same pass");
 	CHECK(claimed == T_JOB1, "a claimed twice: the second claim got the next slot");
 	act[S_A_STEP].kind = A_SLEEP; act[S_A_STEP].a = 60000;
-	CHECK(!strcmp(pass(), "abwJJ"), "task_next: the jobs go on in J_TWO");
+	CHECK(!strcmp(pass(), "abwJJ"), "a returned state: the jobs go on in J_TWO");
 	CHECK(sched_task[T_JOB0].state == 0 && sched_task[T_JOB1].state == 0, "and end");
 }
 
 static void test_next_and_overrun(void)
 {
-	printf("task_next, measurement, overrun\n");
+	printf("a returned state, measurement, overrun\n");
 	reset_all(10);
 	act[S_B_STEP].kind = A_NEXT; act[S_B_STEP].a = S_B_ALT;
 	CHECK(!strcmp(pass(), "abaw"), "b runs B_STEP");
@@ -286,9 +287,9 @@ static void test_step_macros(void)
 	CHECK(zero, "every slot starts with arg 0");
 
 	act[S_B_STEP].kind = M_NEXT; act[S_B_STEP].a = S_B_ALT;
-	CHECK(!strcmp(pass(), "abaw"), "STEP_NEXT returns from the step");
+	CHECK(!strcmp(pass(), "abaw"), "return S_X: the step ends");
 	CHECK(sched_task[T_B].state == S_B_ALT && sched_task[T_B].wake == 300 && sched_task[T_B].mask == 0,
-	      "STEP_NEXT: the next state, and it yields");
+	      "return S_X: the next state, and it yields");
 
 	reset_all(300);
 	act[S_B_STEP].kind = M_SLEEP; act[S_B_STEP].a = S_B_ALT; act[S_B_STEP].b = 20;

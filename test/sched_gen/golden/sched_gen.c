@@ -31,34 +31,34 @@
 
 #include "sched_gen.h"
 
-void rx_step(void) __banked;
-void link_read(void) __banked;
-void loop_poll(void) __banked;
-void con_edit(void) __banked;
-void cli_idle(void) __banked;
-void cli_run(void) __banked;
-void cli_prompt(void) __banked;
-void l2_first(void) __banked;
-void l2_more(void) __banked;
-void net_tcp(void) __banked;
-void net_udp(void) __banked;
-void stp_step(void) __banked;
-void stp_second(void) __banked;
-void lacp_step(void) __banked;
-void lldp_port(void) __banked;
-void sfp_poll(void) __banked;
-void sfp_wake(void) __banked;
-void sfp_read(void) __banked;
-void sfp_config(void) __banked;
-void sfp_ddm(void) __banked;
-void igmp_tick(void) __banked;
-void house_sec(void) __banked;
-void fl_erase(void) __banked;
-void fl_prog(void) __banked;
-void fl_verify(void) __banked;
-void fl_done(void) __banked;
-void cable_step(void) __banked;
-void eee_port(void) __banked;
+uint8_t rx_step(void) __banked;
+uint8_t link_read(void) __banked;
+uint8_t loop_poll(void) __banked;
+uint8_t con_edit(void) __banked;
+uint8_t cli_idle(void) __banked;
+uint8_t cli_run(void) __banked;
+uint8_t cli_prompt(void) __banked;
+uint8_t l2_first(void) __banked;
+uint8_t l2_more(void) __banked;
+uint8_t net_tcp(void) __banked;
+uint8_t net_udp(void) __banked;
+uint8_t stp_step(void) __banked;
+uint8_t stp_second(void) __banked;
+uint8_t lacp_step(void) __banked;
+uint8_t lldp_port(void) __banked;
+uint8_t sfp_poll(void) __banked;
+uint8_t sfp_wake(void) __banked;
+uint8_t sfp_read(void) __banked;
+uint8_t sfp_config(void) __banked;
+uint8_t sfp_ddm(void) __banked;
+uint8_t igmp_tick(void) __banked;
+uint8_t house_sec(void) __banked;
+uint8_t fl_erase(void) __banked;
+uint8_t fl_prog(void) __banked;
+uint8_t fl_verify(void) __banked;
+uint8_t fl_done(void) __banked;
+uint8_t cable_step(void) __banked;
+uint8_t eee_port(void) __banked;
 
 /* 24-bit address per state: low, high, bank (the linker fills in all three) */
 __code const sched_step_fn step_addr[S_COUNT] = {

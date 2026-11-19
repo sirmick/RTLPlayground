@@ -11,7 +11,7 @@ A task and its steps are declared where they are written (`sched.h`):
 
 ```c
 TASK(stp, fixed, medium, first=step)	/* no semicolon */
-STEP(stp, step)				/* void stp_step(void) __banked, state S_STP_STEP */
+STEP(stp, step)				/* uint8_t stp_step(void) __banked, state S_STP_STEP */
 {
 	...
 }
@@ -94,7 +94,7 @@ enum { S_NONE, S_STP_STEP, S_STP_SECOND, S_L2_FIRST, S_L2_MORE, ..., S_COUNT };
 enum { T_STP, T_LACP, T_SFP0, T_SFP1, ..., T_FIXED, T_JOB0 = T_FIXED, ..., T_SLOTS };
 #define SCHED_GEN_SLOTS 24
 #define RUN_SEQ_LEN 72
-typedef void (*sched_step_fn)(void) __banked;
+typedef uint8_t (*sched_step_fn)(void) __banked;	/* returns the next state */
 
 /* sched_gen.c: resident (common area) */
 __code const sched_step_fn step_addr[S_COUNT] = { 0, stp_step, ... };
@@ -125,15 +125,15 @@ directly.
   `STEP()` that holds by construction, the check stays for hand-written
   `.def` files).
 - Two states with the same name, or one function used by two states.
-- A step function that is `static` or not `void f(void)` (rule 4, chapter 12).
+- A step function that is `static` or not `uint8_t f(void)` (rule 4, chapter 12).
 - A state no task can reach, unless marked `entry`: reached means a task's
-  first state, or named in a `task_next(S_X)`, `STEP_NEXT/SLEEP/WAIT/ARG(S_X, ...)`,
+  first state, or named in a `return S_X`, `STEP_SLEEP/WAIT/ARG(S_X, ...)`,
   `task_claim(S_X)` or `task_claim_arg(S_X, ...)` in the
   scanned sources (the `.h`/`.c` beside the `.def` and its `source` lines).
 - More fixed slots than `SCHED_SLOTS`, or none left over when there are jobs;
   two slots of one name, or a slot named `fixed`, `slots` or `job<N>` (its
   enum would clash with `T_FIXED`, `T_SLOTS`, `T_JOB<N>`).
-- A `task_next(S_X)` or `STEP_*(S_X ...)` in a module's source naming a state of another module
+- A `return S_X` or `STEP_*(S_X ...)` in a module's source naming a state of another module
   (warning: cross-module jumps go through events).
 
 ## Sequence derivation

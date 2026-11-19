@@ -4,9 +4,9 @@
  * A task is a slot {state, mask, wake}. Each pass walks the generated run
  * sequence; a slot whose wake tick has come, or whose mask meets this pass's
  * events, runs one step: the function behind its state, through the generated
- * 3-byte table. A step does a bounded piece of work, says what comes next
- * (task_next) and when (one wake call), and returns. A step that says nothing
- * yields: it runs again at its next position.
+ * 3-byte table. A step does a bounded piece of work, says when it wants to
+ * run again (one wake call; none: at its next position) and returns the
+ * state it wants next (decision 22): the scheduler stores it.
  *
  * Everything here is xdata, 8/16-bit, and no function takes more than one
  * parameter: SDCC puts a second parameter, and a non-leaf function's locals,
@@ -21,7 +21,7 @@
  * Tasks and steps are declared where they are written (generator.md):
  *
  *   TASK(name, fixed|job, high|medium|once [, count=N] [, first=step] [, entry=step])
- *   STEP(name, step) { ... }	is void name_step(void) __banked, state S_NAME_STEP
+ *   STEP(name, step) { ... }	is uint8_t name_step(void) __banked, state S_NAME_STEP
  *
  * A TASK has no semicolon. Tasks take their slots in the order of their
  * TASK lines, a task's states the order of its STEPs; the first STEP is the
@@ -32,11 +32,11 @@
 #ifdef SCHED_SWEEP
 #undef __banked		/* the host tests' shim erases it: the generator checks it */
 #define TASK(...)	__sched_task__ #__VA_ARGS__
-#define STEP(t, s)	__sched_step__ #t #s void t##_##s(void) __banked
+#define STEP(t, s)	__sched_step__ #t #s uint8_t t##_##s(void) __banked
 #else
 #include "sched_gen.h"
 #define TASK(...)
-#define STEP(t, s)	void t##_##s(void) __banked
+#define STEP(t, s)	uint8_t t##_##s(void) __banked
 #endif
 
 #define SCHED_SLOTS	SCHED_GEN_SLOTS	/* the generator's --slots */
@@ -89,14 +89,18 @@ extern __xdata uint16_t sched_f_tick, sched_f_cnt;	/* the last sched_fine_read()
 extern __xdata uint8_t  sched_st;		/* the state being measured */
 extern __xdata struct task * __xdata sched_cur_task;	/* &sched_task[sched_cur] */
 
-/* A step ends with one of these: each sets what comes next and returns.
- * A bare `return;` keeps the state and yields: it runs again at its next
- * position. */
-#define STEP_NEXT(s)		do { task_next(s); return; } while (0)
-#define STEP_SLEEP(s, ms)	do { task_next(s); task_sleep(ms); return; } while (0)
-#define STEP_WAIT(s, ev, ms)	do { task_next(s); task_mask(ev); task_sleep(ms); return; } while (0)
-#define STEP_ARG(s, a)		do { task_next(s); task_set_arg(a); return; } while (0)
-#define STEP_END()		do { task_end(); return; } while (0)
+/* What a step returns (decision 22): `return S_FOO;` is S_FOO at its next
+ * position (a yield); STEP_STAY the same state; STEP_END frees the slot. The
+ * others say when as well, and are expressions: `return STEP_WAIT(...);`.
+ * A step that falls off its end fails the build (SDCC's warning 59, an
+ * error for the step sources: sched.mk). */
+#define STEP_END		0	/* the slot is free (state 0) */
+#define STEP_STAY		0xff	/* the same state again (no state is 0xff) */
+#ifndef SCHED_SWEEP		/* swept, they stay as written: the generator sees their state */
+#define STEP_SLEEP(s, ms)	(task_sleep(ms), (s))
+#define STEP_WAIT(s, ev, ms)	(task_mask(ev), task_sleep(ms), (s))
+#define STEP_ARG(s, a)		(task_set_arg(a), (s))
+#endif
 
 /* The slot's own 16 bits, kept across steps: 0 when a fixed task starts
  * (a count=N task tells its instances apart by sched_cur - T_<NAME>0) and
@@ -107,14 +111,11 @@ extern __xdata uint16_t sched_claim_arg;
 #define task_claim_arg(s, a)	(sched_claim_arg = (a), task_claim(s))
 
 /* The low-level calls under the macros, for the rare step that needs them.
- * All act on the current slot. */
-void task_next(uint8_t state);		/* the next step is `state` */
-#define task_yield()			/* the default: run again at the next position */
+ * All act on the current slot; none chooses its state. */
 void task_sleep(uint16_t ms) __banked;	/* due in at least ms (0: yield; SCHED_FOREVER: never) */
 void task_until(uint16_t tick);		/* due at `tick` (at most SCHED_MAX_WAIT ahead) */
 void task_mask(uint16_t ev_mask);	/* also woken by any of these events */
 #define task_wait(ev_mask, ms)	do { task_mask(ev_mask); task_sleep(ms); } while (0)
-void task_end(void);			/* free the slot */
 uint8_t task_claim(uint8_t first) __banked;	/* a free dynamic slot, starting in `first`; or SCHED_NONE */
 #define event_post(ev)		(sched_posted |= (ev))
 

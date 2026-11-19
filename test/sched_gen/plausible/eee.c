@@ -1,6 +1,6 @@
 #include "eee.h"
 
-void eee_port(void) __banked
+uint8_t eee_port(void) __banked
 {
 	
 }

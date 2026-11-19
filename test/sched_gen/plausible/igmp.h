@@ -1,1 +1,1 @@
-void igmp_tick(void) __banked;
+uint8_t igmp_tick(void) __banked;

@@ -49,7 +49,7 @@ static __xdata uint8_t ti, tn;
 TASK(rx, fixed, high, first=idle)
 STEP(rx, idle)
 {
-	STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
 }
 
 STEP(rx, step)
@@ -58,8 +58,8 @@ STEP(rx, step)
 	if (webcmd_pending)
 		event_post(EV_WEBCMD);	/* httpd queued a /cmd */
 	if (tn)
-		return;			/* more waiting: again at the next position */
-	STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
+		return STEP_STAY;	/* more waiting: again at the next position */
+	return STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
 }
 
 /* link: woken by INT0, and by house once a second (link_irq) */
@@ -67,7 +67,7 @@ TASK(link, fixed, high)
 STEP(link, read)
 {
 	link_service();
-	STEP_WAIT(S_LINK_READ, EV_LINK, SCHED_FOREVER);
+	return STEP_WAIT(S_LINK_READ, EV_LINK, SCHED_FOREVER);
 }
 
 /* loop: rldp_tick() once a second */
@@ -76,7 +76,7 @@ STEP(loop, start)
 {
 	loop_due = sched_now + SEC_TICKS;
 	task_until(loop_due);
-	STEP_NEXT(S_LOOP_POLL);
+	return S_LOOP_POLL;
 }
 
 STEP(loop, poll)
@@ -85,6 +85,7 @@ STEP(loop, poll)
 		rldp_tick();
 	loop_due += SEC_TICKS;
 	task_until(loop_due);
+	return STEP_STAY;
 }
 
 /* con: today's line editor, on its own line; a complete line goes to cli */
@@ -94,7 +95,7 @@ STEP(con, edit)
 	cmd_edit();
 	if (con_line_ready)
 		event_post(EV_LINE);
-	STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
 }
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
@@ -116,13 +117,13 @@ STEP(cli, idle)
 {
 	if (con_line_ready) {
 		cli_src = CLI_CON;
-		STEP_NEXT(S_CLI_RUN);
+		return S_CLI_RUN;
 	}
 	if (webcmd_pending) {
 		cli_src = CLI_WEB;
-		STEP_NEXT(S_CLI_RUN);
+		return S_CLI_RUN;
 	}
-	STEP_WAIT(S_CLI_IDLE, EV_LINE | EV_WEBCMD, SCHED_FOREVER);
+	return STEP_WAIT(S_CLI_IDLE, EV_LINE | EV_WEBCMD, SCHED_FOREVER);
 }
 
 STEP(cli, run)
@@ -131,26 +132,26 @@ STEP(cli, run)
 		/* still queued: its connection may have ended since CLI_IDLE,
 		 * and then config_buf may hold the next request */
 		if (!webcmd_pending)
-			STEP_NEXT(S_CLI_IDLE);
+			return S_CLI_IDLE;
 		webcmd_pending = 0;
 		cli_gen = webcmd_gen;
 		cli_dropped = 0;
 		httpd_webcmd_begin();
-		STEP_NEXT(S_CLI_NEXT);
+		return S_CLI_NEXT;
 	}
 	if (con_tx_room() < CLI_ROOM)
-		STEP_WAIT(S_CLI_RUN, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_RUN, EV_CON_TX, SCHED_FOREVER);
 	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
 		if (!(cmd_buffer[ti] = con_line[ti]))
 			break;
 	if (!cmd_buffer[0])
-		STEP_NEXT(S_CLI_PROMPT);
+		return S_CLI_PROMPT;
 	cmd_tokenize();
 	if (err_status == ERR_OK)
 		cmd_parser();
 	if (cli_job)
-		STEP_NEXT(S_CLI_MORE);
-	STEP_NEXT(S_CLI_PROMPT);
+		return S_CLI_MORE;
+	return S_CLI_PROMPT;
 }
 
 /* The web command this run serves still has its connection waiting: not
@@ -174,18 +175,18 @@ STEP(cli, next)
 {
 	if (!cli_web_live()) {
 		cli_web_drop();
-		STEP_NEXT(S_CLI_PROMPT);
+		return S_CLI_PROMPT;
 	}
 	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
-		STEP_WAIT(S_CLI_NEXT, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_NEXT, EV_CON_TX, SCHED_FOREVER);
 	WEBCMD_CAPTURE_ON();
 	cli_web_more = exec_line();
 	WEBCMD_CAPTURE_OFF();
 	if (cli_job)
-		STEP_NEXT(S_CLI_MORE);
+		return S_CLI_MORE;
 	if (!cli_web_more)
-		STEP_NEXT(S_CLI_PROMPT);
-	STEP_NEXT(S_CLI_NEXT);			/* the next line at the next step */
+		return S_CLI_PROMPT;
+	return S_CLI_NEXT;			/* the next line at the next step */
 }
 
 STEP(cli, more)
@@ -193,26 +194,26 @@ STEP(cli, more)
 	if (cli_src == CLI_WEB && !cli_dropped && !cli_web_live()) {
 		cli_web_drop();
 		if (!cli_job)
-			STEP_NEXT(S_CLI_PROMPT);
+			return S_CLI_PROMPT;
 	}
 	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
-		STEP_WAIT(S_CLI_MORE, EV_CON_TX, SCHED_FOREVER);
+		return STEP_WAIT(S_CLI_MORE, EV_CON_TX, SCHED_FOREVER);
 	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_ON();
 	cli_job_more();
 	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_OFF();
 	if (cli_job)
-		STEP_NEXT(S_CLI_MORE);		/* its next line at the next step */
+		return S_CLI_MORE;		/* its next line at the next step */
 	if (cli_src == CLI_WEB && !cli_dropped && cli_web_more)
-		STEP_NEXT(S_CLI_NEXT);
-	STEP_NEXT(S_CLI_PROMPT);
+		return S_CLI_NEXT;
+	return S_CLI_PROMPT;
 }
 
 STEP(cli, prompt)
 {
 	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
-		STEP_SLEEP(S_CLI_PROMPT, 100);
+		return STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
 		if (!cli_dropped && cli_web_live()) {
 			httpd_webcmd_end();
@@ -222,7 +223,7 @@ STEP(cli, prompt)
 		print_cmd_prompt();
 		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */
 	}
-	STEP_NEXT(S_CLI_IDLE);
+	return S_CLI_IDLE;
 }
 
 /* net: uIP's periodic calls, every tick; and on EV_UPLOAD_DONE a poll of
@@ -234,7 +235,7 @@ TASK(net, fixed, once, first=start)
 STEP(net, start)
 {
 	net_due = sched_now;
-	STEP_NEXT(S_NET_TICK);
+	return S_NET_TICK;
 }
 
 STEP(net, tick)
@@ -252,6 +253,7 @@ STEP(net, tick)
 	}
 	task_mask(EV_UPLOAD_DONE);
 	task_until(net_due);
+	return STEP_STAY;
 }
 
 /* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick */
@@ -266,6 +268,7 @@ STEP(stp, tick)
 		}
 	}
 	task_until(sched_now + 1);
+	return STEP_STAY;
 }
 
 TASK(lacp, fixed, medium)
@@ -274,6 +277,7 @@ STEP(lacp, tick)
 	if (lacpEnabled)
 		lacp_timers();
 	task_until(sched_now + 1);
+	return STEP_STAY;
 }
 
 /* lldp, and the cable test's state machine (a job from E on), every tick */
@@ -283,6 +287,7 @@ STEP(lldp, tick)
 	lldp_service();
 	cabletest_tick();
 	task_until(sched_now + 1);
+	return STEP_STAY;
 }
 
 /* sfp0, sfp1: a slot's pins every 50 ms; none on a board without the slot */
@@ -291,10 +296,10 @@ STEP(sfp, start)
 {
 	ti = sched_cur - T_SFP0;
 	if (ti >= machine.n_sfp)
-		STEP_END();
+		return STEP_END;
 	sfp_due[ti] = sched_now + SFP_TICKS;
 	task_until(sfp_due[ti]);
-	STEP_NEXT(S_SFP_POLL);
+	return S_SFP_POLL;
 }
 
 STEP(sfp, poll)
@@ -303,6 +308,7 @@ STEP(sfp, poll)
 	handle_sfp_slot(ti);
 	sfp_due[ti] += SFP_TICKS;
 	task_until(sfp_due[ti]);
+	return STEP_STAY;
 }
 
 /* house: once a second */
@@ -311,7 +317,7 @@ STEP(house, start)
 {
 	house_due = sched_now + SEC_TICKS;
 	task_until(house_due);
-	STEP_NEXT(S_HOUSE_SEC);
+	return S_HOUSE_SEC;
 }
 
 STEP(house, sec)
@@ -319,4 +325,5 @@ STEP(house, sec)
 	house_second();
 	house_due += SEC_TICKS;
 	task_until(house_due);
+	return STEP_STAY;
 }

@@ -60,6 +60,6 @@ The tick isn't an event: time is the `wake` field.
 
 - ISRs never touch xdata event words: they set bits, as today.
 - A step that consumes a level (ring not empty, frames waiting) re-checks it
-  and keeps itself ready (`task_yield()`) while work remains.
+  and keeps itself ready (`return STEP_STAY;`) while work remains.
 - An event posted for a task that isn't waiting for it is simply lost after
   one pass; posting is a wake-up, not a queue.
