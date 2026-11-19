@@ -1501,7 +1501,13 @@ uip_process(u8_t flag) __banked
     }
     /* RTLPlayground: data past the window we advertised (a probe into a
        zero window, or a sender that ignores it) isn't taken: an ACK with
-       the window as it is now. uIP 1.0 took any in-sequence segment. */
+       the window as it is now. uIP 1.0 took any in-sequence segment.
+       UIP_RECEIVE_WINDOW is the window now, not the one in our last ACK,
+       but measured from rcv_nxt it is never smaller: it shrinks only when a
+       segment is taken, in the call whose ACK then advertises it, and in
+       between it can only grow (httpd.c: the stage emptied). So nothing
+       inside the advertised window is refused, and more is taken only if
+       there is room for it now. */
     if(uip_len > (UIP_RECEIVE_WINDOW) &&
        (uip_connr->tcpstateflags & UIP_TS_MASK) == UIP_ESTABLISHED) {
       goto tcp_send_ack;
