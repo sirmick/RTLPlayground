@@ -1,0 +1,32 @@
+# The firmware_init() split leaves the normal firmware unchanged (2026-11-19)
+
+Split: 567ce3f (rtlplayground.c main() -> firmware_init() + the loop).
+Normal 8x build at HEAD 8b62c99:
+  tools/docker-make.sh MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1   (exit 0)
+  output/KEEPLINK_KP_9000_9XHPML_V1_2-compact/rtlplayground-boot-v0.1.0-8b62c99-dirty-KEEPLINK_KP_9000_9XHPML_V1_2-compact.bin
+  ("-dirty": only the orchestrator's .wash/ files; old 063016e/d45d109 images removed first)
+
+## Boot transcript vs doc/sched/baseline/boot-8x.txt (A0, 063016e)
+A0's driver (the script at the end of boot-8x.txt), run from ovs-rtlpg (rtlsim 05424fe):
+  python3 boot8x.py <the -boot image above> version health ip stat
+  [boot to prompt: 2.2 s]; each command 0.0 s
+diff, version strings masked: only the two "Build date:" lines differ
+  (2026-11-18 18:05:20 -> 2026-11-19 01:21:10), plus a trailing newline from
+  extracting the baseline. 120 lines each.
+Note: the earlier check (/tmp/c/boot-now.txt) booted the A0 image by mistake
+(a glob matched two -boot images); this one boots the HEAD image alone.
+
+## make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact (vs gate-8x.json): PASS
+  internal RAM: data 105 (105), overlay 8 (8), bits 3 (3): delta 0; DSEG symbols 54, none new
+  stack 131 B
+  common area: ends 0x396d (baseline 0x396a): +3 B
+  banks: 46188 / 46202 / 45565 B used = the baseline exactly
+What the split moved, against the commit before it (d45d109, built clean in a worktree):
+  common 0x396a -> 0x396d: +3 B, firmware_init()'s call and return (main moved
+  0x18b9 -> 0x1d8e within the common area). Banks 1/2 +12/+6 B: the "-dirty"
+  in the version strings (d45d109 was clean), not code; bank 3 identical.
+
+## schedtest and ^R ^R during the boot
+schedtest's main doesn't act on serial_reset_pending: a ^R ^R typed during
+firmware_init() is dropped (schedtest/README.md, Console). The firmware's main
+loop still resets on it.

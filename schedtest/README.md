@@ -142,6 +142,7 @@ The prompt is `> ` (the firmware's).
 | `deep [N]` | every 20 ms, a step runs a chain of N (default 9; 0 stops) banked calls through banks 1, 2, 3, 1, ..., and at the bottom prints a line and spins 5-10 ms, so the console ISRs land on the deepest stack. Paste input meanwhile for RX |
 | `hot on`, `hot off` | the high-frequency task runs (yielding: the scheduler never idles) or waits; off at boot |
 | `reset` | `crash_reset(CRASH_RESET_CMD)` |
+| `^R ^R` | `CRASH_FROM_ISR(CRASH_CTRL_R)`, once the scheduler runs. One typed during the boot (`firmware_init()`, before `schedtest_main()` sets `serial_reset_ok`) is dropped: unlike the firmware's main loop, schedtest doesn't act on `serial_reset_pending` |
 | anything else | the usage line |
 
 Commands that print a lot (`health`, a long `peek`) do it in one `CLI_RUN` step,
