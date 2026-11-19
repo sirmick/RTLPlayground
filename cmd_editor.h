@@ -6,4 +6,8 @@
 void cmd_editor_init(void) __banked;
 void cmd_edit(void) __banked;
 
+/* The console's line (console.md): complete when con_line_ready; cli copies it */
+extern __xdata uint8_t con_line[];
+extern __xdata uint8_t con_line_ready;
+
 #endif

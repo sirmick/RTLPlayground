@@ -18,6 +18,8 @@
 #include "rtl837x_cabletest.h"
 #include "sfp.h"
 #include "cmd_editor.h"
+#include "cmd_parser.h"
+#include "httpd/httpd.h"
 #include "machine.h"
 #include "timer.h"
 #include "sched.h"
@@ -30,7 +32,6 @@
 void house_second(void);
 void link_service(void);
 uint8_t rx_service(void);
-void cmd_service(void);
 void handle_tx(void);
 
 extern __code const struct machine machine;
@@ -47,7 +48,10 @@ void rx_wait(void) __banked
 
 void rx_task(void) __banked
 {
-	if (rx_service())
+	tn = rx_service();
+	if (webcmd_pending)
+		event_post(EV_WEBCMD);	/* httpd queued a /cmd */
+	if (tn)
 		return;			/* more waiting: again at the next position */
 	STEP_WAIT(S_RX_STEP, EV_RX, SCHED_FOREVER);
 }
@@ -75,12 +79,61 @@ void loop_task(void) __banked
 	task_until(loop_due);
 }
 
-/* con: today's editor and command parser */
+/* con: today's line editor, on its own line; a complete line goes to cli */
 void con_task(void) __banked
 {
 	cmd_edit();
-	cmd_service();
+	if (con_line_ready)
+		event_post(EV_LINE);
 	STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
+}
+
+/* cli: one command at a time, a console line or a web /cmd (console.md).
+ * The prompt only from CLI_PROMPT. */
+#define CLI_CON	1
+#define CLI_WEB	2
+static __xdata uint8_t cli_src;
+
+void cli_idle(void) __banked
+{
+	if (con_line_ready) {
+		cli_src = CLI_CON;
+		STEP_NEXT(S_CLI_RUN);
+	}
+	if (webcmd_pending) {
+		webcmd_pending = 0;
+		cli_src = CLI_WEB;
+		STEP_NEXT(S_CLI_RUN);
+	}
+	STEP_WAIT(S_CLI_IDLE, EV_LINE | EV_WEBCMD, SCHED_FOREVER);
+}
+
+void cli_run(void) __banked
+{
+	task_next(S_CLI_PROMPT);
+	if (cli_src == CLI_WEB) {
+		httpd_webcmd_run();
+		return;
+	}
+	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
+		if (!(cmd_buffer[ti] = con_line[ti]))
+			break;
+	if (!cmd_buffer[0])
+		return;
+	cmd_tokenize();
+	if (err_status == ERR_OK)
+		cmd_parser();
+}
+
+void cli_prompt(void) __banked
+{
+	if (cli_src == CLI_WEB) {
+		event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
+	} else {
+		print_cmd_prompt();
+		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */
+	}
+	STEP_NEXT(S_CLI_IDLE);
 }
 
 /* net: uIP's periodic calls, every tick */

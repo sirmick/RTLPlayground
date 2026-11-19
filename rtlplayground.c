@@ -147,7 +147,6 @@ __xdata uint8_t linkbits_last_p89;
 volatile __bit link_irq;
 volatile __bit rx_irq;
 volatile __bit tick_pending;
-__bit cmd_available;
 // Last known state of the SFP detection/Loss of Signal pins
 __xdata bool button_last;
 __xdata uint8_t button_sec_counter_last;
@@ -1152,17 +1151,6 @@ uint8_t rx_service(void)
 	return 0;
 }
 
-/* A complete console line: run it, then the prompt */
-void cmd_service(void)
-{
-	if (cmd_available) {
-		cmd_available = 0;
-		cmd_tokenize();
-		if (err_status == ERR_OK)
-			cmd_parser();
-		print_cmd_prompt();
-	}
-}
 #endif
 
 

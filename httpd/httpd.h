@@ -26,4 +26,8 @@ void httpd_appcall(void);
 
 void httpd_init(void) __banked;
 
+/* A web /cmd queued for cli (net.md item 2) */
+extern __xdata uint8_t webcmd_pending, webcmd_done;
+void httpd_webcmd_run(void) __banked;	/* cli: run it, the reply into outbuf */
+
 #endif

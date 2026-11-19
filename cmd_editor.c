@@ -3,7 +3,11 @@
 #include "machine.h"
 
 
-// Properties of currently edited command line in cmd_buffer[CMD_BUF_SIZE]
+/* The console's own line buffer: the editor edits it, cli copies a complete
+ * line into cmd_buffer (console.md: two input buffers, one parser) */
+__xdata uint8_t con_line[CMD_BUF_SIZE];
+__xdata uint8_t con_line_ready;	/* a complete line waits for cli */
+// Properties of currently edited command line in con_line[CMD_BUF_SIZE]
 __xdata uint8_t cursor;
 __xdata uint8_t cmd_line_len;
 __xdata uint8_t current_cmdline[CMD_BUF_SIZE];
@@ -18,16 +22,16 @@ void cmd_editor_init(void) __banked
 	con_rx_tail = con_rx_head; // Drop what was typed during the boot
 	cursor = 0;
 	cmd_line_len = 0;
-	cmd_available = 0;
+	con_line_ready = 0;
 	history_editptr = 0xffff;
 }
 
 /*
- * Allows editing the current command line held in cmd_buffer[CMD_BUF_SIZE] by
+ * Allows editing the current command line held in con_line[CMD_BUF_SIZE] by
  * identifying new characters typed or up to 4-byte escape sequences in the
  * console RX ring con_rx_buf[CON_RX_SIZE] (con_ring.h), which the serial ISR
  * fills; con_rx_tail is the editor's read position.
- * Upon detecting new characters or escape sequences, the cmd_buffer and the
+ * Upon detecting new characters or escape sequences, the con_line and the
  * representation of the command line in the terminal are updated.
  * To debug, the easist is to interpose a tty-interceptor between the physical
  * serial device and a logical one created by interceptty:
@@ -36,7 +40,9 @@ void cmd_editor_init(void) __banked
  */
 void cmd_edit(void) __banked
 {
-	while (con_rx_tail != con_rx_head) {
+	/* While a line waits for cli, nothing more is read: typing or a paste
+	 * stays in the RX ring instead of overwriting the pending line (U2) */
+	while (!con_line_ready && con_rx_tail != con_rx_head) {
 		if (con_rx_buf[con_rx_tail] >= ' ' && con_rx_buf[con_rx_tail] < 127) { // A printable character, copy to command line
 			// Reserve one byte for the terminating NUL written on Enter. When the
 			// line is full, drop the character but still fall through to advance the
@@ -45,13 +51,13 @@ void cmd_edit(void) __banked
 				write_char(con_rx_buf[con_rx_tail]);
 				// Shift buffer to right
 				for (uint8_t i = cmd_line_len; i > cursor; i--)
-					cmd_buffer[i] = cmd_buffer[i-1];
+					con_line[i] = con_line[i-1];
 				// Insert char in comand buffer
-				cmd_buffer[cursor++] = con_rx_buf[con_rx_tail];
+				con_line[cursor++] = con_rx_buf[con_rx_tail];
 				cmd_line_len++;
 				// Print rest of line
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
-					write_char(cmd_buffer[i]);
+					write_char(con_line[i]);
 				// Move backwards
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
 					write_char('\010'); // BS works like cursor-left
@@ -66,8 +72,8 @@ void cmd_edit(void) __banked
 					write_char('\033'); write_char('['); write_char('1'); write_char('P'); // Delete to end of line
 					cmd_line_len--;
 					for (uint8_t i = cursor; i < cmd_line_len; i++) {
-						cmd_buffer[i] = cmd_buffer[i+1];
-						write_char(cmd_buffer[i]);
+						con_line[i] = con_line[i+1];
+						write_char(con_line[i]);
 					}
 					for (uint8_t i = cursor; i < cmd_line_len; i++)
 						write_char('\010');
@@ -93,7 +99,7 @@ void cmd_edit(void) __banked
 				continue;
 			} else if (con_rx_buf[con_rx_tail] == '\033' && con_rx_buf[(con_rx_tail + 1) & CON_RX_MASK] == '[' && con_rx_buf[(con_rx_tail + 2) & CON_RX_MASK] == 'A') { // <CURSOR-UP>
 				for (uint8_t i = 0; i < cmd_line_len; i++)
-					current_cmdline[i] = cmd_buffer[i];
+					current_cmdline[i] = con_line[i];
 				current_cmdline[cmd_line_len] = 0;
 				__xdata uint16_t p;
 				if (history_editptr == 0xffff)
@@ -113,8 +119,8 @@ void cmd_edit(void) __banked
 				if (cursor) {
 					print_string("\033[2K> "); // Clear entire line: ^[[2K and print new prompt
 					for (uint8_t i = 0; i < cursor; i++) {
-						cmd_buffer[i] = cmd_history[p];
-						write_char(cmd_buffer[i]);
+						con_line[i] = cmd_history[p];
+						write_char(con_line[i]);
 						p = (p+1) & CMD_HISTORY_MASK;
 					}
 					cmd_line_len = cursor;
@@ -136,16 +142,16 @@ void cmd_edit(void) __banked
 					}
 					p = (p + 1) & CMD_HISTORY_MASK;
 					while (cmd_history[p] && cmd_history[p] != '\n') {
-						cmd_buffer[i] = cmd_history[p];
-						write_char(cmd_buffer[i++]);
+						con_line[i] = cmd_history[p];
+						write_char(con_line[i++]);
 						p = (p + 1) & CMD_HISTORY_MASK;
 					}
 					history_editptr = (p - 1) & CMD_HISTORY_MASK;
 					if (!i) {
 						if (current_cmdline[i]) {
 							while (current_cmdline[i]) {
-								cmd_buffer[i] = current_cmdline[i];
-								write_char(cmd_buffer[i++]);
+								con_line[i] = current_cmdline[i];
+								write_char(con_line[i++]);
 							}
 						} else {
 							write_char('\033'); write_char('['); write_char('C');
@@ -174,31 +180,23 @@ void cmd_edit(void) __banked
 			if (cursor > 0) {
 				write_char('\010');
 				for (uint8_t i = cursor; i < cmd_line_len; i++)
-					write_char(cmd_buffer[i]);
+					write_char(con_line[i]);
 				write_char(' '); // Overwrite end of line
 				// Move backwards n steps:
 				for (uint8_t i = cursor; i <= cmd_line_len; i++)
 					write_char('\010');
 				cursor--;
 				for (uint8_t i = cursor; i <= cmd_line_len; i++)
-					cmd_buffer[i] = cmd_buffer[i+1];
+					con_line[i] = con_line[i+1];
 				cmd_line_len--;
 			}
 		}
-		// If the command buffer is currently in use, we cannot copy to it
-		if (cmd_available)
-			break;
 		// Check whether return was pressed:
 		if (con_rx_buf[con_rx_tail] == '\n' || con_rx_buf[con_rx_tail] == '\r') {
 			write_char('\n');
-			cmd_buffer[cmd_line_len] = NUL;
-//			write_char('>'); print_string_x(cmd_buffer); write_char('<');
-			// If there is a command we print the prompt after execution
-			// otherwise immediately because there is nothing to execute
-			if (cmd_line_len)
-				cmd_available = 1;
-			else
-				print_cmd_prompt();
+			con_line[cmd_line_len] = NUL;
+			// The line, even an empty one, goes to cli, which prints the prompt
+			con_line_ready = 1;
 			cursor = 0;
 			cmd_line_len = 0;
 			history_editptr = 0xffff;
