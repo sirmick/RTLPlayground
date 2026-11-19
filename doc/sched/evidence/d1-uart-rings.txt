@@ -1,0 +1,47 @@
+# D1 evidence: the firmware's console on the UART rings (2026-11-19)
+
+Commits: e7cbb8d D1 (the old-vs-new boundary), 5aab4fa place_banks best-fit
+fallback, d5aa6c1 parallel sim tests. Range 21183df..d5aa6c1. rtlsim:
+ovs-rtlpg 05424fe. Everything below ran on the tree of d5aa6c1 (uncommitted
+then; images named 21183df-dirty).
+
+## Host tests
+make -C test -j8 quick (stamps cleared): QUICK TESTS PASSED, 20 tests. The
+editor's tests feed test/support.c's ring, now con_rx_buf (256 B).
+
+## Normal 8x firmware
+tools/docker-make.sh MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1: exit 0
+make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact (gate-8x.json): PASS
+  internal RAM: data 105 (105), overlay 8 (8), bits 3 (3): delta 0; DSEG none new
+  stack 131 B
+  common area: ends 0x3a9a, was 0x396d at 2a9ac34 (+301 B): con_ring.c is
+    resident now (rings' code, con_putc and its polled wait), the ISR's ring
+    macros, minus the old busy-wait write_char and sbuf
+  banks: 45585 / 46202 / 46198 B used (2a9ac34: 46188 / 46202 / 45565): +30 B in
+    total (cmd_editor's ring indexes; health is not in this build), one group
+    moved from bank 1 to bank 3 by the packer (greedy, as before)
+
+## Boot transcript (A0's driver, the HEAD image alone)
+python3 boot8x.py <rtlplayground-boot-...-compact.bin> version health ip stat
+  boot to prompt 2.2 s; diff vs doc/sched/baseline/boot-8x.txt, version and
+  build date masked: identical (bar the baseline's trailing newline).
+
+## A 500-character paste (rtlsim, normal firmware)
+500 printable characters + CR in one uart write, then 1 s:
+  con_rx_overruns 0; the echo is exactly the first 127 characters (the
+  editor's CMD_BUF_SIZE - 1); the line runs (Unknown command).
+Found on the way, not D1's (the editor is unchanged): 40 x "ip\r" pasted at
+once run 2; the rest echo mangled. cmd_edit copies a printable character into
+cmd_buffer before it checks cmd_available, so typing while a command is
+pending writes over it. Before D1 the 16 B ring lost those bytes instead.
+That is U4's shared buffer (M2/D3).
+
+## schedtest
+All four images rebuilt (base and overrun need 5aab4fa's best-fit fallback:
+greedy levelled the banks with ~1.4 KB free in total and no bank with room
+for sessions' 864 B). Base: banks 52 / 554 / 13 B free, common 141 B left.
+make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice --json /tmp/c/l2-d1.json" NEG_ARGS="--json /tmp/c/l2b-d1.json"
+  exit 0, 68 s wall (was 314 s): sim_tests 0 failures, deterministic (67.7 s);
+  sim_neg 0 failures, deterministic (44.7 s, alongside). Every test of both
+  layers ran in both runs; coverage as before (every state's step function,
+  sched.c 44/44, crash.c 21/21).
