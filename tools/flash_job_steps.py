@@ -20,6 +20,10 @@ S3: `factory-reset` on the console: the default config sector copied to the
 S4: after a new boot, the payload uploaded as it is: written, read back and
     accepted ("Checksum OK"); the per-state maxima read from xdata then,
     before the client's ACK of the answer lets the switch reset.
+S5: after a new boot, a refused upload started at once, so the loader's
+    confirm comes during it: the confirm waits (its erase isn't run between
+    two segments), the upload ends with its answer and every byte, and the
+    boot count is erased after it (one FL_ERASE more than the image's).
 Each passes if no step but FL_ERASE took over 20 ms, and the flash holds what
 it should. The upload's firmware time is printed. Needs a bench whose client
 honours the switch's window (the upload closes it after each segment).
@@ -30,6 +34,7 @@ import argparse, os, re, sys
 CONFIG_START, CONFIG_LEN = 0x7f000, 0x1000	# layout.h, compact
 DEFAULT_CONFIG_START = 0x39000
 UPLOAD_START = 0x40000
+LDR_BOOTCNT = 0x3a000				# layout.h
 LIMIT_US = 20000
 FINE_NS = 6144					# sched.h SCHED_FINE_NS
 
@@ -202,6 +207,40 @@ def main(argv):
         print(f"S4 upload (accepted): {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S4")
+    finally:
+        r.b.close()
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    try:
+        r.boot(slot=12000)	# the prompt at ~11 s, the confirm at ~17.6 s (sim)
+        r.login(slot=1000)
+        r._now()
+        bc0 = r.b.flash(LDR_BOOTCNT, 2)
+        bad = bytearray(r.payload)
+        bad[-1] ^= 0xff
+        t0 = r.b.now
+        resp = r.host.http(upload_req(r, bytes(bad), "bad.bin"), r.b.now + 120 * 1000000)
+        t1 = r.b.now
+        mid = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        r.b.advance(r.b.now + 3000000)
+        after = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        staged = r.b.flash(UPLOAD_START, len(bad))
+        bc1 = r.b.flash(LDR_BOOTCNT, 2)
+        sectors = (len(bad) + 0xfff) // 0x1000
+        e_mid, e_after = mid.get("FL_ERASE", (0, 0))[0], after.get("FL_ERASE", (0, 0))[0]
+        ok = (isinstance(resp, bytes) and b"checksum failed" in resp and staged == bytes(bad)
+              and bc0 == b"BC" and bc1 == b"\xff\xff" and e_after == sectors + 1)
+        print(f"   S5 upload {t0 / 1e6:.1f}..{t1 / 1e6:.1f} s after power-on; answer "
+              f"{resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; staged image "
+              f"{'= the payload' if staged == bytes(bad) else 'DIFFERS'}; boot count {bc0!r} -> {bc1!r}; "
+              f"FL_ERASE {e_mid} at the answer, {e_after} 3 s later ({sectors} sectors)")
+        # the boot's own steps are in these numbers (no health clear before
+        # the upload, to keep it before the confirm): judged are the job's
+        # and house's
+        ok = judge("S5", {k: v for k, v in after.items() if k.startswith("FL_") or k == "HOUSE_SEC"}) and ok
+        ok = ok and after.get("HOUSE_SEC", (0, 0))[1] < 5000
+        print(f"S5 upload over the loader's confirm: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S5")
     finally:
         r.b.close()
     print("flash_job_steps:", "FAIL " + " ".join(fails) if fails else "PASS")
