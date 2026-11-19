@@ -37,6 +37,7 @@
 #include "rtl837x_rldp.h"
 #include "phy.h"
 #include "con_ring.h"
+#include "sched.h"
 
 
 extern __code const struct machine machine;
@@ -2134,6 +2135,12 @@ void cmd_parser(void) __banked
 			}
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
+#ifndef SCHEDTEST	/* schedtest has its own health */
+		} else if (cmd_compare(0, "health") && cmd_compare(1, "tasks")) {
+			sched_health_tasks();	/* the scheduler's slots and states */
+		} else if (cmd_compare(0, "health") && cmd_compare(1, "clear")) {
+			sched_health_clear();
+#endif
 #ifdef HEALTH
 		} else if (cmd_compare(0, "health")) {
 			health_show();

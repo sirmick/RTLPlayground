@@ -32,8 +32,9 @@
 #include "syslog.h"
 #include "dns.h"
 #include "con_ring.h"
-#ifdef SCHEDTEST
+#include "sched.h"
 #include "crash.h"
+#ifdef SCHEDTEST
 #include "schedtest/schedtest.h"
 #endif
 #include "ntp.h"
@@ -102,11 +103,7 @@ volatile __xdata uint32_t ticks;
 __xdata uint8_t arp_age_secs;
 extern __xdata struct dhcp_state dhcp_state;
 
-#define STP_CATCH_UP 8
-#define SFP_TICK_STEP 10
-static __xdata struct timer second;
 static __xdata bool loader_confirmed;
-static __xdata struct timer sfp_poll;
 static __xdata struct timer delay_timer;
 
 // Registry data in sfr is in *big endian* order, so sfr_data[0] is the MSB and sfr_data[3] the LSB
@@ -213,9 +210,7 @@ void isr_timer2(void) __interrupt(5)
 {
 	ticks++;
 	tick_pending = 1;
-#ifdef SCHEDTEST
-	SWDT_ISR(ST_ISR_T2_PUSHES);	/* the push count is checked against the .asm */
-#endif
+	SWDT_ISR(ISR_T2_PUSHES);	/* the push count is checked against the .asm */
 
 	// Clear TF2 & EXF2 by software
 	T2CON &= ~0xC0;
@@ -235,11 +230,7 @@ void isr_serial(void) __interrupt(4)
 		// ^R ^R resets at once, even if the main loop is stuck
 		if (c == RESET_CHAR && serial_last_rx == RESET_CHAR) {
 			if (serial_reset_ok)
-#ifdef SCHEDTEST
-				CRASH_FROM_ISR(CRASH_CTRL_R, ST_ISR_SERIAL_PUSHES);
-#else
-				CHIP_RESET_NOW();
-#endif
+				CRASH_FROM_ISR(CRASH_CTRL_R, ISR_SERIAL_PUSHES);
 			serial_reset_pending = 1;
 		}
 		serial_last_rx = c;
@@ -1161,114 +1152,85 @@ void check_links(void)
 }
 
 
-//
-// An idle function that sleeps for 1 tick and does all the house-keeping
-//
-static void handle_tick(void)
+#ifndef SCHEDTEST
+/* The main loop's phases, run by the firmware's tasks (tasks.c, tasks.def)
+ * at the old loop's cadence. Resident, as the loop was. */
+
+/* Once a second: the uptime register, the loader confirm, the button, a
+ * link check (link_irq, as the old loop), the ARP timer */
+void house_second(void)
 {
-	if (timer_expired(&second)) {
-		timer_reset(&second);
-		if (!loader_confirmed && ticks > (uint32_t)LDR_CONFIRM_S * SYS_TICK_HZ) {
-			loader_confirmed = true;
-			loader_confirm();
-		}
-		reg_read_m(RTL837X_REG_SEC_COUNTER);
-		uint8_t v = sfr_data[3];
+	if (!loader_confirmed && ticks > (uint32_t)LDR_CONFIRM_S * SYS_TICK_HZ) {
+		loader_confirmed = true;
+		loader_confirm();
+	}
+	reg_read_m(RTL837X_REG_SEC_COUNTER);
+	uint8_t v = sfr_data[3];
 #ifdef DEBUG
-		print_string("  Tick counter: "); print_long(ticks); write_char('\n');
+	print_string("  Tick counter: "); print_long(ticks); write_char('\n');
 #endif
+	v++;
+	sfr_data[3] = v;
+	if (!v) {
+		v = sfr_data[2];
 		v++;
-		sfr_data[3] = v;
+		sfr_data[2] = v;
 		if (!v) {
-			v = sfr_data[2];
+			v = sfr_data[1];
 			v++;
-			sfr_data[2] = v;
+			sfr_data[1] = v;
 			if (!v) {
-				v = sfr_data[1];
+				v = sfr_data[0];
 				v++;
-				sfr_data[1] = v;
-				if (!v) {
-					v = sfr_data[0];
-					v++;
-					sfr_data[0] = v;
-				}
+				sfr_data[0] = v;
 			}
 		}
-		reg_write_m(RTL837X_REG_SEC_COUNTER);
-		reg_read_m(RTL837X_REG_SEC_COUNTER);
+	}
+	reg_write_m(RTL837X_REG_SEC_COUNTER);
+	reg_read_m(RTL837X_REG_SEC_COUNTER);
 
-		// Check for button presses once a second
-		handle_button();
-		link_irq = 1;
-		// Age the ARP cache: uip_arp_timer() expects a 10 s cadence
-		if (++arp_age_secs >= 10) {
-			arp_age_secs = 0;
-			uip_arp_timer();
-		}
-		if (rldp_enabled)
-			rldp_tick();
+	// Check for button presses once a second
+	handle_button();
+	link_irq = 1;
+	// Age the ARP cache: uip_arp_timer() expects a 10 s cadence
+	if (++arp_age_secs >= 10) {
+		arp_age_secs = 0;
+		uip_arp_timer();
+	}
 
 #ifdef DEBUG
-		print_sfr_data();
-		write_char('\n');
+	print_sfr_data();
+	write_char('\n');
 #endif
-	}
-
-	health_phase(HEALTH_PH_LINK);
-	if (timer_expired(&sfp_poll)) {
-		timer_reset(&sfp_poll);
-		handle_sfp();
-	}
-	health_phase(HEALTH_PH_SFP);
-	handle_tx();
-	health_phase(HEALTH_PH_TX);
-	if (stp_enabled) {
-		uint8_t n = STP_CATCH_UP;
-		while (n-- && timer_expired(&stp_step)) {
-			timer_reset(&stp_step);
-			stp_timers();
-		}
-	}
-	if (lacpEnabled)
-		lacp_timers();
-	health_phase(HEALTH_PH_STP);
-	lldp_tick();
-	health_phase(HEALTH_PH_LLDP);
-	cabletest_tick();
 }
 
-
-void idle(void)
+/* The switch's link interrupt: read and clear it, re-arm EX0, check the links */
+void link_service(void)
 {
-	if (!(link_irq || rx_irq || tick_pending || cmd_available))
-		PCON |= 1;
-	health_loop_start();
-	if (tick_pending) {
-		tick_pending = 0;
-		handle_tick();
-	}
-	if (link_irq) {
-		link_irq = 0;
-		reg_read_m(RTL837X_ISR_INT_PORT_LINK_CHG);
-		link_changed = ((uint16_t)sfr_data[2] << 8) | sfr_data[3];
-		REG_SET(RTL837X_ISR_INT_PORT_LINK_CHG, 0x3ff);
-		EX0 = 1;
-		check_links();
-		if (lacpEnabled)
-			lacp_link_change(link_changed);
-	}
-	health_phase(HEALTH_PH_LINK);
-	if (rx_irq) {
-		rx_irq = 0;
-		handle_rx();
-		REG_SET(RTL837X_NIC_INT_STS, NIC_INT_RXIS);
-		reg_read(RTL837X_REG_NIC_RX_BUFF_DATA);
-		if (SFR_DATA_U16)
-			rx_irq = 1;
-		else
-			EX1 = 1;
-	}
-	health_phase(HEALTH_PH_RX);
+	reg_read_m(RTL837X_ISR_INT_PORT_LINK_CHG);
+	link_changed = ((uint16_t)sfr_data[2] << 8) | sfr_data[3];
+	REG_SET(RTL837X_ISR_INT_PORT_LINK_CHG, 0x3ff);
+	EX0 = 1;
+	check_links();
+	if (lacpEnabled)
+		lacp_link_change(link_changed);
+}
+
+/* RX: up to RX_BUDGET frames; 1 if more are waiting, else EX1 re-armed */
+uint8_t rx_service(void)
+{
+	handle_rx();
+	REG_SET(RTL837X_NIC_INT_STS, NIC_INT_RXIS);
+	reg_read(RTL837X_REG_NIC_RX_BUFF_DATA);
+	if (SFR_DATA_U16)
+		return 1;
+	EX1 = 1;
+	return 0;
+}
+
+/* A complete console line: run it, then the prompt */
+void cmd_service(void)
+{
 	if (cmd_available) {
 		cmd_available = 0;
 		cmd_tokenize();
@@ -1276,8 +1238,8 @@ void idle(void)
 			cmd_parser();
 		print_cmd_prompt();
 	}
-	health_phase(HEALTH_PH_CMD);
 }
+#endif
 
 
 void reset_chip(void)
@@ -1696,9 +1658,8 @@ void main(void)
 void main(void)
 {
 	firmware_init();
+	crash_boot();		/* a recorded reset's line, before the prompt */
 	print_cmd_prompt();
-	timer_set(&second, SYS_TICK_HZ);
-	timer_set(&sfp_poll, SFP_TICK_STEP);
 	idle_ready = 1;
 
 	cmd_editor_init();
@@ -1708,9 +1669,9 @@ void main(void)
 	serial_reset_ok = 1;
 	if (serial_reset_pending)
 		CHIP_RESET_NOW();
-	while (1) {
-		cmd_edit();
-		idle(); // Enter Idle mode until interrupt occurs
-	}
+	/* The tasks (tasks.def) replace the old main loop; the watchdog runs
+	 * from here on */
+	sched_init();
+	sched_run();
 }
 #endif

@@ -17,5 +17,6 @@ bool sfp_get_info(uint8_t sfp) __banked;
 void sfp_apply_quirks(uint8_t sfp) __banked __reentrant;
 void setup_sfp_gpio(void) __banked;
 void handle_sfp(void) __banked;
+void handle_sfp_slot(uint8_t slot) __banked;
 
 #endif
