@@ -700,6 +700,10 @@ uint8_t upload_done(void) __banked
 		upload_settings.bptr = 0;
 		upload_settings.plen = 0;
 	}
+	/* The window back to an MSS, also when a config save or the boot
+	 * count's erase ends (no upload then, or one between its segments
+	 * with its stage empty): harmless, there is one connection and its
+	 * stage has that room. */
 	uip_rcv_wnd = UIP_TCP_MSS;
 	return 0;
 }
