@@ -17,6 +17,7 @@
 #include "timer.h"
 #include "loader/layout.h"
 #include "update_apply.h"
+#include "flash_job.h"
 
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
@@ -506,20 +507,22 @@ bool loader_recovery(void) __banked
 	return loader_boots - 2 > LDR_RECOVERY_BOOTS;
 }
 
-/* Runs from handle_tick(), LDR_CONFIRM_S after the boot: possibly while a
+/* Runs from house_second(), LDR_CONFIRM_S after the boot: possibly while a
  * firmware upload is in flight, whose next page waits in flash_buf between
- * packets. So it reads the mark into a buffer of its own. */
+ * packets. So it reads the mark into a buffer of its own. The erase is the
+ * flash job's (an FL_ERASE step, flash.md); false if the job is busy: the
+ * caller asks again. */
 static __xdata uint8_t bootcnt_mark[2];
 
-void loader_confirm(void) __banked
+bool loader_confirm(void) __banked
 {
 	flash_region.addr = LDR_BOOTCNT;
 	flash_region.len = sizeof(bootcnt_mark);
 	flash_read_bulk(bootcnt_mark);
 	if (bootcnt_mark[0] != 'B' || bootcnt_mark[1] != 'C')
-		return;
-	flash_region.addr = LDR_BOOTCNT;
-	flash_sector_erase();
+		return true;
+	fl_req = FL_BOOTCNT;
+	return flash_job_start();
 }
 
 static bool loader_meta(uint32_t a)

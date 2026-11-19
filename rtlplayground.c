@@ -1085,8 +1085,7 @@ void check_links(void)
 void house_second(void)
 {
 	if (!loader_confirmed && ticks > (uint32_t)LDR_CONFIRM_S * SYS_TICK_HZ) {
-		loader_confirmed = true;
-		loader_confirm();
+		loader_confirmed = loader_confirm();
 	}
 	reg_read_m(RTL837X_REG_SEC_COUNTER);
 	uint8_t v = sfr_data[3];
