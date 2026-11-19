@@ -25,11 +25,14 @@ $(shell mkdir -p $(SCHED_GEN))
 
 # The generated tables (generator.md): the sweep preprocesses the step
 # sources with this build's flags into .def files (and the .i text the
-# generator checks), every make, rewriting only what changed; the generator
+# generator checks), every make, rewriting only what changed; it fails on a
+# STEP/TASK in any other source of the build, and on a step returning what a
+# helper chose; the generator
 # runs when those change, and rewrites only the tables that change, so an
 # edit that moves no task or state recompiles nothing else.
 $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py FORCE
-	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' $(SCHED_STEP_SRCS) > /dev/null
+	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' \
+		--all $(filter %.c,$(SRCS)) -- $(SCHED_STEP_SRCS) > /dev/null
 $(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
 	python3 tools/sched_gen.py -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
 	cat $(SCHED_GEN)/sequence.txt

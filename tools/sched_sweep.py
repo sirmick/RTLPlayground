@@ -2,7 +2,7 @@
 """
 sched_sweep.py - the tasks' .def files from their inline TASK/STEP markers.
 
-  sched_sweep.py -o OUTDIR [--cpp 'CMD'] SOURCE.c...
+  sched_sweep.py -o OUTDIR [--cpp 'CMD'] [--all FILE.c...] -- SOURCE.c...
 
 Each scheduler source declares its tasks where they are written (sched.h,
 doc/sched/generator.md):
@@ -19,6 +19,15 @@ names as its `source`: sched_gen.py checks the step prototypes and finds the
 states each step names there. A file that comes out unchanged keeps its
 timestamp. The .def files are listed on stdout, in the order of the sources.
 
+Two checks on the steps themselves (decision 22):
+- A step's `return` that calls a function (other than STEP_SLEEP/WAIT/ARG,
+  which stay as written in the sweep) lets a helper choose the state. It
+  fails, unless the source line of that return, or the line above it, says
+  so: /* helper returns state: <function> */.
+- --all names every source of the build: one with a STEP or TASK line
+  that isn't a step source is an error (it would compile, and silently not
+  be a step).
+
 A TASK's options: fixed|job, high|medium|once, then count=N, first=<step>,
 entry=<step> (a state no step names, reached only through task_claim from
 elsewhere), in any order. Its tasks take slots in the order of their TASK
@@ -28,6 +37,10 @@ no STEP, a bad option, two TASKs of one name.
 """
 import argparse, os, re, shlex, subprocess, sys
 
+CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+NOT_A_HELPER = {"STEP_SLEEP", "STEP_WAIT", "STEP_ARG", "sizeof"}
+HELPER_NOTE = re.compile(r"/\*\s*helper returns state:\s*(\w+)\s*\*/")
+DECL = re.compile(r"\b(STEP|TASK)\s*\(")
 MARK = re.compile(r'__sched_task__\s*"((?:[^"\\]|\\.)*)"|__sched_step__\s*"(\w*)"\s*"(\w*)"')
 LINE = re.compile(r'^#\s*(?:line\s+)?(\d+)\s+"([^"]*)"')
 NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -48,6 +61,85 @@ def where_of(text, pos, fallback):
         else:
             no += 1
     return f"{path}:{no - 1}"
+
+
+def skip_literal(text, i):
+    """The index past the string or char literal starting at text[i]."""
+    q, i = text[i], i + 1
+    while i < len(text) and text[i] != q:
+        i += 2 if text[i] == "\\" else 1
+    return i + 1
+
+
+def body_of(text, i):
+    """(start, end) of the braces of the function after text[i]."""
+    start = text.index("{", i)
+    depth, j = 0, start
+    while j < len(text):
+        c = text[j]
+        if c in "\"'":
+            j = skip_literal(text, j)
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if not depth:
+                return start, j
+        j += 1
+    raise SweepError("unbalanced braces")
+
+
+def source_line(where, cache):
+    path, _, no = where.rpartition(":")
+    if path not in cache:
+        cache[path] = open(path).read().split("\n") if os.path.isfile(path) else []
+    lines, n = cache[path], int(no)
+    return " ".join(lines[max(n - 2, 0):n])
+
+
+def check_returns(text, src):
+    """No step's return lets a helper choose the state, unless the source says so."""
+    cache = {}
+    for m in MARK.finditer(text):
+        if m.group(1) is not None:
+            continue
+        t, s = m.group(2), m.group(3)
+        start, end = body_of(text, m.end())
+        for r in re.finditer(r"\breturn\b", text[start:end]):
+            i = start + r.end()
+            depth, j = 0, i
+            while j < end and not (text[j] == ";" and depth == 0):
+                if text[j] in "\"'":
+                    j = skip_literal(text, j)
+                    continue
+                depth += {"(": 1, ")": -1}.get(text[j], 0)
+                j += 1
+            for c in CALL.finditer(text[i:j]):
+                fn = c.group(1)
+                if fn in NOT_A_HELPER:
+                    continue
+                where = where_of(text, i, src)
+                note = HELPER_NOTE.search(source_line(where, cache))
+                if not note or note.group(1) != fn:
+                    raise SweepError(f"{where}: STEP({t}, {s}) returns what {fn}() says: a helper chooses the "
+                                     f"state (decision 22). Return the state in the step, or mark the line "
+                                     f"/* helper returns state: {fn} */")
+
+
+def check_all(files, sources):
+    """A STEP or TASK line in a source of the build that isn't swept."""
+    swept = {os.path.normpath(p) for p in sources}
+    for p in files:
+        if os.path.normpath(p) in swept or not os.path.isfile(p):
+            continue
+        text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), open(p).read(), flags=re.S)
+        text = re.sub(r"//[^\n]*", "", text)
+        for no, line in enumerate(text.split("\n"), 1):
+            m = DECL.search(line)
+            if m and not line.lstrip().startswith("#"):
+                raise SweepError(f"{p}:{no}: {m.group(1)}(...) in a source that isn't a step source "
+                                 f"(SCHED_STEP_SRCS): it would not be a step")
 
 
 def sweep(text, src):
@@ -104,6 +196,7 @@ def sweep(text, src):
         for s, where in t["states"]:
             entry = " entry" if t["opts"].get("entry") == s else ""
             lines.append(f"state {name.upper()}_{s.upper()} {name}_{s}{entry}\t# {where}")
+    check_returns(text, src)
     return lines, MARK.sub(" ", text)
 
 
@@ -118,8 +211,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="the .def files from the TASK/STEP markers")
     ap.add_argument("-o", "--outdir", required=True)
     ap.add_argument("--cpp", default="cpp", help="the preprocessor and the build's flags (default cpp)")
+    ap.add_argument("--all", nargs="*", default=[], help="every source of the build: no STEP/TASK outside SOURCE")
     ap.add_argument("sources", nargs="+")
     a = ap.parse_args(argv)
+    try:
+        check_all(a.all, a.sources)
+    except SweepError as e:
+        print(f"sched_sweep: error: {e}", file=sys.stderr)
+        return 1
     os.makedirs(a.outdir, exist_ok=True)
     out, seen = [], {}
     for src in a.sources:

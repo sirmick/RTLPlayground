@@ -55,6 +55,8 @@ static char trace[256];
 static int ntrace;
 static uint8_t claimed;
 
+/* Every step below returns what this says: the test's act[] chooses the
+ * state, so the steps are marked as returning a helper's (sched_sweep.py). */
 static uint8_t step(uint8_t s, char tag)
 {
 	if (ntrace < (int)sizeof(trace) - 1)
@@ -80,15 +82,15 @@ static uint8_t step(uint8_t s, char tag)
 	return STEP_STAY;
 }
 TASK(a, fixed, once)
-STEP(a, step) { return step(S_A_STEP, 'a'); }
+STEP(a, step) { return step(S_A_STEP, 'a'); }	/* helper returns state: step */
 TASK(b, fixed, once, entry=alt)
-STEP(b, step) { return step(S_B_STEP, 'b'); }
-STEP(b, alt)  { return step(S_B_ALT, 'B'); }
+STEP(b, step) { return step(S_B_STEP, 'b'); }	/* helper returns state: step */
+STEP(b, alt)  { return step(S_B_ALT, 'B'); }	/* helper returns state: step */
 TASK(w, fixed, once)
-STEP(w, step) { return step(S_W_STEP, 'w'); }
+STEP(w, step) { return step(S_W_STEP, 'w'); }	/* helper returns state: step */
 TASK(j, job, once, entry=two)
-STEP(j, step) { return step(S_J_STEP, 'j'); }
-STEP(j, two)  { return step(S_J_TWO, 'J'); }
+STEP(j, step) { return step(S_J_STEP, 'j'); }	/* helper returns state: step */
+STEP(j, two)  { return step(S_J_TWO, 'J'); }	/* helper returns state: step */
 
 static void reset_all(uint32_t t)
 {
