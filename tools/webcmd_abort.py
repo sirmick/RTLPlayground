@@ -19,6 +19,11 @@ W2: a /cmd ("hostname aborted") and the client's RST in the same instant,
     is in flash. The order is forced by the sim: the /cmd segment and the RST
     are in the NIC ring together, and the rx task takes up to RX_BUDGET (4)
     frames a step, so the RST is handled before cli's next step.
+W3: a /cmd ("hostname tail3\nip") followed, in a segment of its own in the
+    same instant, by a CRLF; W4: the same with a second request pipelined
+    behind it (GET /ports.json): the posted command runs exactly (hostname
+    set, the reply its output, no parse error) and the extra data is
+    dropped, as today's code drops data while the reply is sent.
 Exit status 1 if any fails.
 """
 import argparse, os, re, struct, sys
@@ -201,6 +206,27 @@ def main(argv):
             print("   console: " + con.replace("\n", "\n            ").rstrip())
         if not (ok_run and ok_quiet and ok_up):
             fails.append("W2")
+
+        # W3, W4
+        for name, extra in (("W3", b"\r\n"),
+                            ("W4", b"GET /ports.json HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n")):
+            want = f"tail{name[1]}"
+            k.b.pending()
+            c = k.open()
+            k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", f"hostname {want}\nip".encode()))
+            k.send(c, extra)			# in the same instant: before cli runs
+            k.run(3000000, lambda: k.done(c))
+            k.close(c)
+            body = c.resp.partition(b"\r\n\r\n")[2]
+            con = k.b.pending()
+            got = hostname()
+            ok = (c.resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"rror" not in body
+                  and b"Unknown" not in body and got == want and "Unknown command" not in con)
+            print(f"{name} /cmd then {'a CRLF' if name == 'W3' else 'a pipelined GET'}: hostname {got!r}, "
+                  f"reply {body[:50]!r}: {'PASS' if ok else 'FAIL'}")
+            if not ok:
+                print(f"   reply: {c.resp[:160]!r}\n   console: {con.strip()[:200]!r}")
+                fails.append(name)
     finally:
         r.b.close()
     print("webcmd_abort: " + ("FAIL " + " ".join(fails) if fails else "PASS"))

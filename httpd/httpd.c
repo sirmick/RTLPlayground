@@ -1107,6 +1107,11 @@ void httpd_appcall(void)
 			}
 			s->fw_reset_pending = 0;
 		}
+	} else if (uip_newdata() && s->tstate == TSTATE_WEBCMD) {
+		/* A trailing CRLF or a pipelined request while the command waits
+		 * in config_buf: dropped, as today's code drops it while the reply
+		 * is sent (TSTATE_TX). Taking it would overwrite the command. */
+		uip_len = 0;
 	} else if (uip_newdata() && s->tstate == TSTATE_POST) {
 		if (config_upload || uip_len <= max_upload) {
 			if (!config_upload)
