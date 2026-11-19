@@ -1244,6 +1244,7 @@ void cmd_service(void)
 
 void reset_chip(void)
 {
+	con_drain();	/* what was printed before the reset goes out first */
 	FLASH_READ_FOR_RESET();	/* see rtl837x_sfr.h */
 	REG_SET(RTL837X_REG_RESET, 1);
 	while(1);

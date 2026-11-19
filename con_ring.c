@@ -62,3 +62,16 @@ void con_putc(uint8_t c)
 	}
 	ES = con_es;
 }
+
+/* Until the TX ring is empty and its last byte is out (the transmitter idle:
+ * the TI after it found nothing more): before a reset that follows a print.
+ * Polls TI itself when the ISR can't run, as con_putc does. */
+void con_drain(void)
+{
+	while (con_tx_busy) {
+		if ((!EA || !ES) && TI) {
+			TI = 0;
+			CON_ISR_TX();
+		}
+	}
+}
