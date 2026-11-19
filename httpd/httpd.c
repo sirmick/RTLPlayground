@@ -114,6 +114,7 @@ void httpd_init(void) __banked
 	webcmd_done = 0;
 	fl_kind = 0;		/* the flash job (flash_job.c) */
 	fl_finished = 0;
+	uip_rcv_wnd = UIP_TCP_MSS;
 	// Start listening to port 80
 	uip_listen(HTONS(80));
 	// Not through uip_conn: it only points at a connection while uIP is
@@ -449,9 +450,19 @@ __xdata struct {
 } upload_settings;
 
 /* The upload is written by the flash job (flash_job.c, net.md item 1):
- * httpd stages a segment in config_buf and stops the connection; the job's
- * steps call upload_prog() and upload_verify(); once it has ended, the
- * connection's poll takes up_state and up_reset and reopens the window. */
+ * httpd stages the body's segments in config_buf as they come, and uIP's
+ * receive window is the room left there; the job's steps call upload_prog()
+ * and upload_verify(), and once the job has written all of the stage it
+ * starts again. config_buf is the stage because uIP has one connection
+ * (the #error at webcmd_queue()): nothing else can reach it meanwhile, and
+ * while the job writes for a connection that has ended a new one is reset.
+ * When the job has ended, the connection's poll takes up_state and up_reset,
+ * and sends a window update if the window was short. */
+#ifndef UP_STAGE_LEN		/* the stage's room; smaller only to test (make UP_STAGE=n) */
+#define UP_STAGE_LEN	CONFIG_UPLOAD_BUF
+#elif UP_STAGE_LEN > CONFIG_UPLOAD_BUF || UP_STAGE_LEN < 1600
+#error "UP_STAGE_LEN: the stage is config_buf; it must hold the upload's part headers and a segment"
+#endif
 #define UP_PAGES	2	/* pages an FL_PROG step parses and programs: ~10 ms */
 #define VF_CHUNK	2048	/* bytes an FL_VERIFY step reads back */
 #define UP_MORE		1	/* upload_fill(): the segment is used up */
@@ -460,7 +471,10 @@ __xdata struct {
 __xdata uint8_t up_state;	/* the connection's tstate once the job has ended */
 __xdata uint8_t up_reset;	/* its fw_reset_pending, if not 0 */
 static __xdata uint8_t up_r, up_erased, up_n;
-static __xdata uint8_t up_dot;	/* a later segment: a '.' when it is written */
+static __xdata uint8_t up_dot;	/* a later segment came: a '.' at the next */
+static __xdata uint8_t up_short;	/* the window advertised was short of an MSS */
+static __xdata uint16_t st_len;	/* bytes in the stage (config_buf) */
+__xdata uint16_t uip_rcv_wnd;	/* uIP's receive window (uip-conf.h) */
 #ifdef LAYOUT_COMPACT
 static __xdata uint8_t up_install;
 #endif
@@ -586,9 +600,13 @@ uint8_t upload_prog(void) __banked
 	for (up_n = UP_PAGES; up_n; up_n--) {
 		if (!up_r)		/* kept across an FL_ERASE */
 			up_r = upload_fill();
-		if (up_r == UP_MORE) {
+		if (up_r == UP_MORE) {	/* all of the stage written: it starts again */
 			up_r = 0;
 			up_state = TSTATE_POST;
+			st_len = 0;
+			upload_settings.bptr = 0;
+			upload_settings.plen = 0;
+			uip_rcv_wnd = UIP_TCP_MSS;
 			return UP_DONE;
 		}
 		/* The staged image spans FIRMWARE_UPLOAD_START to _END (or the
@@ -633,6 +651,7 @@ uint8_t upload_prog(void) __banked
 		write_len = 0;
 		up_r = 0;
 		up_state = TSTATE_NONE;
+		uip_rcv_wnd = UIP_TCP_MSS;
 		if (!verify_crc)
 			return UP_DONE;
 		/* the read-back: of an install image its application, else of
@@ -670,16 +689,46 @@ uint8_t upload_verify(void) __banked
 	return UP_DONE;
 }
 
-/* A segment staged in config_buf: into the flash job, the connection stopped
- * (a zero window) until it has written it. 0 if the job is busy. */
-static uint8_t upload_stage(void)
+/* The stage, config_buf, from st_len on: the job starts if it has ended, or
+ * takes it when it gets there. The window is the room left (at most an
+ * MSS), so what the client may send always fits: nothing in flight is
+ * dropped, and uIP's window never moves left (net.md item 1). 0 if the job
+ * can't start. */
+static uint8_t upload_go(void)
 {
-	fl_req = FL_UPLOAD;
-	if (!flash_job_start())
-		return 0;
-	uip_stop();
+	upload_settings.plen = st_len;
+	if (!fl_kind) {
+		fl_req = FL_UPLOAD;
+		if (!flash_job_start())
+			return 0;
+	}
+	uip_rcv_wnd = st_len < UP_STAGE_LEN ? UP_STAGE_LEN - st_len : 0;
+	if (uip_rcv_wnd >= UIP_TCP_MSS)
+		uip_rcv_wnd = UIP_TCP_MSS;
+	else
+		up_short = 1;
 	uip_conn->appstate.tstate = TSTATE_UPLOAD;
 	return 1;
+}
+
+/* A later segment of the body. 0 if it doesn't fit (sent past the window)
+ * or the job can't start: the answer built. */
+static uint8_t upload_take(void)
+{
+	if (st_len + uip_len > UP_STAGE_LEN) {
+		print_string("Upload sent past the window, aborting.\n");
+		send_bad_request();
+		return 0;
+	}
+	if (up_dot)
+		write_char('.');	/* the segment before: not the last */
+	up_dot = 1;
+	memcpy(config_buf + st_len, uip_appdata, uip_len);
+	st_len += uip_len;
+	if (upload_go())
+		return 1;
+	send_bad_request();
+	return 0;
 }
 
 static void handle_config_fragment(__xdata uint8_t *p)
@@ -718,8 +767,7 @@ static void handle_config_fragment(__xdata uint8_t *p)
 	}
 	up_state = TSTATE_NONE;
 	up_reset = 0;
-	uip_stop();
-	s->tstate = TSTATE_UPLOAD;
+	s->tstate = TSTATE_UPLOAD;	/* the request is whole: more data is dropped */
 }
 
 
@@ -759,10 +807,12 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 	up_r = 0;
 	up_erased = 0;
 	up_dot = 0;
+	up_short = 0;
+	up_state = TSTATE_POST;
 	upload_settings.p = config_buf;
 	upload_settings.bptr = payload_start;
-	upload_settings.plen = pre_acc;
-	if (!upload_stage()) {
+	st_len = pre_acc;
+	if (!upload_go()) {
 		s->tstate = TSTATE_NONE;
 		send_bad_request();
 	}
@@ -1133,6 +1183,7 @@ void httpd_appcall(void)
 	if(uip_connected()) {
 		dbg_string("Connected...\n");
 		s->tstate = TSTATE_NONE;
+		uip_rcv_wnd = UIP_TCP_MSS;
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
 		/* the job still writes from config_buf for a connection that has
 		 * ended: no request may land there until it is done */
@@ -1156,17 +1207,15 @@ void httpd_appcall(void)
 	} else if (uip_poll()) {
 		uip_len = 0;
 		if (s->tstate == TSTATE_UPLOAD && fl_finished) {
-			/* the flash job has written it: the window opens again */
+			/* the flash job has written all of the stage */
 			fl_finished = 0;
 			s->tstate = up_state;
 			if (up_reset)
 				s->fw_reset_pending = up_reset;
-			uip_restart();
-			if (up_state == TSTATE_POST) {
-				if (up_dot)
-					write_char('.');
-			}
-			else if (slen)
+			if (up_short)		/* the window was short: an update */
+				uip_flags |= UIP_NEWDATA;
+			up_short = 0;
+			if (up_state != TSTATE_POST && slen)
 				send_outbuf();
 		} else if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
 			webcmd_done = 0;
@@ -1227,22 +1276,21 @@ void httpd_appcall(void)
 		 * in config_buf: dropped, as today's code drops it while the reply
 		 * is sent (TSTATE_TX). Taking it would overwrite the command. */
 		uip_len = 0;
-	} else if (uip_newdata() && s->tstate == TSTATE_POST) {
+	} else if (uip_newdata() && s->tstate == TSTATE_UPLOAD
+		   && (fl_kind == FL_CONFIG || (!fl_kind && up_state != TSTATE_POST))) {
+		/* a config save being written, or a part that has ended, its
+		 * answer not sent yet: dropped, as behind a queued /cmd */
+		uip_len = 0;
+	} else if (uip_newdata() && (s->tstate == TSTATE_POST || s->tstate == TSTATE_UPLOAD)) {
+		/* into the stage, behind what the job still has to write */
 		if (config_upload || uip_len <= max_upload) {
 			if (!config_upload)
 				max_upload -= uip_len;
-			/* the stage: config_buf, unused once the headers are read */
-			memcpy(config_buf, uip_appdata, uip_len);
-			upload_settings.p = config_buf;
-			upload_settings.bptr = 0;
-			upload_settings.plen = uip_len;
-			up_dot = 1;
-			if (upload_stage()) {
+			if (upload_take()) {
 				uip_len = 0;
 				return;
 			}
 			s->tstate = TSTATE_NONE;
-			send_bad_request();
 			goto do_send;
 		} else {
 			send_bad_request();

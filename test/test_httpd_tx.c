@@ -156,6 +156,7 @@ uint8_t *fl_src;
 uint16_t fl_len;
 uint32_t fl_addr;
 static int job_busy;		/* a scenario's: the job refuses */
+static int job_defer;		/* a scenario's: the job is claimed but runs at job_run() */
 
 static void job_upload(void)
 {
@@ -174,8 +175,13 @@ static void job_upload(void)
 
 uint8_t flash_job_start(void)
 {
-	if (job_busy)
+	if (job_busy || fl_kind)
 		return 0;
+	fl_finished = 0;
+	if (job_defer) {
+		fl_kind = fl_req;
+		return 1;
+	}
 	if (fl_req == FL_UPLOAD) {
 		job_upload();
 	} else if (fl_req == FL_CONFIG) {
@@ -187,6 +193,35 @@ uint8_t flash_job_start(void)
 	}
 	fl_finished = 1;
 	return 1;
+}
+
+/* one step of a deferred job, as the scheduler would run it */
+static uint8_t job_vf;
+
+static void job_step(void)
+{
+	uint8_t r;
+
+	if (!fl_kind)
+		return;
+	r = job_vf ? upload_verify() : upload_prog();
+	if (r == UP_ERASE) {
+		flash_region.addr = fl_addr;
+		flash_sector_erase();
+	} else if (r == UP_VERIFY) {
+		job_vf = 1;
+	} else if (r == UP_DONE) {
+		job_vf = 0;
+		fl_kind = 0;
+		fl_finished = 1;
+	}
+}
+
+/* a deferred job runs now, to its end */
+static void job_run(void)
+{
+	while (fl_kind)
+		job_step();
 }
 static bool loader_update_ok = true;
 static int loader_update_calls;
@@ -283,6 +318,9 @@ static int stream_len;
 static uint8_t last_tx[MSS_FULL + 64];	/* payload of the last server segment */
 static uint16_t srv_wnd;		/* the window the last server segment advertised */
 static uint8_t srv_flags;		/* and its flags */
+static uint32_t srv_ack;		/* and its ACK */
+static int edge_watch, edge_bad;	/* each ACK's right edge (ack + window) checked */
+static uint32_t edge_last;
 static int last_tx_len;
 
 static uint16_t hton16(uint16_t v)
@@ -325,6 +363,14 @@ static int harvest(void)
 		return -1;
 
 	srv_wnd = (uint16_t)(TCPH->wnd[0] << 8 | TCPH->wnd[1]);
+	srv_ack = rd32(TCPH->ackno);
+	if (edge_watch && (TCPH->flags & TCP_ACK)) {
+		uint32_t e = srv_ack + srv_wnd;
+
+		if (edge_last && e < edge_last)
+			edge_bad++;
+		edge_last = e;
+	}
 	srv_flags = TCPH->flags;
 	seq = rd32(TCPH->seqno);
 	/* The SYNACK carries the MSS option, so the header is not always 20 B. */
@@ -1657,18 +1703,24 @@ static void scenario_upload_broken_matches(void)
 	      "upload: repeated partial delimiters are staged as payload");
 }
 
-/* E3: the flash job writes each staged segment while the connection is
- * stopped. Its ACK closes the window; the poll after the job reopens it with
- * a window update. A segment sent into the closed window isn't taken (uIP
- * drops it), and the client's retransmission after the update is. A 5000 B
- * image crosses a sector: both sectors erased, every byte staged in order. */
+/* E3: the stage (config_buf) takes segments behind what the flash job still
+ * has to write, and the window is its room. A client that keeps to it, with
+ * the job held, then run a step at a time between arrivals: every segment
+ * is taken, the window closes as the stage fills, the poll after the job
+ * has written it all sends a window update (no zero-window deadlock), and no
+ * ACK moves the right edge (ack + window) left. A 5000 B image crosses a
+ * sector: both sectors erased, every byte staged in order. A segment past
+ * the window is refused. */
 #define WIN_LEN 5000
 
 static void scenario_upload_window(void)
 {
-	static uint8_t request[WIN_LEN + 512];
+	static uint8_t request[WIN_LEN + 1024];	/* the last case sends 4 MSS */
 	static const char closing[] = "\r\n--upload-boundary--\r\n";
-	int header_len, request_len, off, segs = 0, closed = 0, reopened = 0, dropped = 0;
+	static const char part[] = "--upload-boundary\r\n"
+		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
+		"Content-Type: application/octet-stream\r\n\r\n";
+	int header_len, request_len, off, n, taken = 1, zero = 0, stuck = 0;
 	uint32_t saved_flash_size = flash_size;
 
 	session_start(MSS_FULL);
@@ -1679,9 +1731,6 @@ static void scenario_upload_window(void)
 	flash_written_len = 0;
 	flash_write_bad = 0;
 	erase_n = 0;
-	static const char part[] = "--upload-boundary\r\n"
-		"Content-Disposition: form-data; name=\"file\"; filename=\"firmware.bin\"\r\n"
-		"Content-Type: application/octet-stream\r\n\r\n";
 	header_len = snprintf((char *)request, sizeof(request),
 		"POST /upload HTTP/1.1\r\nHost: sw\r\n"
 		"Cookie: session=0123456789ab\r\n"
@@ -1693,40 +1742,69 @@ static void scenario_upload_window(void)
 	memcpy(request + header_len + WIN_LEN, closing, sizeof(closing) - 1);
 	request_len = header_len + WIN_LEN + sizeof(closing) - 1;
 
-	for (off = 0; off < request_len; ) {
-		int n = request_len - off > MSS_FULL ? MSS_FULL : request_len - off;
-
-		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
-		off += n;
-		segs++;
-		if (srv_wnd == 0 && uip_conn->appstate.tstate == 9)
-			closed++;
-		if (off < request_len && segs == 2) {
-			/* into the closed window: not taken, not acknowledged */
-			size_t before = flash_written_len;
-			uint32_t seq = cli_seq;
-
-			srv_flags = 0;
-			client_send(TCP_ACK | TCP_PSH, (const char *)request + off, 1);
-			cli_seq = seq;
-			if (flash_written_len == before && !srv_flags)
-				dropped = 1;
+	/* The job held, then run a step at a time between arrivals, then to its
+	 * end when the window has closed: every ACK's right edge is checked. */
+	job_defer = 1;
+	job_vf = 0;
+	edge_watch = 1;
+	edge_last = 0;
+	edge_bad = 0;
+	off = 0;
+	srv_wnd = MSS_FULL;
+	for (int k = 0; off < request_len; k++) {
+		n = request_len - off;
+		if (n > MSS_FULL / 2)		/* as Linux: half the largest window seen */
+			n = MSS_FULL / 2;
+		if (n > srv_wnd)
+			n = srv_wnd;
+		if (!n) {			/* closed: the job writes the stage, its poll */
+			zero++;
+			job_run();
+			run_periodic(1);
+			if (!srv_wnd)
+				stuck++;
+			if (!srv_wnd)
+				break;
+			continue;
 		}
-		srv_wnd = 0;
-		run_periodic(1);
-		if (srv_wnd > 0)
-			reopened++;
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, n);
+		if (srv_ack != cli_seq || uip_conn->appstate.tstate != 9)
+			taken = 0;
+		off += n;
+		if (k % 3 == 2) {		/* a step of the job between arrivals */
+			job_step();
+			if (fl_finished && !fl_kind)
+				run_periodic(1);
+		}
 	}
+	job_defer = 0;
+	job_run();
+	run_periodic(1);
+	edge_watch = 0;
+	CHECK(taken && off == request_len, "upload window: every segment inside the window is taken");
+	CHECK(zero > 0 && !stuck, "upload window: the window closes as the stage fills, and the poll after the job reopens it");
+	CHECK(!edge_bad, "upload window: no ACK moves the window's right edge left");
 	drain(MSS_FULL);
-	CHECK(closed == segs, "upload window: every segment's ACK closes the window while the job writes it");
-	CHECK(reopened >= segs - 1, "upload window: the poll after the job reopens it");
-	CHECK(dropped, "upload window: a segment sent into the closed window is dropped, its retransmission taken");
 	CHECK(!flash_write_bad && flash_written_len == WIN_LEN && !memcmp(flash_written, request + header_len, WIN_LEN),
 	      "upload window: the image is staged whole, in order, across the segments");
 	CHECK(erase_n == 2 && erase_log[0] == FIRMWARE_UPLOAD_START && erase_log[1] == FIRMWARE_UPLOAD_START + 0x1000,
 	      "upload window: each sector erased once, before its first page");
 	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12) && strstr((char *)stream, "checksum failed"),
 	      "upload window: the answer goes out once the part is written");
+
+	/* a client that ignores the window: refused, not written past */
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	last_session_use[0] = 0;
+	flash_written_len = 0;
+	job_defer = 1;
+	for (off = 0; off < 4 * MSS_FULL; off += MSS_FULL)
+		client_send(TCP_ACK | TCP_PSH, (const char *)request + off, MSS_FULL);
+	job_defer = 0;
+	fl_kind = 0;
+	drain(MSS_FULL);
+	CHECK(stream_len >= 12 && !memcmp(stream, "HTTP/1.1 400", 12),
+	      "upload window: a segment past the window is refused");
 	flash_size = saved_flash_size;
 }
 
