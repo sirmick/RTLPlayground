@@ -1,0 +1,127 @@
+# D2 evidence: the main loop's phases become fixed tasks (2026-11-19)
+
+Commits: 5bb7c53 D2 (the old-vs-new boundary), 0cef86b tools/sched_tour.py.
+rtlsim: ovs-rtlpg 05424fe. Firmware image tested: built from 5bb7c53's
+sources (named 1921b26-dirty: built before the commit; the one later change,
+cmd_parser's #ifndef SCHEDTEST, doesn't touch the normal build).
+
+## Tasks (tasks.def) and what each runs
+
+| slot | task | freq | state(s) | runs | wakes |
+|---|---|---|---|---|---|
+| 0 | rx | high | RX_IDLE, RX_STEP | rx_service(): handle_rx (RX_BUDGET 4), RXIS, re-arm EX1 | EV_RX; yields while frames wait |
+| 1 | link | high | LINK_READ | link_service(): read/clear LINK_CHG, EX0, check_links, lacp_link_change | EV_LINK (INT0, and house's link_irq once a second, as before) |
+| 2 | loop | high | LOOP_START, LOOP_POLL | rldp_tick() if rldp_enabled | 1 s, task_until(last + 200) |
+| 3 | con | high | CON_EDIT | cmd_edit() + the pending command (today's code, until D3) | EV_CON_RX |
+| 4 | net | once | NET_TICK | handle_tx() (uIP periodic) | every tick |
+| 5 | stp | medium | STP_TICK | the 50 Hz stp_timers() catch-up (<= 8) if stp_enabled | every tick |
+| 6 | lacp | medium | LACP_TICK | lacp_timers() if lacpEnabled | every tick |
+| 7 | lldp | once | LLDP_TICK | lldp_tick(), cabletest_tick() | every tick |
+| 8, 9 | sfp0, sfp1 | once | SFP_START, SFP_POLL | handle_sfp_slot(i); ends on a board without slot i | 50 ms, task_until(last + 10) |
+| 10 | house | once | HOUSE_START, HOUSE_SEC | house_second(): loader confirm, uptime register, button, link_irq, ARP timer | 1 s, task_until(last + 200) |
+
+Where D2 keeps today's behaviour rather than modules.md's later shape (for
+old-vs-new): stp, lacp, lldp run each tick into their own timers (not 20 ms
+/ 1 s wakes); the link check's 1 s fallback is house's link_irq, as today;
+rx has no 1 s fallback (today has none); loop doesn't wake on EV_LINKCHG
+(nothing posts it yet); no igmp task (IGMP has no timers: rx-driven); the
+cable test's tick rides in lldp's step until it becomes a job (E); sfp is
+today's per-slot pin poll (the #770 states are E2). The `reset` command
+still calls reset_chip() (no record); ^R ^R and the watchdog record. HEALTH
+builds' per-phase counters (health_phase) are no longer fed: the scheduler's
+per-state numbers (`health tasks`) replace them.
+
+## Host tests
+make -C test -j8 quick: QUICK TESTS PASSED (20).
+
+## make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact (gate-8x.json): PASS
+  internal RAM: data 105 (105), overlay 8 (8), bits 3 (3): delta 0; DSEG none new
+  stack 131 B
+  common area: ends 0x3e02 (D1 0x3a9a): +872 B, 382 B left: sched.c, crash.c,
+    sched_gen.c (the tables), the ISR's watchdog and crash paths; the loop's
+    code stayed resident as the four service functions
+  banks: 47644 / 47598 / 47140 B used (D1 45585 / 46202 / 46198): +4397 B
+    (sched_bank, sched_health, the names, tasks.c), 1508 / 1554 / 2012 free
+
+## Boot transcript (A0's driver, the D2 image alone)
+python3 boot8x.py <the -boot image> version health ip stat: boot to prompt
+2.2 s; vs doc/sched/baseline/boot-8x.txt, version and build date masked:
+identical (bar the baseline's trailing newline).
+
+## ^R ^R
+Power-on boot prints no reset line. ^R ^R after the prompt: through the
+loader, "Last reset: ^R ^R in con/CON_EDIT after 0 ms, PC 0xf28a bank 3,
+states - - - - RX_IDLE LINK_READ LOOP_START CON_EDIT" (the first pass), and
+`health tasks` shows it.
+
+## tools/sched_tour.py (boot, ovs-rtlpg's CLI_TOUR, login, WEB_PAGES, health tasks)
+    health tasks
+    slot	task	state	mask	wake
+    0	rx	RX_STEP	0x8001	+31768
+    1	link	LINK_READ	0x8002	+32590
+    2	loop	LOOP_POLL	0x0000	+23
+    3	con	CON_EDIT	0x0000	now
+    4	net	NET_TICK	0x0000	+1
+    5	stp	STP_TICK	0x0000	+1
+    6	lacp	LACP_TICK	0x0000	+1
+    7	lldp	LLDP_TICK	0x0000	+1
+    8	sfp0	SFP_POLL	0x0000	+3
+    9	sfp1	free
+    10	house	HOUSE_SEC	0x0000	+23
+    11	job0	free
+    12	job1	free
+    13	job2	free
+    14	job3	free
+    15	job4	free
+    16	job5	free
+    17	job6	free
+    18	job7	free
+    19	job8	free
+    20	job9	free
+    21	job10	free
+    22	job11	free
+    23	job12	free
+    state	runs	max
+    RX_IDLE	0	0us
+    RX_STEP	972	34209us
+    LINK_READ	3756	36us
+    LOOP_START	0	0us
+    LOOP_POLL	313	12us
+    CON_EDIT	456	42192us
+    NET_TICK	62495	202us
+    STP_TICK	62509	18us
+    LACP_TICK	62507	18us
+    LLDP_TICK	62492	24us
+    SFP_START	0	0us
+    SFP_POLL	6260	42us
+    HOUSE_START	0	0us
+    HOUSE_SEC	313	49us
+    passes 0x0001eab8 idle 0x0000f511 longest 72ms
+    overruns 5 last RX_STEP, con rx overruns 0
+    
+    > 
+    slots listed: 24
+    steps over 20 ms (but FL_ERASE): [('RX_STEP', '34209us'), ('CON_EDIT', '42192us')]
+    stack: SP at the prompt 0x89, painted 0x91..0xff, high-water 0xb6, headroom 73 B
+    FAIL steps over 20 ms: [('RX_STEP', '34209us'), ('CON_EDIT', '42192us')]
+    sched_tour: FAIL
+
+Every slot listed (sfp1 free: the 8x has one SFP slot). Stack headroom 73 B
+(>= 30). Steps over 20 ms, per command and page (health clear before each):
+    cli 'stat': CON_EDIT 40147us
+    cli 'vlan show': CON_EDIT 30856us
+    cli 'lacp show': CON_EDIT 42167us
+    cli 'storm': CON_EDIT 28486us
+    cli 'history': CON_EDIT 80ms
+    web /vlanlist.json: RX_STEP 34209us
+These are today's code running in one step, as in the old loop: a dump
+prints faster than the 115200 console drains (write_char waits on the full
+TX ring), and vlanlist walks the VLAN table. The book moves them in D3/E1/E4;
+QA thread d2-long-steps asks how D2's criterion should read.
+
+## schedtest
+All four variants rebuilt (base, overrun: best fit; schedtest doesn't link
+tasks.c, and cmd_parser's health tasks/clear are #ifndef SCHEDTEST, which
+kept it at D1's packing: base 52 / 554 / 13 B free, common 632 B left).
+make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS="--twice ..."
+  exit 0, 92 s: sim_tests 0 failures, deterministic; sim_neg 0 failures, deterministic.
