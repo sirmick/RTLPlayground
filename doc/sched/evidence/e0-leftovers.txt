@@ -1,0 +1,100 @@
+# E0 evidence: M2's leftovers from DB (2026-11-19)
+
+Commit: 56ba466 (the crash record's image identity, tools/crash_foreign.py).
+rtlsim: ovs-rtlpg 307c230 (build/rtlsim up to date, make -q). Images: 56ba466
+built clean in a worktree (tools/docker-make.sh MACHINE=<M> LAYOUT=compact
+LOADER=1; schedtest the same with `schedtest [ST_NEG=...]`).
+
+## 1. The crash record carries the image's identity
+
+DB (silicon.md): the first boot of db07bb9 printed a record schedtest had
+left at 0xbfe0 (a web update keeps xdata), decoded with the firmware's slot
+and state names.
+- sched.mk writes $(BUILDDIR)/sched/build_id.h each build (FORCE + cmp, as
+  version.h): CRASH_IMAGE_HI/_LO, 32 bits of a SHA-1 over the version
+  (v0.1.0-<hash>[-dirty]), the build date and the build directory (machine,
+  layout, schedtest and its ST_NEG variants). So another commit, another
+  board, schedtest, or another build of the same commit is another image.
+- crash.h: bytes 24-27 of the record (from the spare 7) hold it; the record
+  stays 32 B and the sum still covers bytes 0-29. crash_die() stores it.
+  crash_boot() takes a record only if magic, sum and identity hold;
+  another image's valid record is dropped (magic cleared), unprinted, and
+  crash_prior stays 0. watchdog.md has the layout.
+- Only crash.c and sched_health.c include build_id.h, so only they are
+  rebuilt for a new identity (they were already rebuilt by version.h's date).
+- Host (test_sched): the record carries the identity; a valid record with
+  another identity is ignored, nothing printed or kept, and dropped.
+- Sim (tools/crash_foreign.py FW MAP SCHEDTEST): schedtest is reset with
+  ^R ^R; its record is put in the firmware's xdata and the firmware is
+  chip-reset (xdata kept, as on silicon):
+| firmware | C1: schedtest's record | C2: the firmware's own (^R ^R) |
+|---|---|---|
+| f621897 (before E0) | FAIL: "Last reset: ^R ^R in rx/RX_IDLE after 0 ms, PC 0x3161 bank 1, states LOOP_POLL ? LOOP_POLL ..." (DB's misreport) | PASS |
+| 56ba466 | PASS: no "Last reset:", crash_last empty | PASS: "Last reset: ^R ^R in con/CON_EDIT after 0 ms, PC 0xf101 bank 2, ..." |
+  The schedtest image is from the same commit (56ba466), so the identity
+  tells apart two images built from the same source.
+
+## 2. The console RX overrun count in an always-built command
+
+Nothing to change: `health tasks` (cmd_parser.c, built in every firmware but
+schedtest, not under HEALTH) has printed it since the scheduler core
+(da6b8bc), on its overruns line. On the default 8x build (56ba466, no
+HEALTH), in rtlsim:
+    overruns 1 last HOUSE_SEC, con rx overruns 0
+DB's note ("health is only in HEALTH=1 builds, so the default firmware
+can't show the count") is about bare `health`; `health tasks` shows it.
+
+## 3. HOUSE_SEC ~41 ms on silicon: loader_confirm()'s sector erase
+
+Reproduced in rtlsim (8x, 56ba466; the control mode times the flash as the
+chip does, a sector erase ~45 ms):
+    at 15.1 s, before loader_confirm: HOUSE_SEC 4 runs, max 36us; overruns 0
+    loader_confirm at 17.114 s; flash_sector_erase at 17.114422 s
+    at 19.1 s, after: HOUSE_SEC 8 runs, max 40000us; overruns 2 last HOUSE_SEC
+(/tmp/c/v4/house3.py: health tasks before and after, run_until_pc on
+_loader_confirm and _flash_sector_erase.) Silicon's 40.8 ms is the same.
+- The call: house_second() -> loader_confirm() (boot.c) once,
+  LDR_CONFIRM_S (15 s) after boot: the loader writes its boot-count mark
+  "BC" at LDR_BOOTCNT (0x3a000) on every boot through it, and the app
+  confirms a good boot by erasing that sector, a ~45 ms
+  flash_sector_erase() that waits in the common area. So every boot
+  through the loader has one ~40 ms HOUSE_SEC step, ~15 s in.
+- Not cheap to fix here: an erase can't be shortened, and banked code may
+  not run while the flash is busy (flash.md's rule), so the wait can't be
+  spread over steps without the flash-busy mode flash.md declines. The book
+  allows an erase as the one exception to the 20 ms limit, but as the flash
+  job's FL_ERASE step.
+- Owner: E3 (the flash job, sched5): loader_confirm becomes a flash-job
+  request (erase LDR_BOOTCNT, no program), so the 40 ms is an FL_ERASE step
+  and HOUSE_SEC stays short. Until then sched_tour's long-step check and
+  EH's long-step checks will see HOUSE_SEC 40 ms once a boot.
+- The earlier sim tours didn't show it (HOUSE_SEC 49 us) because the tour
+  clears the stats (`health clear`) before each command, after the erase.
+
+## Checks (56ba466)
+
+  make gate MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+    internal RAM: data 105 B (baseline 105), overlay 8 B (8), bits 3 B (3)
+    DSEG symbols: 54, none new; stack 131 B (at least 120)
+    common area: ends 0x3d6f (gate 0x3f80, 529 B left; crash_die's stores +20 B)
+    banks 1368 / 1336 / 1251 B free
+    PASS
+  SWGT024: PASS, the same internal RAM and common area; banks 1349/1329/1236 free.
+  xdata 17973 B on both boards (unchanged: the identity is in the record).
+  make -C test quick (in the worktree): QUICK TESTS PASSED, 20 tests;
+    test_sched 115 checks, 0 failed.
+  make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS=--twice OVS=~/src/ovs-rtlpg
+    sim_tests: 0 failures, deterministic; sim_neg: 0 failures, deterministic; exit 0
+    (sim_neg's record decoder names the identity field now; the layout it
+    reads is the same.)
+  old-vs-new, ovs-rtlpg 307c230 (a clean `git archive` export with the same
+  build/rtlsim: the ovs-rtlpg working tree has sim's uncommitted EH changes),
+  --expect d3-oldnew.expect: 14 of 14 on the 8x and on SWGT024 (SWGT's
+  `upload reg 06f4` line matched nothing, as at 9462bdf).
+
+## Open
+
+- The test Makefile doesn't rebuild test_sched when crash.h changes
+  (test/build/test_sched kept a stale struct until removed by hand): its
+  rule lists the .c files, not the headers.
+- HOUSE_SEC's erase: E3 (above).
