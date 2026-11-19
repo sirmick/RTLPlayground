@@ -712,13 +712,15 @@ uint8_t upload_done(void) __banked
 static uint8_t upload_go(void)
 {
 	upload_settings.plen = st_len;
-	up_active = 1;
-	timer_set(&postbody_timer, UPLOAD_TIMEOUT);
 	if (!fl_kind) {
 		fl_req = FL_UPLOAD;
-		if (!flash_job_start())
+		if (!flash_job_start()) {
+			up_active = 0;	/* refused: other jobs may run again */
 			return 0;
+		}
 	}
+	up_active = 1;
+	timer_set(&postbody_timer, UPLOAD_TIMEOUT);
 	uip_rcv_wnd = st_len < UP_STAGE_LEN ? UP_STAGE_LEN - st_len : 0;
 	if (uip_rcv_wnd >= UIP_TCP_MSS)
 		uip_rcv_wnd = UIP_TCP_MSS;
@@ -734,6 +736,7 @@ static uint8_t upload_take(void)
 {
 	if (st_len + uip_len > UP_STAGE_LEN) {
 		print_string("Upload sent past the window, aborting.\n");
+		up_active = 0;
 		send_bad_request();
 		return 0;
 	}
