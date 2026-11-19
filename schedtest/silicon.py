@@ -468,7 +468,7 @@ class Silicon:
         self.info(f"busy {busy.hex()}")
         self.info(f"idle {idle.hex()}")
         self.check(idle == want, f"the idle row is bank {bank}'s code from the image", want.hex() if idle != want else None)
-        self.info(f"{len(diff)} of 64 differ during the erase (rtlsim returns 0xff)"
+        self.info(f"{len(diff)} of 64 differ during the erase (rtlsim returns 0x00, as the 8x did)"
                   + "".join(f"\n           {a:#06x}: busy {b:02x} idle {c:02x}" for a, b, c in diff))
 
     def t_report(self):
