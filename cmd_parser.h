@@ -46,9 +46,13 @@ void execute_config(void) __banked;
 #define CLI_JOB_STAT	4
 #define CLI_JOB_LACP	5
 #define CLI_JOB_STPFDB	6
+#define CLI_JOB_EEE	7
 /* A job with side effects runs to its end even if nobody reads it */
-#define CLI_JOB_KEEPS(j)	((j) == CLI_JOB_STPFDB)
+#define CLI_JOB_KEEPS(j)	((j) >= CLI_JOB_STPFDB)
 extern __xdata uint8_t cli_job;
+/* set by a job's line: its next one at least CLI_JOB_SLEEP_MS later */
+#define CLI_JOB_SLEEP_MS	10
+extern __xdata uint8_t cli_job_sleep;
 void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after its last */
 void cmd_finish(void) __banked;		/* the job to its end, at once */
 void exec_begin(__xdata uint8_t *p) __banked;	/* several commands, from p */

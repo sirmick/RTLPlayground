@@ -702,8 +702,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			print_string("100m\n");
 			// Enable EEE advertisement for 100BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_100M);
-			if (!(speed & EEE_NORESET))
-				phy_reset(port);
 			return;
 	}
 	if (speed & EEE_1000) {
@@ -712,8 +710,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, 0);
 			// Enable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
-			if (!(speed & EEE_NORESET))
-				phy_reset(port);
 			return;
 	}
 	if (speed & EEE_2G5) {
@@ -722,8 +718,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, PHY_EEE_BIT_2G5);
-			if (!(speed & EEE_NORESET))
-				phy_reset(port);
 			return;
 	}
 	if (speed & EEE_5G) {
@@ -732,8 +726,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, PHY_EEE_BIT_2G5 | PHY_EEE_BIT_5G);
-			if (!(speed & EEE_NORESET))
-				phy_reset(port);
 			return;
 	}
 	if (speed & EEE_10G) {
@@ -742,8 +734,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_10G | PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, PHY_EEE_BIT_2G5 | PHY_EEE_BIT_5G);
-			if (!(speed & EEE_NORESET))
-				phy_reset(port);
 			return;
 	}
 
@@ -761,7 +751,6 @@ void port_eee_disable(uint8_t port) __banked
 	phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, 0);
 	// Disable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
 	phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, 0);
-	phy_reset(port);
 }
 
 
@@ -850,30 +839,50 @@ void port_eee_status(uint8_t port) __banked
 }
 
 
+/*
+ * eee on|off [port] as the cli's job (E4): a port a step, its PHY reset in
+ * two, the cli asleep for CLI_JOB_SLEEP_MS between (was delay(2) a port,
+ * up to 80 ms in one step). eee_port..eee_last; eee_speed 0: off.
+ */
+__xdata uint8_t eee_port, eee_last, eee_all, eee_speed;
+static __xdata uint8_t eee_phy;
+
+/* all ports' speed: the 10G ports' own; 2.5G for the others' 10G */
+static uint8_t eee_port_speed(uint8_t i)
+{
+	if ((i == 3 && machine.n_10g) || (i == 8 && machine.n_10g == 2) || !(eee_speed & EEE_10G))
+		return eee_speed;
+	return (eee_speed & EEE_NORESET) | EEE_2G5;
+}
+
+/* at boot (EEE_NORESET): no PHY reset */
 void port_eee_enable_all(__xdata uint8_t speed) __banked
 {
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if (i == 3 && machine.n_10g) {
-			port_eee_enable(i, speed);
-		} else if (i == 8 && machine.n_10g == 2) {
-			port_eee_enable(i, speed);
-		} else {
-			if (speed & EEE_10G)
-				port_eee_enable(i, (speed & EEE_NORESET) | EEE_2G5);
-			else
-				port_eee_enable(i, speed);
+	eee_speed = speed;
+	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++)
+		port_eee_enable(i, eee_port_speed(i));
+}
+
+
+/* the eee job's next step: a port's settings, its PHY off; or its PHY on */
+uint8_t port_eee_line(void) __banked
+{
+	if (eee_phy) {			/* its 10 ms are over */
+		eee_phy = 0;
+		phy_on(eee_port);
+	} else {
+		if (!eee_speed)
+			port_eee_disable(eee_port);
+		else
+			port_eee_enable(eee_port, eee_all ? eee_port_speed(eee_port) : eee_speed);
+		if (!machine.is_sfp[eee_port] && phy_off(eee_port)) {
+			eee_phy = 1;
+			cli_job_sleep = 1;
+			return 1;
 		}
 	}
+	return eee_port++ != eee_last;
 }
-
-
-void port_eee_disable_all(void) __banked
-{
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		port_eee_disable(i);
-	}
-}
-
 
 void port_eee_status_all(void) __banked
 {

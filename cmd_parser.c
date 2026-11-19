@@ -98,6 +98,7 @@ __xdata uint8_t cmd_words_b[N_WORDS];
 __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
 __xdata uint16_t cmd_history_ptr;
 __xdata uint8_t cli_job;		/* a dump in progress (cli_job_more) */
+__xdata uint8_t cli_job_sleep;
 static void cmd_save(void);
 static __xdata uint16_t hist_p;		/* the history job's cursor */
 static __xdata uint8_t hist_begun, hist_n, hist_c;
@@ -1606,16 +1607,17 @@ void parse_eee(void)
 			return;
 		}
 	}
+	eee_all = port < 0;
+	eee_port = MACHINE_MIN_PORT;
+	eee_last = MACHINE_MAX_PORT;
+	if (!eee_all)
+		eee_port = eee_last = port;
 	if (cmd_compare(1, "on")) {
-		if (port >= 0)
-			port_eee_enable(port, speed);
-		else
-			port_eee_enable_all(speed);
+		eee_speed = speed;
+		cli_job = CLI_JOB_EEE;
 	} else if (cmd_compare(1, "off")) {
-		if (port >= 0)
-			port_eee_disable(port);
-		else
-			port_eee_disable_all();
+		eee_speed = 0;
+		cli_job = CLI_JOB_EEE;
 	} else if (cmd_compare(1, "status")) {
 		if (port >= 0)
 			port_eee_status(port);
@@ -2422,6 +2424,9 @@ void cli_job_more(void) __banked
 	case CLI_JOB_STPFDB:
 		job_more = stp_fdb_line();
 		break;
+	case CLI_JOB_EEE:
+		job_more = port_eee_line();
+		break;
 #ifndef SCHEDTEST
 	case CLI_JOB_HEALTH:
 		job_more = sched_health_line();
@@ -2436,8 +2441,13 @@ void cli_job_more(void) __banked
 
 void cmd_finish(void) __banked
 {
-	while (cli_job)
+	while (cli_job) {
 		cli_job_more();
+		if (cli_job_sleep) {
+			cli_job_sleep = 0;
+			delay(2);
+		}
+	}
 }
 
 /*

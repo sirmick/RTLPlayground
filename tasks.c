@@ -202,6 +202,10 @@ STEP(cli, more)
 	cli_job_more();
 	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_OFF();
+	if (cli_job_sleep) {			/* the eee job's PHY reset (E4) */
+		cli_job_sleep = 0;
+		return STEP_SLEEP(S_CLI_MORE, CLI_JOB_SLEEP_MS);
+	}
 	if (cli_job)
 		return S_CLI_MORE;		/* its next line at the next step */
 	if (cli_src == CLI_WEB && !cli_dropped && cli_web_more)
