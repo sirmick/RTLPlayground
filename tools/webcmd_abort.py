@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""
+webcmd_abort.py - the web command buffer (config_buf) in rtlsim, on one
+normal firmware image, through ovs-rtlpg's old-vs-new bench (tests/oldnew).
+
+  tools/webcmd_abort.py BOOT_IMAGE [--ovs DIR] [--board FILE]
+
+Since D3 a /cmd waits in config_buf for the cli task, and its reply goes out
+on a later poll (net.md item 2). uIP has one connection, so no other request
+can reach config_buf meanwhile, unless the /cmd's own connection ends first.
+
+W1: a config upload (POST /config, staged in config_buf), a /cmd, another
+    upload, another /cmd: each /cmd's reply is its commands' output and each
+    upload is in flash.
+W2: a /cmd ("hostname aborted") and the client's RST in the same instant,
+    then a POST /config (its body "hostname cfgbody ...") on a new
+    connection: the cancelled command runs nothing, the upload's body isn't
+    run as commands (hostname unchanged, the console silent), and the upload
+    is in flash. The order is forced by the sim: the /cmd segment and the RST
+    are in the NIC ring together, and the rx task takes up to RX_BUDGET (4)
+    frames a step, so the RST is handled before cli's next step.
+Exit status 1 if any fails.
+"""
+import argparse, os, re, struct, sys
+
+CMD = "ip\nversion"
+CONFIG_START = 0x7f000
+
+
+def cmd_ok(resp):
+    body = resp.partition(b"\r\n\r\n")[2]
+    return resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"Software version:" in body
+
+
+class Conn:
+    """One client TCP connection from the bench's Host; several at once.
+    acking False holds our ACKs back (the switch's data stays unacknowledged)."""
+
+    def __init__(self, host, sport):
+        self.h, self.sport = host, sport
+        self.iss = 1000 + (sport - 40000) * 100000
+        self.snd, self.rcv, self.una = self.iss + 1, None, self.iss
+        self.resp, self.fin, self.rst, self.acking = b"", False, False, True
+        self.unacked = False
+
+    def tcp(self, flags, data=b"", mss=False):
+        self.h._tcp(self.sport, self.iss if flags & 0x02 else self.snd, self.rcv or 0, flags, data, mss)
+
+    def take(self, s):
+        seq, ack, off, fl = struct.unpack("!IIBB", s[4:14])
+        data = s[(off >> 4) * 4:]
+        if fl & 0x04:
+            self.rst = True
+        if fl & 0x10:
+            self.una = max(self.una, ack)
+        if fl & 0x02 and self.rcv is None:
+            self.rcv = seq + 1
+            return
+        if self.rcv is None:
+            return
+        if seq == self.rcv and data:
+            self.resp += data
+            self.rcv += len(data)
+        if seq + len(data) == self.rcv and fl & 0x01 and not self.fin:
+            self.fin = True
+            self.rcv += 1
+        if data or fl & 0x01:
+            self.unacked = True
+        self.ack()
+
+    def ack(self):
+        if self.unacked and self.acking:
+            self.unacked = False
+            self.tcp(0x10)
+
+
+class Client:
+    def __init__(self, run):
+        self.r, self.b, self.h = run, run.b, run.host
+        self.conns = {}
+
+    def pump(self):
+        for s in self.h.rx:
+            c = self.conns.get(struct.unpack("!H", s[2:4])[0])
+            if c:
+                c.take(s)
+        self.h.rx = []
+
+    def run(self, us, stop=None):
+        def st():
+            self.pump()
+            return stop() if stop else False
+        return self.b.advance(self.b.now + us, st)
+
+    def open(self):
+        if not self.h.arp(self.b.now + 1000000):
+            raise RuntimeError("no ARP reply")
+        sport, self.h.next_port = self.h.next_port, self.h.next_port + 1
+        c = self.conns[sport] = Conn(self.h, sport)
+        c.tcp(0x02, mss=True)
+        self.run(1000000, lambda: c.rcv is not None)
+        c.tcp(0x10)
+        return c
+
+    def send(self, c, req):
+        """The request in one segment (all of ours fit one)."""
+        c.tcp(0x18, req)
+        c.snd += len(req)
+
+    def done(self, *cs):
+        return all(c.fin or c.rst for c in cs)
+
+    def close(self, *cs):
+        for c in cs:
+            if c.fin:
+                c.tcp(0x11)
+                c.snd += 1
+        self.run(200000)
+
+
+def post(cookie, path, ctype, body):
+    return (f"POST {path} HTTP/1.1\r\nCookie: session=".encode() + cookie +
+            f"\r\nContent-Type: {ctype}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("image")
+    ap.add_argument("--ovs", default=os.path.expanduser("~/src/ovs-rtlpg"))
+    ap.add_argument("--board", default=None)
+    a = ap.parse_args(argv)
+    board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
+    sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
+    sys.path.insert(0, os.path.join(a.ovs, "tests"))
+    from oldnew import Run
+
+    fails = []
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None)
+    try:
+        r.boot()
+        r.login()
+        r._now()
+        k = Client(r)
+
+        def upload(text):
+            bnd = "----wcmd0123456789"
+            body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
+                    f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
+            c = k.open()
+            k.send(c, post(r.cookie, "/config", f"multipart/form-data; boundary={bnd}", body))
+            k.run(5000000, lambda: k.done(c))
+            k.close(c)
+            saved = r.b.flash(CONFIG_START, 512).split(b"\0")[0].split(b"\xff")[0].decode("latin-1")
+            return c.resp.startswith(b"HTTP/1.1 200") and saved.startswith(text.rstrip("\n")), saved
+
+        def webcmd(text):
+            c = k.open()
+            k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", text.encode()))
+            k.run(3000000, lambda: k.done(c))
+            k.close(c)
+            return c.resp
+
+        def hostname():
+            k.b.pending()
+            before, out = k.b.console("hostname", k.b.now + 3000000)
+            return (out or "").replace("hostname", "", 1).replace("\n> ", "").strip()
+
+        F = r.F
+        cfg = lambda name: f"hostname {name}\nvlan 10 {F[1]} {F[2]}t\npvid {F[1]} 10\n"
+
+        # W1
+        res = []
+        for i in (1, 2):
+            ok_up, saved = upload(cfg(f"up{i}"))
+            resp = webcmd(CMD)
+            res.append((ok_up, cmd_ok(resp)))
+            print(f"   upload {i}: {'PASS' if ok_up else 'FAIL'} (flash {saved[:40]!r}); "
+                  f"/cmd: {'PASS' if cmd_ok(resp) else 'FAIL'} {resp.partition(b'\r\n\r\n')[2][:60]!r}")
+        ok = all(a and b for a, b in res)
+        print(f"W1 /cmd with a config upload before and after: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("W1")
+
+        # W2
+        name0 = hostname()
+        k.b.pending()
+        c = k.open()
+        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"hostname aborted"))
+        c.tcp(0x04)				# RST, in the same instant
+        k.run(1000000)
+        ok_up, saved = upload(cfg("cfgbody"))
+        k.run(1000000)
+        con = k.b.pending()
+        name1 = hostname()
+        ok_run = name1 == name0
+        ok_quiet = "Unknown command" not in con and "Error" not in con and "aborted" not in con
+        print(f"W2 /cmd aborted before cli runs, then POST /config: hostname {name0!r} -> {name1!r} "
+              f"{'PASS' if ok_run else 'FAIL'}, console {'PASS' if ok_quiet else 'FAIL'}, "
+              f"upload {'PASS' if ok_up else 'FAIL'}")
+        if con.strip():
+            print("   console: " + con.replace("\n", "\n            ").rstrip())
+        if not (ok_run and ok_quiet and ok_up):
+            fails.append("W2")
+    finally:
+        r.b.close()
+    print("webcmd_abort: " + ("FAIL " + " ".join(fails) if fails else "PASS"))
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

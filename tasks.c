@@ -101,7 +101,6 @@ void cli_idle(void) __banked
 		STEP_NEXT(S_CLI_RUN);
 	}
 	if (webcmd_pending) {
-		webcmd_pending = 0;
 		cli_src = CLI_WEB;
 		STEP_NEXT(S_CLI_RUN);
 	}
@@ -112,7 +111,12 @@ void cli_run(void) __banked
 {
 	task_next(S_CLI_PROMPT);
 	if (cli_src == CLI_WEB) {
-		httpd_webcmd_run();
+		/* still queued: its connection may have ended since CLI_IDLE,
+		 * and then config_buf may hold the next request */
+		if (webcmd_pending) {
+			webcmd_pending = 0;
+			httpd_webcmd_run();
+		}
 		return;
 	}
 	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
@@ -128,7 +132,8 @@ void cli_run(void) __banked
 void cli_prompt(void) __banked
 {
 	if (cli_src == CLI_WEB) {
-		event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
+		if (webcmd_done)		/* not if its connection ended */
+			event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
 	} else {
 		print_cmd_prompt();
 		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */
