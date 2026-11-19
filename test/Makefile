@@ -11,9 +11,7 @@
 CC       = gcc
 SRCROOT  = ..
 # -include shim first so __xdata/__code/__banked vanish before any firmware header.
-# -MMD -MP: each binary also depends on the headers it includes (build/*.d),
-# so a firmware header change rebuilds the tests that use it.
-CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas -MMD -MP \
+CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas \
            -Wno-pointer-sign \
            -DRTLP_HOST_TEST \
            -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -22,6 +20,11 @@ ifeq ($(findstring clang,$(shell $(CC) --version 2>/dev/null)),)
 CFLAGS  += -Wno-builtin-declaration-mismatch
 endif
 LDFLAGS  = -fsanitize=address,undefined
+# After each link: the binary depends on every header its sources include
+# (build/<test>.d), so a firmware header change rebuilds the tests that use
+# it. Not -MMD: with several sources in one gcc call, the last source's
+# dependencies overwrite the others' (a stale crash.h struct passed quietly).
+DEPEND   = $(CC) $(CFLAGS) -MM -MP -MT $@ $(filter %.c,$^) > $@.d
 
 BUILDDIR = build
 
@@ -62,32 +65,40 @@ $(BUILDDIR):
 # cmd_editor.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_cmd_editor: test_cmd_editor.c support.c $(SRCROOT)/cmd_editor.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # rtl837x_port.c and httpd/page_impl.c are compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_port_tables: test_port_tables.c $(TABLE_ENV) hw_mock.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 $(BUILDDIR)/test_tick_gate: test_tick_gate.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # timer.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_timer: test_timer.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # Exercise the production RX ring reader; only the hardware DMA edge is mocked.
 # Discard unused TX functions so this RX fixture needs no TX register mocks.
 $(BUILDDIR)/test_nic_rx: test_nic_rx.c $(SRCROOT)/rtl837x_nic.c $(SRCROOT)/rtl837x_nic.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections $(filter %.c,$^) -o $@ $(LDFLAGS) -Wl,--gc-sections
+	$(DEPEND)
 
 $(BUILDDIR)/test_page_json: test_page_json.c $(TABLE_ENV) hw_mock.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # rtl837x_lacp.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_lacp: test_lacp.c $(SRCROOT)/rtl837x_lacp.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 $(BUILDDIR)/test_loader: test_loader.c $(SRCROOT)/loader/loader.c $(SRCROOT)/loader/net.c $(SRCROOT)/loader/loader.h $(SRCROOT)/loader/layout.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) test_loader.c -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # httpd/httpd.c and uip/uip.c are compiled UNMODIFIED from the firmware tree;
 # this test carries the environment below them itself.
@@ -96,6 +107,7 @@ $(BUILDDIR)/test_loader: test_loader.c $(SRCROOT)/loader/loader.c $(SRCROOT)/loa
 $(BUILDDIR)/test_httpd_tx_compact: CFLAGS += -DLAYOUT_COMPACT
 $(BUILDDIR)/test_httpd_tx $(BUILDDIR)/test_httpd_tx_compact: test_httpd_tx.c $(SRCROOT)/httpd/httpd.c $(SRCROOT)/uip/uip.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 # the login sessions httpd.c calls into
 $(BUILDDIR)/test_httpd_tx $(BUILDDIR)/test_httpd_tx_compact: $(SRCROOT)/sessions.c
 
@@ -104,10 +116,12 @@ $(BUILDDIR)/test_cpu_vlan_restricted: CFLAGS += -DMACHINE_MAX_PORT=7
 $(BUILDDIR)/test_cpu_vlan_8372: CFLAGS += -DMACHINE_MAX_PORT=7 -DMACHINE_MIN_PORT=3 -DRTLP_TEST_IS8373=0
 $(BUILDDIR)/test_cpu_vlan_full $(BUILDDIR)/test_cpu_vlan_restricted $(BUILDDIR)/test_cpu_vlan_8372: test_cpu_vlan.c $(TABLE_ENV) | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # The flash device model (pure, no firmware symbols) and its self-test.
 $(BUILDDIR)/test_flash_dev: test_flash_dev.c flash_dev.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # The real boot-time apply (update_apply.c, UNMODIFIED from the firmware tree)
 # run against the modelled flash device - built for both flash layouts.
@@ -117,10 +131,13 @@ $(BUILDDIR)/test_update_apply_compact: CFLAGS += -DLAYOUT_COMPACT
 $(BUILDDIR)/test_config_migrate $(BUILDDIR)/test_mdata_migrate: CFLAGS += -DLAYOUT_COMPACT
 $(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 $(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 $(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # The scheduler table generator (tools/sched_gen.py) is tested in Python; its
 # "binary" is a wrapper, so it runs and logs like the others.
@@ -145,6 +162,7 @@ $(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
 $(BUILDDIR)/test_sched: test_sched.c $(SRCROOT)/sched.c $(SRCROOT)/sched_bank.c $(SRCROOT)/con_ring.c $(SRCROOT)/crash.c $(SRCROOT)/sched_health.c \
 		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c | $(SCHED_T)/sched_gen.h
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
 
 # Each test runs into its own log, so `make -j` runs them side by side; the
 # logs are printed in order once all are done. A test's .ok marker is only
