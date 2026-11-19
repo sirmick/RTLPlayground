@@ -14,6 +14,7 @@
 #include "sched.h"
 #include "con_ring.h"
 #include "crash.h"
+#include "build_id.h"
 #include "sched_core/tasks.h"
 
 static int tests_run, tests_failed;
@@ -425,6 +426,7 @@ static void test_crash(void)
 	CHECK(crash_rec.tick == (uint16_t)(7000 + SWDT_TICKS) && crash_rec.step_tick == 7000, "record: ticks");
 	CHECK(crash_rec.ring[(crash_rec.ring_idx - 1) & 7] == S_W_STEP && crash_rec.ring[(crash_rec.ring_idx - 2) & 7] == S_B_STEP, "record: the last states, newest last");
 	CHECK(sizeof(struct crash_rec) == 32, "the record is 32 bytes");
+	CHECK(crash_rec.image_lo == CRASH_IMAGE_LO && crash_rec.image_hi == CRASH_IMAGE_HI, "record: this image's identity");
 
 	out_reset();
 	crash_boot();
@@ -442,6 +444,18 @@ static void test_crash(void)
 	out_reset();
 	crash_boot();
 	CHECK(out_len == 0 && crash_prior == 0, "a bad sum is garbage");
+
+	/* E0: a valid record another image left (schedtest's, an older build's) */
+	crash_prior = 0;
+	if (!setjmp(reset_jmp))
+		crash_reset(CRASH_RESET_CMD);
+	crash_rec.image_hi ^= 0x0100;		/* another build */
+	crash_rec.sum = crash_sum();		/* still a valid record */
+	out_reset();
+	crash_boot();
+	CHECK(out_len == 0 && crash_prior == 0 && crash_last.magic != CRASH_MAGIC,
+	      "a record from another image: ignored, nothing printed or kept");
+	CHECK(crash_rec.magic != CRASH_MAGIC, "and dropped");
 }
 
 static void test_health(void)
