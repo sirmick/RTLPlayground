@@ -1,4 +1,4 @@
-# old-vs-new (ovs-rtlpg tests/oldnew, 09d712e) for D1 against fork main
+# old-vs-new (ovs-rtlpg tests/oldnew, bb0ee65) for D1 against fork main
 # b635486: the differences D1 is meant to make. write_char no longer waits
 # ~87 us a byte on the wire, so the code after a print runs before its bytes
 # are out: the new firmware is a little ahead of the old at the scenarios'
