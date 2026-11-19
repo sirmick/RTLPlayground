@@ -1,0 +1,114 @@
+# E5 evidence: the explicit step API, decisions 22-24 (2026-11-19)
+
+Branch feat/sched (worktree ~/src/rtlpg-sched), off 12f9b15 (the E1+E3
+merge, accepted). Three commits, each proven on its own:
+  133886d E5: tasks and steps declared inline, swept into the .def files  (24)
+  436af40 E5: a step returns the state it wants next                       (22)
+  38ec166 E5: hardware-only 8-bit events; one task wakes another directly  (23)
+  (then this file)
+Each was built clean in a worktree (git worktree add --detach /tmp/e5/wt-<H>
+<H>; tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1), 8x
+(KEEPLINK_KP_9000_9XHPML_V1_2) and SWGT024 (SWGT024_V2_0_UNMANAGED).
+rtlsim: ovs-rtlpg 83efa85, from its git archive (/tmp/e3/ovs-83e).
+
+## 1. Inline TASK/STEP, the sweep (133886d)
+
+TASK(name, fixed|job, high|medium|once [, count=N] [, first=step]
+[, entry=step]) and STEP(task, step) = `task_step(void) __banked`, state
+S_TASK_STEP (sched.h). tools/sched_sweep.py runs the build's preprocessor
+and flags with -DSCHED_SWEEP over the step sources (sched.mk
+SCHED_STEP_SRCS: tasks.c flash_job.c; schedtest's st_main.c st_b1-3.c),
+where the markers survive as strings, and writes <builddir>/sched/<src>.def
++ <src>.i; sched_gen.py runs on them with all its checks, its errors naming
+the C line. tasks.def, schedtest/*.def, test/sched_core/tasks.def go;
+sequence.def stays. The generator's own fixtures (test/sched_gen/) stay in
+the .def format: they test the generator's input, not the build's tasks.
+
+Tables and image identical. The firmware's states and slots keep their
+names: lldp_tick() (rtl837x_lldp.c) became lldp_service(), so STEP(lldp,
+tick) is lldp_tick; the flash job's task is `fl` (FL_*). Proof, both
+boards, a baseline worktree at 12f9b15 and the new tree, both with
+  tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1 GIT_VERSION=0000000 SOURCE_DATE_EPOCH=1795000000
+  cmp -l <base>/output/<M>-compact/rtlplayground[-boot]-v0.1.0-0000000-<M>-compact.bin <new>/...
+-> 0 bytes differ (boot and application images, 8x and SWGT024). The
+generated sched_gen.h/.c/_names.c differ from the hand-written .def's only
+in the header line and the renamed step functions (diff after mapping
+rx_wait->rx_idle, rx_task->rx_step, ..., fl_end->fl_done).
+Incremental: a second make compiles nothing (12f9b15's recompiles
+html_data/httpd/page_impl every time); touching tasks.c recompiles only
+tasks.rel (the sweep and the generator rewrite only what changed).
+schedtest: state names <task>_STEP for its single-state dummies, tasks
+printer/slow are pr/sl (PR_*, SL_* and sl_hang unchanged); tables identical
+up to those names. bad_spec is now a state no step reaches.
+
+## 2. Steps return their state (436af40)
+
+uint8_t steps: return S_X / STEP_STAY (0xff) / STEP_END (0) /
+STEP_SLEEP|WAIT|ARG(s, ...) as expressions. sched_pass() stores the
+result; task_next() and task_end() are gone. Swept, STEP_SLEEP/WAIT/ARG stay
+literal so the generator sees their states; it finds `return S_X` and
+wants uint8_t steps. The step sources compile with --Werror: a step that
+can fall off its end is SDCC's warning 59, now an error. Proof: schedtest
+ST_NEG=fall_through (schedtest/fall_through.c), sim_neg's fall_through:
+"make fails (2)", "schedtest/fall_through.c:12: error 59: function
+'ft_step' must return value".
+
+## 3. Hardware-only events, direct wakes (38ec166)
+
+mask 8 bits: HW_RX, HW_LINK, HW_CON_RX, HW_CON_TX, EV_FOREVER (bit 7).
+task_wake(slot) (resident): due now, a forever wait's mark cleared. con and
+rx wake cli; the flash job's end sets fl_poll and wakes net (net still does
+its per-tick work only when due). EV_CMD_DONE, EV_UPLOAD, EV_CFG,
+EV_LINKCHG had no reader: gone (QA e5-linkchg, the orchestrator: no link
+wakes without a consumer). `grep -rn event_post` over the sources: none
+(only history in evidence/ and modules.md's note).
+
+## Sizes (gate, clean builds; free bytes per bank 1/2/3, common area left)
+
+| commit | 8x banks | 8x total | SWGT024 banks | SWGT total | common | xdata used |
+|---|---|---|---|---|---|---|
+| 12f9b15 (merge) | 473/20/404 | 897 | 1/390/464 | 855 | 296 | 19989 |
+| 133886d | 473/20/404 | 897 | 1/390/464 | 855 | 296 | 19989 |
+| 436af40 | 473/431/67 | 971 | 412/465/52 | 929 | 306 | 19989 |
+| 38ec166 | 538/109/485 | 1132 | 103/519/468 | 1090 | 284 | 19962 |
+
+E5: +235 B of bank space on each board; the common area -12 B (task_wake,
+22 B resident, against 10 B the returns saved); xdata -27 B (the task table
+168 -> 144, sched_posted, sched_ev 8 bits). IRAM: data 98 B (baseline
+105), overlay 8, bits 3, stack 138 B: unchanged at every commit, gate PASS.
+schedtest (8x), packed best fit in all four variants; 38ec166: base
+412/203/12, hang 20/203/430, overrun 412/0/201, bad_flash 448/203/12
+(common 533-535 B left).
+
+## Results at each commit (/tmp/e5/verify.sh <H>; logs /tmp/e5/v-<H>/)
+
+At 133886d, 436af40 and 38ec166:
+- gate PASS both boards; make -C test quick: QUICK TESTS PASSED (test_loader
+  skipped); make -C test/stp: all scenarios passed.
+- make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+  SIM_ARGS=--twice: sim_tests 0 failures, sim_neg 0 failures (bad_spec and,
+  from 436af40, fall_through included), both deterministic.
+- old-vs-new (tests/oldnew/oldnew.py --checks --known
+  tests/oldnew/known-failures --expect doc/sched/evidence/e1e3-oldnew.expect,
+  from the 83efa85 export): 17 of 17 on both boards, no new expect line.
+  Expect lines unused: as at the merge (8x: upload/stp_upload reg 06f4;
+  SWGT024: web 010, config rldp/stp, loop rldp); at 38ec166 the 8x's
+  `loop frames * rldp` is unused too: its loop scenario now equals the
+  old firmware's (one RLDP probe fewer than the merge, 99 -> 98).
+At 38ec166 also (/tmp/e5/tools.sh 38ec166), both boards:
+- console_bugs PASS; webcmd_abort W1-W6 PASS; lldp_overrun PASS;
+  flash_job_steps S0-S6 PASS (S6 7.06 s, 53 zero windows, a dropped window
+  update repaired by a probe; the merge: 7.09 s, the same counts).
+- cli_steps --web: cli states over 5000 us: 0.
+- curl_upload (alone): C1 config 200, C2 bad image 400 3.89 s, C3 image
+  200 5.10 / 5.11 s, no zero windows (the merge: 3.92 / 5.14 s): the
+  flash job's end now wakes net directly, at its next position.
+
+## Open
+
+- The step sources compile with --Werror: a new warning in tasks.c,
+  flash_job.c or schedtest's st_*.c fails the build, by design.
+- schedtest's overrun variant fills bank 2 exactly (0 B free): packed best
+  fit still places it.
+- Bench/silicon: schedtest's slot and state names changed (sl/SL_HANG,
+  <task>_STEP), silicon.py updated, not run (the bench is not mine).
