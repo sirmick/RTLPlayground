@@ -5,24 +5,33 @@
 | Ring | Size | Filled by | Drained by |
 |---|---|---|---|
 | RX | 256 B (from 16), 8-bit indexes that wrap by themselves (decision 19) | `isr_serial` | the `con` task |
-| TX | 128 B (one long line plus room) | `write_char` | `isr_serial` on TI |
+| TX | 2 KiB, 16-bit indexes (decision 21; 128 B until E1) | `write_char` | `isr_serial` on TI |
 
 - **RX:** the ISR stores, or counts an overrun when the ring is full (shown
   in `health`). `EV_CON_RX` is sampled (the ring not empty), so no new ISR
   bit. `^R ^R` stays in the ISR, as today, and records the reset
   (chapter 11).
 - The ISR side is two macros, `CON_ISR_RX(c)` and `CON_ISR_TX()`
-  (`con_ring.h`); with them the serial ISR pushes 7 bytes instead of 6 (8-bit
-  RX indexes: the 256 B ring wraps by itself).
+  (`con_ring.h`); with them the serial ISR pushes 8 bytes (6 before D1; 7
+  with the 128 B TX ring's 8-bit indexes; the RX ring's 8-bit indexes wrap
+  by themselves).
+- **TX indexes are 16 bits (E1),** so neither side may read the other's
+  half-written: the head is written only by `con_putc()`, with ES off, and
+  read by the ISR; the tail is written only by the ISR (and by `con_putc()`
+  starting an idle transmitter, ES off), and read in `con_putc()` and
+  `con_tx_room()` with ES off. Host tests: wrap and full at 16 bits
+  (`test_sched`).
 - **TX:** `write_char` puts a byte in the ring and, if the transmitter is
   idle, starts it. **If the ring is full it busy-waits** for room, as today's
-  code waits for every byte. Old code that prints a lot keeps working at
-  today's cost; converting it is an improvement, not a requirement.
+  code waits for every byte. With 2 KiB a command's output (the tour's
+  largest unchunked one, `vlan show`, 465 B) goes in without waiting: its
+  step costs its work, not the UART (87 µs a byte at 115200).
 - `cmd_capture` (web commands) and syslog stay in `write_char`, unchanged.
 - **Before a reset:** `reset_chip()` first waits with `con_drain()` until the
   TX ring is empty and its last byte is out, so what was printed just
   before (`reset`, `factory-reset`, the button, "Resetting to apply
-  update") isn't lost. The `^R ^R` and watchdog paths reset at once.
+  update") isn't lost. The `^R ^R` and watchdog paths reset at once. With
+  2 KiB queued the drain can take ~180 ms (2048 × 87 µs).
 - `EV_CON_TX` = "room for a full line" (≥ 100 free bytes), sampled at
   pass start.
 
@@ -88,35 +97,44 @@ buffer is **`config_buf`**, the buffer httpd already holds each request in
 
 ## Chunked output
 
-A long command is states owned by the cli task, with its cursor (the "next
-param") in the slot's `arg`:
+Measured (E1, `tools/cli_steps.py`, 2026-11-19): with the 128 B ring every
+command that printed more than ~185 B was over 5 ms, `version` included,
+and almost all of it was the wait for the UART. Without the wait (a test
+build whose `con_putc` dropped bytes) only `history` (8.9 ms) and
+`health tasks` (9.2 ms) were over, and `l2` grows 3.1 ms a MAC. So the TX
+ring grew to 2 KiB (decision 21), and only dumps that grow with a table, or
+whose work passes 5 ms, are chunked: a cli **job**.
 
-```c
-void l2_first(void) __banked
-{
-	STEP_ARG(S_L2_MORE, 0);              /* from the first entry */
-}
-
-void l2_more(void) __banked
-{
-	if (!con_tx_room_line())
-		STEP_WAIT(S_L2_MORE, EV_CON_TX, SCHED_FOREVER);
-	if (!l2_print_entry(task_arg()))     /* one line */
-		STEP_NEXT(S_CLI_PROMPT);
-	task_set_arg(task_arg() + 1);       /* stays in L2_MORE; yields */
-}
-```
-
-- One line per step: a line is the natural unit, and the TX ring holds one.
-- First conversions, by measured cost: `l2` (3.1 ms/entry), `stat` (~60 ms),
-  `vlan` (~55 ms), `stp` status (~48 ms), `port N show` (~25 ms), `history`
-  (≤ 180 ms), `health`.
-- Web commands run the same states. The output goes to the capture buffer
-  instead of waiting for TX room. The console mirror still waits, so a web
-  command's speed stays bounded by the UART, as today.
+- `cli_job` (cmd_parser.c) names the job; its cursor is the module's own
+  xdata (the job's line function reads it). The command prints its header
+  and sets `cli_job`; `cli_job_more()` prints the next line and clears
+  `cli_job` after the last.
+- Jobs: `l2` (a table search a step), `stat` and `lacp show` (a port, a
+  LAG a step: their work plus a web reply's capture passed 5 ms), `history`
+  (a line, at most 64 bytes looked at), `health tasks` (a slot, a state, the
+  totals), and `stp off`'s BPDU entries (a walk of the 4094 VLAN entries,
+  256 a step; it prints nothing). evidence/e1-chunked-cli.txt.
+- The cli task: `CLI_RUN` parses; with a job set it goes to `CLI_MORE`,
+  which waits for `EV_CON_TX` (room for a line), runs one line, and stays
+  until the job ends, then `CLI_PROMPT`.
+- Any other caller (the config at boot, `execute_commands()`) runs the job
+  to its end at once (`cmd_finish()`), as before.
+- `history`'s own line goes into the history after its job, as before
+  (`cmd_save()` deferred), so the dump never shows itself.
+- A command starts only with 1 KiB of the ring free (`CLI_ROOM`), more than
+  any unchunked command prints, so a paste or a multi-line `/cmd` doesn't
+  wait on the UART mid-step.
+- **Web commands** run a line a step (`CLI_NEXT`: `exec_line()`, the old
+  `execute_commands()` split at each command; the same stop rules), and a
+  job's lines in `CLI_MORE`, into the capture buffer. The capture is on only
+  during cli's own steps (`WEBCMD_CAPTURE_ON/OFF`): another task's print
+  between two steps isn't in the reply. The reply is completed in
+  `CLI_PROMPT` (`httpd_webcmd_end`). If the connection ends meanwhile, cli
+  drops the command at its next step (`webcmd_busy`).
 
 ## Rules
 
-- No step prints more than one line without checking room.
+- A job prints one line a step, after checking room for it; a command
+  starts with `CLI_ROOM` free.
 - The prompt is only printed by `CLI_PROMPT`, so asynchronous messages (link
   changes, STP events) can't land in the middle of a command's output.
