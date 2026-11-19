@@ -104,11 +104,13 @@ struct uip_eth_addr uip_ethaddr = { .addr = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55
 void     flash_read_bulk(uint8_t *dst) { (void)dst; }
 const char *get_flash_size_str(void) { return "2M"; }
 uint8_t has_loader;	/* update_apply.c sets it at boot */
+uint8_t cli_job_sleep;	/* cmd_parser.c: the eee job asks the cli to sleep */
 uint8_t  sfp_read_reg(uint8_t slot, uint8_t reg) { (void)slot; (void)reg; return 0; }
 bool     gpio_pin_test(uint8_t pin) { (void)pin; return false; }
 void     phy_read(uint8_t phy_id, uint8_t dev_id, uint16_t reg) { (void)phy_id; (void)dev_id; (void)reg; }
 void     phy_write(uint8_t phy_id, uint8_t dev_id, uint16_t reg, uint16_t val) { (void)phy_id; (void)dev_id; (void)reg; (void)val; }
-void     phy_reset(uint8_t port) { (void)port; }
+uint8_t  phy_off(uint8_t port) { (void)port; return 1; }
+void     phy_on(uint8_t port) { (void)port; }
 uint8_t  stp_port_role(uint8_t port) { (void)port; return 0; }
 uint8_t  stp_port_state(uint8_t port) { (void)port; return 3; }
 
