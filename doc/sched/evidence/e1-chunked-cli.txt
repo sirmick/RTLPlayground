@@ -123,6 +123,43 @@ and only what grows with a table, or whose work passes 5 ms, is a job.
 8. D3's tools on bcdf246, both boards: console_bugs PASS, webcmd_abort PASS
    (W1-W4), lldp_overrun PASS.
 
+## Review fixes (reviewer2), 0ce4fc8
+
+1. A /cmd spans cli steps, but webcmd_busy was one flag: if its connection
+   ended and a new /cmd was queued before cli's next step, busy was 1 again
+   and cli went on with the old command's lines out of config_buf (which
+   held the new body), then answered the new client with the old reply.
+   Now webcmd_queue bumps webcmd_gen; cli records it in CLI_RUN and at
+   every step goes on only while webcmd_busy and the generation is its own
+   (cli_web_live). Otherwise the command is dropped (no more lines, no
+   reply) and cli serves the queued one next.
+2. The drop zeroed cli_job, which also stopped stp off's VLAN walk, so a web
+   `stp off`/`stp bpdu` whose connection ended left BPDU entries and the
+   PVID pass unwritten. Now only a pure dump stops; a job with side effects
+   (CLI_JOB_KEEPS: stp off's) runs to its end, its output not captured.
+3. Every exit of the cli steps is a STEP_ macro (no task_next() up front
+   with bare returns); cli_web_drop() only cleans up.
+   execute_commands() had no caller left: removed (the test stub too).
+Tests, tools/webcmd_abort.py (the sim is stopped on cli's own functions,
+run-until on the image's map):
+   W5: a web "l2\nhostname oldbody" over 300 MACs, its connection reset
+       just after a cli_more step with the TX ring full (cli waits ~4 ms for
+       room), and at once a new /cmd "hostname w5\nip": its own reply,
+       hostname w5, the old body's second line never runs.
+   W6: STP off, "stp bpdu filter", VLAN 4000; a web "stp bpdu flood" reset
+       at the walk's first step: the L2 table equals a whole one's.
+| image | W1-W4 | W5 | W6 |
+|---|---|---|---|
+| bcdf246 | PASS | FAIL: hostname unchanged, the new client got the old l2 reply ("400 NO") | FAIL: VLAN 4000's entry left CPU-only (2fa00180 .. 80, not efa00180 .. ff) |
+| 0ce4fc8 (8x, SWGT024) | PASS | PASS | PASS |
+E1's checks again at 0ce4fc8, both boards: gate PASS (IRAM 105/8/3; 8x
+common 330 B left, banks 969 / 898 / 890 free; xdata 19931 B); host quick
+20 PASS; test/stp all scenarios; schedtest-sim --twice 0 failures both
+layers; cli_steps.py --web 0 cli steps over 5 ms; every scenario with cli
+states at 5 ms (34 runs): none over; old-vs-new 17 of 17 with
+e1-oldnew.expect and checks (NEW: 8 PASS, 0 FAIL); console_bugs,
+webcmd_abort (W1-W6), lldp_overrun PASS.
+
 ## Open
 
 - known-failures: drop `* long step CLI_RUN` (sim).
