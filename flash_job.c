@@ -40,7 +40,7 @@ static __xdata uint16_t fl_n;
 
 uint8_t flash_job_start(void) __banked
 {
-	if (fl_kind)
+	if (fl_kind || (fl_req != FL_UPLOAD && up_active))
 		return 0;
 	if (task_claim(fl_req == FL_UPLOAD ? S_FL_PROG : S_FL_ERASE) == SCHED_NONE)
 		return 0;
@@ -106,8 +106,12 @@ void fl_verify(void) __banked
 
 void fl_end(void) __banked
 {
-	if (fl_kind == FL_UPLOAD && upload_done())
-		STEP_NEXT(S_FL_PROG);	/* more came meanwhile */
+	/* more of an upload came meanwhile, while this or another kind of job
+	 * ran (upload_go() leaves a running job to take it): FL_PROG */
+	if (fl_kind < FL_FACTORY && upload_done()) {
+		fl_kind = FL_UPLOAD;
+		STEP_NEXT(S_FL_PROG);
+	}
 	if (fl_kind >= FL_FACTORY) {
 		print_string("Written default config to flash\n");
 		if (fl_kind == FL_FACTORY_BTN)

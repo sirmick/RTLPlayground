@@ -76,6 +76,7 @@ __xdata uint16_t short_parsed;
 #define POSTBODY_CMD	1
 #define POSTBODY_LOGIN	2
 #define POSTBODY_TIMEOUT (5 * SYS_TICK_HZ)
+#define UPLOAD_TIMEOUT (30 * SYS_TICK_HZ)	/* an upload's body, from segment to segment */
 __xdata uint8_t postbody_endpoint;
 __xdata struct timer postbody_timer;
 
@@ -114,6 +115,7 @@ void httpd_init(void) __banked
 	webcmd_done = 0;
 	fl_kind = 0;		/* the flash job (flash_job.c) */
 	fl_finished = 0;
+	up_active = 0;
 	uip_rcv_wnd = UIP_TCP_MSS;
 	// Start listening to port 80
 	uip_listen(HTONS(80));
@@ -474,6 +476,7 @@ static __xdata uint8_t up_r, up_erased, up_n;
 static __xdata uint8_t up_dot;	/* a later segment came: a '.' at the next */
 static __xdata uint8_t up_short;	/* the window advertised was short of an MSS */
 static __xdata uint16_t st_len;	/* bytes in the stage (config_buf) */
+__xdata uint8_t up_active;	/* an upload's body is coming: other jobs wait (flash_job.h) */
 __xdata uint16_t uip_rcv_wnd;	/* uIP's receive window (uip-conf.h) */
 #ifdef LAYOUT_COMPACT
 static __xdata uint8_t up_install;
@@ -690,7 +693,7 @@ uint8_t upload_verify(void) __banked
  * starts again, in the same step as the job ends, and the window opens. */
 uint8_t upload_done(void) __banked
 {
-	if (up_state == TSTATE_POST) {
+	if (up_state == TSTATE_POST && up_active) {
 		if (upload_settings.bptr < upload_settings.plen)
 			return 1;
 		st_len = 0;
@@ -709,6 +712,8 @@ uint8_t upload_done(void) __banked
 static uint8_t upload_go(void)
 {
 	upload_settings.plen = st_len;
+	up_active = 1;
+	timer_set(&postbody_timer, UPLOAD_TIMEOUT);
 	if (!fl_kind) {
 		fl_req = FL_UPLOAD;
 		if (!flash_job_start())
@@ -1197,6 +1202,7 @@ void httpd_appcall(void)
 		s->tstate = TSTATE_NONE;
 		uip_rcv_wnd = UIP_TCP_MSS;
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
+		up_active = 0;
 		/* the job still writes from config_buf for a connection that has
 		 * ended: no request may land there until it is done */
 		if (fl_kind) {
@@ -1207,6 +1213,7 @@ void httpd_appcall(void)
 		dbg_string("Connection closed\n");
 		if (s->tstate == TSTATE_WEBCMD)
 			webcmd_pending = webcmd_done = 0;	/* nobody waits for it */
+		up_active = 0;
 		s->tstate = TSTATE_CLOSED;
 		if (s->fw_reset_pending && uip_acked())
 			reset_chip();
@@ -1214,6 +1221,7 @@ void httpd_appcall(void)
 		dbg_string("Connection aborted\n");
 		if (s->tstate == TSTATE_WEBCMD)
 			webcmd_pending = webcmd_done = 0;
+		up_active = 0;
 		uip_close();
 		s->tstate = TSTATE_CLOSED;
 	} else if (uip_poll()) {
@@ -1227,6 +1235,8 @@ void httpd_appcall(void)
 			if (up_short)		/* the window was short: an update */
 				uip_flags |= UIP_NEWDATA;
 			up_short = 0;
+			if (up_state != TSTATE_POST)
+				up_active = 0;	/* the part has ended */
 			if (up_state != TSTATE_POST && slen)
 				send_outbuf();
 		} else if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
@@ -1236,10 +1246,14 @@ void httpd_appcall(void)
 			dbg_string("Closing because everything has been transmitted\n");
 			uip_close();
 			s->tstate = TSTATE_CLOSED;
-		} else if ((s->tstate == TSTATE_POSTBODY || s->tstate == TSTATE_HEADER)
+		} else if ((s->tstate == TSTATE_POSTBODY || s->tstate == TSTATE_HEADER
+			    || s->tstate == TSTATE_POST)
 			   && timer_expired(&postbody_timer)) {
+			/* POST: an upload whose body stopped coming (UPLOAD_TIMEOUT),
+			 * which would hold other flash jobs off for ever */
 			dbg_string("HTTP request never completed\n");
 			uip_abort();
+			up_active = 0;
 			s->tstate = TSTATE_CLOSED;
 		}
 	} else if (uip_acked() && s->tstate == TSTATE_TX) {
