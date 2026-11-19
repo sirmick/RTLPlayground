@@ -14,7 +14,7 @@ unless every measured number is the same. Exit status 1 on any failure.
 Times: the firmware logs (tick, fine units) pairs; a fine unit is 64 Timer
 2 counts, 6.144 us, and sched_fine_per_tick (813) make a tick.
 """
-import argparse, glob, json, math, os, re, shutil, struct, subprocess, sys, tempfile, time
+import argparse, concurrent.futures, contextlib, glob, io, json, math, os, re, shutil, struct, subprocess, sys, tempfile, time
 
 FINE_US = 6.144
 PROMPT = r"\n> $"
@@ -443,10 +443,10 @@ class Suite:
     TESTS = ["wake", "waiter", "isr_ev", "hot", "jobs", "printer", "flash", "slow", "paste", "invariants", "stack",
              "horizon", "soak", "probes"]
 
-    def run(self, only=None):
-        for name in self.TESTS:
-            if only and name not in only:
-                continue
+    def run_one(self, name):
+        """one test in a fresh simulator; what it printed"""
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
             self.current = name
             t0 = time.time()
             print(f"  {name}")
@@ -462,11 +462,31 @@ class Suite:
                 self.failures.append(f"{name}: {e}")
                 print(f"    FAIL {e}")
             print(f"    ({time.time() - t0:.1f} s wall)")
-        if not only:
+        return buf.getvalue()
+
+    def start(self, pool, only=None):
+        """submit the tests, each a process of its own (they share nothing
+        but the coverage directory)"""
+        self.only = only
+        return [(n, pool.submit(_one, self.build, self.ovs, self.covdir, n))
+                for n in self.TESTS if not only or n in only]
+
+    def collect(self, futures):
+        """in the tests' order: their output, results, failures; then coverage"""
+        for name, f in futures:
+            out, res, fails = f.result()
+            sys.stdout.write(out)
+            self.results.update(res)
+            self.failures += fails
+        if not self.only:
             self.current = "coverage"
             print("  coverage")
             self.coverage()
         return self.results
+
+    def run(self, only=None, jobs=1):
+        with concurrent.futures.ProcessPoolExecutor(jobs) as pool:
+            return self.collect(self.start(pool, only))
 
     def coverage(self):
         """Over all the tests' dumps: every state's step function ran, and
@@ -501,6 +521,14 @@ class Suite:
         shutil.rmtree(self.covdir, ignore_errors=True)
 
 
+def _one(build, ovs, covdir, name):
+    s = Suite(build, ovs)
+    shutil.rmtree(s.covdir, ignore_errors=True)
+    s.covdir = covdir
+    out = s.run_one(name)
+    return out, s.results, s.failures
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description="schedtest in rtlsim (B4)")
     ap.add_argument("build")
@@ -508,17 +536,23 @@ def main(argv):
     ap.add_argument("--twice", action="store_true", help="run twice and compare every number")
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--json", help="write the measured numbers here")
+    ap.add_argument("--jobs", type=int, default=os.cpu_count(), help="tests at once (default: the CPUs)")
     a = ap.parse_args(argv)
     t0 = time.time()
     s = Suite(a.build, a.ovs)
     print(f"sim_tests: {s.image}")
-    res = s.run(a.only)
-    fails = list(s.failures)
+    with concurrent.futures.ProcessPoolExecutor(a.jobs) as pool:
+        f1 = s.start(pool, a.only)
+        if a.twice:                     # both runs at once: fresh simulators each
+            s2 = Suite(a.build, a.ovs)
+            f2 = s2.start(pool, a.only)
+        res = s.collect(f1)
+        fails = list(s.failures)
+        if a.twice:
+            print("second run:")
+            res2 = s2.collect(f2)
+            fails += [f"(second run) {f}" for f in s2.failures]
     if a.twice:
-        print("second run:")
-        s2 = Suite(a.build, a.ovs)
-        res2 = s2.run(a.only)
-        fails += [f"(second run) {f}" for f in s2.failures]
         same = json.dumps(res, sort_keys=True) == json.dumps(res2, sort_keys=True)
         print(f"  deterministic: {'yes, every number the same' if same else 'NO'}")
         if not same:
