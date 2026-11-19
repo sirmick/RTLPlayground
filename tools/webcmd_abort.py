@@ -24,6 +24,18 @@ W3: a /cmd ("hostname tail3\nip") followed, in a segment of its own in the
     behind it (GET /ports.json): the posted command runs exactly (hostname
     set, the reply its output, no parse error) and the extra data is
     dropped, as today's code drops data while the reply is sent.
+W5: a web /cmd "l2\nhostname oldbody" over 300 learned MACs, its connection
+    reset mid-dump, and at once a new /cmd "hostname w5\nip": the new one
+    gets its own reply (ip's, no l2 lines), the hostname is w5, and the old
+    body's second line never runs (E1: the run checks its command's
+    generation at every step).
+W6: STP off, "stp bpdu filter" (the BPDU entries CPU-only), VLAN 4000
+    configured; a web /cmd "stp bpdu flood" (stp_off()'s VLAN walk, VLAN
+    4000's entry near its end), its connection reset at the walk's first
+    step: the walk still runs to its end, so the L2 table equals the one a
+    whole console "stp bpdu flood" leaves (E1: a job with side effects isn't
+    dropped). W5 and W6 stop the sim on cli's functions: the image's
+    rtlplayground.map, next to it.
 Exit status 1 if any fails.
 """
 import argparse, os, re, struct, sys
@@ -123,6 +135,14 @@ class Client:
         self.run(200000)
 
 
+def until_step(r, fn):
+    """Run to the next call of fn, and past that step (its end: the next
+    return to the scheduler), keeping the bench's clock."""
+    r.b.sim.run_until_pc(fn, max_ms=5000)
+    r.b.sim.run_until_pc("_sched_pass", max_ms=100)
+    r.b.now = r.b.sim.time()[1]
+
+
 def post(cookie, path, ctype, body):
     return (f"POST {path} HTTP/1.1\r\nCookie: session=".encode() + cookie +
             f"\r\nContent-Type: {ctype}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
@@ -133,19 +153,29 @@ def main(argv):
     ap.add_argument("image")
     ap.add_argument("--ovs", default=os.path.expanduser("~/src/ovs-rtlpg"))
     ap.add_argument("--board", default=None)
+    ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args(argv)
     board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
     sys.path.insert(0, os.path.join(a.ovs, "tests"))
     from oldnew import Run
+    from bench import Bench
 
     fails = []
     r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None)
+    # the image's map (next to it), for W5 and W6's run-until on cli's steps
+    mp = os.path.join(os.path.dirname(os.path.abspath(a.image)), "rtlplayground.map")
+    r.b.close()
+    r.b = Bench(a.image, board=board, rtlsim=os.path.join(a.ovs, "build", "rtlsim"), args=["--map", mp])
+    r.b.link(r.P[0], True)
     try:
         r.boot()
         r.login()
         r._now()
         k = Client(r)
+        # W6's VLAN, while the console is quiet (a line typed while a link
+        # change prints is lost)
+        k.b.console(f"vlan 4000 {r.F[1]} {r.F[2]}t", k.b.now + 3000000)
 
         def upload(text):
             bnd = "----wcmd0123456789"
@@ -227,6 +257,61 @@ def main(argv):
             if not ok:
                 print(f"   reply: {c.resp[:160]!r}\n   console: {con.strip()[:200]!r}")
                 fails.append(name)
+        # W6: stp off's VLAN walk survives its connection. "stp bpdu filter"
+        # leaves the BPDU entries CPU-only (STP off: at once, a whole walk);
+        # a web "stp bpdu flood" rewrites them, VLAN 4000's near the walk's end.
+        k.b.console("stp bpdu filter", k.b.now + 3000000)
+        k.run(1000000)
+        k.b.pending()
+        c = k.open()
+        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"stp bpdu flood"))
+        until_step(r, "_stp_fdb_line")	# the walk's first step
+        c.tcp(0x04)				# while the walk runs
+        k.run(2000000)
+        cut = r.b.table("l2")
+        k.b.console("stp bpdu filter", k.b.now + 3000000)
+        k.run(1000000)
+        k.b.console("stp bpdu flood", k.b.now + 3000000)
+        k.run(1000000)
+        whole = r.b.table("l2")
+        ok = cut == whole and any("fa00180 " in l for l in whole)	# VLAN 4000's entry is there
+        print(f"W6 web stp bpdu flood reset mid-walk: L2 table {'the same as' if ok else 'NOT the same as'} "
+              f"a whole one's: {'PASS' if ok else 'FAIL'}")
+        if a.verbose:
+            print("   whole's BPDU entries: " + " | ".join(l for l in whole if "c2000000" in l)[:300])
+        if not ok or a.verbose:
+            print("   cut:   " + " | ".join(l for l in cut if l not in whole)[:300])
+            print("   whole: " + " | ".join(l for l in whole if l not in cut)[:300])
+            fails.append("W6")
+        # W5: a new /cmd while an old one's dump is cut off
+        P = r.P
+        r.link(P[1], True)
+        for n in range(300):
+            src = bytes([0x02, 0, 0, 0x10, n >> 8, n & 0xff])
+            r.b.sim.nic_inject(P[1], b"\xff" * 6 + src + struct.pack("!H", 0x88b5) + b"\0" * 46)
+            if n % 32 == 31:
+                k.run(20000)
+        k.run(2000000)
+        k.b.pending()
+        c1 = k.open()
+        k.send(c1, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"l2\nhostname oldbody"))
+        k.run(5000000, lambda: k.b.take_uart().count("\n") > 100)	# mid-dump, the TX ring full
+        until_step(r, "_cli_more")		# a line printed: cli waits ~4 ms for room for the next
+        c1.tcp(0x04)
+        c2 = k.open()
+        k.send(c2, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"hostname w5\nip"))
+        k.run(8000000, lambda: k.done(c2))
+        k.close(c2)
+        k.run(1000000)
+        body = c2.resp.partition(b"\r\n\r\n")[2]
+        got = hostname()
+        ok = (c2.resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"02:00:00:10" not in body
+              and got == "w5")
+        print(f"W5 a new /cmd after one reset mid-l2: hostname {got!r}, reply {body[:60]!r}: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            print(f"   reply: {c2.resp[:200]!r}")
+            fails.append("W5")
+
     finally:
         r.b.close()
     print("webcmd_abort: " + ("FAIL " + " ".join(fails) if fails else "PASS"))

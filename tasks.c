@@ -100,6 +100,8 @@ void con_task(void) __banked
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 static __xdata uint8_t cli_src, cli_web_more;
+static __xdata uint8_t cli_gen;		/* the web command this run serves (webcmd_gen) */
+static __xdata uint8_t cli_dropped;	/* its connection ended: no reply, no more lines */
 
 void cli_idle(void) __banked
 {
@@ -122,37 +124,48 @@ void cli_run(void) __banked
 		if (!webcmd_pending)
 			STEP_NEXT(S_CLI_IDLE);
 		webcmd_pending = 0;
+		cli_gen = webcmd_gen;
+		cli_dropped = 0;
 		httpd_webcmd_begin();
 		STEP_NEXT(S_CLI_NEXT);
 	}
 	if (con_tx_room() < CLI_ROOM)
 		STEP_WAIT(S_CLI_RUN, EV_CON_TX, SCHED_FOREVER);
-	task_next(S_CLI_PROMPT);
 	for (ti = 0; ti < CMD_BUF_SIZE; ti++)	/* the console's line into cmd_buffer */
 		if (!(cmd_buffer[ti] = con_line[ti]))
 			break;
 	if (!cmd_buffer[0])
-		return;
+		STEP_NEXT(S_CLI_PROMPT);
 	cmd_tokenize();
 	if (err_status == ERR_OK)
 		cmd_parser();
 	if (cli_job)
 		STEP_NEXT(S_CLI_MORE);
+	STEP_NEXT(S_CLI_PROMPT);
 }
 
-/* A web command's connection ended: stop, nobody reads the reply, and
- * config_buf may soon hold the next request. */
+/* The web command this run serves still has its connection waiting: not
+ * ended, and no new /cmd queued since (which would hold config_buf). */
+static uint8_t cli_web_live(void)
+{
+	return webcmd_busy && webcmd_gen == cli_gen;
+}
+
+/* Its connection ended: no reply and no more of its lines (config_buf may
+ * hold the next request already). A pure dump stops; a job with side
+ * effects (stp off's entries) runs to its end, its output discarded. */
 static void cli_web_drop(void)
 {
-	cli_job = 0;
-	task_next(S_CLI_IDLE);
+	cli_dropped = 1;
+	if (!CLI_JOB_KEEPS(cli_job))
+		cli_job = 0;
 }
 
 void cli_next(void) __banked
 {
-	if (!webcmd_busy) {
+	if (!cli_web_live()) {
 		cli_web_drop();
-		return;
+		STEP_NEXT(S_CLI_PROMPT);
 	}
 	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
 		STEP_WAIT(S_CLI_NEXT, EV_CON_TX, SCHED_FOREVER);
@@ -163,25 +176,26 @@ void cli_next(void) __banked
 		STEP_NEXT(S_CLI_MORE);
 	if (!cli_web_more)
 		STEP_NEXT(S_CLI_PROMPT);
-	/* stays in CLI_NEXT: the next line at the next step */
+	STEP_NEXT(S_CLI_NEXT);			/* the next line at the next step */
 }
 
 void cli_more(void) __banked
 {
-	if (cli_src == CLI_WEB && !webcmd_busy) {
+	if (cli_src == CLI_WEB && !cli_dropped && !cli_web_live()) {
 		cli_web_drop();
-		return;
+		if (!cli_job)
+			STEP_NEXT(S_CLI_PROMPT);
 	}
 	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
 		STEP_WAIT(S_CLI_MORE, EV_CON_TX, SCHED_FOREVER);
-	if (cli_src == CLI_WEB)
+	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_ON();
 	cli_job_more();
-	if (cli_src == CLI_WEB)
+	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_OFF();
 	if (cli_job)
-		return;			/* stays in CLI_MORE: its next line at the next step */
-	if (cli_src == CLI_WEB && cli_web_more)
+		STEP_NEXT(S_CLI_MORE);		/* its next line at the next step */
+	if (cli_src == CLI_WEB && !cli_dropped && cli_web_more)
 		STEP_NEXT(S_CLI_NEXT);
 	STEP_NEXT(S_CLI_PROMPT);
 }
@@ -189,7 +203,7 @@ void cli_more(void) __banked
 void cli_prompt(void) __banked
 {
 	if (cli_src == CLI_WEB) {
-		if (webcmd_busy) {		/* not if its connection ended */
+		if (!cli_dropped && cli_web_live()) {
 			httpd_webcmd_end();
 			event_post(EV_CMD_DONE);	/* httpd sends the reply on a poll */
 		}

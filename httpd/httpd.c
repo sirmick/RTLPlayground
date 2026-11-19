@@ -699,6 +699,7 @@ static void webcmd_queue(__xdata uint8_t *body)
 	webcmd_done = 0;
 	webcmd_pending = 1;
 	webcmd_busy = 1;
+	webcmd_gen++;		/* a run still serving an earlier one stops (cli) */
 	uip_conn->appstate.tstate = TSTATE_WEBCMD;
 }
 
@@ -706,7 +707,7 @@ static void webcmd_queue(__xdata uint8_t *body)
  * a long dump a line a step): begin, then each step with the capture on
  * (WEBCMD_CAPTURE_ON/OFF: only cli's own output goes in the reply), then
  * end, which completes the reply. */
-__xdata uint8_t webcmd_cap, webcmd_busy;
+__xdata uint8_t webcmd_cap, webcmd_busy, webcmd_gen;
 static __xdata uint16_t webcmd_hdr;
 
 void httpd_webcmd_begin(void) __banked
