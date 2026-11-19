@@ -34,14 +34,15 @@ STEP(sleep_b, step)
 	return STEP_SLEEP(S_SLEEP_B_STEP, 37);
 }
 
-/* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out. A beat
+/* Wakes the waiter every 300 ms: it sees st_poked, or times out. A beat
  * that doesn't drift: the low-level task_until, from the last due tick. */
 static __xdata uint16_t po_due;
 static __xdata uint8_t po_n;
 TASK(poster, fixed, once)
 STEP(poster, step)
 {
-	event_post(EV_ST_POKE);
+	st_poked = 1;
+	task_wake(T_WAITER);
 	st_lp = &st_log_poster;
 	st_aux = 0;
 	st_log();
@@ -62,7 +63,7 @@ TASK(jobber, fixed, once)
 STEP(jobber, step)
 {
 	if (!st_jobs_req)
-		return STEP_WAIT(S_JOBBER_STEP, EV_ST_GO, SCHED_FOREVER);
+		return STEP_SLEEP(S_JOBBER_STEP, SCHED_FOREVER);	/* woken by cli */
 	st_jobs_req = 0;
 	while (task_claim_arg(S_JB_RUN, JB_STEPS) != SCHED_NONE)	/* arg: its steps */
 		st_jobs_claimed++;

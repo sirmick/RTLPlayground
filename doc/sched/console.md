@@ -8,7 +8,7 @@
 | TX | 2 KiB, 16-bit indexes (decision 21; 128 B until E1) | `write_char` | `isr_serial` on TI |
 
 - **RX:** the ISR stores, or counts an overrun when the ring is full (shown
-  in `health`). `EV_CON_RX` is sampled (the ring not empty), so no new ISR
+  in `health`). `HW_CON_RX` is sampled (the ring not empty), so no new ISR
   bit. `^R ^R` stays in the ISR, as today, and records the reset
   (chapter 11).
 - The ISR side is two macros, `CON_ISR_RX(c)` and `CON_ISR_TX()`
@@ -32,7 +32,7 @@
   before (`reset`, `factory-reset`, the button, "Resetting to apply
   update") isn't lost. The `^R ^R` and watchdog paths reset at once. With
   2 KiB queued the drain can take ~180 ms (2048 × 87 µs).
-- `EV_CON_TX` = "room for a full line" (≥ 100 free bytes), sampled at
+- `HW_CON_TX` = "room for a full line" (≥ 100 free bytes), sampled at
   pass start.
 
 ## The `con` task (editor)
@@ -45,9 +45,9 @@ frequency keeps `con` within a few steps of every byte.
 
 | State | Does | Next |
 |---|---|---|
-| `CON_EDIT` | drains the RX ring into the line editor (today's `cmd_edit`, on its own `con_line`), echoes. On Enter: sets `con_line_ready`, posts `EV_LINE`, and reads nothing more until cli has taken the line (U2) | `task_wait(EV_CON_RX, FOREVER)` |
+| `CON_EDIT` | drains the RX ring into the line editor (today's `cmd_edit`, on its own `con_line`), echoes. On Enter: sets `con_line_ready`, wakes cli (`task_wake(T_CLI)`), and reads nothing more until cli has taken the line (U2) | `STEP_WAIT(S_CON_EDIT, HW_CON_RX, SCHED_FOREVER)` |
 
-As built (D3), `con` waits on `EV_CON_RX` only: the echo goes through
+As built (D3), `con` waits on `HW_CON_RX` only: the echo goes through
 `write_char`, which busy-waits while the TX ring is full, as every other
 print does. The RX ring buffers meanwhile.
 
@@ -57,9 +57,9 @@ Fixed, frequency **once**. One command at a time, from either source.
 
 | State | Does | Next |
 |---|---|---|
-| `CLI_IDLE` | waits for a console line or a queued web command | `task_wait(EV_LINE | EV_WEBCMD, FOREVER)` |
+| `CLI_IDLE` | waits for a console line or a queued web command: woken by con or rx (`task_wake(T_CLI)`, E5), it re-checks `con_line_ready` and `webcmd_pending` | `STEP_SLEEP(S_CLI_IDLE, SCHED_FOREVER)` |
 | `CLI_RUN` | copies the line into `cmd_buffer`, tokenizes, dispatches. A short command runs to completion here. A long one sets up its job state and continues in it | `CLI_PROMPT` or the command's own state |
-| `CLI_PROMPT` | prints the prompt (console source), or posts `EV_CMD_DONE` (web source) | `CLI_IDLE` |
+| `CLI_PROMPT` | prints the prompt (console source), or ends the reply (web source: `httpd_webcmd_end()`; httpd sends it on its next poll) | `CLI_IDLE` |
 
 **Two input buffers, one parser.** The console editor gets its own line
 buffer, and httpd a separate web command buffer. `CLI_RUN` copies the source
@@ -82,7 +82,7 @@ buffer is **`config_buf`**, the buffer httpd already holds each request in
 - If the `/cmd`'s connection ends first (client reset, abort, timeout),
   httpd clears `webcmd_pending` and `webcmd_done` before the next connection
   can exist. `CLI_RUN` re-checks `webcmd_pending` right before parsing, and
-  `CLI_PROMPT` posts `EV_CMD_DONE` only if `webcmd_done`: a cancelled
+  `CLI_PROMPT` ends the reply only if the connection still waits: a cancelled
   command runs nothing, and the next request in `config_buf` is never run
   as commands (`tools/webcmd_abort.py`). If a new `/cmd` was queued in
   between, that one runs: it is the one in `config_buf`, and its connection
@@ -115,7 +115,7 @@ whose work passes 5 ms, are chunked: a cli **job**.
   totals), and `stp off`'s BPDU entries (a walk of the 4094 VLAN entries,
   256 a step; it prints nothing). evidence/e1-chunked-cli.txt.
 - The cli task: `CLI_RUN` parses; with a job set it goes to `CLI_MORE`,
-  which waits for `EV_CON_TX` (room for a line), runs one line, and stays
+  which waits for `HW_CON_TX` (room for a line), runs one line, and stays
   until the job ends, then `CLI_PROMPT`.
 - Any other caller (the config at boot, the boot's `stat`) runs the job
   to its end at once (`cmd_finish()`), as before.

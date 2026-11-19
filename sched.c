@@ -21,8 +21,7 @@ extern volatile __xdata uint32_t ticks;
 __xdata struct task sched_task[SCHED_SLOTS];
 __xdata uint8_t  sched_cur;
 __xdata uint16_t sched_now;
-__xdata uint16_t sched_ev;
-__xdata uint16_t sched_posted;
+__xdata uint8_t  sched_ev;
 
 __xdata uint16_t sched_st_max[S_COUNT];
 __xdata uint16_t sched_st_runs[S_COUNT];
@@ -53,9 +52,16 @@ void task_until(uint16_t tick)
 	sched_cur_task->wake = tick;
 }
 
-void task_mask(uint16_t ev_mask)
+void task_mask(uint8_t hw_mask)
 {
-	sched_cur_task->mask |= ev_mask;
+	sched_cur_task->mask |= hw_mask;
+}
+
+/* Due now, a wait without timeout too (its horizon mark goes) */
+void task_wake(uint8_t slot)
+{
+	sched_task[slot].wake = sched_now;
+	sched_task[slot].mask &= ~EV_FOREVER;
 }
 
 /* ---- the loop ---- */

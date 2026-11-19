@@ -34,7 +34,7 @@ FL_DONE    post the requester's event, free the slot
   The requester claims the job and waits on its done event.
 - **Upload (firmware):** httpd stages one TCP segment (chapter 8), the job
   erases ahead when a sector boundary nears, then programs the staged bytes,
-  then `EV_UPLOAD_DONE` reopens the window. Expected upload time: segment
+  then the job's end reopens the window (as built: it wakes net). Expected upload time: segment
   count × (RTT + ~2-5 ms), plus 40 ms per 4 KiB sector. Roughly today's
   speed, without the long passes.
 - **Config save:** buffered in `config_buf` as today. The job erases one
@@ -48,7 +48,9 @@ carries the request so httpd can make one without `sched.h`. A requester
 sets `fl_req` (a config save also `fl_src`, `fl_len`) and calls
 `flash_job_start()`: 0 if the job is busy or no slot is free (the request
 is then refused: 400 for the web, "Flash busy, not reset" on the console).
-At its end the job sets `fl_finished` and posts `EV_UPLOAD_DONE`.
+At its end the job sets `fl_finished` and `fl_poll` and wakes net
+(`task_wake(T_NET)`), which polls the connection at once (E5; it was the
+event `EV_UPLOAD_DONE`).
 
 | Kind | Steps |
 |---|---|

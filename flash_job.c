@@ -24,7 +24,7 @@
 extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 
-__xdata uint8_t fl_req, fl_kind, fl_finished;
+__xdata uint8_t fl_req, fl_kind, fl_finished, fl_poll;
 __xdata uint8_t * __xdata fl_src;
 __xdata uint16_t fl_len;
 __xdata uint32_t fl_addr;
@@ -123,6 +123,7 @@ STEP(fl, done)
 	}
 	fl_kind = 0;
 	fl_finished = 1;
-	event_post(EV_UPLOAD_DONE);
+	fl_poll = 1;
+	task_wake(T_NET);			/* the answer or a window update at once */
 	return STEP_END;
 }

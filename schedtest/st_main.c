@@ -82,7 +82,7 @@ STEP(con, edit)
 {
 	while (con_rx_ready()) {
 		if (con_tx_room() < 4)		/* the echo must not wait */
-			return STEP_WAIT(S_CON_EDIT, EV_CON_TX, SCHED_FOREVER);
+			return STEP_WAIT(S_CON_EDIT, HW_CON_TX, SCHED_FOREVER);
 		c = con_getc();
 		st_con_rx_n++;
 		st_con_rx_sum += c;
@@ -98,7 +98,7 @@ STEP(con, edit)
 					st_line[li] = ed[li];
 				st_line[ed_len] = 0;
 				st_line_ready = 1;
-				event_post(EV_LINE);
+				task_wake(T_CLI);
 			}
 			ed_len = 0;
 			continue;
@@ -114,7 +114,7 @@ STEP(con, edit)
 			write_char(c);
 		}
 	}
-	return STEP_WAIT(S_CON_EDIT, EV_CON_RX, SCHED_FOREVER);
+	return STEP_WAIT(S_CON_EDIT, HW_CON_RX, SCHED_FOREVER);
 }
 
 /* ---- cli ---- */
@@ -154,7 +154,7 @@ STEP(cli, idle)
 {
 	if (st_line_ready)
 		return S_CLI_RUN;
-	return STEP_WAIT(S_CLI_IDLE, EV_LINE, SCHED_FOREVER);
+	return STEP_SLEEP(S_CLI_IDLE, SCHED_FOREVER);	/* woken by con */
 }
 
 STEP(cli, run)
@@ -188,17 +188,17 @@ STEP(cli, run)
 		print_string("erasepeek done\n");
 	} else if (word("print")) {
 		st_print_req = number() ? num : 3000;
-		event_post(EV_ST_GO);
+		task_wake(T_PR);
 	} else if (word("jobs")) {
 		st_jobs_req = 1;
-		event_post(EV_ST_GO);
+		task_wake(T_JOBBER);
 	} else if (word("slow")) {
 		st_slow_ms = number() ? num : 30;
 		st_slow_req = 1;
-		event_post(EV_ST_GO);
+		task_wake(T_SL);
 	} else if (word("hang")) {
 		st_slow_req = 2;		/* SL_HANG says so unless ST_NEG=hang */
-		event_post(EV_ST_GO);
+		task_wake(T_SL);
 	} else if (word("flash")) {
 		st_flash_start();
 	} else if (word("badflash")) {
@@ -209,7 +209,7 @@ STEP(cli, run)
 #endif
 	} else if (word("hot")) {
 		st_hot_on = word("hot on");
-		event_post(EV_ST_GO);
+		task_wake(T_HOT);
 	} else if (word("deep")) {
 		st_deep_depth = number() ? num : 9;
 #ifdef ST_POKE

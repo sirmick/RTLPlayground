@@ -53,14 +53,14 @@ compares every measured number.
 |---|---|
 | wake | sleep_a/b/c (5, 37, 1000 ms): never early; late by at most a pass (+ the tick) |
 | waiter | post -> waiter within one pass; the 100 ms timeout path, never early |
-| isr_ev | each UART byte -> ISR -> `EV_CON_RX` -> isr_ev, within 2 ms; the ring head seen moving |
+| isr_ev | each UART byte -> ISR -> `HW_CON_RX` -> isr_ev, within 2 ms; the ring head seen moving |
 | hot | worst gap <= spacing x (longest step + 60 us) |
 | jobs | claims fill the 11 dynamic slots, then `SCHED_NONE`; every job ends; slots reused |
 | printer | 3000 lines, all present in order; no printer or console step over 5 ms |
 | flash | erase + program + verify ok; program/verify steps < 5 ms; erase within its 40 ms; the checker clean |
 | slow | one overrun, state `SL_SLOW`, its length |
 | paste | 500 characters + CR all taken, no RX overrun (deep off): quiet, and across a ~20 ms step (`slow 20`; ~230 B arrive meanwhile, the 256 B ring holds them). Across the 40 ms erase a paste may lose bytes (decision 19): recorded, not asserted |
-| invariants | 30 pass ends: states valid, defined mask bits, wakes within the task's longest wait; `sched_posted` empty at the next pass's first step |
+| invariants | 30 pass ends: states valid, defined mask bits, wakes within the task's longest wait |
 | stack | `deep 9` under console traffic both ways: headroom >= 30 B, the scanner agrees with the raw paint |
 | horizon | 170 s with no input: con's wait without timeout reaches its horizon (~164 s) and is pushed on, without running |
 | soak | 600 s of firmware time (the tick wraps twice), stimuli every 10 s, sampled invariants; no early wake, no reset, no RX overrun, headroom >= 30 B, checks clean |
@@ -154,11 +154,11 @@ so they show up as `CLI_RUN` overruns: the console takes 87 µs a byte.
 
 | Task | Bank | freq | What |
 |---|---|---|---|
-| `con` | st_main.c (placed) | high | line editor: drains the RX ring, echoes, hands the line to cli (`EV_LINE`) |
+| `con` | st_main.c (placed) | high | line editor: drains the RX ring, echoes, hands the line to cli (`task_wake(T_CLI)`) |
 | `cli` | st_main.c | once | `CLI_IDLE` / `CLI_RUN` / `CLI_PROMPT` |
-| `sleep_a`, `waiter`, `hot`, `pr` (the printer) | st_b1.c, BANK1 | once, once, **high**, once | 5 ms sleep; waits `EV_ST_POKE` with a 100 ms timeout; ~1 µs per run; the printer |
-| `sleep_b`, `poster`, `jobber` + job `jb`, job `fl` | st_b2.c, BANK2 | once | 37 ms sleep; posts `EV_ST_POKE` every 300 ms; the jobber; the flasher |
-| `sleep_c`, `isr_ev`, `deep`, `sl` (slow) | st_b3.c, BANK3 | once | 1000 ms sleep (and the stack rescan); woken by `EV_CON_RX` (UART ISR -> event); the deep call chain; slow/hang |
+| `sleep_a`, `waiter`, `hot`, `pr` (the printer) | st_b1.c, BANK1 | once, once, **high**, once | 5 ms sleep; woken by the poster (`st_poked`), 100 ms timeout; ~1 µs per run; the printer |
+| `sleep_b`, `poster`, `jobber` + job `jb`, job `fl` | st_b2.c, BANK2 | once | 37 ms sleep; wakes the waiter every 300 ms; the jobber; the flasher |
+| `sleep_c`, `isr_ev`, `deep`, `sl` (slow) | st_b3.c, BANK3 | once | 1000 ms sleep (and the stack rescan); woken by `HW_CON_RX` (UART ISR -> event); the deep call chain; slow/hang |
 
 12 fixed slots, 12 dynamic. The generated sequence and its spacing are in
 `<builddir>/sched/sequence.txt`.
@@ -180,9 +180,9 @@ per tick.
 | Symbol | What |
 |---|---|
 | `st_log_sleep_a`, `_sleep_b`, `_sleep_c` | each run of the sleepers (5, 37, 1000 ms) |
-| `st_log_waiter` | each wake; aux 1 = by `EV_ST_POKE`, 2 = timeout |
+| `st_log_waiter` | each wake; aux 1 = by the poster, 2 = timeout |
 | `st_log_poster` | each post |
-| `st_log_isr_ev` | each wake by `EV_CON_RX`; aux = `con_rx_head` |
+| `st_log_isr_ev` | each wake by `HW_CON_RX`; aux = `con_rx_head` |
 | `st_log_hot` | each run of the high-frequency task; aux = `sched_passes_lo` |
 | `st_print_done` | lines printed by the last `print` |
 | `st_jobs_claimed`, `st_jobs_full`, `st_jobs_done` | u16 counters |
@@ -195,7 +195,7 @@ per tick.
 | `sched_task[24]` | `{u8 state, u16 mask, u16 wake, u16 arg}`, 7 B each |
 | `sched_st_max[]`, `sched_st_runs[]` | u16 per state ID |
 | `sched_overruns`, `sched_overrun_state`, `sched_pass_max`, `sched_passes_lo/hi`, `sched_idle_lo/hi` | |
-| `sched_posted`, `sched_ev`, `sched_now`, `sched_cur` | |
+| `sched_ev`, `sched_now`, `sched_cur` | |
 | `con_rx_overruns` | u16 |
 | `crash_rec` (0xbfe0), `crash_last` | `struct crash_rec` (crash.h) |
 
