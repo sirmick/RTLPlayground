@@ -1,0 +1,27 @@
+# Upstream candidates
+
+Bugs in upstream RTLPlayground (logicog) found during the scheduler work, on
+fork main 612116e unless noted. Each would be its own small PR: on upstream,
+proven on the sim, one bug each. None is filed yet; Michael decides when.
+
+| # | Bug | Where | Found by | Fixed here by |
+|---|---|---|---|---|
+| U1 | The boot prompt is printed before `cmd_editor_init()`, so console bytes arriving in between are dropped (`version` arrives as `ersion`) | `rtlplayground.c` (prompt), `cmd_editor.c:19` | sim, A1 | not yet (independent of the scheduler) |
+| U2 | `cmd_edit` copies a character into `cmd_buffer` before checking `cmd_available`, so a multi-line paste overwrites the command still waiting to run (`stat` runs as `v...`) | `cmd_editor.c` | sim, A2 | M2/D3 (separate console and web buffers, one cli task) |
+| U3 | The 16 B console RX ring laps silently: no overrun count | `rtlplayground.c` `isr_serial` | sim, A2 | M2/D1 (256 B ring with an overrun count, decision 19) |
+| U4 | A web `/cmd` overwrites a half-typed console line (one shared buffer) | `cmd_parser` / httpd | audit (os-audit) | M2/D3 |
+| U5 | The CRC routine leaves `PSBANK` at 1 | `crc16_bank1` | audit | flash.md: fix on the way |
+| U6 | The health phase IDs clash | `health` | audit | phases.md, independent |
+| U7 | The host-test stubs lack `leds_mode` and `rldp_*`, so four host tests fail to link (fork only: the LED and loop-detection web pages) | `test/env_tables.c`, `test/test_httpd_tx.c` | A0 | fixed on fork main b635486 |
+
+## Silicon facts worth upstreaming (documentation, not bugs)
+
+- A chip reset before the switch init (NIC reset, SMI, PHY/SerDes set-up)
+  hangs the RTL8373 until power is cycled, as already recorded for the
+  SWTG024AS in `rtl837x_sfr.h` (silicon.md). Any watchdog must stay off
+  during the boot.
+- During a flash erase, memory-mapped reads of the bank window return 0x00
+  on the RTL8373 (silicon.md); banked code must not run while the flash is
+  busy.
+- The loader's XMODEM accepts at most 1856 blocks (237,568 B): the app
+  image, not the install image (whose first 237,568 B are the app).
