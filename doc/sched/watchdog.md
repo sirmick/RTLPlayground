@@ -55,7 +55,9 @@ survives a chip reset, chapter 2), outside every XSEG: the app's ends at
 | 12 | 2 | PC of the interrupted code (from the stack in the ISR) |
 | 14 | 8 | last 8 states run (ring) |
 | 22 | 1 | ring index |
-| 23 | 7 | spare |
+| 23 | 1 | spare |
+| 24 | 4 | the image that wrote it: `CRASH_IMAGE_LO`, `_HI` (E0) |
+| 28 | 2 | spare |
 | 30 | 2 | 16-bit sum of bytes 0-29 |
 
 - `CRASH_NOTE(slot, state)` (in the loop, before each dispatch) keeps the
@@ -70,6 +72,16 @@ survives a chip reset, chapter 2), outside every XSEG: the app's ends at
   states ...`, the last 8 states oldest first), copy it for `health`, then
   clear the magic. A power-on finds garbage: the magic or sum
   fails, and the record is ignored.
+- **Another image's record** (E0; found on silicon in DB: a schedtest
+  record survived a web update and was decoded with the firmware's slot and
+  state names) is dropped unread. `crash_die()` stores the build's identity,
+  32 bits of a SHA-1 over the version (`v0.1.0-<hash>[-dirty]`), the build
+  date and the build directory (machine, layout, schedtest and its
+  variants), which `sched.mk` writes per build into `build_id.h`;
+  `crash_boot()` takes a record only if it matches, else clears the magic.
+  So a record from another commit, another board, schedtest, or another
+  build of the same commit is not printed. `tools/crash_foreign.py` checks
+  it in rtlsim; `test_sched` on the host.
 - The loader must not use the address (its XSEG ends at 0x4f6a; the address
   goes above both). The B5 test checks the record survives a reset through
   the loader.

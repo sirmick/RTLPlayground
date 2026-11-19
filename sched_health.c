@@ -9,6 +9,7 @@
 #include "sched.h"
 #include "con_ring.h"
 #include "crash.h"
+#include "build_id.h"
 
 static __xdata uint8_t i, ps;
 static __xdata uint16_t u, lo;
@@ -153,14 +154,20 @@ void sched_health_clear(void) __banked
 	ES = 1;
 }
 
-/* At boot: a record whose magic and sum hold is printed once, kept for
- * health, and consumed. A power-on finds garbage and ignores it. */
+/* At boot: a record whose magic and sum hold, written by this image, is
+ * printed once, kept for health, and consumed. A power-on finds garbage and
+ * ignores it; a record another image left (a web update keeps xdata) is
+ * dropped unread: its slots and states aren't this image's. */
 void crash_boot(void) __banked
 {
 	crash_last.magic = 0;
 	crash_prior = 0;
 	if (crash_rec.magic != CRASH_MAGIC || crash_rec.sum != crash_sum())
 		return;
+	if (crash_rec.image_lo != CRASH_IMAGE_LO || crash_rec.image_hi != CRASH_IMAGE_HI) {
+		crash_rec.magic = 0;
+		return;
+	}
 	for (i = 0; i < sizeof(struct crash_rec); i++)
 		((__xdata uint8_t *)&crash_last)[i] = ((__xdata uint8_t *)&crash_rec)[i];
 	crash_prior = crash_rec.resets < 0xff ? crash_rec.resets + 1 : 0xff;

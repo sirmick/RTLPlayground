@@ -5,7 +5,9 @@
  * which the C start-up does not clear, so it survives a chip reset. The
  * scheduler keeps the slot, state, step start and a ring of the last states
  * current before each step (CRASH_NOTE); crash_die() fills in the rest and
- * the sum, and resets the chip. The next boot prints it once (crash_boot).
+ * the sum, and resets the chip. The next boot prints it once (crash_boot),
+ * if this image wrote it: the record carries the build's identity
+ * (CRASH_IMAGE_*, build_id.h, generated per build by sched.mk).
  *
  * From an ISR (the watchdog in isr_timer2, ^R ^R in isr_serial) the path is a
  * jump, not a call: a call anywhere in an ISR makes SDCC save every register
@@ -43,7 +45,10 @@ struct crash_rec {
 	uint16_t pc;		/* 12: PC of the interrupted code, 0 if not from an ISR */
 	uint8_t  ring[8];	/* 14: the last 8 states run */
 	uint8_t  ring_idx;	/* 22: next ring entry */
-	uint8_t  spare[7];	/* 23 */
+	uint8_t  spare;		/* 23 */
+	uint16_t image_lo;	/* 24: the image that wrote it (build_id.h) */
+	uint16_t image_hi;	/* 26 */
+	uint8_t  spare2[2];	/* 28 */
 	uint16_t sum;		/* 30: 16-bit sum of bytes 0-29 */
 };
 
