@@ -1,12 +1,9 @@
-# old-vs-new (ovs-rtlpg tests/oldnew) for D2 against fork main b635486. The
-# scheduler adds no difference of its own: D2's results equal D1's (the
-# version aside), so these are D1's (d1-oldnew.expect): output no longer
-# waits on the wire, and the firmware is a little ahead at fixed times.
-*       000 boot                  # the boot's slot ends a few characters further on: the next line's "<n" (8x)
-config  007 boot                  # the same, the boot after the power cut ("<n" for "<")
-upload  003 boot                  # the same, the uploaded image's boot (a trailing "\n") (8x)
-upload  reg 06f4                  # RTL837X_REG_SEC_COUNTER: the update's reset falls on the other side of a second (8x)
+# old-vs-new (ovs-rtlpg tests/oldnew, 09d712e) for D2 against fork main
+# b635486. The scheduler adds no difference of its own: these are D1's
+# (d1-oldnew.expect): output no longer waits on the wire, and the firmware
+# is a little ahead at the scenarios' fixed times.
 stp     002 cli stp status        # STP started that much sooner: each port's tx count +1, ages 40/0 for 39/1
 stp     005 web GET /stp.json     # its tcs counter, 0x16 for 0x15
 stp     006 web GET /stpcnt.json  # the BPDU counters, one more
 loop    frames * rldp             # one RLDP probe more per linked port in the window
+upload  reg 06f4                  # RTL837X_REG_SEC_COUNTER: the update's reset falls on the other side of a second (8x)
