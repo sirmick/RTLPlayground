@@ -1520,31 +1520,11 @@ void setup_serial_timer1(void)
 
 
 
-#ifdef SCHEDTEST
-/* The scheduler test image (schedtest/): the CPU, the tick, the UART and
- * the flash controller, as below, but no switch init; then the scheduler
- * over the dummy tasks. The firmware's main stays linked, unused. */
-void main(void)
-{
-	ticks = 0;
-	CKCON = 0;
-	SFR_b9 = 0x00;
-	SFR_ba = 0x80;
-	IE = 0;
-	EIE = 0;
-	con_ring_init();
-	setup_clock();
-	setup_timer2();
-	setup_serial_timer1();
-	setup_external_irqs();
-	EA = 1;
-	flash_init(machine.flash_sio ? 0 : 1);
-	schedtest_main();
-}
-#define main firmware_main
-#endif
 
-void main(void)
+/* The boot up to the main loop: the CPU, the tick, the UART, the flash, the
+ * switch, the network, the config. schedtest runs it too: a reset that
+ * lands before the PHY set-up is done hangs the chip (rtl837x_sfr.h). */
+static void firmware_init(void)
 {
 	ticks = 0;
 	dhcp_state.state = DHCP_OFF;
@@ -1732,6 +1712,22 @@ void main(void)
 	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
 	/* After the config: a name from it wins, otherwise derive one. */
 	set_hostname_default();
+}
+
+#ifdef SCHEDTEST
+/* The scheduler test image (schedtest/): the real boot, then the scheduler
+ * over the dummy tasks instead of the main loop. The console's rings take
+ * over from the start: write_char goes through them. */
+void main(void)
+{
+	con_ring_init();
+	firmware_init();
+	schedtest_main();
+}
+#else
+void main(void)
+{
+	firmware_init();
 	print_cmd_prompt();
 	timer_set(&second, SYS_TICK_HZ);
 	timer_set(&sfp_poll, SFP_TICK_STEP);
@@ -1749,3 +1745,4 @@ void main(void)
 		idle(); // Enter Idle mode until interrupt occurs
 	}
 }
+#endif

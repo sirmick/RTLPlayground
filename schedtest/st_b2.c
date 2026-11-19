@@ -6,6 +6,8 @@
 #include "rtl837x_common.h"
 #include "layout.h"
 #include "rtl837x_flash.h"
+#include "boot.h"
+#include "loader/layout.h"
 #include "sched.h"
 #include "schedtest/schedtest.h"
 
@@ -34,6 +36,7 @@ void sleep_b(void) __banked
 /* Posts EV_ST_POKE every 300 ms: the waiter sees it, or times out. A beat
  * that doesn't drift: the low-level task_until, from the last due tick. */
 static __xdata uint16_t po_due;
+static __xdata uint8_t po_n;
 void poster(void) __banked
 {
 	event_post(EV_ST_POKE);
@@ -43,6 +46,8 @@ void poster(void) __banked
 	if ((int16_t)(sched_now - po_due) > 60)	/* first run, or fell behind */
 		po_due = sched_now;
 	po_due += 60;				/* 300 ms */
+	if (po_n < LDR_CONFIRM_S * 10 / 3 && ++po_n == LDR_CONFIRM_S * 10 / 3)
+		loader_confirm();		/* booted: as the firmware's loop does */
 	task_until(po_due);
 }
 
