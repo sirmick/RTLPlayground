@@ -1,0 +1,131 @@
+# E1 evidence: chunked CLI dumps, a 2 KiB console TX ring (2026-11-19)
+
+Commits: fd5274f + c64bf06 test/Makefile: each test binary depends on every
+header its sources include (E0's review item); 6e18ae2 the 2 KiB TX ring,
+the cli jobs, the web /cmd a line a step; bcdf246 stp off's VLAN walk as a
+job, the boot's stat at once, test/stp repaired. bcdf246 is the old-vs-new
+boundary. rtlsim: ovs-rtlpg 0fc788c (EH, sim2), as a clean `git archive`
+export with the same build/rtlsim (the ovs-rtlpg working tree carries sim's
+uncommitted changes). Images built clean in a worktree (tools/docker-make.sh
+MACHINE=<M> LAYOUT=compact LOADER=1).
+
+## What the steps cost, and why (QA e1-tx-ring, decision 21)
+
+tools/cli_steps.py IMAGE --web: each command between `health clear` and
+`health tasks`, console and web /cmd; the CLI tour of the old-vs-new
+scenarios plus port N, stp status, health tasks, history; ports 2, 3 linked,
+STP on, VLANs 10 and 20. Longest cli step, f621897 (M2):
+    version 5.1 ms, port 5.9, stp 9.7, stp status 23.6, storm 28, vlan show
+    30, stat 40, lacp show 42, health tasks 71, history 186 ms
+The same image with con_putc dropping bytes instead of waiting (an
+experiment, not committed), CLI_RUN read from xdata:
+    version 1.3, port 1.2, stp 1.4, stp status 2.6, vlan show 2.6, storm 2.8,
+    lacp show 3.0, stat 3.7, l2 0.6 (few MACs); history 8.9, health tasks 9.2
+So the 5 ms limit was broken by the 128 B TX ring at 115200 baud (87 us a
+byte): anything printing more than ~185 B. Decision 21: the ring is 2 KiB,
+and only what grows with a table, or whose work passes 5 ms, is a job.
+
+## What E1 does
+
+- con_ring: TX 2048 B, 16-bit head and tail. con_putc writes the head and
+  reads the tail in one ES-off section a byte (the start of an idle
+  transmitter in it too); con_tx_room reads the tail with ES off; the ISR
+  alone writes the tail otherwise. isr_serial pushes 8 (was 7): sched.mk's
+  ISR_SERIAL_PUSHES, checked by isr_frame.py. con_putc no longer kicks the
+  watchdog. Host tests (test_sched): 2047 free, EV_CON_TX below 100, the
+  drain, 7 x 1500 B through the ring in order (the indexes wrap 5 times),
+  full, and a byte into a full ring with ES off polling TI.
+- cli jobs (cmd_parser.c cli_job, cli_job_more, cmd_finish): l2 (a table
+  search a step), stat and lacp show (a port or a LAG a step: their work
+  plus a web reply's capture passed 5 ms), history (a line, 64 bytes looked
+  at at most; its own line saved after the dump, as before), health tasks
+  (a slot, a state, the totals), stp off's BPDU entries (stp_fdb_line: 256
+  VLAN reads a step, an entry written counts 16; 4094 reads were 33 ms in
+  one step). The boot's stat and the config at boot run a job to its end.
+- tasks.c: CLI_MORE runs a job's line a step after EV_CON_TX (room for a
+  line); a command starts with 1 KiB free (CLI_ROOM). A web /cmd: CLI_RUN
+  begins it (httpd_webcmd_begin), CLI_NEXT runs a command a step
+  (exec_line: execute_commands split, the same stop rules), its job in
+  CLI_MORE, CLI_PROMPT completes the reply (httpd_webcmd_end). The capture
+  is on only during cli's steps (WEBCMD_CAPTURE_ON/OFF), so other tasks'
+  prints between steps aren't in the reply. A connection that ends drops the
+  command at cli's next step (webcmd_busy).
+
+## The proofs (bcdf246 unless said)
+
+1. No cli step over 5 ms.
+   - tools/cli_steps.py --web (6e18ae2, the tour + port N, stp status,
+     health tasks, history; console and web): "cli states over 5000 us: 0"
+     (/tmp/c/v4/cli-steps-e1b.txt).
+   - Every scenario: the old-vs-new harness's long-step check at each
+     scenario's end, run locally with cli states at 5 ms (a private copy of
+     0fc788c's tests/oldnew; checks.py --only <all 17>, both boards, 6e18ae2):
+     the only cli state over 5 ms was the stp scenario's `stp off`,
+     CLI_RUN 32.9 ms. bcdf246 makes it a job; cli_steps.py on bcdf246:
+     stp off, stp on, stp bpdu filter, console and web: none over 5 ms.
+   - l2 with 200 MACs (dev build): every step under 5 ms; the console lists
+     200 of 200; the web reply truncates at the 2500 B capture with its
+     marker, as before.
+2. LACP gap < 1.2 s while l2 dumps 1000 MACs (EH lacp_l2, CHECKS=1):
+     8x  check new PASS lacp gap 49..154 s: 103 gaps, min 1.011 s max 1.029 s
+     SWGT check new PASS lacp gap 49..154 s: 103 gaps, min 1.010 s max 1.030 s
+   (old: KNOWN, a 3.858 s gap from 48.369 s.)
+3. Old-vs-new, 17 scenarios, CHECKS=1, KNOWN=tests/oldnew/known-failures,
+   NEW_PAYLOAD = bcdf246's application image:
+     python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <bcdf246 -boot> \
+       --new-payload <bcdf246 app> --board boards/<board>.json --checks \
+       --known tests/oldnew/known-failures --expect doc/sched/evidence/e1-oldnew.expect
+| board | without --expect | with e1-oldnew.expect |
+|---|---|---|
+| 8x | 1 of 17 match | 17 of 17 match |
+| SWGT024 | 12 of 17 match | 17 of 17 match |
+   e1-oldnew.expect: D3's lines, stp_upload's reg 06f4 (sim2), and E1's,
+   one per difference with its reason:
+   - the 8x's SEC_COUNTER one more at nearly every scenario's end, and
+     /information.json's uptime: the boot's ~2.4 KB of output no longer
+     waits on the UART, the prompt 161.7 ms sooner (10999.8 vs 11161.5 ms;
+     SWGT024 9733.8 vs 9862.8 ms), which crosses a second on the 8x; config's
+     one RLDP probe and one BPDU more (8x), the same lead.
+   - lacp_l2: the LAG no longer flaps during l2 (the old's LACP timed out in
+     its 3.86 s dump: 4 port_lag_members_set lines at step 004); 2 LACPDUs
+     fewer (129 for 131) with steady 1.01-1.03 s gaps where the old's gap
+     ended in a burst 3 ms apart; lacp show's and the partner's counts follow.
+   - SWGT024 config frames tcp/80 32 -> 25: the old firmware's FIN came
+     after the bench client's own, which the client doesn't acknowledge: 8
+     FIN retransmits and a RST (51.0-52.3 s); the new one closes before the
+     client's FIN. (8x: 32 -> 33, U4's /cmd frame, as in D3.)
+   SWGT024 flags the 8x-only lines and `upload reg 06f4` as matching nothing
+   (not a failure). known-failures' `* long step CLI_RUN` is now stale:
+   E1 fixes it (for sim to drop). The checks on NEW: lacp and stp PASS;
+   stp_upload's hello KNOWN (E3's upload); HOUSE_SEC (E3, e0-leftovers.txt)
+   and RX_STEP (~34.7 ms, the web's vlanlist reply: E4's VLAN bitmap) KNOWN.
+4. Watchdog: the largest unchunked output found (all 8x ports up, STP on,
+   four LAGs, every port named 31 characters): vlan show 465 B, storm 441,
+   stp status 303, stp 242, port N 197 (stat 576 B is a job). A command
+   starts with 1 KiB free, so none waits; to wait 5 s a step would print
+   ~57 KB. watchdog.md says so.
+5. Gate (8x, bcdf246):
+     internal RAM: data 105 B (baseline 105), overlay 8 B (8), bits 3 B (3)
+     DSEG symbols: 54, none new; stack 131 B
+     common area: ends 0x3e35 (331 B left)
+     banks 48253 / 48133 / 48204 B used (899 / 1019 / 948 free; WARN over 47 KiB)
+     PASS
+   SWGT024: PASS, common 330 B left, banks 1004 / 894 / 926 free.
+   Code deltas against E0 (56ba466, 8x): banked +1089 B (143501 -> 144590),
+   common +198 B (529 -> 331 B left: the 16-bit ring, the ISR, con_putc),
+   xdata +1955 B (17973 -> 19928: the ring 1920, the jobs' cursors). Nothing
+   user-visible dropped; no code trimmed.
+6. Host: make -C test quick, 20 PASS (test_sched 119 checks). make -C
+   test/stp: all scenarios passed (it hadn't linked since D3's ctl_buf; it
+   now catches BPDUs at ctl_output and runs stp off's job to its end).
+7. schedtest (8x, 4 builds): make schedtest-sim SIM_ARGS=--twice: sim_tests
+   0 failures, sim_neg 0 failures, both deterministic.
+8. D3's tools on bcdf246, both boards: console_bugs PASS, webcmd_abort PASS
+   (W1-W4), lldp_overrun PASS.
+
+## Open
+
+- known-failures: drop `* long step CLI_RUN` (sim).
+- The bench client doesn't ACK a FIN that arrives after its own (the old
+  firmware's config scenario shows it): harmless, noted for sim.
+- Banks are over 47 KiB in all three on both boards (~0.9-1.0 KiB free each).
