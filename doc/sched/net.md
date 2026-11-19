@@ -43,6 +43,17 @@ in between would corrupt it. Control frames get their own small buffer (one
 max-size control frame, ~128 B) and their own send path (`nic_tx_packet`
 from it). `uip_buf` then belongs to uIP alone.
 
+As built (D3): `ctl_buf` in `frame_tx.c`, `RTL_FRAME_DESC_SIZE` +
+`CTL_FRAME_MAX` (256, `LLDP_MAX_FRAME`): 268 B, not ~128. LLDP is the
+largest: its variable TLVs (system name, description, port description) are
+cut to their arrays, and `rtl837x_lldp.c` checks at compile time that every
+TLV at its bound fits (about 192 B of payload with today's version string;
+205 B on the wire measured with a 23-character hostname and a 31-character
+port name, `tools/lldp_overrun.py`). Each user asserts its frame struct fits
+`CTL_FRAME_MAX`. RLDP builds no frames (the chip's engine); IGMP replies stay
+in `uip_buf`. STP, LACP and LLDP send with `ctl_output()`, uIP with
+`tcpip_output()`, both through the static `frame_output()`.
+
 ## uIP timers
 
 `uip_periodic()` runs from `net` every 5 ms of real time, measured by
