@@ -1,0 +1,39 @@
+# ES: SDCC's loop optimizations off per file (27d0ebf), 2026-11-19
+
+Michael's code-space decision: only the per-file loop flags from
+evidence/es-code-space.txt section 3. loopflags.mk: --noinduction on
+cmd_parser ntp_cli uip/uiplib crypto/chacha20 dns_cli cmd_editor
+rtl837x_stp_cli; --noinvariant on rtl837x_port sfp rtl837x_lacp rtl837x_storm
+rtl837x_rldp httpd/page_stp; both on rtl837x_leds_dump httpd/page_impl dns.
+sched_bank (-6 B in the report) left out: its measurement runs around every
+step. The flags are an object's OBJ_FLAGS (the .rel rule's own), not
+CC_FLAGS: the .ccflags stamp is made in the context of whichever object asks
+first, so a target-specific CC_FLAGS could be recorded there; the step
+sources' --Werror (sched.mk, E5) moved to OBJ_FLAGS too.
+
+Built clean in /tmp/e5/wt-27d0ebf, 8x and SWGT024; /tmp/e5/verify.sh 27d0ebf
+tools (logs /tmp/e5/v-27d0ebf/), rtlsim ovs-rtlpg 83efa85 (export).
+
+| | 8x banks free (1/2/3, total) | SWGT024 | common left | IRAM data | stack |
+|---|---|---|---|---|---|
+| 38ec166 (5f2b60e: same code) | 538/109/485 (1132) | 103/519/468 (1090) | 284 | 98 | 138 |
+| 27d0ebf | 948/928/518 (2394) | 933/921/497 (2351) | 284 | 90 | 146 |
+
++1262 / +1261 B (the report: 1286 with sched_bank and before placement).
+DSEG 98 -> 90, overlay 8 (its maximum, unchanged), bits 3: the baselines
+gate-8x.json and gate-schedtest.json lowered in the same commit (--update).
+xdata 19962 -> 19977 (+15: induction variables now in xdata). schedtest
+(8x) 385/574/920 free, common 534 left.
+
+Results:
+- gate PASS both; make -C test quick PASSED; make -C test/stp all passed;
+  schedtest-sim --twice: 0 failures, deterministic.
+- old-vs-new --checks --known --expect e1e3-oldnew.expect: 17 of 17 on both,
+  no new expect line (unused as at 38ec166).
+- Step timing, the tour's longest step per scenario (oldnew's long-steps
+  check), 38ec166 -> 27d0ebf: within +-0.03 ms everywhere (e.g. 8x cli
+  CLI_RUN 3.598 -> 3.592 ms, igmp 1.086 -> 1.093, l2_big RX_STEP 11.163 ->
+  11.132; SWGT024 cli 3.039 -> 3.051): noise, not slower.
+- cli_steps --web: cli states over 5000 us: 0, both boards (as before).
+- console_bugs, webcmd_abort W1-W6, lldp_overrun, flash_job_steps S0-S6
+  (S6 7.06-7.07 s), curl_upload (C3 5.10 / 5.11 s): PASS both.
