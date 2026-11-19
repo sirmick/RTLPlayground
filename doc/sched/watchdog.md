@@ -19,6 +19,14 @@ if (swdt_on && !--swdt_cnt) {
   7 in isr_serial with the 256 B ring's 8-bit indexes); `tools/isr_frame.py` reads it from the
   `.asm` and checks the number in the source.
 - `swdt_kick()` at each pass start sets `swdt_cnt = 1000`.
+- **Also in `con_putc()`, when a wait for room in the TX ring ends:**
+  output still moving is progress, not a hang. Until E1 chunks the dumps,
+  one unconverted command can print for longer than 5 s in one step: `l2`
+  prints ~35 characters a learned MAC, ~3.1 ms each, so ≥ ~1600 MACs pass
+  5 s and a full 4096-entry table takes ~13 s; the same over the web (the
+  `/cmd` mirror) and any dump that grows with the configuration. A step that
+  hangs without printing still trips it at 5 s. Accepted, until E1 (owner):
+  a loop that prints for ever isn't caught.
 - **Limit: 5 s** (1000 ticks). It must be far above the step limit (20 ms)
   and the flash exception (40 ms), and below LACP/STP's patience only by
   accident: the watchdog catches hangs, not slow steps.

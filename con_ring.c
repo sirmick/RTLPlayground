@@ -6,6 +6,7 @@
 #include <8051.h>
 #include <stdint.h>
 #include "con_ring.h"
+#include "crash.h"
 
 __xdata uint8_t con_rx_buf[CON_RX_SIZE];
 volatile __xdata uint8_t con_rx_head;
@@ -40,14 +41,20 @@ static __xdata uint8_t con_es;
 
 /* Waits while the ring is full. If the serial interrupt can't run (EA or ES
  * off: code that prints with interrupts off), the wait does the ISR's part
- * itself, polling TI, so it never hangs. ES is left as it was found. */
+ * itself, polling TI, so it never hangs. ES is left as it was found.
+ * A wait that ends kicks the watchdog: output still moving is progress, so
+ * a long unconverted dump (l2: ~3.1 ms a MAC) isn't taken for a hang
+ * (watchdog.md). */
 void con_putc(uint8_t c)
 {
-	while (!con_tx_room()) {
-		if ((!EA || !ES) && TI) {
-			TI = 0;
-			CON_ISR_TX();
+	if (!con_tx_room()) {
+		while (!con_tx_room()) {
+			if ((!EA || !ES) && TI) {
+				TI = 0;
+				CON_ISR_TX();
+			}
 		}
+		swdt_kick();
 	}
 	con_tx_buf[con_tx_head] = c;
 	/* The ISR must not see the transmitter idle between the store and the
