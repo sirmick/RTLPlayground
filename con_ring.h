@@ -53,6 +53,7 @@ extern volatile __xdata uint8_t con_tx_busy;	/* the transmitter is sending */
 uint8_t con_getc(void);		/* the next RX byte; call only when con_rx_ready() */
 uint8_t con_tx_room(void);	/* free bytes in the TX ring */
 void con_putc(uint8_t c);	/* waits while the TX ring is full */
+void con_drain(void);		/* waits until the TX ring is out: before a reset */
 void con_ring_init(void);
 
 #endif

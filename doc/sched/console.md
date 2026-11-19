@@ -19,6 +19,10 @@
   code waits for every byte. Old code that prints a lot keeps working at
   today's cost; converting it is an improvement, not a requirement.
 - `cmd_capture` (web commands) and syslog stay in `write_char`, unchanged.
+- **Before a reset:** `reset_chip()` first waits with `con_drain()` until the
+  TX ring is empty and its last byte is out, so what was printed just
+  before (`reset`, `factory-reset`, the button, "Resetting to apply
+  update") isn't lost. The `^R ^R` and watchdog paths reset at once.
 - `EV_CON_TX` = "room for a full line" (≥ 100 free bytes), sampled at
   pass start.
 
