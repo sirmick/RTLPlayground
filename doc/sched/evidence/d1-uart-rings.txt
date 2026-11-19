@@ -45,3 +45,27 @@ make schedtest-sim MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact SIM_ARGS=
   sim_neg 0 failures, deterministic (44.7 s, alongside). Every test of both
   layers ran in both runs; coverage as before (every state's step function,
   sched.c 44/44, crash.c 21/21).
+
+## Old vs new (ovs-rtlpg 2f3b6dd tests/oldnew, rtlsim 2f3b6dd; OLD = fork main b635486, ~/src/rtlpg-ref)
+NEW = a35bac2, built clean in a worktree (tools/docker-make.sh MACHINE=... LAYOUT=compact LOADER=1):
+  python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <a35bac2 -boot> --board boards/<board>.json [--expect d1-oldnew.expect]
+| board | without --expect | with d1-oldnew.expect |
+|---|---|---|
+| 8x (keeplink_kp_9000_9xhpml_v1_2) | 0 of 12 match | 12 of 12 match |
+| SWGT024 (swgt024_v2_0_unmanaged) | 9 of 12 match | 12 of 12 match |
+lacp: no partner yet (PENDING D0a): only the actor's side is compared; it matches.
+Every difference, explained (doc/sched/evidence/d1-oldnew.expect lists them, each
+as narrow as the harness's names allow): write_char no longer waits ~87 us a
+byte on the wire, so the code after a print runs before its bytes are out and
+the firmware is a little ahead of the old at the scenarios' fixed times (the
+8x's prompt comes 47 ms sooner on the wire: 11114.1 vs 11161.5 ms; inside, the
+firmware is further ahead).
+- `000 boot` (every scenario, 8x): the boot slot's text ends a few characters
+  further on (the next line's "<n"); `config 007 boot`, `upload 003 boot` the same
+- `stp 002 cli stp status`, `005 /stp.json`, `006 /stpcnt.json`: STP runs that
+  much sooner: tx counts +1, ages 40/0 for 39/1, tcs 0x16 for 0x15
+- `loop frames * rldp`: 99 RLDP probes per linked port for 98
+- `upload reg 06f4` (SEC_COUNTER): the update's reset falls the other side of a second
+None of the reference scenarios pastes a line, so the 256 B ring's paste
+behaviour (and U2's) isn't exercised; the drain before a reset is in upload's
+path ("Resetting to apply update") and shows no difference.
