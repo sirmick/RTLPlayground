@@ -39,6 +39,21 @@ void cmd_tokenize(void) __banked;
 void cmd_parser(void) __banked;
 void execute_config(void) __banked;
 void execute_commands(__xdata uint8_t *p) __banked;
+
+/* Dumps as jobs (E1): cli_job set by the command, a line per cli_job_more() */
+#define CLI_JOB_HISTORY	1
+#define CLI_JOB_L2	2
+#define CLI_JOB_HEALTH	3
+#define CLI_JOB_STAT	4
+#define CLI_JOB_LACP	5
+extern __xdata uint8_t cli_job;
+void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after its last */
+void cmd_finish(void) __banked;		/* the job to its end, at once */
+void exec_begin(__xdata uint8_t *p) __banked;	/* several commands, from p */
+uint8_t exec_line(void) __banked;	/* the next one; 0 when done (err_status) */
+uint8_t port_l2_line(void) __banked;	/* rtl837x_port.c: the l2 job */
+uint8_t port_stats_line(void) __banked;	/* rtl837x_port.c: the stat job */
+uint8_t lacp_show_line(void) __banked;	/* rtl837x_lacp.c: the lacp show job */
 void print_ip(__xdata uint8_t *ptr) __banked;
 void print_mac(__xdata uint8_t *ptr) __banked;
 void print_sw_version(void) __banked;

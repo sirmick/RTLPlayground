@@ -9,7 +9,7 @@ SCHED_DEFS ?= tasks.def
 # What the ISR prologues push before SWDT_ISR / CRASH_FROM_ISR read SP
 # (crash.h); checked against the compiled rtlplayground.asm below.
 ISR_T2_PUSHES = 8
-ISR_SERIAL_PUSHES = 7
+ISR_SERIAL_PUSHES = 8
 CC_FLAGS += -I$(SCHED_GEN) -DISR_T2_PUSHES=$(ISR_T2_PUSHES) -DISR_SERIAL_PUSHES=$(ISR_SERIAL_PUSHES)
 
 # Resident: the core, the crash record, the dispatch tables. Banked, placed

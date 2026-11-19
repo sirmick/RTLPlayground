@@ -373,22 +373,54 @@ static void test_rings(void)
 		CON_ISR_RX('z');
 	CHECK(con_rx_overruns == 7 + 45, "full again at any index: 255 kept, the rest counted");
 
-	CHECK(con_tx_room() == 127, "empty TX ring: 127 free");
+	CHECK(sizeof(con_tx_buf) == 2048, "the TX ring is 2 KiB (decision 21)");
+	CHECK(con_tx_room() == CON_TX_SIZE - 1, "empty TX ring: 2047 free");
 	con_putc('H');
 	CHECK(SBUF == 'H' && con_tx_busy, "the first byte starts the transmitter");
 	for (int k = 0; k < 40; k++)
 		con_putc('a' + k % 26);
-	CHECK(con_tx_room() == 87, "40 queued");
+	CHECK(con_tx_room() == CON_TX_SIZE - 1 - 40, "40 queued");
 	CHECK(ES, "serial interrupt back on");
 	reset_all(1); con_putc('H');
-	for (int k = 0; k < 40; k++) con_putc('x');
+	for (int k = 0; k < CON_TX_SIZE - 1 - 99; k++) con_putc('x');
 	pass();
-	CHECK(!(sched_ev & EV_CON_TX), "under 100 free: no EV_CON_TX");
+	CHECK(con_tx_room() == 99 && !(sched_ev & EV_CON_TX), "under 100 free: no EV_CON_TX");
 	int sent = 0;
-	while (con_tx_busy && sent < 200) { CON_ISR_TX(); sent++; }
-	CHECK(sent == 41 && con_tx_room() == 127, "TI drains the ring, then the transmitter goes idle");
+	while (con_tx_busy && sent < 3000) { CON_ISR_TX(); sent++; }
+	CHECK(sent == CON_TX_SIZE - 99 && con_tx_room() == CON_TX_SIZE - 1,
+	      "TI drains the ring, then the transmitter goes idle");
 	pass();
 	CHECK(sched_ev & EV_CON_TX, "room for a line: EV_CON_TX");
+
+	/* E1: 16-bit indexes, across the wrap and full */
+	ok = 1;
+	int out = 0;
+	for (int round = 0; round < 7; round++) {	/* 7 x 1500 B: the indexes wrap 5 times */
+		for (int k = 0; k < 1500; k++) {
+			con_putc((uint8_t)(k + round));
+			if (k == 0)
+				ok &= SBUF == (uint8_t)round;	/* the idle transmitter takes the first */
+		}
+		out = 1;
+		while (con_tx_busy) {
+			CON_ISR_TX();
+			if (con_tx_busy) {
+				ok &= SBUF == (uint8_t)(out + round);
+				out++;
+			}
+		}
+		ok &= out == 1500;
+	}
+	CHECK(ok && con_tx_room() == CON_TX_SIZE - 1, "across the wraps: every byte out, in order");
+	con_putc('F');
+	for (int k = 0; k < CON_TX_SIZE - 1; k++) con_putc('f');
+	CHECK(con_tx_room() == 0, "full: 2047 queued behind the one sending");
+	ES = 0; TI = 1;				/* the ISR can't run: con_putc does its part */
+	con_putc('g');
+	CHECK(con_tx_room() == 0 && SBUF == 'f' && con_tx_buf[(con_tx_head - 1) & CON_TX_MASK] == 'g',
+	      "a byte into a full ring waits for one to go, polling TI with ES off");
+	ES = 1;
+	while (con_tx_busy) CON_ISR_TX();
 }
 
 static void fake_isr_timer2(void) { ticks++; SWDT_ISR(5); }

@@ -28,6 +28,12 @@ void httpd_init(void) __banked;
 
 /* A web /cmd queued for cli (net.md item 2) */
 extern __xdata uint8_t webcmd_pending, webcmd_done;
-void httpd_webcmd_run(void) __banked;	/* cli: run it, the reply into outbuf */
+extern __xdata uint8_t webcmd_busy;	/* queued until its reply is sent or its connection ends */
+extern __xdata uint8_t webcmd_cap;	/* the capture between cli's steps: 1, 2 = full */
+extern __xdata uint8_t cmd_capture;	/* rtlplayground.c: write_char's capture */
+void httpd_webcmd_begin(void) __banked;	/* cli: the reply's header; its commands from config_buf */
+void httpd_webcmd_end(void) __banked;	/* cli: complete the reply, webcmd_done */
+#define WEBCMD_CAPTURE_ON()	(cmd_capture = webcmd_cap)
+#define WEBCMD_CAPTURE_OFF()	(webcmd_cap = cmd_capture, cmd_capture = 0)
 
 #endif
