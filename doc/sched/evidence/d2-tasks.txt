@@ -117,7 +117,9 @@ Every slot listed (sfp1 free: the 8x has one SFP slot). Stack headroom 73 B
 These are today's code running in one step, as in the old loop: a dump
 prints faster than the 115200 console drains (write_char waits on the full
 TX ring), and vlanlist walks the VLAN table. The book moves them in D3/E1/E4;
-QA thread d2-long-steps asks how D2's criterion should read.
+QA thread d2-long-steps (resolved) accepted them as D2's long steps. Since D3
+the console commands run in the cli task, so the same dumps show as CLI_RUN,
+not CON_EDIT (d3-console-net.txt).
 
 ## schedtest
 All four variants rebuilt (base, overrun: best fit; schedtest doesn't link
@@ -169,15 +171,18 @@ host quick 20 PASS; 8x gate PASS (IRAM 0, common 0x3e5d, 291 B left).
 rtlsim's control mode doesn't learn MACs (learning lives in its OVS fabric),
 so an l2 table of ~2000 entries couldn't be built here; peek is the long print.
 
-## Old vs new (ovs-rtlpg 2f3b6dd tests/oldnew, rtlsim 2f3b6dd; OLD = fork main b635486, ~/src/rtlpg-ref)
-NEW = 9948af2, built clean in a worktree (tools/docker-make.sh MACHINE=... LAYOUT=compact LOADER=1):
+## Old vs new (ovs-rtlpg bb0ee65 tests/oldnew, rtlsim bb0ee65; OLD = fork main b635486, ~/src/rtlpg-ref)
+NEW = 9948af2, built clean in a worktree (tools/docker-make.sh MACHINE=... LAYOUT=compact LOADER=1).
+From ~/src/ovs-rtlpg:
   python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <9948af2 -boot> --board boards/<board>.json [--expect d2-oldnew.expect]
 | board | without --expect | with d2-oldnew.expect |
 |---|---|---|
-| 8x (keeplink_kp_9000_9xhpml_v1_2) | 0 of 12 match | 12 of 12 match |
-| SWGT024 (swgt024_v2_0_unmanaged) | 9 of 12 match | 12 of 12 match |
-lacp: no partner yet (PENDING D0a): only the actor's side is compared; it matches.
-D2 adds no difference of its own: on both boards the set of differing results
-equals D1's, and on the 8x D2's results equal D1's one for one (the version
-masked). d2-oldnew.expect is therefore D1's list (see the D1 evidence for each
-line's reason).
+| 8x (keeplink_kp_9000_9xhpml_v1_2) | 10 of 13 match | 13 of 13 match |
+| SWGT024 (swgt024_v2_0_unmanaged) | 11 of 13 match | 13 of 13 match |
+13 scenarios, incl. lacp and lacp_slow against the partner, the console between
+steps compared, and MAC learning (see the D1 evidence). D2 adds no difference
+of its own: on both boards D2's results equal D1's (a35bac2) one for one, 3173
+results on the 8x and 2353 on SWGT024 (versions masked), so d2-oldnew.expect
+is D1's list (see the D1 evidence for each line's reason). The cli scenario's
+`health` and `history` match (bare `health` is unchanged; `health tasks` is new
+and not in the list).
