@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include "rtl837x_common.h"
+#include "debug.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_port.h"
@@ -68,7 +69,7 @@ static void l2_flush_wait(void)
 bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type) __banked
 {
 	if (port > CPU_LOGICAL_PORT || type >= VLAN_INVALID) {
-		print_string("Invalid port or ingress filter type\n");
+		dbg_string("Invalid port or ingress filter type\n");
 		return false;
 	}
 
@@ -152,7 +153,7 @@ int8_t vlan_get(uint16_t vlan) __banked
 void vlan_create(void) __banked
 {
 	if (!vlan_settings.vlan || vlan_settings.vlan >= 0xfff) {
-		print_string("\nInvalid VLAN: "); print_short(vlan_settings.vlan); write_char('\n');
+		dbg_string("\nInvalid VLAN: "); dbg_short(vlan_settings.vlan); dbg_char('\n');
 		return;
 	}
 

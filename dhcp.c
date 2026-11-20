@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "rtl837x_sfr.h"
 #include "rtl837x_common.h"
+#include "debug.h"
 #include "dhcp.h"
 #include "uip.h"
 #include "uip/uip.h"
@@ -366,7 +367,7 @@ void dhcp_start(void) __banked
 	if(dhcp_state.conn) {
 		uip_udp_bind(dhcp_state.conn, HTONS(DHCPC_CLIENT_PORT));
 	} else {
-		print_string("dhcp_start failed to set up socket\n");
+		dbg_string("dhcp_start failed to set up socket\n");
 		return;
 	}
 	get_random_32();

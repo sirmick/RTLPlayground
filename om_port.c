@@ -105,9 +105,9 @@ uint8_t om_apply_port(uint8_t idx) __banked
 	} else if (r.speed != o.speed) {	/* the cage's: sfp_speed[] takes auto, 100m.. (no 10m) */
 		b = machine.is_sfp[l] - 1;
 		sfp_speed[b] = r.speed ? r.speed - 1 : SFP_SPEED_AUTO;
-		if (!om_full) {		/* the module found again at once, then read (the boot's sfp task does) */
+		if (!om_full) {		/* the module found again by the sfp task's next poll, then read */
 			sfp_pins_last |= 0x1 << (b << 2);
-			sfp_pins(b);
+			sfp_ready[b] = sfp_id_ok[b] = sfp_diag_ok[b] = 0;
 		}
 	}
 	if (r.mtu != o.mtu)

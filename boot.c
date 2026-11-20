@@ -6,6 +6,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_common.h"
+#include "debug.h"
 #include "rtl837x_flash.h"
 #include "rtl837x_pins.h"
 #include "rtl837x_phy.h"
@@ -57,9 +58,11 @@ void sds_config_mac(uint8_t sds, uint8_t mode) __banked
 	else
 		sfr_data[2] &= 0x03;
 	reg_write_m(RTL837X_REG_SDS_MODES);
+#ifdef DEBUG
 	print_string("\nRTL837X_REG_SDS_MODES: ");
 	print_reg(RTL837X_REG_SDS_MODES);
 	print_string("\n");
+#endif
 }
 
 
@@ -131,7 +134,7 @@ void early_boot_handle_button(void) __banked
  */
 void sds_config(uint8_t sds, uint8_t mode) __banked
 {
-	print_string("sds_config sds: "); print_byte(sds); print_string(", mode: "); print_byte(mode); write_char('\n');
+	dbg_string("sds_config sds: "); dbg_byte(sds); dbg_string(", mode: "); dbg_byte(mode); dbg_char('\n');
 
 	uint8_t page = 0;
 	uint16_t v = 0;
@@ -157,7 +160,7 @@ void sds_config(uint8_t sds, uint8_t mode) __banked
 		page = 0x26;
 		break;
 	default:
-		print_string("Error in SDS Mode\n");
+		dbg_string("Error in SDS Mode\n");
 		return;
 	}
 

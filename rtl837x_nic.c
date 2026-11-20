@@ -1,4 +1,5 @@
 #include "rtl837x_common.h"
+#include "debug.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_nic.h"
@@ -83,7 +84,7 @@ void nic_tx_packet(__xdata uint8_t *buffer, uint16_t len, uint16_t ring_ptr)
 	SFR_NIC_CTRL = len;
 	while (SFR_NIC_CTRL != 0) {
 		if (++guard == 0) {
-			print_string("NIC: TX transfer did not complete\n");
+			dbg_string("NIC: TX transfer did not complete\n");
 			return;
 		}
 	}
