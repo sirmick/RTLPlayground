@@ -6,7 +6,9 @@ generator on it: broken schemas must fail with their message; the registry
 must give a field added anywhere the next free ID and renumber nothing; a
 type change, a removed field and a missing ID must fail the build.
 """
+import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -173,6 +175,51 @@ check(rc == 0, "Flags losing a word keeps the ID", out)
 print("output")
 rc, out, _ = gen(BASE, registry=reg, out=True)
 check(rc == 0, "generates", out)
+
+print("the web UI's schema (--js)")
+d = tempfile.mkdtemp()
+with open(os.path.join(d, "a.py"), "w") as f:
+    f.write('''obj("port", count=PORTS, tip="A port")
+cfg("name", Str(7), "", tip="Its name", label="c_name")
+cfg("on", Bool, True, when="copper")
+cfg("speed", Enum("sp", "auto 1g"), "auto")
+cfg("mtu", U16(64, 9000), 1500, tip="Largest frame", unit="B")
+cfg("iso", PortMask(cpu=True), "OM_X")
+action("test", "f")
+obj("sys")
+cfg("ip", IPv4, "192.168.1.1")
+state("port", count=PORTS)
+st("link", Enum("ln", "down up"))
+st("rx", U64, when="copper")
+''')
+subprocess.run([sys.executable, GEN, "-s", d, "--register"], capture_output=True)
+js_path = os.path.join(d, "schema.js")
+p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o1"), "--js", js_path],
+                   capture_output=True, text=True)
+p2 = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o2")], capture_output=True, text=True)
+same = all(open(os.path.join(d, "o1", n)).read() == open(os.path.join(d, "o2", n)).read()
+           for n in ("om_gen.h", "om_gen.c"))
+check(p.returncode == 0 and same, "--js leaves om_gen.h and om_gen.c as they are", p.stdout + p.stderr)
+txt = open(js_path).read() if os.path.exists(js_path) else ""
+m = re.search(r"var SCHEMA = (\{.*\});", txt)
+sch = json.loads(m.group(1)) if m else {}
+pf = sch.get("port", {}).get("f", {})
+check(sch.get("port", {}).get("i") == "P" and sch["port"].get("t") == "A port" and "sys" in sch
+      and "i" not in sch["sys"] and "state.port" in sch, "objects: index kind, tip, state ones by \"state.\"",
+      json.dumps(sch)[:300])
+check(list(pf) == ["name", "on", "speed", "mtu", "iso", "test"], "fields in schema order", str(list(pf)))
+check(pf.get("name") == ["s", 7, None, "", 0, "Its name", "", "c_name"] and pf.get("on") == ["b", None, None, "on", 1]
+      and pf.get("speed") == ["e", "auto 1g", None, "auto"]
+      and pf.get("mtu") == ["n", 64, 9000, "1500", 0, "Largest frame", "B"],
+      "type, limits or words, default, when, tip, unit, label", json.dumps(pf))
+check(pf.get("iso") == ["m", 1] and pf.get("test") == ["a"],
+      "a C-expression default is null and trailing empties go", json.dumps(pf))
+check(sch["sys"]["f"]["ip"] == ["ip", None, None, "192.168.1.1"] and
+      sch["state.port"]["f"] == {"link": ["e", "down up"], "rx": ["n", None, None, None, 1]},
+      "addresses as text; state fields, no default", json.dumps(sch["state.port"]))
+mt = os.path.getmtime(js_path)
+subprocess.run([sys.executable, GEN, "-s", d, "--js", js_path], capture_output=True)
+check(os.path.getmtime(js_path) == mt, "an unchanged schema.js is not rewritten")
 
 print("\n%s" % ("TEST_OM_GEN PASSED" if not fails else "%d FAILED" % fails))
 sys.exit(1 if fails else 0)

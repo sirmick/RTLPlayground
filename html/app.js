@@ -57,13 +57,10 @@ var LANG = {
         c_down: "down",
         c_on: "On",
         c_auto: "Auto",
-        c_delete: "Delete",
         c_type: "Type",
         c_state: "State",
         c_enabled: "Enabled",
-        c_load: "Load",
         c_disable: "Disable",
-        c_sfp: "SFP",
         c_full: "full",
         c_half: "half",
         c_yes: "yes",
@@ -75,10 +72,6 @@ var LANG = {
         d_rxpps: "RX pps",
         d_txbad: "TX bad",
         d_rxbad: "RX bad",
-        i_host: "Hostname",
-        i_ip: "IP address",
-        i_mask: "Netmask",
-        i_gw: "Gateway",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Built",
@@ -88,7 +81,7 @@ var LANG = {
         i_pcb: "PCB",
         i_temp: "Temperature",
         i_flash: "Flash",
-        i_syslog: "Syslog",
+        i_reset: "Last reset",
         p_state: "State",
         p_disabled: "disabled",
         p_up: "up",
@@ -104,12 +97,18 @@ var LANG = {
         p_rxlos: "RX LOS",
         p_adv: "Advertising",
         pt_title: "Port configuration",
+        f_port_duplex: "Duplex",
+        f_port_ingress_filter: "Filter",
+        f_port_eee: "EEE",
+        f_port_isolate: "Sends to",
+        f_port_cabletest: "Cable test",
+        f_state_port_duplex: "Duplex",
+        f_state_port_media: "Media",
+        f_state_port_ms_role: "Role",
+        f_state_port_eee_active: "EEE active",
         pt_conn: "Devices learned",
         pt_speed: "Speed",
         pt_mtu: "MTU",
-        pt_sfp_note: "SFP speed is set per slot and is not saved in the startup config.",
-        pt_name_err: "Port name: 1-15 characters, no spaces",
-        pt_mtu_err: "MTU must be 64-16383",
         stp_title: "Spanning tree",
         loop_title: "Loop detection",
         loop_d: "The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.",
@@ -210,18 +209,14 @@ var LANG = {
         v_pvid_on: "PVID on",
         v_empty: "No VLANs configured.",
         v_mgmt: "Management VLAN",
-        v_mgmt_none: "untagged",
         v_editor: "VLAN editor",
         v_optional: "optional",
-        v_setmgmt_q: "Set {n} as the management ID?",
         v_setmgmt_t: "Management VLAN",
         v_member: "Member",
         v_pvid: "PVID",
         v_add: "Add a new VLAN",
-        v_mgmt_c: "WARNING: You must be able to access this VLAN to continue to manage the switch.",
         v_legend: "U = untagged member, T = tagged member, - = not a member. PVID is automatically assigned based on the untagged membership.",
         v_accept: "Accept",
-        v_ing_all: "All",
         v_del_t: "Delete VLAN",
         v_rename: "Rename",
         v_rename_t: "Rename VLAN",
@@ -232,10 +227,7 @@ var LANG = {
         v_loaded: "Loaded VLAN {n}",
         v_notfound: "VLAN {n} not found (a new one can still be created)",
         v_nomember: "Select at least one member port (or delete the VLAN instead)",
-        v_vid_first: "Enter a VLAN ID first",
-        v_mgmt_q: "Set VLAN {n} as management VLAN?",
         v_vid_err: "VLAN ID already exists",
-        v_mgmt_d: "The switch will start tagging its own traffic with that VLAN. If the port you are connected through does not carry it, this page becomes unreachable and the setting can only be undone over the console.",
         v_mgmt_tt: "The management VLAN cannot be deleted, you need to assign management to another VLAN first.",
         l2_title: "MAC address table",
         l2_filter: "filter...",
@@ -462,13 +454,10 @@ var LANG = {
         c_down: "リンクダウン",
         c_on: "オン",
         c_auto: "自動",
-        c_delete: "削除",
         c_type: "タイプ",
         c_state: "状態",
         c_enabled: "有効",
-        c_load: "読み込み",
         c_disable: "無効化",
-        c_sfp: "SFP",
         c_full: "全二重",
         c_half: "半二重",
         c_yes: "はい",
@@ -480,10 +469,6 @@ var LANG = {
         d_rxpps: "RX pps",
         d_txbad: "TX 異常",
         d_rxbad: "RX 異常",
-        i_host: "ホスト名",
-        i_ip: "IP アドレス",
-        i_mask: "ネットマスク",
-        i_gw: "ゲートウェイ",
         i_mac: "MAC",
         i_fw: "ファームウェア",
         i_built: "ビルド日",
@@ -493,7 +478,6 @@ var LANG = {
         i_pcb: "PCB",
         i_temp: "温度",
         i_flash: "フラッシュ",
-        i_syslog: "Syslog",
         p_state: "状態",
         p_disabled: "無効",
         p_up: "アップ",
@@ -512,9 +496,6 @@ var LANG = {
         pt_conn: "学習済みデバイス",
         pt_speed: "速度",
         pt_mtu: "MTU",
-        pt_sfp_note: "SFP の速度はスロット単位で設定され、起動設定には保存されません。",
-        pt_name_err: "ポート名: 1〜15 文字、空白不可",
-        pt_mtu_err: "MTU は 64〜16383 の範囲で指定してください",
         stp_title: "スパニングツリー",
         stp_h: "RSTP, 802.1w",
         stp_version: "バージョン",
@@ -585,7 +566,6 @@ var LANG = {
         v_pvid_on: "PVID",
         v_empty: "VLAN は設定されていません。",
         v_mgmt: "管理 VLAN",
-        v_mgmt_none: "タグ無し",
         v_editor: "VLAN エディタ",
         v_optional: "任意",
         v_setmgmt: "管理 VLAN に設定",
@@ -594,7 +574,6 @@ var LANG = {
         v_pvid: "PVID",
         v_legend: "U = タグ無しメンバー、T = タグ付きメンバー、- = 非メンバー。PVID はタグ無し受信トラフィックをこの VLAN に割り当てます。",
         v_accept: "受け入れ",
-        v_ing_all: "すべて",
         v_ing_apply: "受信モードを適用",
         v_del_t: "VLAN を削除",
         v_del_q: "VLAN {n} を削除しますか?",
@@ -604,9 +583,6 @@ var LANG = {
         v_loaded: "VLAN {n} を読み込みました",
         v_notfound: "VLAN {n} は存在しません (新規作成は可能です)",
         v_nomember: "メンバーポートを 1 つ以上選択してください (または VLAN を削除してください)",
-        v_vid_first: "先に VLAN ID を入力してください",
-        v_mgmt_q: "VLAN {n} を管理 VLAN に設定しますか?",
-        v_mgmt_d: "スイッチは自身のトラフィックにこの VLAN のタグを付けるようになります。接続中のポートがこの VLAN を通さない場合、このページにアクセスできなくなり、コンソールからしか元に戻せません。",
         l2_title: "MAC アドレステーブル",
         l2_filter: "フィルタ...",
         l2_flush: "学習エントリを消去",
@@ -766,13 +742,10 @@ var LANG = {
         c_down: "未连接",
         c_on: "开",
         c_auto: "自动",
-        c_delete: "删除",
         c_type: "类型",
         c_state: "状态",
         c_enabled: "启用",
-        c_load: "读取",
         c_disable: "禁用",
-        c_sfp: "SFP",
         c_full: "全双工",
         c_half: "半双工",
         c_yes: "是",
@@ -784,10 +757,6 @@ var LANG = {
         d_rxpps: "RX pps",
         d_txbad: "TX 错误",
         d_rxbad: "RX 错误",
-        i_host: "主机名",
-        i_ip: "IP 地址",
-        i_mask: "子网掩码",
-        i_gw: "网关",
         i_mac: "MAC",
         i_fw: "固件",
         i_built: "构建日期",
@@ -797,7 +766,6 @@ var LANG = {
         i_pcb: "PCB",
         i_temp: "温度",
         i_flash: "Flash",
-        i_syslog: "Syslog",
         p_state: "状态",
         p_disabled: "已禁用",
         p_up: "已连接",
@@ -816,9 +784,6 @@ var LANG = {
         pt_conn: "已学习设备",
         pt_speed: "速率",
         pt_mtu: "MTU",
-        pt_sfp_note: "SFP 速率按插槽设置，不会保存到启动配置。",
-        pt_name_err: "端口名称: 1-15 个字符，不能包含空格",
-        pt_mtu_err: "MTU 范围为 64-16383",
         stp_title: "生成树",
         stp_h: "RSTP, 802.1w",
         stp_version: "版本",
@@ -912,18 +877,14 @@ var LANG = {
         v_pvid_on: "PVID",
         v_empty: "尚未配置 VLAN。",
         v_mgmt: "管理 VLAN",
-        v_mgmt_none: "untagged",
         v_editor: "VLAN 编辑器",
         v_optional: "optional",
-        v_setmgmt_q: "将 {n} 设为管理 VLAN ID？",
         v_setmgmt_t: "设为管理 VLAN",
         v_member: "成员",
         v_pvid: "PVID",
         v_add: "添加新 VLAN",
-        v_mgmt_c: "警告：必须能够访问此 VLAN，才能继续管理交换机。",
         v_legend: "U = untagged 成员，T = tagged 成员，- = 非成员。PVID 将入方向的未标记流量归入此 VLAN。",
         v_accept: "接受",
-        v_ing_all: "全部",
         v_del_t: "删除 VLAN",
         v_rename: "重命名",
         v_rename_t: "重命名 VLAN",
@@ -934,9 +895,6 @@ var LANG = {
         v_loaded: "已读取 VLAN {n}",
         v_notfound: "VLAN {n} 不存在 (仍可新建)",
         v_nomember: "请至少选择一个成员端口 (或改为删除该 VLAN)",
-        v_vid_first: "请先输入 VLAN ID",
-        v_mgmt_q: "将 VLAN {n} 设为管理 VLAN?",
-        v_mgmt_d: "交换机将开始为自身流量打上该 VLAN 标签。如果您所连接的端口不属于该 VLAN，本页面将无法访问，且只能通过控制台撤销此设置。",
         v_mgmt_tt: "无法删除管理 VLAN，请先将管理功能分配给另一个 VLAN。",
         l2_title: "MAC 地址表",
         l2_filter: "筛选...",
@@ -1139,13 +1097,10 @@ var LANG = {
         c_down: "caído",
         c_on: "Encendido",
         c_auto: "Auto",
-        c_delete: "Eliminar",
         c_type: "Tipo",
         c_state: "Estado",
         c_enabled: "Habilitado",
-        c_load: "Cargar",
         c_disable: "Deshabilitar",
-        c_sfp: "SFP",
         c_full: "dúplex completo",
         c_half: "semidúplex",
         c_yes: "sí",
@@ -1157,10 +1112,6 @@ var LANG = {
         d_rxpps: "RX pps",
         d_txbad: "TX erróneos",
         d_rxbad: "RX erróneos",
-        i_host: "Nombre de host",
-        i_ip: "Dirección IP",
-        i_mask: "Máscara de red",
-        i_gw: "Puerta de enlace",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Compilado",
@@ -1169,7 +1120,6 @@ var LANG = {
         i_hw: "Hardware",
         i_pcb: "PCB",
         i_flash: "Flash",
-        i_syslog: "Syslog",
         p_state: "Estado",
         p_disabled: "deshabilitado",
         p_up: "activo",
@@ -1188,9 +1138,6 @@ var LANG = {
         pt_conn: "Dispositivos aprendidos",
         pt_speed: "Velocidad",
         pt_mtu: "MTU",
-        pt_sfp_note: "La velocidad del SFP se ajusta por ranura y no se guarda en la configuración de inicio.",
-        pt_name_err: "Nombre de puerto: 1-15 caracteres, sin espacios",
-        pt_mtu_err: "El MTU debe estar entre 64 y 16383",
         stp_title: "Árbol de expansión",
         stp_h: "RSTP, 802.1w",
         stp_version: "Versión",
@@ -1261,7 +1208,6 @@ var LANG = {
         v_pvid_on: "PVID activo",
         v_empty: "No hay VLANs configuradas.",
         v_mgmt: "VLAN de gestión",
-        v_mgmt_none: "sin etiquetar",
         v_editor: "Editor de VLANs",
         v_optional: "opcional",
         v_setmgmt: "Establecer como VLAN de gestión",
@@ -1270,7 +1216,6 @@ var LANG = {
         v_pvid: "PVID",
         v_legend: "U = miembro sin etiquetar, T = miembro etiquetado, - = no miembro. PVID asigna esta VLAN al tráfico entrante sin etiquetar.",
         v_accept: "Aceptar",
-        v_ing_all: "Todos",
         v_ing_apply: "Aplicar modos de entrada",
         v_del_t: "Eliminar VLAN",
         v_del_q: "¿Eliminar VLAN {n}?",
@@ -1280,9 +1225,6 @@ var LANG = {
         v_loaded: "VLAN {n} cargada",
         v_notfound: "VLAN {n} no encontrada (aún se puede crear una nueva)",
         v_nomember: "Selecciona al menos un puerto miembro (o elimina la VLAN)",
-        v_vid_first: "Introduce primero un ID de VLAN",
-        v_mgmt_q: "¿Establecer VLAN {n} como VLAN de gestión?",
-        v_mgmt_d: "El switch empezará a etiquetar su propio tráfico con esa VLAN. Si el puerto por el que te conectas no la transporta, esta página dejará de ser accesible y el ajuste solo podrá deshacerse por la consola.",
         l2_title: "Tabla de direcciones MAC",
         l2_filter: "filtrar...",
         l2_flush: "Vaciar entradas aprendidas",
@@ -1426,9 +1368,7 @@ var LANG = {
         stp_ctrx: "TC recibidas",
         stp_cttx: "TC enviadas",
         stp_cage: "Última BPDU [s]",
-        v_setmgmt_q: "¿Fijar {n} como ID de gestión?",
         v_add: "Añadir una VLAN",
-        v_mgmt_c: "AVISO: debes poder acceder a esta VLAN para seguir gestionando el switch.",
         v_rename: "Renombrar",
         v_rename_t: "Renombrar VLAN",
         v_mgmt_tt: "La VLAN de gestión no se puede borrar, primero hay que asignar la gestión a otra VLAN.",
@@ -1516,13 +1456,10 @@ var LANG = {
         c_down: "arrêt",
         c_on: "Marche",
         c_auto: "Auto",
-        c_delete: "Supprimer",
         c_type: "Type",
         c_state: "Etat",
         c_enabled: "Activé",
-        c_load: "Charger",
         c_disable: "Désactivé",
-        c_sfp: "SFP",
         c_full: "full",
         c_half: "half",
         c_yes: "oui",
@@ -1534,10 +1471,6 @@ var LANG = {
         d_rxpps: "RX pps",
         d_txbad: "TX KO",
         d_rxbad: "RX KO",
-        i_host: "Nom d'hote",
-        i_ip: "Adresse IP",
-        i_mask: "Masque réseau",
-        i_gw: "Passerelle",
         i_mac: "Adresse MAC",
         i_fw: "Micro logiciel",
         i_built: "Compilé le",
@@ -1547,7 +1480,6 @@ var LANG = {
         i_pcb: "PCB",
         i_temp: "Température",
         i_flash: "Taille Flash",
-        i_syslog: "Journal système",
         p_state: "Etat",
         p_disabled: "Inactif",
         p_up: "Actif",
@@ -1566,9 +1498,6 @@ var LANG = {
         pt_conn: "Appareils appris",
         pt_speed: "Vitesse",
         pt_mtu: "MTU",
-        pt_sfp_note: "La vitesse SFP est paramétrée pour le port et n'est pas enregistrée dans la configuration de démarrage.",
-        pt_name_err: "Nom du port: 1 à 15 caractères, sans espaces",
-        pt_mtu_err: "MTU doit être comrpis entre 64 et 16383",
         stp_title: "Arborescence",
         stp_h: "RSTP, 802.1w",
         stp_version: "Protocole",
@@ -1643,7 +1572,6 @@ var LANG = {
         v_pvid_on: "PVID on",
         v_empty: "Aucun VLANs configuré.",
         v_mgmt: "VLAN de management",
-        v_mgmt_none: "détagué",
         v_editor: "Editeur de VLAN",
         v_optional: "optionel",
         v_setmgmt: "Mette en VLAN de management",
@@ -1652,7 +1580,6 @@ var LANG = {
         v_pvid: "PVID",
         v_legend: "U = Membre détagué (UnTagged), T = membre tagué (Tagged), - = non membre. PVID (Port VLan ID) assigne ce VLAN au trafic entrant non tagué.",
         v_accept: "Accepté",
-        v_ing_all: "Tous",
         v_ing_apply: "Appliquer les filtes",
         v_del_t: "Supprimer le VLAN",
         v_del_q: "Supprimer le VLAN {n}?",
@@ -1662,9 +1589,6 @@ var LANG = {
         v_loaded: "VLAN chargés {n}",
         v_notfound: "VLAN {n} non trouvé (un nouveau peut toutefois être créé)",
         v_nomember: "Selectionnez au moins un port membre (ou supprimez le VLAN)",
-        v_vid_first: "Entrez un identifiant VLAN d'abord",
-        v_mgmt_q: "Mettre ce VLAN {n} en tant que VLAN de management?",
-        v_mgmt_d: "Ce commutateur commencera par taguer son propre trafic avec ce VLAN. Si le port avec lequel vous êtes connecté ne le permet pas, cette page deviendra inaccessible et les paramètres ne pourront plus être changés que via la console.",
         l2_title: "Table des adresses MAC",
         l2_filter: "filtre...",
         l2_flush: "Effacer les entrées apprises",
@@ -1854,13 +1778,10 @@ var LANG = {
         c_down: "getrennt",
         c_on: "Ein",
         c_auto: "Auto",
-        c_delete: "Löschen",
         c_type: "Typ",
         c_state: "Zustand",
         c_enabled: "Aktiviert",
-        c_load: "Laden",
         c_disable: "Deaktivieren",
-        c_sfp: "SFP",
         c_full: "voll",
         c_half: "halb",
         c_yes: "ja",
@@ -1872,10 +1793,6 @@ var LANG = {
         d_rxpps: "RX Pakete/s",
         d_txbad: "TX fehlerhaft",
         d_rxbad: "RX fehlerhaft",
-        i_host: "Hostname",
-        i_ip: "IP-Adresse",
-        i_mask: "Netzmaske",
-        i_gw: "Gateway",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Erstellt",
@@ -1885,7 +1802,6 @@ var LANG = {
         i_pcb: "PCB",
         i_temp: "Temperatur",
         i_flash: "Flash",
-        i_syslog: "Syslog",
         p_state: "Zustand",
         p_disabled: "deaktiviert",
         p_up: "verbunden",
@@ -1904,9 +1820,6 @@ var LANG = {
         pt_conn: "Gelernte Geräte",
         pt_speed: "Geschwindigkeit",
         pt_mtu: "MTU",
-        pt_sfp_note: "Die SFP-Geschwindigkeit wird pro Steckplatz gesetzt und nicht in der Startkonfiguration gespeichert.",
-        pt_name_err: "Port-Name: 1-15 Zeichen, keine Leerzeichen",
-        pt_mtu_err: "MTU muss zwischen 64 und 16383 liegen",
         stp_title: "Spanning Tree",
         stp_h: "RSTP, 802.1w",
         stp_version: "Version",
@@ -2001,19 +1914,15 @@ var LANG = {
         v_pvid_on: "PVID auf",
         v_empty: "Keine VLANs konfiguriert.",
         v_mgmt: "Management-VLAN",
-        v_mgmt_none: "untagged",
         v_editor: "VLAN-Editor",
         v_optional: "optional",
         v_setmgmt: "Als Management-VLAN",
         v_setmgmt_t: "Dieses VLAN zum Management-VLAN machen",
-        v_setmgmt_q: "{n} als Management-VLAN setzen?",
         v_add: "Neues VLAN hinzufügen",
-        v_mgmt_c: "WARNUNG: Du musst dieses VLAN erreichen können, um den Switch weiter verwalten zu können.",
         v_member: "Mitglied",
         v_pvid: "PVID",
         v_legend: "U = Mitglied untagged, T = Mitglied tagged, - = kein Mitglied. PVID ordnet eingehenden Verkehr ohne Tag diesem VLAN zu.",
         v_accept: "Annehmen",
-        v_ing_all: "Alle",
         v_ing_apply: "Ingress-Modi übernehmen",
         v_del_t: "VLAN löschen",
         v_rename: "Umbenennen",
@@ -2025,9 +1934,6 @@ var LANG = {
         v_loaded: "VLAN {n} geladen",
         v_notfound: "VLAN {n} nicht gefunden (es kann neu angelegt werden)",
         v_nomember: "Mindestens einen Mitglieds-Port wählen (oder das VLAN stattdessen löschen)",
-        v_vid_first: "Zuerst eine VLAN-ID eingeben",
-        v_mgmt_q: "VLAN {n} als Management-VLAN setzen?",
-        v_mgmt_d: "Der Switch versieht dann seinen eigenen Verkehr mit diesem VLAN-Tag. Führt der Port, über den du verbunden bist, dieses VLAN nicht, ist diese Seite nicht mehr erreichbar und die Einstellung lässt sich nur noch über die serielle Konsole zurücknehmen.",
         v_mgmt_tt: "Das Management-VLAN lässt sich nicht löschen. Lege zuerst ein anderes VLAN als Management-VLAN fest.",
         l2_title: "MAC-Adresstabelle",
         l2_filter: "filtern...",
@@ -2227,6 +2133,8 @@ var S = {
     n: 0,
     sfpSlot: [],
     info: {},
+    sys: {},
+    loader: {},
     detail: null,
     tip: null,
     dirty: false,
@@ -2437,136 +2345,35 @@ function parseLines(lines, o) {
     return o;
 }
 
-/* Stand-in for schema.js, which om_gen.py is to emit (DESIGN 14.3): per
- * field its type (t: bool enum num str pmask), enum words (e), limits,
- * length, default (d), label (l, or the UI string i), tip and when rule (w). */
-var SCHEMA = {
-    port: {
-        name: {
-            i: "c_name",
-            t: "str",
-            len: 31,
-            d: "",
-            l: "Name",
-            tip: "Shown in the UI and sent as the LLDP port description"
-        },
-        enabled: {
-            i: "c_enabled",
-            t: "bool",
-            d: "on",
-            w: "copper",
-            l: "Enabled",
-            tip: "Administrative state"
-        },
-        speed: {
-            i: "pt_speed",
-            t: "enum",
-            e: "auto 10m 100m 1g 2g5 5g 10g",
-            d: "auto",
-            w: "copper",
-            l: "Speed",
-            tip: "Autonegotiate, or force one speed; 5g and 10g only on 10G ports"
-        },
-        duplex: {
-            t: "enum",
-            e: "auto full half",
-            d: "auto",
-            w: "copper",
-            l: "Duplex",
-            tip: "Duplex for a forced 10m or 100m"
-        },
-        mtu: {
-            i: "pt_mtu",
-            t: "num",
-            min: 64,
-            max: 16383,
-            d: "16383",
-            l: "MTU",
-            tip: "Largest frame accepted, in bytes"
-        },
-        pvid: {
-            i: "v_pvid",
-            t: "num",
-            min: 0,
-            max: 4094,
-            d: "1",
-            l: "PVID",
-            tip: "VLAN for untagged frames; 0 parks a tagged-only port"
-        },
-        ingress: {
-            i: "v_accept",
-            t: "enum",
-            e: "all tagged untagged",
-            d: "all",
-            l: "Accept",
-            tip: "Acceptable frame types"
-        },
-        ingress_filter: {
-            i: "stp_bh_filter",
-            t: "bool",
-            d: "on",
-            l: "Filter",
-            tip: "Drop frames of VLANs the port is not a member of"
-        },
-        lldp: {
-            i: "nav_lldp",
-            t: "enum",
-            e: "permit block",
-            d: "permit",
-            l: "LLDP",
-            tip: "Send LLDP on this port"
-        },
-        eee: {
-            t: "bool",
-            d: "on",
-            w: "copper",
-            l: "EEE",
-            tip: "Energy-efficient Ethernet"
-        },
-        isolate: {
-            t: "pmask",
-            cpu: 1,
-            l: "Sends to",
-            tip: "Ports this port may send to"
-        }
-    },
-    "state.port": {
-        link: {
-            i: "c_link",
-            l: "Link"
-        },
-        speed: {
-            i: "pt_speed",
-            l: "Speed"
-        },
-        duplex: {
-            l: "Duplex",
-            w: "copper"
-        },
-        media: {
-            l: "Media"
-        },
-        ms_role: {
-            i: "stp_role",
-            l: "Role",
-            w: "copper"
-        },
-        pause_tx: {
-            l: "Pause TX"
-        },
-        pause_rx: {
-            l: "Pause RX"
-        },
-        macs: {
-            i: "pt_conn",
-            l: "MACs"
-        },
-        eee_active: {
-            l: "EEE active",
-            w: "copper"
-        }
-    }
+/* A field of SCHEMA (schema.js, generated by om_gen.py --js and put in
+ * front of this file) in the form the widgets read: t the type, e the
+ * words, min/max, len, cpu, tip, u the unit, i its UI string (the schema's
+ * label, or f_<object>_<field>) */
+var OM_T = {
+    b: "bool",
+    e: "enum",
+    n: "num",
+    s: "str",
+    m: "pmask"
 };
+
+function omField(obj, name) {
+    var v = SCHEMA[obj].f[name],
+        f = {
+            t: OM_T[v[0]] || v[0],
+            tip: v[5] || "",
+            u: v[6],
+            i: v[7] || ("f_" + obj + "_" + name).replace(/\./g, "_"),
+            l: name
+        };
+    if (v[0] === "e") f.e = v[1];
+    else if (v[0] === "n") {
+        f.min = v[1];
+        f.max = v[2];
+    } else if (v[0] === "s") f.len = v[1];
+    else if (v[0] === "m") f.cpu = v[1];
+    return f;
+}
 
 /* Port masks as text ("1-4,9,cpu", "none", "all") and back: a set of port
  * numbers, "cpu" for the CPU port */
@@ -3329,9 +3136,8 @@ function portDetail(i) {
     S.detail = i;
 }
 
-/* "0x00015180" seconds -> "1 d 00:00:00" in the page language */
-function fmtUptime(hex) {
-    var s = parseInt(hex, 16);
+/* seconds -> "1 d 00:00:00" in the page language */
+function fmtUptime(s) {
 
     function p(n) {
         return String(n).padStart(2, "0");
@@ -3344,50 +3150,60 @@ function fmtUptime(hex) {
     }) : t3;
 }
 
+/* The dashboard's card: the build, board and chip, from state.sys (P5-1).
+ * The hostname and the addresses come back with their objects (P4-1, P5-3). */
 function renderInfo() {
-    var m = [
-        ["i_host", "hostname"],
-        ["i_ip", "ip_address"],
-        ["i_mask", "ip_netmask"],
-        ["i_gw", "ip_gateway"],
-        ["i_mac", "mac_address"],
-        ["i_fw", "sw_ver"],
-        ["i_built", "build_date"],
-        ["i_uptime", "uptime"],
-        ["i_hw", "hw_ver"],
-        ["i_pcb", "pcb_ver"],
-        ["i_temp", "chip_temp"],
-        ["i_flash", "flash_size"],
-        ["i_syslog", "syslog_server"]
-    ];
+    var y = S.sys,
+        m = [
+            ["i_mac", y.mac],
+            ["i_fw", y.version],
+            ["i_built", y.build_date],
+            ["i_uptime", y.uptime_s && fmtUptime(+y.uptime_s)],
+            ["i_hw", y.machine],
+            ["i_pcb", y.pcb],
+            ["i_temp", y.temp_c && y.temp_c + " \u00b0C"],
+            ["i_flash", y.flash && (y.flash.size >= 1048576 ? y.flash.size / 1048576 + " MiB" : y.flash.size / 1024 + " KiB")],
+            ["i_reset", y.reset && y.reset.cause]
+        ];
     var tb = $("sysinfo");
     tb.innerHTML = "";
     m.forEach(function(r) {
-        var v = S.info[r[1]];
-        if (r[1] === "uptime") v = fmtUptime(v);
-        if (v == null || v === "") return;
+        if (r[1] == null || r[1] === "") return;
         tb.appendChild(h("tr", null, [h("td", {
             class: "mut",
             text: t(r[0])
         }), h("td", {
             class: "mono",
-            text: String(v)
+            text: String(r[1])
         })]));
     });
-    if (S.info.hostname) {
-        $("brandname").textContent = $("brandname").title = document.title = S.info.hostname;
-        // Remembered per switch (each has its own origin) for the login page tab
-        try {
-            localStorage.setItem("rtl_host", S.info.hostname);
-        } catch (e) {}
-    }
-    if (S.info.sw_ver) $("fver").textContent = "RTLPlayground " + S.info.sw_ver;
+    if (y.version) $("fver").textContent = "RTLPlayground " + y.version;
 }
 
+/* state.sys and state.sys.reset into S.sys, state.loader into S.loader */
+function stSysLoad() {
+    return cli(["get state.sys", "get state.sys.reset", "get state.loader"]).then(function(r) {
+        var o = {};
+        r.out.forEach(function(ls) {
+            parseLines(ls, o)
+        });
+        o = o.state || {};
+        S.sys = o.sys || {};
+        S.loader = o.loader || {};
+    });
+}
+
+/* /information.json: the system tab's addresses, hostname, syslog and LEDs
+ * until their objects land (P4-1) */
 function pollInfo() {
     return getJSON("/information.json").then(function(j) {
         S.info = j;
-        renderInfo()
+        if (j.hostname) {
+            $("brandname").textContent = $("brandname").title = document.title = j.hostname;
+            try {
+                localStorage.setItem("rtl_host", j.hostname);
+            } catch (e) {}
+        }
     });
 }
 
@@ -3414,7 +3230,7 @@ function dashStatus() {
 }
 tabHooks.dash = {
     enter: function() {
-        pollInfo().catch(function() {})
+        stSysLoad().then(renderInfo).catch(function() {});
     },
     status: dashStatus,
 };
@@ -3422,19 +3238,20 @@ tabHooks.dash = {
 /* ---- Tables bound to paths: rows the ports, columns an object's fields -- */
 
 function label(f) {
-    return f.i ? t(f.i) : f.l
+    var s = t(f.i);
+    return (s === f.i ? f.l : s) + (f.u ? " (" + f.u + ")" : "")
 }
 
 function tHead(tbl, obj, cols) {
-    var f = SCHEMA[obj],
-        hr = tbl.createTHead().insertRow();
+    var hr = tbl.createTHead().insertRow();
     hr.appendChild(h("th", {
         text: t("c_port")
     }));
     cols.forEach(function(c) {
+        var f = omField(obj, c);
         hr.appendChild(h("th", {
-            text: label(f[c]),
-            title: f[c].tip || ""
+            text: label(f),
+            title: f.tip
         }));
     });
 }
@@ -3448,7 +3265,7 @@ function cfgTable(tbl, obj, cols, ports) {
         var tr = tb.insertRow();
         tr.insertCell().textContent = n;
         cols.forEach(function(c) {
-            tr.insertCell().appendChild(widget(obj + "." + n + "." + c, SCHEMA[obj][c], ports.length));
+            tr.insertCell().appendChild(widget(obj + "." + n + "." + c, omField(obj, c), ports.length));
         });
     });
 }
@@ -5557,7 +5374,7 @@ $("saveBtn").addEventListener("click", function() {
 // Firmware older than pcb_ver reports only the machine name as hw_ver; check
 // against that instead of skipping the test.
 function fwBoardName() {
-    return S.info.pcb_ver || S.info.hw_ver;
+    return S.sys.pcb || S.sys.machine;
 }
 function fwForThisSwitch(u) {
     var name = fwBoardName();
@@ -5580,7 +5397,7 @@ function fwForThisSwitch(u) {
 // running firmware reports the image size its flash layout takes (compact
 // builds are smaller); older firmware is 512 KiB.
 function fwClassify(u) {
-    var want = Number(S.info.img_size) || 524288;
+    var want = Number(S.sys.image_size) || 524288;
     var kind, inst = want < 524288 && u.length === want + 16384;
     if (u.length > 10 && u[0] === 0x4d && u[1] === 0x44 && u[2] === 0x54 && u[3] === 0x31) kind = "mdata";
     else if (u.length === 16384) kind = "loader";
@@ -5676,7 +5493,7 @@ Object.keys(FW_CARDS).forEach(function(kind) {
     });
     btn.addEventListener("click", function() {
         if (!file) return;
-        var d = kind === "loader" && S.info.loader === "no" ? "ld_convert_d" : c.d;
+        var d = kind === "loader" && S.loader.present === "off" ? "ld_convert_d" : c.d;
         confirmModal(t("fw_q"), (other ? t("fw_other", {
             m: fwBoardName()
         }) + " " : "") + t(d), function() {
@@ -5773,7 +5590,7 @@ function fwSettle(st, knownGood, loader, btn) {
         var to = setTimeout(function() {
             if (ctl) ctl.abort()
         }, 2500);
-        fetch("/information.json", {
+        fetch("/favicon.ico", {
             signal: ctl ? ctl.signal : undefined,
             cache: "no-store"
         }).then(function() {
@@ -5816,19 +5633,20 @@ function fwSettle(st, knownGood, loader, btn) {
 }
 
 // What is on this switch, and which cards apply: the PoE card only on a board
-// with a PoE controller ("poe" in information.json) and room for its firmware.
+// with a PoE controller (state.sys.poe not none) and room for its firmware.
 function fwStatus() {
-    var i = S.info,
+    var ld = S.loader.present,
+        poe = S.sys.poe === "none" ? null : S.sys.poe,
         rows = [
-            ["fw_s_ver", i.sw_ver],
-            ["fw_s_loader", i.loader == null ? null : t(i.loader === "yes" ? "fw_s_yes" : "fw_s_no")],
-            ["fw_s_poe", i.poe == null ? null : t({
-                "ok": "fw_poe_ok",
-                "no image": "fw_poe_none",
-                "no answer": "fw_poe_noanswer",
-                "no image for this chip": "fw_poe_nochip",
-                "no room": "fw_poe_noroom"
-            }[i.poe] || "fw_poe_failed")]
+            ["fw_s_ver", S.sys.version],
+            ["fw_s_loader", ld == null ? null : t(ld === "on" ? "fw_s_yes" : "fw_s_no")],
+            ["fw_s_poe", poe == null ? null : t({
+                ok: "fw_poe_ok",
+                no_image: "fw_poe_none",
+                no_answer: "fw_poe_noanswer",
+                no_chip_image: "fw_poe_nochip",
+                no_room: "fw_poe_noroom"
+            }[poe] || "fw_poe_failed")]
         ];
     var tb = $("fwstatus");
     tb.innerHTML = "";
@@ -5842,12 +5660,12 @@ function fwStatus() {
             text: String(r[1])
         })]));
     });
-    $("pfcard").style.display = i.poe != null && i.poe !== "no room" ? "" : "none";
-    $("ldwarn").textContent = i.loader === "no" ? t("ld_none") : "";
+    $("pfcard").style.display = poe != null && poe !== "no_room" ? "" : "none";
+    $("ldwarn").textContent = ld === "off" ? t("ld_none") : "";
 }
 tabHooks.fw = {
     enter: function() {
-        pollInfo().then(fwStatus).catch(function() {});
+        stSysLoad().then(fwStatus).catch(function() {});
         fwStatus();
     }
 };
