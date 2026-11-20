@@ -33,7 +33,7 @@ const struct machine machine = {
 
 uint8_t cmd_words_len;
 uint8_t cmd_words_b[15];
-uint8_t cli_job_sleep;
+uint8_t cli_job_sleep, cli_job_one, cmd_capture;
 static uint16_t t_tx_room = 2048;	/* the console's TX ring: free */
 uint16_t con_tx_room(void) { return t_tx_room; }
 
@@ -1497,6 +1497,20 @@ static void binary(void)
 	static const uint8_t empty[] = { 0, 'R', 'C', '1', 24, 0 };
 	CHECK(!memcmp(sec, empty, 6) && sec[32] == 0xff, "save of the defaults: the header and 24 B of records");
 	expect("get -s", "ok\n");		/* the default entries at their own defaults: nothing */
+	/* get -s and load leave crc_value as they found it: a web upload's verify carries it
+	 * across its steps (P3D-c review). save's encoding is the flash job's, which no
+	 * upload shares (flash_job_start() refuses while one is active). */
+	{
+		extern uint16_t crc_value;
+		int kept = 1;
+		const char *const l[] = { "get -s", "load saved", "discard" };
+		for (int j = 0; j < 3; j++) {
+			crc_value = 0xbeef;
+			run(l[j]);
+			kept &= crc_value == 0xbeef;
+		}
+		CHECK(kept, "get -s, load: crc_value as it was (an upload's verify)");
+	}
 	expect("get state.cfg.save state.cfg.saved_bytes", "state.cfg.save done\nstate.cfg.saved_bytes 32\nok\n");
 
 	expect("set port.3.mtu 9000", "ok\n");
@@ -2382,7 +2396,14 @@ static void help(void)
 	CHECK(om_line() && cli_job_sleep && !out_len, "help: no room on the console for a line: it sleeps");
 	t_tx_room = 2048;
 	cli_job_sleep = 0;
-	CHECK(om_line() && !cli_job_sleep && !strncmp(out_buf, "tsys object", 11), "and then prints it");
+	cli_job_one = 0;
+	CHECK(om_line() && !cli_job_sleep && !strncmp(out_buf, "tsys object", 11) && cli_job_one,
+	      "and then prints it, one line in the step (cli_job_one: up to ~4 ms a line)");
+	t_tx_room = 0;				/* a web reply (cmd_capture): the console's room doesn't count */
+	cmd_capture = 1;
+	CHECK(om_line() && !cli_job_sleep && strstr(out_buf, "\ntsys.hostname "), "a web reply's line: no wait for the console");
+	cmd_capture = 0;
+	t_tx_room = 2048;
 	cmd_finish();
 	/* after it: get's '*', set's words and a Secret as before */
 	o = run("get");

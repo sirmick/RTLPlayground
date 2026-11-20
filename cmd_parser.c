@@ -87,6 +87,7 @@ __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
 __xdata uint8_t cmd_history_ptr;	/* 8 bits: CMD_HISTORY_SIZE is 256 */
 __xdata uint8_t cli_job;		/* a dump in progress (cli_job_more) */
 __xdata uint8_t cli_job_sleep;
+__xdata uint8_t cli_job_one;
 static void cmd_save(void);
 
 // Error set by commands

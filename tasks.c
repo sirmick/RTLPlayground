@@ -243,13 +243,15 @@ STEP(cli, more)
 		WEBCMD_CAPTURE_ON();
 		do				/* lines while outbuf has room, to CLI_WEB_FINE */
 			cli_job_more();
-		while (cli_job && !cli_job_sleep && WEBCMD_ROOM(CLI_WEB_ROOM)
+		while (cli_job && !cli_job_sleep && !cli_job_one && WEBCMD_ROOM(CLI_WEB_ROOM)
 		       && sched_step_fine() < CLI_WEB_FINE);
 		WEBCMD_CAPTURE_OFF();
+		cli_job_one = 0;
 	} else {				/* the console's: a line a step, the UART paces it */
 		if (con_tx_room() < CON_TX_LINE)
 			return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
 		cli_job_more();
+		cli_job_one = 0;
 	}
 	if (cli_job_sleep) {			/* the eee job's PHY reset (E4) */
 		cli_job_sleep = 0;

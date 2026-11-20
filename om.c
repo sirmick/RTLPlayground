@@ -47,6 +47,7 @@ extern __code const char * __code const om_msg[];
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
 extern __xdata uint16_t crc_value;
+extern __xdata uint8_t cmd_capture;	/* rtlplayground.c: write_char's capture (a web reply) */
 void crc16_bank1(__xdata uint8_t *v) __naked;	/* crc16.asm: *v into crc_value */
 
 #define RUN	((__xdata uint8_t *)&cfg_run)
@@ -2540,15 +2541,18 @@ static void rd_head(void)
  * CRC call: 16 us): 1 while there are more; then b_fmt ok (rd() at the first
  * record again) or bad */
 #define CRC_N	128
+static __xdata uint16_t l_kept;		/* crc_value as crc_step found it: an upload's verify carries it */
 
 static uint8_t crc_step(void)
 {
+	l_kept = crc_value;
 	crc_value = l_crc;
 	for (i = 0; i < CRC_N && rd_left; i++) {
 		rd();
-		crc16_bank1(&e_b);	/* only here: an upload's verify shares crc_value */
+		crc16_bank1(&e_b);	/* only here, and crc_value as it was after */
 	}
 	l_crc = crc_value;
+	crc_value = l_kept;
 	if (rd_left)
 		return 1;
 	b_fmt = E_CFGFORMAT_BAD;
@@ -2695,7 +2699,7 @@ static void h_quote(void)		/* a Str default is quoted: it may hold a space */
 
 static uint8_t h_line(void)		/* help's next line: 0 at the end */
 {
-	if (con_tx_room() < OM_H_LINE) {	/* write_char would wait for the UART: later */
+	if (!cmd_capture && con_tx_room() < OM_H_LINE) {	/* write_char would wait for the UART: later */
 		cli_job_sleep = 1;
 		return 1;
 	}
@@ -2764,6 +2768,7 @@ static uint8_t h_line(void)		/* help's next line: 0 at the end */
 	h_tip();
 	e_star = 0;
 	j_hit = 1;
+	cli_job_one = 1;			/* a line costs up to ~4 ms: one a web step */
 	return 1;
 end:
 	if (j_hit)
