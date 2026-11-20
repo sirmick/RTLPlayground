@@ -2759,14 +2759,9 @@ var CONF_CMDS = [
     /^ingress(\s+\d+[tua])+$/, /^ingress\s+[tua]$/,
     /^port\s+\d+\s+(10m|100m|1g|2g5|5g|10g|auto|on|off)(\s+(half|full))?$/,
     /^port\s+\d+\s+name(\s+\S+)?$/,
-    /^port\s+\d+\s+lldp\s+(permit|block)+$/,
     /^eee\s+(on|off)(\s+\d+)?(\s+(100m|1g|2g5))?$/,
-    /^mirror(\s+\d+)(\s+\d+[tr]?)+$/, /^mirror\s+off$/,
     /^isolate\s+\d+(\s+(off|\d+))+$/,
-    /^igmp\s+(on|off)$/,
     /^mtu\s+\d+\s+\d+$/,
-    /^lldp\s+(on|off)$/,
-    /^loop\s+(on|off)$/,
     /^led\s+(on|off)(\s+ports)?$/,
     /^bw\s+(in|out)\s+\d+\s+\S+$/,
     /^storm\s+\d+\s+(bcast|mcast|ucast|umcast)\s+(off|\d+\s+(pps|kbps))$/,
@@ -3880,25 +3875,26 @@ $("stpen").addEventListener("change", function() {
 $("stpcntd").addEventListener("toggle", function() {
     if (this.open) stpLoad()
 });
-/* on and stp from /loop.json (config, until P4-5), the ports from state.loop */
+/* loop.enabled (the box the candidate's, the line running's), the ports
+ * from state.loop; with STP on (stpCur.on: running's stp.enabled, from
+ * stpLoad) it only reports */
 function loopLoad() {
-    var s;
-    return getJSON("/loop.json").then(function(x) {
-        s = x;
-        return stObj("state.loop");
-    }).then(function(l) {
-        var en = $("loopen");
-        if (document.activeElement !== en) en.checked = s.on;
+    return cli(["get -c loop.enabled", "get loop.enabled", "get state.loop"]).then(function(r) {
+        var c = parseLines(r.out[0] || []).loop || {},
+            on = (parseLines(r.out[1] || []).loop || {}).enabled === "on",
+            l = (parseLines(r.out[2] || []).state || {}).loop || {},
+            en = $("loopen");
+        if (document.activeElement !== en) en.checked = c.enabled === "on";
         var txt = t("loop_off"),
             lp = l.looped && l.looped !== "none" ? l.looped : "",
             bl = l.blocked && l.blocked !== "none" ? l.blocked : "";
-        if (s.on && !lp)
+        if (on && !lp)
             txt = t("loop_none");
-        else if (s.on) {
+        else if (on) {
             txt = t("loop_looped", {p: lp});
             if (bl)
                 txt += ", " + t("loop_blocked", {p: bl});
-            if (s.stp)
+            if (stpCur && stpCur.on)
                 txt += " (" + t("loop_stp") + ")";
         }
         $("loopst").textContent = txt;
@@ -3906,7 +3902,7 @@ function loopLoad() {
 }
 
 $("loopen").addEventListener("change", function() {
-    postCmd("loop " + (this.checked ? "on" : "off")).then(loopLoad).catch(function() {});
+    omSet(["set loop.enabled " + (this.checked ? "on" : "off")], ["set loop.enabled " + (this.checked ? "off" : "on")]).then(loopLoad);
 });
 
 var stpPoller = new Poller(function() {
@@ -4558,45 +4554,66 @@ function buildMirror() {
     })(q);
 }
 
+/* mirror.* (P4-5): the badge running's, the port and the sources the
+ * candidate's (MC); apply's check refuses a port that is a source */
+var MC = {};
+
 function mirrorLoad() {
-    return getJSON("/mirror.json").then(function(m) {
-        $("mstate").textContent = t(m.enabled ? "m_active" : "c_off");
-        $("mstate").className = "badge " + (m.enabled ? "ok" : "");
-        if (m.enabled) $("mport").value = m.mirrorPort;
+    return cli(["get -c mirror", "get mirror.enabled"]).then(function(r) {
+        MC = parseLines(r.out[0] || []).mirror || {};
+        var on = (parseLines(r.out[1] || []).mirror || {}).enabled === "on",
+            rx = pmParse(MC.rx, S.n),
+            tx = pmParse(MC.tx, S.n);
+        $("mstate").textContent = t(on ? "m_active" : "c_off");
+        $("mstate").className = "badge " + (on ? "ok" : "");
+        if (MC.port !== "none") $("mport").value = MC.port;
         for (var p = 1; p <= S.n; p++) {
-            var v = (m.mirror_rx.includes(p) ? 1 : 0) + (m.mirror_tx.includes(p) ? 2: 0);
+            var v = (rx[p] ? 1 : 0) + (tx[p] ? 2 : 0);
             $("mm" + p).querySelectorAll("button").forEach(function(b, i) {
                 b.classList.toggle("on", i === v)
             });
         }
+        mirrorGrey();
     });
+}
+
+/* the mirror port's row can't be a source: greyed */
+function mirrorGrey() {
+    for (var p = 1; p <= S.n; p++) {
+        var na = String(p) === $("mport").value;
+        $("mm" + p).classList.toggle("na", na);
+        $("mm" + p).querySelectorAll("button").forEach(function(b) {
+            b.disabled = na
+        });
+    }
+}
+$("mport").addEventListener("change", mirrorGrey);
+
+/* lines for mirror.*, MC's values as the undo */
+function mirrorSet(l) {
+    if (!MC.port) return mirrorLoad();	/* never loaded: no undo */
+    omSet(l, ["enabled", "port", "rx", "tx"].map(function(f) {
+        return "set mirror." + f + " " + MC[f]
+    })).then(mirrorLoad);
 }
 $("mapply").addEventListener("click", function() {
     var mp = $("mport").value,
-        cmd = "mirror " + mp,
-        any = false;
+        rx = {},
+        tx = {};
     for (var p = 1; p <= S.n; p++) {
         if (String(p) === mp) continue;
         var v = Number($("mm" + p).querySelector("button.on").getAttribute("data-v"));
-        if (v === 1) {
-            cmd += " " + p + "r";
-            any = true;
-        } else if (v === 2) {
-            cmd += " " + p + "t";
-            any = true;
-        } else if (v === 3) {
-            cmd += " " + p;
-            any = true;
-        }
+        if (v & 1) rx[p] = 1;
+        if (v & 2) tx[p] = 1;
     }
-    if (!any) {
+    if (!Object.keys(rx).length && !Object.keys(tx).length) {
         toast(t("m_none"), "err");
         return;
     }
-    postCmd(cmd).then(mirrorLoad).catch(function() {});
+    mirrorSet(["set mirror.port " + mp, "set mirror.rx " + pmText(rx, S.n), "set mirror.tx " + pmText(tx, S.n), "set mirror.enabled on"]);
 });
 $("moff").addEventListener("click", function() {
-    postCmd("mirror off").then(mirrorLoad).catch(function() {});
+    mirrorSet(["set mirror.enabled off"]);
 });
 tabHooks.mirror = {
     enter: function() {
@@ -4782,39 +4799,38 @@ tabHooks.lag = {
     }
 };
 
+/* lldp.enabled and port.N.lldp, the candidate's; the names running's */
 function lldpLoad() {
-    return getJSON("/lldp.json").then(function(s) {
-        $("lldp_en").checked = s.on;
+    return cli(["get -c lldp.enabled", "get port.*.name", "get -c port.*.lldp"]).then(function(r) {
+        var o = parseLines([].concat(r.out[0] || [], r.out[1] || [], r.out[2] || [])),
+            pt = o.port || {};
+        $("lldp_en").checked = (o.lldp || {}).enabled === "on";
         var tb = $("lldp_table").tBodies[0];
         tb.innerHTML = "";
-        byPort(s.portStatus).forEach(function(p) {
-            var tr = tb.insertRow();
-            tr.insertCell().textContent = p.port;
-            tr.insertCell().textContent = p.name;
+        for (var n = 1; n <= S.n; n++)(function(n) {
+            var q = pt[n] || {},
+                tr = tb.insertRow();
+            tr.insertCell().textContent = n;
+            tr.insertCell().textContent = q.name || "";
             var sw = h("label", {
                 class: "switch"
             }, [
                 h("input", {
                     type: "checkbox",
                     onchange: function() {
-                        postCmd("port " + p.port + " lldp " + (this.checked ? "permit" : "block"))
-                            .then(function() {
-                                setTimeout(lldpLoad, 300)
-                            }).catch(function() {});
+                        var w = this.checked ? "permit" : "block";
+                        omSet(["set port." + n + ".lldp " + w], ["set port." + n + ".lldp " + q.lldp]).then(lldpLoad);
                     }
                 }), h("i")
             ]);
-            sw.firstChild.checked = p.permitted;
+            sw.firstChild.checked = q.lldp === "permit";
             tr.insertCell().appendChild(sw);
-        });
+        })(n);
     });
 }
 
 $("lldp_en").addEventListener("change", function() {
-    var el = this;
-    postCmd("lldp " + (el.checked ? "on" : "off")).catch(function() {
-        el.checked = !el.checked
-    });
+    omSet(["set lldp.enabled " + (this.checked ? "on" : "off")], ["set lldp.enabled " + (this.checked ? "off" : "on")]).then(lldpLoad);
 });
 tabHooks.lldp = {
     enter: lldpLoad
@@ -5013,7 +5029,8 @@ var SY_F = {
         "sy-ntpsrv": "ntp.server",
         "sy-ntpint": "ntp.interval_min",
         "sy-tz": "ntp.timezone",
-        "sy-dst": "ntp.dst"
+        "sy-dst": "ntp.dst",
+        "sy-igmp": "igmp.enabled"
     },
     SY = {};
 
@@ -5037,7 +5054,7 @@ function syPut(id, v) {
 }
 
 function sysLoad() {
-    cli(["get -c sys mgmt dns syslog ntp web"]).then(function(r) {
+    cli(["get -c sys mgmt dns syslog ntp web igmp"]).then(function(r) {
         var o = parseLines(r.out[0] || []);
         for (var id in SY_F) {
             var p = SY_F[id].split(".");
@@ -5105,16 +5122,6 @@ function syApply(ids, win, go, tab) {
     }).then(sysLoad);
 }
 
-function cfgParseKnown(txt) {
-    var igmp = false;
-    txt.split(/\r?\n/).forEach(function(l) {
-        l = l.trim();
-        if (/^igmp on$/.test(l)) igmp = true;
-        if (/^igmp off$/.test(l)) igmp = false;
-    });
-    $("sy-igmp").checked = igmp;
-}
-
 function syModeUi() {
     var dhcp = $("sy-mode").value === "dhcp";
     ["sy-ip", "sy-mask", "sy-gw", "sy-dns1", "sy-dns2"].forEach(function(id) {
@@ -5156,10 +5163,7 @@ $("sy-apply").addEventListener("click", function() {
     });
 });
 $("sy-igmp").addEventListener("change", function() {
-    var el = this;
-    postCmd("igmp " + (el.checked ? "on" : "off")).catch(function() {
-        el.checked = !el.checked
-    });
+    syApply(["sy-igmp"]);
 });
 $("sy-syslog").addEventListener("change", function() {
     syApply(["sy-syslog", "sy-sysip", "sy-sysport"]);
@@ -5236,7 +5240,6 @@ function cfgReload() {
         x = x.replace(/\0[\s\S]*$/, "");
         $("cfgedit").value = x;
         cfgBytes();
-        cfgParseKnown(x);
     }).catch(function() {});
 }
 
@@ -5287,7 +5290,6 @@ $("cfgfile").addEventListener("change", function() {
         x = x.replace(/[\0\xff\ufffd][\s\S]*$/, "");
         $("cfgedit").value = x;
         cfgBytes();
-        cfgParseKnown(x);
         toast(t("sy_loaded_note"));
     });
     this.value = "";
