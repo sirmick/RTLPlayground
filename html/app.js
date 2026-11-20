@@ -2588,21 +2588,42 @@ function stgDiscard() {
 var STG_WINDOW = 30;
 
 function stgApply() {
-    var until = Date.now() + STG_WINDOW * 1000;
+    var until = Date.now() + STG_WINDOW * 1000,
+        rolled = 0;
     $("stgApply").disabled = true;
     cli(["apply " + STG_WINDOW]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
     }, function() {}).then(function() {
         /* applied, or its reply lost (the change may cut this browser
          * off): the window is open either way, confirm once through */
-        return stgConfirm(until);
+        return stgConfirm(until).catch(function(e) {
+            rolled = 1;
+            throw e;
+        });
     }).then(function() {
         toast(t("stg_applied"), "ok");
     }, function(e) {
         toast(e.message, "err");
     }).then(function() {
+        return rolled && stgBack(60);
+    }).then(function() {
         $("stgApply").disabled = false;
         omReload();
+    });
+}
+
+/* after a rollback: wait, n tries 2 s apart, until the switch answers
+ * with its window closed, then show what it runs */
+function stgBack(n) {
+    return cli(["get state.cfg.apply"]).then(function(r) {
+        var a = ((parseLines(r.out[0] || []).state || {}).cfg || {}).apply;
+        if (a === "confirm" || a === "undo") throw 0;
+    }).catch(function() {
+        if (n) return new Promise(function(ok) {
+            setTimeout(ok, 2000)
+        }).then(function() {
+            return stgBack(n - 1)
+        });
     });
 }
 
@@ -2611,7 +2632,8 @@ function stgConfirm(until) {
         s: Math.max(0, Math.round((until - Date.now()) / 1000))
     });
     return cli(["confirm"]).then(function(r) {
-        if (r.errs.length) throw new Error(r.errs[0]);
+        /* no window: it ended, the switch rolled back */
+        if (r.errs.length) throw new Error(t("stg_rolled"));
     }, function() {
         if (Date.now() > until) throw new Error(t("stg_rolled"));
         return new Promise(function(ok) {
