@@ -1558,8 +1558,6 @@ void cmd_parser(void) __banked
 			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
-		} else if (cmd_compare(0, "ntp")) {
-			ntp_parse();
 		} else if (cmd_compare(0, "ip")) {
 			if (cmd_compare(1, "dhcp")) {
 				dhcp_start();

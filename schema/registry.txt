@@ -23,3 +23,9 @@ field 4.3 syslog.port U16
 obj 5 dns
 field 5.1 dns.server1 IPV4
 field 5.2 dns.server2 IPV4
+obj 6 ntp
+field 6.1 ntp.enabled BOOL
+field 6.2 ntp.server Str(47)
+field 6.3 ntp.interval_min U16
+field 6.4 ntp.timezone TZ
+field 6.5 ntp.dst Enum(dst)

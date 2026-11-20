@@ -230,7 +230,6 @@ SRCS = \
 	dns_cli.c \
 	sessions.c \
 	ntp.c \
-	ntp_cli.c \
 	syslog.c \
 	timer.c \
 	udp_apps.c \

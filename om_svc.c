@@ -1,7 +1,8 @@
 /*
  * om_svc.c - the network services for the object model (schema/dns.py,
- * syslog.py): apply their config. What the old dns server and syslog
- * commands did; syslog stops, takes the fields, starts if enabled.
+ * ntp.py, syslog.py): apply their config. What the old dns server, ntp and
+ * syslog commands did; ntp and syslog stop, take the fields, start if
+ * enabled.
  */
 #include <stdint.h>
 #include <stdbool.h>
@@ -9,6 +10,7 @@
 #include "rtl837x_common.h"
 #include "syslog.h"
 #include "dns.h"
+#include "ntp.h"
 #include "om_gen.h"
 
 uint8_t om_apply_syslog(uint8_t idx) __banked
@@ -30,5 +32,21 @@ uint8_t om_apply_dns(uint8_t idx) __banked
 {
 	(void)idx;
 	memcpy(dns_state.server, &cfg_run.dns, 8);
+	return OM_OK;
+}
+
+typedef char ntp_fits[sizeof(cfg_run.ntp.server) == sizeof(ntp_state.server) &&
+		      E_DST_EU == NTP_DST_EU && E_DST_US == NTP_DST_US ? 1 : -1];
+
+uint8_t om_apply_ntp(uint8_t idx) __banked
+{
+	(void)idx;
+	ntp_stop();
+	memcpy(ntp_state.server, cfg_run.ntp.server, sizeof(ntp_state.server));
+	ntp_state.interval = cfg_run.ntp.interval_min;
+	ntp_state.offset = cfg_run.ntp.timezone;
+	ntp_state.dst = cfg_run.ntp.dst;
+	if (cfg_run.ntp.enabled)
+		ntp_start();
 	return OM_OK;
 }
