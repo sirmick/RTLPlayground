@@ -14,6 +14,7 @@ proven on the sim, one bug each. None is filed yet; Michael decides when.
 | U6 | The health phase IDs clash | `health` | audit | phases.md, independent |
 | U8 | An unknown escape sequence (e.g. ESC O P) makes `cmd_edit` spin forever: two `continue`s don't advance the read position | `cmd_editor.c:61-62`, `:170-171` | review, D1 | not yet |
 | U7 | The host-test stubs lack `leds_mode` and `rldp_*`, so four host tests fail to link (fork only: the LED and loop-detection web pages) | `test/env_tables.c`, `test/test_httpd_tx.c` | A0 | fixed on fork main b635486 |
+| U10 | `vlan_delete` doesn't wait for its VLAN-table write to finish, so the next table command can be dropped (seen as VLAN 4000 missing after `vlan 20 d`) | `rtl837x_port.c` vlan_delete | E4 test (tools/boot_stuck.py) | fixed in E4 (3b7886c) |
 | U9 | uIP doesn't answer a zero-window probe or keep-alive (an empty segment out of sequence, seq = rcv_nxt - 1), and takes an in-sequence segment past the window it advertised: a lost window update is never repaired (uIP-wide, uIP 1.0; latent upstream, whose window is a constant MSS) | `uip/uip.c`, the sequence check in `uip_process()` | E3 review, sim (`tools/flash_job_steps.py` S6) | fixed in E3 (the check answers them with an ACK carrying the current window, marked "RTLPlayground"; test_httpd_tx probe checks) |
 
 ## Silicon facts worth upstreaming (documentation, not bugs)
