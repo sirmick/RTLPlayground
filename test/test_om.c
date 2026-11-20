@@ -652,7 +652,7 @@ static void cases(void)
 	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntlag.*\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ndns\nntp\nsyslog\nweb\nlag.*\nport.*\nport.*.tstorm.*\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp.port.*\nvlan.*\nmgmt\ndns\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nntp\nsyslog\nweb\nlag.*\nport.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
