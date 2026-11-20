@@ -2326,6 +2326,39 @@ static void vlans(void)
 	}
 	expect("set vlan.4000.members 1", "err vlan.4000.members: table full\n");
 	expect("discard", "ok\n");
+	/* P4-4b with a keyed object: boot's refusals one object at a time, no loop */
+	om_init();
+	expect("set vlan.20.members 1-2", "ok\n");
+	expect("set vlan.20.tagged 3", "ok\n");	/* vlan's own check refuses: tagged not a member */
+	expect("set port.1.pvid 20", "ok\n");	/* then port's: VLAN 20 went with vlan's defaults */
+	expect("set port.2.mtu 2000", "ok\n");
+	expect("set sys.hostname keep", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "err vlan.20: tagged ports must be members\n") && strstr(out_buf, "err port.1: pvid: no such vlan\n")
+	      && !strstr(out_buf, "not applied"), "boot: vlan refused, then port: each said once");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults vlan.# port.#\nok\n");
+	expect("get -d vlan port sys.hostname", "sys.hostname keep\nok\n");	/* both at defaults (VLAN 1 back), sys applied */
+	/* mgmt.vlan on a missing VLAN: mgmt resets, its ip with it (a check is per object) */
+	om_init();
+	expect("set mgmt.ip 192.168.2.77", "ok\n");
+	expect("set mgmt.vlan 30", "ok\n");
+	om_boot_apply();
+	expect("get state.cfg.boot_defaults mgmt.ip mgmt.vlan", "state.cfg.boot_defaults mgmt\nmgmt.ip 192.168.2.2\nmgmt.vlan 1\nok\n");
+	/* refused at its defaults: VLAN 1 deleted; mgmt.vlan 1 (and every port.N.pvid 1): mgmt,
+	 * first in apply order, refuses again after its reset: nothing applied, no loop */
+	om_init();
+	expect("del vlan.1", "ok\n");
+	expect("set port.2.mtu 2000", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "Boot config not applied\n") && cfg_run.port[1].mtu == 16383,
+	      "an object refusing at its defaults: nothing applied, no loop");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply rolled_back\nstate.cfg.boot_defaults mgmt\nok\n");
+	om_init();
+	om_boot_apply();		/* a clean boot: boot_defaults empty again */
 	vlan_checks = 0;
 
 	/* the text views of a keyed object: a default entry deleted, an entry at
