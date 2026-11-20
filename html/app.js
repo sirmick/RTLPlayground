@@ -3023,7 +3023,7 @@ var LSPEED = {
     "10g": "10G"
 };
 
-function gets(paths) {	/* get paths, as few lines as fit, into one object */
+function gets(paths) {	/* get paths (state.port.link: every port's), as few lines as fit, into one object */
     return cli(getLines(paths)).then(function(r) {
         var o = {};
         r.out.forEach(function(l) {
@@ -3034,7 +3034,7 @@ function gets(paths) {	/* get paths, as few lines as fit, into one object */
 }
 
 function portsCfg() {
-    return gets(["port.*.name", "port.*.enabled", "port.*.speed", "state.port.*.media"]).then(function(o) {
+    return gets(["port.name", "port.enabled", "port.speed", "state.port.media"]).then(function(o) {
         S.pcfg = o;
     });
 }
@@ -3044,8 +3044,8 @@ omReloaders.push(function() {
 
 function pollStatus() {
     return (S.pcfg ? Promise.resolve() : portsCfg()).then(function() {
-        return gets(["state.port.*.link", "state.port.*.speed", "state.port.*.duplex", "state.port.*.tx_good",
-            "state.port.*.rx_good", "state.port.*.tx_bad", "state.port.*.rx_bad", "state.sfp.*.present"]);
+        return gets(["state.port.link", "state.port.speed", "state.port.duplex", "state.port.tx_good",
+            "state.port.rx_good", "state.port.tx_bad", "state.port.rx_bad", "state.sfp.present"]);
     }).then(function(o) {
         var c = S.pcfg.port || {},
             m = (S.pcfg.state || {}).port || {},
