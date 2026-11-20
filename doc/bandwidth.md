@@ -1,4 +1,7 @@
 # Egress and Ingress Bandwidth Control
+
+> On feat/om bandwidth control keeps the old `bw` command until P4-6, which moves it to
+> `port.N.bw_in_kbps`, `port.N.bw_in_mode` and `port.N.bw_out_kbps` (doc/cli.md).
 The RTL8372/3 allows to control the bandwidth of data transmitted (egress) and/or
 admitted (ingress) at any given port. Once admitted, packets are internally switched
 at wire-speed, since the backplane of the devices has a bandwidth of 60GBit/s.

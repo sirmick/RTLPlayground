@@ -1,5 +1,9 @@
 # VLAN
 
+> On feat/om the VLANs keep the old `vlan` command until P4-2, which moves them to
+> `vlan.V.name`, `vlan.V.members` and `vlan.V.tagged` (doc/cli.md). A port's PVID and
+> ingress rule are paths already: `port.N.pvid`, `port.N.ingress`.
+
 The RTL827x provides support for up to 4096 802.1Q VLANs, each port can be
 assigend a PVID.
 
@@ -79,23 +83,24 @@ vlan <VLAN-ID> d
 vlan show
   Dumps the current ingress vlan settings.
 
-vlan <VLAN-ID> mgmt
+```
+
+The management VLAN, a port's PVID and its ingress rule are paths (doc/cli.md):
+
+```
+set mgmt.vlan <VLAN-ID>
   Restricts network access to the switch (web UI, syslog) to the given
-  VLAN. Use `vlan 0 mgmt` to disable the filter. Default is `vlan 1 mgmt`.
-  Warning: setting this to an unreachable VLAN locks out the web UI;
-  recovery requires serial console.
+  VLAN; 0 disables the filter. The default is 1. Apply it with a confirm
+  window (`apply 60`): an unreachable VLAN would lock out the web UI.
+  (`vlan N mgmt` now says to use this.)
 
-pvid <port> <VLAN-ID>
-  assigns PVID to a port. ports are numbered as on the casing
+set port.<N>.pvid <VLAN-ID>
+  assigns the PVID to a port, numbered as on the casing.
 
-ingress [p]<t|u|a>...
-  Allows ingress packages on port `p` only when `t`agged, `u`ntagged or `a`ny.
-  Multiple ports can be given at once as in vlan. When `p` is missing, all ports
-  are assigned the same mode. CPU port can not be changed.
+set port.<N>.ingress tagged|untagged|all
+  admits frames on the port only when tagged, untagged, or any (the default).
+  `set port.*.ingress all` sets every port. The CPU port can't be changed.
 
-  Use `vlan show` to see current configuration.
-
-  Example:
-  `ingress 1t 2a` -> Set port 1 as tagged input only, set port 2 accepting any frames.
-  `ingress a` -> Set all ports to accept both tagged and untagged frames (default behaviour).
+get port.*.pvid port.*.ingress
+  shows them; `vlan show` still dumps the ingress settings too.
 ```

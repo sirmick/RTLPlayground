@@ -538,6 +538,8 @@ the flash-model tests are on their way out, now that rtlsim covers that ground b
 ## (12) Other documents
 
 The following documents give further documentation on specific features of the RTL837x SoCs:
+- [The CLI: get, set, apply, save](doc/cli.md)
+- [HTTP API: POST /cli](doc/api.md)
 - [Adding a new device](doc/adding-a-device.md)
 - [RTL8372/3 Feature support](doc/hardware.md)
 - [CPU Port](doc/CpuPort.md)

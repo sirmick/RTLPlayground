@@ -5,14 +5,15 @@ it can take the date and time from an NTP server once the network is up. The
 time is lost at every restart and set again at the first synchronisation.
 
 ```
-ntp server <name|ip>     # default pool.ntp.org
-ntp interval <1-1440>    # minutes between two synchronisations, default 60
-ntp timezone <+hh:mm>    # offset from UTC, -12:00 to +14:00
-ntp dst off|eu|us        # daylight saving rule
-ntp on
-ntp off
-ntp                      # the settings
-get state.ntp            # synchronised, the time, the offset, the last sync
+get ntp                              # the settings
+set ntp.server <name|ip>             # default pool.ntp.org
+set ntp.interval_min <1-1440>        # minutes between two synchronisations, default 60
+set ntp.timezone <+hh:mm>            # offset from UTC, -12:00 to +14:00
+set ntp.dst off|eu|us                # daylight saving rule
+set ntp.enabled on|off
+apply
+do ntp.sync                          # synchronise now (err while ntp.enabled is off)
+get state.ntp                        # synchronised, the time, the offset, the last sync
 ```
 
 `state.ntp.time` is seconds since 1970, UTC; `state.ntp.local_offset_min`
@@ -34,5 +35,6 @@ saving time applies:
   time on the first Sunday of November.
 
 The same settings, with the current local time and the last synchronisation,
-are in the Time card of the System page. Settings made there or on the
-console are kept only once the configuration is saved.
+are in the Time card of the System page. A `set` changes the candidate;
+`apply` makes it live (the client stops, takes the fields, and starts again
+if enabled), and `save` keeps it across a restart (doc/cli.md).

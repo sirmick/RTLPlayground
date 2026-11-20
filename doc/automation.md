@@ -1,32 +1,48 @@
 # Automation
 
-## Upload
+Everything the web interface does goes through one endpoint, `POST /cli`,
+with the console's lines as the body (doc/api.md). A script logs in once and
+then posts lines.
 
-You can automate upload of the firmware via WEB with curl:
+## Log in
 
-1. Authorize with /login endpoint and save cookie:
+```bash
+curl -c cookies.txt http://${SWITCH_IP}/login -d pwd=${PASSWORD} -i
+```
 
-   ```bash
-   curl -c cookies.txt  http://${SWITCH_IP}/login -d pwd=${PASSWORD} -i
-   ```
+This saves the session cookie in cookies.txt (`session`, HttpOnly).
 
-   This will save session cookie in cookies.txt
-2. Send the firmware via form:
+## Read and change the config
 
-    ```bash
-    curl -b cookies.txt http://${SWITCH_IP}/upload -F "uploadedfile=@${FIRMWARE_FILE_PATH}" -i
-    ```
+```bash
+curl -b cookies.txt http://${SWITCH_IP}/cli --data-binary 'get state.port.*.link'
+curl -b cookies.txt http://${SWITCH_IP}/cli --data-binary $'set port.3.name uplink\napply\nsave'
+curl -b cookies.txt http://${SWITCH_IP}/config > saved.txt      # the saved config, as get -s
+```
 
-    You can expect that server will close connection, without responding to request.
-    Wait for SWITCH_IP to be responding again.
+Each line's output ends with `ok` or `err <path>: <reason>`; the HTTP status is
+200 either way. `tools/rtlpg_client.py --host H cli LINE...` does the same from
+Python.
+
+## Firmware update
+
+`tools/fwupdate.py` checks the image, uploads it, waits for the reboot, and,
+from firmware before the object model, carries the config over (it reads,
+converts and sets it again: `--dry-run` shows the plan first). By hand:
+
+```bash
+curl -b cookies.txt http://${SWITCH_IP}/upload -F "uploadedfile=@${FIRMWARE_FILE_PATH}" -i
+```
+
+On a compact board the file is `rtlplayground-install-*.bin`. The switch
+answers once the image is checked, then resets; wait for it to answer again.
 
 ## Port status
 
-In similar way to upload, you can fetch the json status of the ports.
+```bash
+curl -b cookies.txt http://${SWITCH_IP}/cli --data-binary 'get state.port'
+```
 
-1. Get the session cookie as for upload.
-2. Hit the `/status.json` with cookie:
-
-    ```bash
-    curl -b cookies.txt http://${SWITCH_IP}/status.json
-    ```
+`state.port.N.link`, `speed`, `duplex`, the counters (`tx_good`, `rx_good`,
+`tx_bad`, `rx_bad`) and the learned MACs, per port; `state.port.N.mib` for
+the full MIB counters. `/status.json` is gone.

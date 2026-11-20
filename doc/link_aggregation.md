@@ -1,5 +1,8 @@
 # Link Aggregation (aka Trunking)
 
+> On feat/om the LAG commands below stay until P4-3, which moves them to
+> `lag.L.mode`, `lag.L.members` and `lag.L.hash` (doc/cli.md).
+
 The RTL827x allows to combine multiple ports to a single logical link
 (Link Aggregation / Trunking) according to IEEE 802.3ad. LAGs allow to
 combine the individual physical links into a single link with the combined

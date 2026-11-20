@@ -119,4 +119,5 @@ as flags. A module that wants external calibration has its 40 calibration
 bytes (184-223) in `ddm.cal`, in hex, and its values are then uncalibrated:
 the web UI applies the calibration and works out dBm.
 
-`sfp <1|2> <10g|2g5|1g|100m|auto>` sets a cage's speed.
+`sfp <1|2> <10g|2g5|1g|100m|auto>` sets a cage's speed, until P4-6 moves it to
+`port.N.speed` on the cage's port.

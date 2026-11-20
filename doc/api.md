@@ -1,22 +1,81 @@
 ## HTTP API
 
-The switch firmware implements a JSON API which underpins the webUI.
-Port numbers referred to throughout the API are physical port numbers
-and should reflect the physical numbers visible on the switch.
+The API is the CLI. `POST /cli` takes console lines as its body and answers
+with what the console would print: `get`, `set`, `apply`, `save`, `do` and
+paths (doc/cli.md). The web UI uses nothing else for what is on the object
+model. A few JSON pages remain, for the objects not migrated yet; each goes
+when its object moves.
 
-The following endpoints are supported:
- * /bandwidth.json
- * /eee.json
- * /isolation.json
- * /lag.json
- * /lldp.json
- * /mirror.json
- * /stp.json
- * /storm.json
- * /vlan.json?vid=<VLANID>
- * /vlanlist.json
+Port numbers everywhere are the front-panel numbers printed on the switch.
 
+## Logging in
 
+```
+POST /login            body: pwd=<password>    (application/x-www-form-urlencoded)
+```
+
+A good password gets `302` to `/index.html` and a `session` cookie (HttpOnly).
+A wrong one gets `302` to `/login.html`. Every other request needs the
+cookie, or gets `401`. A session ends after `web.session_timeout_s` without a
+request, and when `web.password` changes.
+
+## POST /cli
+
+```
+POST /cli              body: CLI lines, one per line (text/plain)
+-> 200 text/plain      each line's output, ending with "ok" or "err <path>: <reason>"
+```
+
+```
+$ curl -b cookies.txt http://192.168.10.247/cli --data-binary $'set port.3.name uplink\napply'
+ok
+ok
+```
+
+- **The status is always 200.** Whether a line worked is in its `ok` or `err` line.
+- **Lines run in order**, as typed on the console. `set ...` lines and an `apply` in one
+  POST is the usual change. Use `apply N` and a later `confirm` when the change can cut
+  you off (doc/cli.md, the confirm window).
+- **Continuation:** a reply of any length is streamed, an output buffer at a time, and
+  ends when the switch closes the connection. Nothing is truncated: `get state.port` is
+  ~5.5 KB, `get state.l2` pages 25 entries at a time (`get state.l2.K-`).
+- **One connection at a time** (uIP with one connection): another is refused until the
+  first closes, so a client retries. Closing the connection mid-reply stops the rest of
+  the run.
+- **Commands not on the model** (`vlan`, `stp`, `lag`, ...) take their old syntax here too,
+  until they move.
+- `POST /cmd` is the old endpoint for the old commands. It streams the same way, and is
+  kept for the old UI's tabs until P6.
+
+## The other endpoints
+
+| Request | Does |
+|---|---|
+| `GET /config` | The saved config as text: `get -s`, the password left out. |
+| `POST /upload` | A firmware image, multipart (`uploadedfile`): the switch checks it, answers, resets, and the loader installs it. Compact boards take `rtlplayground-install-*.bin`. `tools/fwupdate.py` does it all, and carries an old config over. |
+| `POST /loader` | A new loader image, staged; installed at the next boot. |
+| `POST /mdata` | The board's machine-data blob (PoE firmware) into its own region. |
+| `POST /reset` | Resets after the reply (`do sys.reset` does the same over `/cli`). |
+| `POST /l2_del.json?idx=N` | Deletes L2 entry N (the L2 tab's delete). |
+| `GET /`, `/index.html`, `/login.html`, `app.js`, `favicon.ico` | The web UI's files. |
+
+Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.port`,
+`port.*`); `/eee.json` (`port.N.eee`, `state.port.N.eee_active`); `/isolation.json`
+(`port.N.isolate`); `/information.json` (`get state.sys`, `state.sys.reset`,
+`state.loader`); `/l2.json` (`get state.l2`), `/counters.json` (`state.port.N.mib`);
+`/cmd_log`, `/cmd_log_clear` (no command history any more).
+
+## The JSON pages left
+
+Each is a GET, needs the cookie, and goes when its object moves:
+
+| Page | Until | Then |
+|---|---|---|
+| `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
+| `/lag.json` | P4-3 | `lag.L.*`, `state.lag`, `state.lacp.port` |
+| `/stp.json` | P4-4 | `stp.*`, `state.stp` |
+| `/lldp.json`, `/loop.json`, `/mirror.json` | P4-5 | `lldp.*`, `loop.*`, `mirror.*` |
+| `/bandwidth.json`, `/storm.json` | P4-6 | `port.N.bw_*`, `port.N.storm.*` |
 
 ## bandwidth
 ```json
@@ -26,7 +85,7 @@ The following endpoints are supported:
     ...
 ]
 ```
-Array of port properties
+Array of port properties (until P4-6)
 
 
 | Property | Description
@@ -38,48 +97,7 @@ Array of port properties
 | `eLimited` | Apply egress (outbound) limit
 | `eBW` | The egress rate limit applied
 
-## eee
-```json
-[
-    {"port":1,"isSFP":false,"advertised":["2.5G","1G","100M"],"linkPartner":["1G","100M"],"active":true},
-    {"port":2,"isSFP":false,"advertised":["2.5G","1G","100M"],"linkPartner":[],"active":false},
-    ...
-    {"port":9,"isSFP":true}]
-```
-Array of ports EEE configuration and status
-
-| Property | Description
-|----------|------------
-| `port` | The physical port number
-| `isSFP` | Whether the port is SFP
-| `advertised` | Links advertised by the port (only for non-SPF links)
-| `linkPartner` | Links advertised by the remote-device (only for non-SPF links)
-| `active` | Whether EEE is enabled on the port (only for non-SPF links)
-
-## information
-
-Gone (the object model, P5-1): `POST /cli` with `get state.sys` (version,
-build date, machine, PCB, chip, ports, image size, uptime, MAC, temperature,
-flash size, PoE, button), `get state.sys.reset` (the last reset and its
-cause) and `get state.loader`. The config it echoed is read with `get`.
-
-
-## isolation
-```json
-[
-    {"port":1,"allow":[1,2,3,4,5,6,7,8,9,0]},
-    {"port":2,"allow":[1,2,3,4,5,6,7,8,9,0]},
-    ...
-]
-```
-Array of ports
-
-| Property | Description
-|----------|------------
-| `port` | The physical port number
-| `allow` | The list of physical ports this port is permitted to send to, 0 is the CPU
-
-## lag
+## lag (until P4-3)
 ```json
 {
     "lags":[
@@ -128,7 +146,7 @@ Object representing static and LACP lags
 | `rx` | Number of received LACPDUs
 | `psys` | Remote system mac address
 
-## lldp
+## lldp (until P4-5)
 ```json
 {
     "on":1,
@@ -152,7 +170,7 @@ Object representing static and LACP lags
 | `permitted` | if true, the switch transmits LLDPBUs on this port, if false it does not
 
 
-## mirror
+## mirror (until P4-5)
 ```json
 {
     "enabled":false,
@@ -169,7 +187,7 @@ Object representing static and LACP lags
 | `mirror_tx` | List of physical port numbers that the mirror will receive a copy of transmitted packets for
 
 
-## stp
+## stp (until P4-4)
 ```json
 {
     "on":true,"type":"rstp","prio":8,"hello":2,"maxage":20,"fwd":15,"txhold":6,"pcs":"long","bh":"flood","tcs":"0x000002a8","rMaxage":20,"rFwd":15,"rootPrio":"8000","rootMac":"010203040506","myMac":"010203040506","cost":"0x00000000","weRoot":true,"tc":"0x0000",
@@ -220,7 +238,9 @@ Object representing static and LACP lags
 | `dp` | Designated port
 | `dc` | Designated cost
 
-## vlan
+## vlan (until P4-2)
+
+`/vlan.json?vid=V`: one VLAN.
 ```json
 {
     "untagged_members":[1,2,3,4,5,8,9],
@@ -236,7 +256,7 @@ Object representing static and LACP lags
 | `name` | The name of the VLAN
 | `pvid` | List of physical ports that have their Port VLAN ID set to this VLAN
 
-## storm
+## storm (until P4-6)
 ```json
 [
     {
@@ -264,10 +284,10 @@ Array of port settings
 | `unit` | The unit of the rate "pps" or "kbit/s"
 | `rate` | The value of the limit
 
-## vlanlist
+## vlanlist (until P4-2)
 ```json
 {
-    "mgmt":1,"vlan":[
+    "vlan":[
         {"id":1,"name":""},
         {"id":2,"name":"vlanTwo"},
         ...
@@ -276,7 +296,6 @@ Array of port settings
 ```
 | Property | Description
 |----------|------------
-| `mgmt` | The management VLAN ID
 | `vlan` | Array of VLAN objects
 
 ### VLAN Objects
