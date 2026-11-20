@@ -157,7 +157,9 @@ STEP(cli, run)
  * ended, and no new /cmd queued since (which would hold config_buf). */
 static uint8_t cli_web_live(void)
 {
-	return webcmd_busy && webcmd_gen == cli_gen;
+	if (!webcmd_busy)	/* an if, not &&: SDCC gave && a bit of internal RAM */
+		return 0;
+	return webcmd_gen == cli_gen;
 }
 
 /* Its connection ended: no reply and no more of its lines (config_buf may
