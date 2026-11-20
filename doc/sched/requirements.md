@@ -94,7 +94,8 @@ Each goal with where it stands at 72cee59. "Sim" is rtlsim (chapter 13),
   dispatch, the calls every step makes, the crash path, the rings and the
   tables went there; 163 B are left (fb-build.txt).
 - **Code banks (compact layout):** 9501 B free over three banks at the
-  start (b6-gate.txt); 1231 B now (8x), 1187 B (SWGT024). Every bank is over 47 KiB.
+  start (b6-gate.txt); 1231 B now (8x), 1187 B (SWGT024). Every bank is
+  over 47 KiB.
 - **Banked code must not run while the flash is busy** (it reads 0x00 on
   silicon, chapter 2). rtlsim fails a run that does (chapter 13).
 - **8- and 16-bit arithmetic** in scheduler and step code: SDCC spills
