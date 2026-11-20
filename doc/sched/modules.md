@@ -63,7 +63,7 @@ one transaction, ~2 ms at 100 kHz.
 | dumps | `L2_FIRST`/`L2_MORE`, `STAT_ROW`, `VLAN_ROW`, `STP_ROW`, `PORT_ROW`, `HIST_LINE`, `HEALTH_LINE` | cli (states of the cli task, not separate slots) |
 | `flash` | `FL_ERASE`, `FL_PROG`, `FL_VERIFY`, `FL_DONE` (chapter 10) | upload, config save, factory reset |
 | `cable` | today's cabletest state machine, one state per 50 ms tick | `port N cabletest` |
-| `eee` | `EEE_PORT`: one `phy_reset()` (10 ms) per step instead of `delay(2)` in a loop | `eee ... all` |
+| `eee` | a cli job since E4 (`CLI_JOB_EEE`, in `CLI_MORE`): per port one step for its settings and PHY off, the cli asleep `CLI_JOB_SLEEP_MS` (10 ms), one step for PHY on; `delay(2)` a port before | `eee on\|off [port]` |
 
 The dumps are **states of `cli`**, not separate jobs: one command runs at a
 time, so they need no slot of their own.
@@ -81,3 +81,40 @@ time, so they need no slot of their own.
 Every unbounded poll gets a bound and an error path: I2C (`sfp_read_block`),
 flash `WEL`, table execute, L2 flush, `rtl8224_sds_write`. A step that hits a
 timeout reports it (`health`) and moves on; it doesn't retry in a loop.
+
+As built (E4), in the common area (`rtlplayground.c`), so the flash's
+`WEL` wait can use them too: `hw_start(n)` and `hw_expired()` bound a
+poll at n to n + 1 whole ticks, and `hw_timeout(reg)` counts a poll that
+gave up, with its register. `hw_poll(reg)` waits for bit 0 of the
+register's low byte, which covers the table execute (`TBL_CTRL`, every
+`wait_table_ready()` and the page and IGMP table walks), `STAT_GET` and
+the I2C controller. It gives up after `HW_POLL_TICKS` (5-10 ms) and
+returns 1. The L2 flush waits up to `HW_FLUSH_TICKS` (15-20 ms; its time
+on silicon is not measured), and `rtl8224_sds_write` and `WEL` up to
+`HW_POLL_TICKS`. The callers go on as if the operation had finished. Only
+`sfp_read_block` fails its read. `health tasks` prints the count and the
+last register (`ff01`: the flash never set `WEL`, so the erase or program
+did nothing). The loader keeps its unbounded `WEL` wait.
+
+A step waits out one timeout at most. After a timeout, `hw_stuck` makes
+every later poll in the same step give up at once, and the scheduler
+clears it at the next step's start (`sched_m_step_start`). Without it, a
+page of polls with the bit held would wait out every one: /counters.json
+has 55 `STAT_GET`s, ~550 ms. Every later poll that gives up is still
+counted. Before the scheduler runs (the boot), it stays set after the
+first timeout. Forced in rtlsim (`tools/hw_timeouts.py`, rtlsim's `reg
+hold`, `phy hold`, `flash wp`), each path's longest step is 9.5-16.6 ms.
+
+Not bounded: `SFR_EXEC_STATUS` under every register and SMI access (the
+primitive itself, microseconds; if it stuck, nothing could run), the
+flash's `BUSY` (an erase's own time, up to the 40 ms flash exception), and
+the NIC DMA (already 65536 spins). A hang in these is the software
+watchdog's (chapter 11).
+
+## VLAN bitmap (phase E4)
+
+`vlan_bits[512]` holds a bit per valid VLAN. `vlan_create` sets its bit,
+`vlan_delete` clears it, and `vlan_setup` fills the bitmap from the table
+at boot (a reset may leave entries valid; rtlsim keeps them). The VLAN
+table has no other writers. `/vlanlist.json` walks it with `vlan_next()`
+instead of 4094 table reads.

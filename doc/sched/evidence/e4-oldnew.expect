@@ -1,0 +1,33 @@
+# old-vs-new (ovs-rtlpg tests/oldnew, 83efa85, 17 scenarios) for feat/sched with E4 (the last four lines): e2-oldnew.expect's lines, each once.
+stp        002 cli stp status        # D1: STP that much sooner, tx counts +1, ages 40/0 for 39/1
+stp        005 web GET /stp.json     # D1: tcs 0x16 for 0x15
+stp        006 web GET /stpcnt.json  # D1: the BPDU counters, one more
+upload     reg 06f4                  # D1: SEC_COUNTER, the update's reset the other side of a second (per build)
+stp_upload reg 06f4                  # the same as upload's
+*          reg 06f4                  # E1 (8x): SEC_COUNTER one more at the end: the boot ~162 ms sooner crosses a second
+vlan       frames * tcp/80           # U4: the /cmd's reply on a later poll, not with the request's ACK (28 -> 29)
+config     frames * tcp/80           # U4 +1 (D3) and E3 +1: the config save's 200 on the poll after the flash job (32 -> 34); SWGT024 under E1 32 -> 25: the old's FIN came after the bench's own, unacknowledged: 8 retransmits and a RST
+web        010 web GET /information.json  # E1 (8x): its uptime one second more, the same second
+config     frames * rldp             # E1 (8x): one RLDP probe more in the window, the firmware ~162 ms ahead
+config     frames * stp              # E1 (8x): one BPDU more, the same
+loop       frames * rldp             # E1 + E3 (8x): one RLDP probe more in the window (98 -> 99 on the looped ports), the firmware ahead as config's; D1 and D2 had the same (d1/d2-oldnew.expect), E1 and E3 alone not
+lacp_l2    004 console               # E1: the LAG no longer flaps during l2: the old's LACP timed out in its 3.86 s dump (4 port_lag_members_set lines)
+lacp_l2    040 cli lacp show         # E1: rx 0x7e for 0x80 on the LAG ports: 2 LACPDUs fewer, below
+lacp_l2    041 lacp partner          # E1: in/out 129/132 for 131/134, the same
+lacp_l2    frames * lacp             # E1: 129 for 131: gaps a steady 1.01-1.03 s; the old's 3.86 s gap ended in a catch-up burst (3 ms apart)
+upload     frames * tcp/80           # E3: the stage's window: window updates once the job has written it (168 -> ~272)
+stp_upload frames * tcp/80           # E3: the same
+upload     003 console               # E3: the upload takes ~1 s longer, so the boot after it is split at another point between this
+upload     003 boot                  #     result and the next (their text, taken together, is the same)
+stp_upload 004 console               # E3: one '.' per segment after the first, as before; a client keeping to the window sends more, smaller ones
+stp_upload 004 boot                  # E3: the boot after the longer upload split at another point, as upload's
+stp_upload frames * stp              # E3: the upload ~1 s longer: one hello more in the scenario
+sfp        reg 0418                  # E2: the I2C controller's last transaction is the DDM refresh (8 bytes from 232), not /ports.json's (1 byte, 238): the pages read the cache
+sfp        reg 0420                  #     its register (0x68 for 0x6e)
+sfp        reg 0424                  #     and the bytes it read
+web        reg 0418                  # E2: no module in this scenario: the old /information.json still tried the empty cage over I2C (a failed read of 16); the new page reads the cache, so no transaction at all
+web        reg 0420                  #     and the register address is never written
+web        reg 5cac                  # E4: the table engine's last command: the old /vlanlist.json ended on VLAN 4094's read (0ffe0300); the new page reads the bitmap, so the last is an L2 one
+web        reg 5ccc                  #     and that L2 command's data register
+lldp       reg 5cac                  # E4: the same (lldp's scenario gets /vlanlist.json)
+lldp       reg 5ccc                  #     the same

@@ -1,0 +1,122 @@
+E4: hardware-poll timeouts, eee as a job, /vlanlist.json from a VLAN bitmap
+(and reviewer2's E2 fix). sched7, 2026-11-20.
+
+Commits (git log, oldest first)
+  ac2d4d7 E4: /vlanlist.json from a VLAN bitmap the VLAN code keeps
+  6ca124c E4: eee on|off as the cli's job, a PHY reset in two steps
+  2769979 E2 fix: a failed module read clears the caches; `sfp` prints from them
+  9254daa E4: hardware polls get timeouts; health tasks counts them
+  79a8ad3 E4: hw_expired() without ||: no bit of internal RAM
+  9cef8e2 E2 fix: sfp_print() prints the DDM bytes from sfp_buf
+  (the doc commit after these: this file, modules.md, memory.md, e4-oldnew.expect)
+The E2 fix sits on top of the first two E4 commits because the request
+for it arrived after they were committed.
+
+Verify, clean worktree of 9cef8e2 (/tmp/e4/verify.sh 9cef8e2 tools with
+EXPECT=doc/sched/evidence/e4-oldnew.expect, then /tmp/e4/e4extra.sh
+9cef8e2; logs in /tmp/e4/v-9cef8e2/; ovs-rtlpg harness 83efa85 at
+/tmp/e3/ovs-83e, rtlsim and the hold knobs from feat/sched-sim 0514263)
+  gate 8x PASS, SWGT024 PASS (internal RAM data 90, overlay 8, bits 3: baseline)
+  quick (host) PASS, stp PASS, schedtest x4 built, schedtest-sim --twice PASS
+  oldnew 8x 17/17, SWGT024 17/17 (e4-oldnew.expect: e2's lines plus 4)
+  console_bugs, webcmd_abort, lldp_overrun, flash_job_steps PASS x2
+  cli_steps --web: no cli state over 5000 us x2; curl upload PASS x2
+  vlan_eee: 84 results, 0 differ, 0 over 5000 us x2
+  hw_timeouts: 0 failed x2; dotx_dx_1009n sds: 0 failed
+  sfp_pull: 0 failed x2
+The E2 fix's own run, at 2769979 (/tmp/e4/v-2769979/): everything above
+but E4's own tests, plus sfp_pull and /tmp/e5/sfp_health.py, PASS x2.
+The known-failures line 18 ('web,vlan,lldp: long step RX_STEP') is stale
+(matched no failed check) on both boards. A schedtest-sim run at 6ca124c
+failed once (fall_through: html_min/favicon.ico not found, the two runs
+differed). A rerun passed, as did the runs at 2769979 and 9cef8e2: a
+flake in the negative build.
+
+Old-vs-new expect lines added (intended): web and lldp, reg 5cac
+(TBL_CTRL) and 5ccc. The old /vlanlist.json's last table command was
+VLAN 4094's read (0ffe0300). The new page reads no table, so the last
+command is an L2 one.
+
+Banks free (clean builds; 8x / SWGT024; the sum of 3 banks)
+  4cee50b (E2)  1572 / 1529   common area ends 0x3e70, 272 B left
+  6ca124c       1299 / 1255   0x3e70
+  2769979       1070 / 1026   0x3e70  (the E2 fix before 9cef8e2: +228 B)
+  9cef8e2       1437 / 1393   0x3f28, 88 B left
+  8x 9cef8e2: bank 1 587, bank 2 221, bank 3 629 free; SWGT024 201/574/618.
+  ac2d4d7, 9254daa and 79a8ad3 got no clean build of their own. In
+  main-tree builds (-dirty) 9254daa failed the 8x gate (bits 3 -> 4,
+  fixed by 79a8ad3), and 79a8ad3 passed it with the common area at 0x3f28.
+  Per function (8x, /tmp/es-tools/funcs.py): the bitmap ~+260 B (vlan_next
+  122, vlan_bit_put 87, vlan_setup's table scan +89; vlan_name -94); the
+  eee job ~+30; the timeouts -78 in the banks, +162 in the common area
+  (hw_poll 75, hw_expired, hw_start, hw_timeout, the WEL bound); the E2 fix
+  +111 (sfp_raw +75, the flags' clear +39).
+
+xdata: XSEG ends at 0x5ef2 with the bitmap; far below chacha20 (0xbf00)
+and the crash record (0xbfe0). memory.md has the row.
+
+/vlanlist.json, RX_STEP (tools/vlan_eee.py; old image b635486, same output)
+  old (E2 image): 37.5 ms (VLAN 1 only), 39.0 ms (6 VLANs)
+  bitmap:          2.9 ms,               4.2 ms
+  byte map tried:  4.1 ms,               5.5 ms  -> not kept (see below)
+  any small page, for scale: /mirror.json 2.2 ms
+  A full reply (40 VLANs, 20-character names): 34 ms new, 67-100 ms old.
+  The bound is the reply's size: emitting the JSON costs ~1.5 ms per entry.
+  An open item for the httpd output, not E4.
+  The bitmap is kept by vlan_create (console, /cmd, config replay all go
+  through it) and vlan_delete. vlan_setup fills it from the table at
+  boot: rtlsim keeps the VLAN table over a chip `reset`, and the old page
+  listed those VLANs, so the new one does too. vlan_eee compares the
+  page and the table after console, /cmd, config-load and delete
+  changes, and after a reset.
+  Byte map: the orchestrator OK'd vlan_on[4096] to save code (158 B
+  less). Its walk costs ~1.2 ms more than the bitmap's 512 bytes, which
+  takes the 6-VLAN case over 5 ms, so the bitmap stays. The object-model
+  project may revisit the representation.
+
+eee (tools/vlan_eee.py, all states' longest step per command)
+  old: eee on/off (all ports) CLI_RUN 78-80 ms, one port 9.3 ms
+  new: CLI_MORE <= 386 us, CLI_RUN <= 257 us; console and /cmd output
+  equal to the old image's. `eee status` (unchanged) is 4.98 ms on the
+  8x and 2.8 ms on the SWGT024.
+
+Poll timeouts (tools/hw_timeouts.py: rtlsim holds the bit; 8x run)
+  path   hold                        trigger                count  longest step
+  table  reg hold 5cac 1             vlan 30, /l2.json      +5     RX_STEP 9.6 ms
+  stat   reg hold f60 1              /counters.json, stat   +79    RX_STEP 10.8 ms
+  flush  reg hold 53d4 1ffff         l2 forget              +1     CLI_RUN 16.6 ms
+  i2c    reg hold 418 1              an SFP module in       +5     SFP_READ 9.5 ms
+  wel    flash wp on                 web config save        +4     FL_PROG 8.8 ms
+  sds    reg hold 4 7000, phy hold 0 30 5 8224, phy hold 0 30 3f8 8000,
+         power cut (dotx_dx_1009n)   the boot               2, last 03f8
+  Each finishes (prompt or reply), is counted with its register in
+  `health tasks` ("hw timeouts N last 0xREG"), and works again once
+  released, with no new timeout. The stat count is large because every
+  later STAT_GET in a step gives up at once (hw_stuck) and is still
+  counted. At 6ca124c (before the timeouts) the table hold hangs: `vlan
+  30` never returns, and the console then shows a boot (the software
+  watchdog).
+  Only an RTL8373N board without 10G ports writes rtl8224_sds_write
+  (rtl837x_init.c), and rtlsim models no 8224, so the test fakes both
+  IDs. After that boot the first console reply comes back as link lines
+  only; the test sends `version` first.
+
+E2 fix
+  sfp_pull.py (module pulled when sfp_id_ok[0] turns 1): 4cee50b fails 3
+  (the vendor still in /information.json, which differs from the
+  empty-slot page; sfp_id_ok stays 1); 2769979 and 9cef8e2 pass. Still no
+  <MODULE REMOVED>: the failed read prints "SFP: an I2C read failed,
+  retrying on the next poll" and marks the slot empty, as in E2.
+  `sfp` from the caches: the oldnew sfp scenario's `sfp` replies are
+  equal to the old live read's. Code: +111 B, not a saving. Most of it
+  is sfp_raw, which keeps the encoding, rate and options bytes as read.
+  Dropping it would save ~75 B but print the speed setting's rate and
+  the options after the quirks: the orchestrator's call. A module that
+  is present but not read yet prints the old read-failed line. The
+  optional I2C-failure counter: not added. I2C timeouts are counted in
+  hw timeouts; a NACK is not.
+
+Not bounded (modules.md): SFR_EXEC_STATUS under every register and SMI
+access, the flash's BUSY, and the NIC DMA (already 65536 spins). A hang
+there is the software watchdog's. HW_FLUSH_TICKS (15-20 ms) is a guess:
+the flush's time on silicon has not been measured.
