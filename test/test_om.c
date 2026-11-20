@@ -163,7 +163,8 @@ uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
 static int t_syslog;
 static struct cfg_syslog syslog_new;
 uint8_t om_apply_syslog(uint8_t idx) { t_syslog++; syslog_new = cfg_run.syslog; return OM_OK; }
-static int t_dns, t_ntp;
+static int t_dns, t_ntp, t_web;
+uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
 uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
 uint8_t om_apply_dns(uint8_t idx) { t_dns++; return OM_OK; }
 
@@ -433,7 +434,7 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: dns ntp port.* sched sys syslog tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get vlan.1", "err vlan.1: dns ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
 	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
@@ -807,7 +808,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns ntp port.* sched sys syslog tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -1310,6 +1311,14 @@ static void services(void)
 	t_ntp = 0;
 	expect("apply", "ok\n");
 	CHECK(t_ntp == 1 && cfg_run.ntp.timezone == 330 && cfg_run.ntp.dst == E_DST_EU, "ntp: one apply, +05:30 is 330 minutes");
+	expect("get web", "web.password *\nweb.session_timeout_s 3600\nok\n");
+	expect("set web.password two words", "err web.password: printable text without \" \\ or a space, at most its length\n");
+	expect("set web.password s3cret", "ok\n");
+	expect("set web.session_timeout_s 59", "err web.session_timeout_s: 60-65535\n");
+	t_web = 0;
+	expect("apply", "ok\n");
+	CHECK(t_web == 1 && !strcmp(cfg_run.web.password, "s3cret"), "web: one apply, the new password");
+	expect("get web.password", "web.password *\nok\n");
 	expect("get syslog", "syslog.enabled off\nsyslog.server 0.0.0.0\nsyslog.port 514\nok\n");
 	expect("set syslog.port 0", "err syslog.port: 1-65535\n");
 	expect("set syslog.server 10.1.2.3", "ok\n");

@@ -1,8 +1,8 @@
 /*
  * om_svc.c - the network services for the object model (schema/dns.py,
- * ntp.py, syslog.py): apply their config. What the old dns server, ntp and
- * syslog commands did; ntp and syslog stop, take the fields, start if
- * enabled.
+ * ntp.py, syslog.py, web.py): apply their config. What the old dns server,
+ * ntp, syslog, passwd and session commands did; ntp and syslog stop, take
+ * the fields, start if enabled; a new password logs every session out.
  */
 #include <stdint.h>
 #include <stdbool.h>
@@ -11,7 +11,11 @@
 #include "syslog.h"
 #include "dns.h"
 #include "ntp.h"
+#include "sessions.h"
 #include "om_gen.h"
+
+extern __xdata char passwd[21];
+extern __xdata uint16_t session_timeout;
 
 uint8_t om_apply_syslog(uint8_t idx) __banked
 {
@@ -48,5 +52,18 @@ uint8_t om_apply_ntp(uint8_t idx) __banked
 	ntp_state.dst = cfg_run.ntp.dst;
 	if (cfg_run.ntp.enabled)
 		ntp_start();
+	return OM_OK;
+}
+
+typedef char web_fits[sizeof(cfg_run.web.password) == sizeof(passwd) ? 1 : -1];
+
+uint8_t om_apply_web(uint8_t idx) __banked
+{
+	(void)idx;
+	session_timeout = cfg_run.web.session_timeout_s;
+	if (memcmp(passwd, cfg_run.web.password, sizeof(passwd))) {
+		memcpy(passwd, cfg_run.web.password, sizeof(passwd));
+		session_init();		/* the old password's logins end */
+	}
 	return OM_OK;
 }

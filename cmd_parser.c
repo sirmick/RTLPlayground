@@ -53,9 +53,7 @@ extern __code const uint8_t * __code const hex;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
 
-extern __xdata char passwd[21];
 
-extern __xdata uint16_t session_timeout;
 
 extern __xdata struct dhcp_state dhcp_state;
 
@@ -1213,27 +1211,6 @@ err:
 }
 
 
-void parse_passwd(void)
-{
-	// cmd_words_len can be more then 2 if a SPACE in the password.
-	if (cmd_words_len >= 2) {
-		uint8_t i = cmd_words_b[1];		
-		uint8_t c = 0;
-		uint8_t j = 0;
-		do {
-			c = cmd_buffer[i++];
-			passwd[j++] = c;
-		} while (c != NUL && j < 20);
-		passwd[j] = NUL;
-		/* Logins made with the old password end here. With one session the next
-		 * login pushed a leftover one out; with several it would stay valid. */
-		session_init();
-		return;
-	}
-	cmd_error("Missing password\n");
-}
-
-
 void parse_bw(void)
 {
 	if (cmd_words_len < 3) // Check for at least 3 arguments
@@ -1352,24 +1329,6 @@ void parse_storm(void)
 
 err:
 	print_string("usage: storm [<port> bcast|mcast|ucast|umcast <rate> pps|kbps|off]\n");
-}
-
-void parse_session(void)
-{
-	if (cmd_words_len >= 2) {
-		/* atoi_short() returns zero for no digits and for a value past
-		 * 65535; a zero-second timeout is not useful either, so both
-		 * tests are needed. */
-		if (!atoi_short(cmd_words_b[1]) || !atoi_results_short) {
-			print_string("Must be 1-65535 s\n");
-			return;
-		}
-		session_timeout = atoi_results_short;
-	}
-	/* Also the confirmation after setting: one message for both. */
-	print_string("Session timeout: ");
-	itoa_short(session_timeout);
-	print_string(" s\n");
 }
 
 void parse_flash(void)
@@ -1680,8 +1639,6 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
-		} else if (cmd_compare(0, "passwd")) {
-			parse_passwd();
 		} else if (cmd_compare(0, "bw")) {
 			parse_bw();
 		} else if (cmd_compare(0, "storm")) {
@@ -1690,8 +1647,6 @@ void cmd_parser(void) __banked
 			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			hist_begun = 0;
 			cli_job = CLI_JOB_HISTORY;
-		} else if (cmd_compare(0, "session")) {
-			parse_session();
 		} else if (cmd_compare(0, "lldp")) {
 			if (cmd_compare(1, "on")) {
 				print_string("LLDP enabled\n");
@@ -1745,7 +1700,6 @@ void clear_command_history(void) __banked
 
 
 #define FLASH_READ_BURST_SIZE 0x100
-#define PASSWORD "1234"
 
 #if CONFIG_LEN % FLASH_READ_BURST_SIZE
 	#error "CONFIG_LEN not a multiple of FLASH_READ_BURST_SIZE"
@@ -1760,8 +1714,6 @@ void execute_config(void) __banked
 		pos = DEFAULT_CONFIG_START;
 	}
 
-	// Set default password, it can be overwritten in the configuration file
-	strtox(passwd, PASSWORD);
 	save_cmd = 0;
 
 	// Coming from the standard layout, the saved config is moved to its

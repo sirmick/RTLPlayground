@@ -29,3 +29,6 @@ field 6.2 ntp.server Str(47)
 field 6.3 ntp.interval_min U16
 field 6.4 ntp.timezone TZ
 field 6.5 ntp.dst Enum(dst)
+obj 7 web
+field 7.1 web.password Secret(20)
+field 7.2 web.session_timeout_s U16
