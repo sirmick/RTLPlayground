@@ -5,6 +5,7 @@ output-main/
 toolchain/
 html_data.c
 html_data.h
+html/schema.js
 version.h
 tools/httpd_sim
 tools/injector

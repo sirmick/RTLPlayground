@@ -13,6 +13,11 @@ and the committed ID registry (schema/registry.txt), and writes:
              field and object descriptors, per-object defaults, the banked
              handler table, and _Static_asserts pinning the packed layout
 
+  --js PATH  the web UI's schema (html/schema.js, DESIGN 14.3): every
+             object's fields with their type, limits or words, default, when
+             rule and tip, as one `var SCHEMA = {...}`. The same on every
+             board (no counts, no chip defaults), so one file serves them all.
+
   om_gen.py --register   adds IDs for new config objects and fields to the
                          registry (commit the result); a build fails while
                          the registry lacks one
@@ -136,11 +141,12 @@ def Scaled(decimals):
 
 class Field:
     def __init__(self, name, typ, access, default=None, when="always", tip="", fn=None,
-                 derived=False):
+                 derived=False, unit="", label=""):
         if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z0-9_]+)*", name):
             raise SystemExit("bad field name %r" % name)
         self.name, self.typ, self.access = name, typ, access
         self.default, self.when, self.tip, self.fn = default, WHEN[when], tip, fn
+        self.unit, self.label = unit, label      # the web UI's only (schema.js)
         self.cname = name.replace(".", "_")
         self.id = 0
         self.derived = derived
@@ -206,26 +212,28 @@ def state(name, **kw):
     return _add(Obj(name, True, **kw))
 
 
-def cfg(name, typ, default, when="always", tip="", derived=False):
+def cfg(name, typ, default, when="always", tip="", derived=False, unit="", label=""):
     """derived: a Str whose empty value means "work it out" (the object's derive=
-    handler gives it; get prints that)."""
+    handler gives it; get prints that). unit, label: for the web UI (schema.js):
+    the value's unit ("B", "s"), and the UI string naming the field when not
+    f_<object>_<field>."""
     o = SCHEMA["cur"]
     assert not o.state, "cfg() in a state object"
     if derived and (typ.code != "STR" or default != ""):
         raise SystemExit("%s.%s: only a Str with default \"\" can be derived" % (o.regname, name))
-    o.fields.append(Field(name, typ, "cfg", default, when, tip, derived=derived))
+    o.fields.append(Field(name, typ, "cfg", default, when, tip, derived=derived, unit=unit, label=label))
 
 
-def st(name, typ, when="always", tip=""):
+def st(name, typ, when="always", tip="", unit="", label=""):
     o = SCHEMA["cur"]
     assert o.state, "st() in a config object"
-    o.fields.append(Field(name, typ, "state", None, when, tip))
+    o.fields.append(Field(name, typ, "state", None, when, tip, unit=unit, label=label))
 
 
-def action(name, fn, when="always", tip=""):
+def action(name, fn, when="always", tip="", label=""):
     o = SCHEMA["cur"]
     assert not o.state, "action() belongs to a config object"
-    o.fields.append(Field(name, Action, "action", None, when, tip, fn=fn))
+    o.fields.append(Field(name, Action, "action", None, when, tip, fn=fn, label=label))
 
 
 def default_entry(key, **values):
@@ -743,11 +751,71 @@ def gen(objs, outdir):
     return fns
 
 
+# The web UI's schema (--js). Per object (its path, "state." before a state
+# object's): i its index kinds (P port, N<count>, K<max> keyed, W<words>),
+# t its tip, f its fields in schema order, each an array [type, a, b,
+# default, when, tip, unit, label] with trailing empties dropped. a, b by type: e/f the
+# words; n the limits; d the decimals; s/p the length; m 1 with the CPU;
+# mac 1 with auto; pt 1 with none; tz the limits in minutes. when: 0 always,
+# 1 copper, 2 sfp, 3 10g. A default that depends on the chip or is a C
+# expression is null. label: the UI string naming the field (app.js's
+# LANG), when not the default f_<object>_<field> with "_" for ".".
+JS_T = {"BOOL": "b", "ENUM": "e", "FLAGS": "f", "FLAGS16": "f", "U8": "n", "U16": "n",
+        "U32": "n", "I16": "n", "U64": "n", "SCALED": "d", "STR": "s", "SECRET": "p",
+        "PMASK": "m", "IPV4": "ip", "MASK4": "ip", "MAC": "mac", "PORT": "pt", "TZ": "tz",
+        "BRID": "br", "ACT": "a"}
+
+
+def js_default(f):
+    t, d = f.typ, f.default
+    if f.access != "cfg" or chip(d) or t.code in ("PMASK", "U64", "BRID") \
+            or (isinstance(d, str) and t.code in ("U8", "U16", "U32", "PORT") and not d.isdigit()
+                and d != "none"):
+        return None
+    if t.code == "BOOL":
+        return "on" if d else "off"
+    return str(d)
+
+
+def js_field(f):
+    t = f.typ
+    a = b = None
+    if t.code in ("ENUM", "FLAGS", "FLAGS16"):
+        a = " ".join(t.words)
+    elif t.code in ("U8", "U16", "U32", "I16", "TZ"):
+        a, b = t.lo, t.hi
+    elif t.code in ("SCALED", "STR", "SECRET", "PMASK", "MAC", "PORT"):
+        a = t.arg
+    v = [JS_T[t.code], a, b, js_default(f), f.when, f.tip, f.unit, f.label]
+    while v[-1] in (None, "", 0):
+        v.pop()
+    return v
+
+
+def js(objs, path):
+    import json
+    out = {}
+    for o in objs:
+        e = {}
+        if o.levels:
+            e["i"] = "".join(k[0] + ("" if k == "PORT" else str(n)) for k, n, _, _ in o.levels)
+        if o.tip:
+            e["t"] = o.tip
+        e["f"] = {f.name: js_field(f) for f in o.fields}
+        out[("state." if o.state else "") + o.regname] = e
+    text = ("// Generated by tools/om_gen.py --js from schema/: do not edit (DESIGN 14.3)\n"
+            "var SCHEMA = " + json.dumps(out, separators=(",", ":")) + ";\n")
+    if not os.path.exists(path) or open(path).read() != text:
+        with open(path, "w") as fp:
+            fp.write(text)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-s", "--schema", action="append")
     ap.add_argument("-o", "--out")
     ap.add_argument("--register", action="store_true")
+    ap.add_argument("--js", help="write the web UI's schema.js here")
     a = ap.parse_args()
     dirs = a.schema or ["schema"]
     objs = load_schema(dirs)
@@ -755,6 +823,8 @@ def main():
     apply_registry(objs, regs, a.register)
     if a.out:
         gen(objs, a.out)
+    if a.js:
+        js(objs, a.js)
     n_cfg = sum(len(o.fields) for o in objs if not o.state)
     n_st = sum(len(o.fields) for o in objs if o.state)
     print("om_gen: %d objects, %d config/action fields, %d state fields" % (len(objs), n_cfg, n_st))

@@ -325,7 +325,13 @@ $(HTML_MIN_LIST): FORCE
 	@echo $(sort $(HTML)) LANGS=$(LANGS) > $@.tmp
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv $@.tmp $@
 
-$(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py tools/filter_langs.py $(if $(wildcard $(HTML_MIN)),,FORCE)
+# The web UI's schema (DESIGN 14.3), generated in the source tree from schema/
+# alone: the same for every board, so one copy serves every BUILDDIR. It goes
+# in front of app.js: one file, one gzip stream, no request of its own.
+html/schema.js: $(wildcard schema/*.py) schema/registry.txt tools/om_gen.py
+	python3 tools/om_gen.py -s schema --js $@
+
+$(HTML_MIN_STAMP): $(HTML) html/app.js html/schema.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py tools/filter_langs.py $(if $(wildcard $(HTML_MIN)),,FORCE)
 	rm -rf $(HTML_MIN)
 	mkdir -p $(HTML_MIN) $(BUILDDIR)/_langs
 	@for f in $(HTML); do \
@@ -333,7 +339,7 @@ $(HTML_MIN_STAMP): $(HTML) html/app.js $(HTML_MIN_LIST) tools/minify.py tools/rj
 		python3 tools/minify.py $(BUILDDIR)/_langs/$$(basename $$f) $(HTML_MIN)/$$(basename $$f) || exit 1; \
 	done
 	python3 tools/filter_langs.py "$(LANGS)" html/app.js $(BUILDDIR)/_langs/app.js && \
-		python3 tools/rjsmin.py < $(BUILDDIR)/_langs/app.js > $(HTML_MIN)/app.js || exit 1
+		cat html/schema.js $(BUILDDIR)/_langs/app.js | python3 tools/rjsmin.py > $(HTML_MIN)/app.js || exit 1
 	@touch $@
 
 # html_data.c is generated in the source tree with the web UI's addresses, so
@@ -361,11 +367,11 @@ $(SUBDIRS):
 	$(MAKE) -C $@ BUILDDIR=$(BUILDDIR)
 
 clean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
+	-rm -f html_data.c html_data.h html/schema.js $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
 	-if [ -d $(BUILDDIR) ]; then find $(BUILDDIR) -type f ! -name "*.bin" -delete; fi
 
 distclean: $(SUBDIRSCLEAN)
-	-rm -f html_data.c html_data.h $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
+	-rm -f html_data.c html_data.h html/schema.js $(VERSION_HEADER) $(HTML_MIN_LIST) $(HTML_MIN_STAMP) $(LAYOUT_STAMP)
 	-rm -rf $(BUILDDIR)
 	-rm -rf toolchain
 
