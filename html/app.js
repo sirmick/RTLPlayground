@@ -2301,10 +2301,10 @@ function cli(lines) {
             cur = [];
         r.body.split("\n").forEach(function(l) {
             if (l === "[output truncated]") res.errs.push(l);
-            else if (l === "ok" || /^err |^error\b/i.test(l)) {
+            else if (l === "ok" || /^err[ :]|^error\b/i.test(l)) {
                 res.out.push(cur);
                 res.st.push(l);
-                if (l !== "ok") res.errs.push(l.replace(/^err /, ""));
+                if (l !== "ok") res.errs.push(l.replace(/^err:? /, ""));
                 cur = [];
             } else if (l) cur.push(l);
         });
@@ -2528,6 +2528,7 @@ function wShow(path, cand, run) {
 
 /* An edit into the candidate: "set path value", or "del" for an empty text */
 function stage(w) {
+    if (stgHold) return;	/* locked in apply's window; the reload puts it back */
     var v = w.get(),
         why = omCheck(w.f, v);
     if (why) {
@@ -2597,6 +2598,7 @@ var STG_WINDOW = 30;
 function stgApply() {
     $("stgApply").disabled = true;
     stgHold = 2;		/* apply's reply may take long: 10 s */
+    stgLock(1);
     cli(["apply " + STG_WINDOW]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
         stgHold = 1;
@@ -2614,9 +2616,19 @@ function stgApply() {
         toast(e.message, "err");
     }).then(function() {
         stgHold = 0;
+        stgLock(0);
         $("stgApply").disabled = false;
         omReload();
     });
+}
+
+/* no edits while apply's window is open, so a change still pending after
+ * it means apply never got there */
+function stgLock(on) {
+    for (var k in W) {
+        W[k].el.classList.toggle("lock", !!on);
+        if (W[k].inp) W[k].inp.disabled = !!on || W[k].el.classList.contains("na");
+    }
 }
 
 /* n tries 2 s apart: confirm while the window is open (at once if apply
@@ -2627,6 +2639,7 @@ function stgWatch(n, open) {
     return (open ? Promise.resolve("confirm") : cli(["get state.cfg"]).then(function(r) {
         var c = (parseLines(r.out[0] || []).state || {}).cfg || {},
             a = c.apply;
+        if (r.errs.length || !a) throw 0;	/* err: applying (the walk) */
         $("stgN").textContent = t("stg_confirm", {
             s: c.confirm_s || 0
         });
