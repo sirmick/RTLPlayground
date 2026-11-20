@@ -20,11 +20,29 @@
 #define T_PMASK		8
 #define T_SCALED	9
 #define T_ACT		10
+#define T_IPV4		11
+#define T_MASK4		12	/* an IPv4 netmask: contiguous */
+#define T_MAC		13
+#define T_FLAGS		14	/* up to 8 words, a bit each */
+#define T_FLAGS16	15
+#define T_SECRET	16	/* a Str that get prints as * */
+#define T_I16		17
+#define T_TZ		18	/* I16 minutes, as +hh:mm */
+#define T_PORT		19	/* one port: logical inside, front-panel number outside */
+#define T_BRID		20	/* bridge ID: priority (big endian) and MAC, as prio/4096.MAC */
+#define T_TYPE		0x1f	/* om_field.tw: the type; the when rule above it */
+#define T_WHEN		5
 
 /* om_obj.flags */
 #define OM_CFG		0
 #define OM_STATE	1
-#define OM_PORTOBJ	2	/* numbered by front-panel port */
+#define OM_CHIPDEF	2	/* two element defaults: RTL8372, RTL8373 */
+
+/* om_obj.k[]: an index level's kind */
+#define IX_PORT		0	/* front-panel number; the element is the logical port */
+#define IX_NUM		1	/* 1..n (n 1 and no '#' in the path: no index) */
+#define IX_KEY		2	/* keyed: n slots, a key in om_lim[a] at the element's start */
+#define IX_WORD		3	/* the words of om_enum[a] */
 
 /* om_field.when: where a field exists (om_when()) */
 #define W_ALWAYS	0
@@ -35,31 +53,37 @@
 struct om_field {
 	__code const char *name;
 	uint8_t id;		/* stable ID (schema/registry.txt), config fields */
-	uint8_t type;
-	uint8_t off;		/* offsetof in the object's struct */
-	uint8_t arg;		/* enum index, string length, decimals, handler */
-	uint8_t lim;		/* om_lim[] row, integers */
-	uint8_t when;
+	uint8_t tw;		/* type | when << T_WHEN */
+	uint8_t off;		/* offsetof in the element's struct */
+	uint8_t arg;		/* enum, string length, decimals, om_lim[] row, handler, flag */
 };
 
 struct om_lim {
-	uint32_t lo, hi;
+	uint32_t lo, hi;	/* I16, TZ: biased by 0x8000 */
 };
 
 struct om_obj {
-	__code const char *name;
-	uint8_t id, flags, nf;
+	__code const char *name;	/* the path, '#' an index: "port.#", "port.#.storm.#" */
 	__code const struct om_field *f;
+	__code const uint8_t *def;	/* element default (config); keyed: then the default entries */
 	uint16_t base;		/* offsetof(struct cfg, obj); 0 in om_st */
-	uint8_t size;
-	__code const uint8_t *def;	/* default instance (config) */
-	uint8_t apply, check, get;	/* om_fns[] index, 0xff = none */
+	uint8_t id, flags, nf, size;
+	uint8_t k[2], n[2], a[2];	/* index levels: kind, count, enum or om_lim[] row */
+	uint8_t ndef;		/* keyed: default entries */
+	uint8_t apply, check, get, derive;	/* om_fns[] index, 0xff = none */
 };
 
-/* A handler: one argument (the logical port, or 0), OM_OK or OM_ERR */
+/* A handler: one argument (the element: logical port, number, slot), OM_OK or OM_ERR */
 typedef uint8_t (*om_fn)(uint8_t) __banked;
 #define OM_OK	0
 #define OM_ERR	1
+
+/*
+ * A derive handler fills om_val with the value of field om_fid (stored
+ * empty: its default) and returns OM_OK, or OM_ERR for a field it doesn't
+ * derive; get and diff print the derived value.
+ */
+extern __xdata uint8_t om_val[], om_fid;
 
 /* Every user port and the CPU: the reset default of port isolation */
 #define OM_ISOLATE_DEFAULT	((uint16_t)(0x200 | (((1 << (MACHINE_MAX_PORT + 1)) - 1) & \
@@ -72,7 +96,10 @@ void om_init(void) __banked;		/* defaults into every copy */
 void om_cmd(void) __banked;		/* get set del diff apply discard do */
 uint8_t om_line(void) __banked;		/* the cli job's next line; 0 when done */
 void om_boot_apply(void) __banked;	/* after the boot config: apply it */
-/* for handlers: "err <the command's path>: why", err_status set */
-void om_fail(__code const char *why) __banked;
+/* for handlers: "err <the command's path>: why", err_status set; in the
+ * common area (om_fail.c), so why may be in the caller's bank */
+void om_fail(__code const char *why);
+void om_err_head(void) __banked;
+void om_err_end(void) __banked;
 
 #endif

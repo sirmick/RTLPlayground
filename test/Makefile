@@ -73,10 +73,16 @@ $(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SRCROOT)/tools
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -o $(BUILDDIR)/om > /dev/null
 $(filter-out $(BUILDDIR)/test_om_gen,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
 
-# om.c, the engine, UNMODIFIED; the port handlers are stubs in the test.
-$(BUILDDIR)/test_om: test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om/om_gen.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
-	$(DEPEND)
+# om.c, the engine, UNMODIFIED, over the real schema and om_schema/ (every
+# kind and type no real object uses yet); the handlers are stubs in the test.
+OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
+$(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s om_schema -o $(BUILDDIR)/om_t > /dev/null
+$(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
+OM_T_SRCS = test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_fail.c $(BUILDDIR)/om_t/om_gen.c
+$(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
 
 # The generator: broken schemas fail with their message, the registry holds.
 $(BUILDDIR)/test_om_gen: test_om_gen.py $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
