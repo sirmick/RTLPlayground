@@ -36,7 +36,8 @@ def area(name, addr, size):
             f"{name:<36}{addr:08X}    {size:08X} =  {size:10d}. bytes (REL,CON,CODE)\n\n")
 
 
-def write_build(d, data=105, overlay=8, bits=3, stack=131, common_end=0x396a, banks=(46188, 46202, 45565)):
+def write_build(d, data=105, overlay=8, bits=3, stack=131, common_end=0x396a, banks=(46188, 46202, 45565),
+                xdata=None):
     with open(os.path.join(d, "rtlplayground.map"), "w") as f:
         f.write(area("HOME", 0, 0x3e1) + area("CSEG", 0x43d, 0x2ef5) + area("XINIT", common_end - 0x16, 0x16))
         for b, used in zip((1, 2, 3), banks):
@@ -49,6 +50,8 @@ def write_build(d, data=105, overlay=8, bits=3, stack=131, common_end=0x396a, ba
     with open(os.path.join(d, "rtlplayground.mem"), "w") as f:
         f.write("Internal RAM layout:\n      0 1 2 3 4 5 6 7 8 9 A B C D E F\n" + "\n".join(rows) + "\n")
         f.write(f"\n16 bit mode initial stack starts at: 0x7d (sp set to 0x7c) with {stack} bytes available.\n")
+        if xdata is not None:           # the summary's line, as SDCC writes it
+            f.write(f"   EXTERNAL RAM     0x0001   0x{xdata:04x}   {xdata}    49151\n")
     with open(os.path.join(d, "main.asm"), "w") as f:
         f.write("\t.area DSEG    (DATA)\n_reg_bit_set_PARM_2:\n\t.ds 1\n_parse_storm_sloc0_1_0:\n\t.ds 4\n"
                 "\t.area OSEG    (OVR,DATA)\n")
@@ -119,6 +122,13 @@ def test_fixtures():
         write_build(b, data=100)
         rc, out = run(b, base)
         check(rc == 0 and "can be lowered with --update" in out, "less than the baseline passes, with a note")
+
+        write_build(b, xdata=23380)
+        rc, out = run(b, base)
+        check(rc == 0 and "xdata: 23380 B (gate 45056, 21676 B left)" in out, "xdata is reported")
+        write_build(b, xdata=46000)
+        rc, out = run(b, base)
+        check(rc == 1 and "FAIL xdata is 46000 B, past 45056 B" in out, "xdata past 44 KiB fails")
 
 
 def test_builds():

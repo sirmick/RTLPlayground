@@ -13,6 +13,9 @@ and checks it, against FILE (JSON) where a check needs a baseline:
         baseline updated in the same commit (--update writes it)
   FAIL  the stack below 120 B
   FAIL  the common area ending above 0x3f80
+  FAIL  xdata (EXTERNAL RAM in the .mem map) past 44 KiB: the chip has 48 KiB,
+        the crash record its last 32 B (crash.h), and the linker's
+        --xram-size isn't trusted to fail the build
   WARN  a bank above 47 KiB (free bytes are always reported)
   note  new DSEG symbols even when the total did not grow (names moved)
 
@@ -25,6 +28,7 @@ from resource_report import areas, iram, BANK_SIZE    # noqa: E402
 
 STACK_MIN = 120
 COMMON_MAX = 0x3f80
+XDATA_MAX = 44 * 1024
 BANK_WARN = 47 * 1024
 SUFFIX = re.compile(r"_\d+_\d+$")       # SDCC's numbering of locals and slocs
 
@@ -60,6 +64,11 @@ def measure(builddir):
     r["common_end"] = xinit[0] + xinit[1]
     r["banks"] = [a[f"BANK{b}"][1] if f"BANK{b}" in a else 0 for b in (1, 2, 3)]
     r["dseg"] = dseg_symbols(builddir)
+    r["xdata"] = None
+    for l in open(os.path.join(builddir, "rtlplayground.mem")):
+        w = l.split()
+        if w[:2] == ["EXTERNAL", "RAM"] and len(w) >= 5:
+            r["xdata"] = int(w[4])      # bytes used (start, end, size, max)
     return r
 
 
@@ -105,6 +114,11 @@ def gate(builddir, baseline_file):
     if left < 0:
         fails.append(f"the common area ends at 0x{m['common_end']:04x}, {-left} B above 0x{COMMON_MAX:04x}: "
                      "move code into a bank (doc/sched/memory.md)")
+
+    if m["xdata"] is not None:
+        lines.append(f"xdata: {m['xdata']} B (gate {XDATA_MAX}, {XDATA_MAX - m['xdata']} B left)")
+        if m["xdata"] > XDATA_MAX:
+            fails.append(f"xdata is {m['xdata']} B, past {XDATA_MAX} B (the chip's 48 KiB less headroom)")
 
     for b, used in zip((1, 2, 3), m["banks"]):
         lines.append(f"bank {b}: {used} B used, {BANK_SIZE - used} B free")
