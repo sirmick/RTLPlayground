@@ -65,23 +65,6 @@ static void l2_flush_wait(void)
 	hw_timeout(RTL837x_L2_TBL_FLUSH_CTRL);
 }
 
-void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked
-{
-	print_string("Mirroring port: "); print_byte(port); print_string(" with rx-mask: ");
-	print_short(rx_pmask); print_string(", tx mask: "); print_short(tx_pmask);
-	write_char('\n');
-
-	REG_WRITE(RTL837x_MIRROR_CONF, rx_pmask >> 8, rx_pmask, tx_pmask >> 8, tx_pmask);
-	REG_WRITE(RTL837x_MIRROR_CTRL, 0, 0, 0, (port << 1) | 0x1);
-}
-
-
-void port_mirror_del(void) __banked
-{
-	REG_SET(RTL837x_MIRROR_CTRL, 0);
-}
-
-
 bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type) __banked
 {
 	if (port > CPU_LOGICAL_PORT || type >= VLAN_INVALID) {

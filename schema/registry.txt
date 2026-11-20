@@ -80,3 +80,8 @@ obj 15 lldp
 field 15.1 lldp.enabled BOOL
 obj 16 loop
 field 16.1 loop.enabled BOOL
+obj 17 mirror
+field 17.1 mirror.enabled BOOL
+field 17.2 mirror.port PORT
+field 17.3 mirror.rx PMASK
+field 17.4 mirror.tx PMASK

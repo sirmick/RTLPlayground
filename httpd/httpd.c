@@ -1335,8 +1335,6 @@ void httpd_appcall(void)
 				send_bandwidth();
 			} else if (is_word(q, "/storm.json")) {
 				send_storm();
-			} else if (is_word(q, "/mirror.json")) {
-				send_mirror();
 			} else if (is_word(q, "/stp.json")) {
 				send_stp();
 			} else if (is_word(q, "/config")) {

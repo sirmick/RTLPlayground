@@ -292,7 +292,6 @@ void send_isolation(void) { }
 void send_eee(void) { }
 static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
-void send_mirror(void) { }
 void send_stp(void) { }
 
 extern uint8_t authenticated;
