@@ -1360,7 +1360,12 @@ void httpd_appcall(void)
 			} else if (is_word(q, "/vlanlist.json")) {
 				send_vlanlist();
 			} else if (is_word(q, "/config")) {
-				send_config();
+				/* the saved config as text: get -s, as a /cli */
+				strtox(config_buf, "get -s");
+				webcmd_cli = 1;
+				webcmd_queue(config_buf);
+				uip_len = 0;
+				return;
 			} else {
 				send_not_found();
 			}

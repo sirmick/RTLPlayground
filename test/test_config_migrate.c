@@ -114,6 +114,24 @@ int main(void)
 	}
 	CHECK(all_ok, "a power cut at any point of the move settles to the config moved once");
 
+	/* binary records (om.c, DESIGN.md 15.3), saved by an object-model image
+	 * on the standard layout: moved the same way, byte for byte */
+	{
+		static const uint8_t bin[] = { 0, 'R', 'C', '1', 8, 0, 0x5c, 0x9e,
+					       1, 3, 0, 1, 5, 2, 0x28, 0x23 };
+		fd_init(&g_flash, 0x80000);
+		fd_load(&g_flash, LEGACY_CONFIG_START, bin, sizeof bin);
+		CHECK(migrate_run() == CONFIG_MOVED && !memcmp(g_flash.mem + CONFIG_START, bin, sizeof bin) &&
+		      g_flash.mem[CONFIG_START + sizeof bin] == 0xff && sector_blank(LEGACY_CONFIG_START),
+		      "a binary saved config is moved too");
+		fd_free(&g_flash);
+		static const uint8_t junk[] = { 0, 'R', 'C', '2', 1, 2, 3 };
+		fd_init(&g_flash, 0x80000);
+		fd_load(&g_flash, LEGACY_CONFIG_START, junk, sizeof junk);
+		CHECK(migrate_run() == CONFIG_STAYED && sector_blank(CONFIG_START), "a NUL-led sector without the magic stays");
+		fd_free(&g_flash);
+	}
+
 	printf(failures ? "\ntest_config_migrate: %d FAILURE(S)\n" : "\ntest_config_migrate: ALL PASS\n", failures);
 	return failures ? 1 : 0;
 }

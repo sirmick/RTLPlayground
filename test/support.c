@@ -18,6 +18,7 @@ extern unsigned int alarm(unsigned int);
 extern void _exit(int);
 #include "rtl837x_common.h"     /* CMD_BUF_SIZE, CMD_HISTORY_SIZE, decls */
 #include "con_ring.h"           /* the console RX ring the editor reads */
+#include "om.h"                 /* OM_TXT: om.c's capture */
 #include <test/support.h>
 
 /* --- symbols the editor/parser reference (extern in the firmware headers) --- */
@@ -42,7 +43,15 @@ size_t out_len;
 
 void out_reset(void) { out_len = 0; out_buf[0] = 0; }
 
+/* om.c's capture (write_char's on target): weak, only test_om links om.c */
+extern uint8_t om_cap __attribute__((weak));
+extern uint8_t om_txt[] __attribute__((weak));
+
 static void out_putc(char c) {
+    if (&om_cap && om_cap) {
+        if (om_cap < OM_TXT) om_txt[om_cap++ - 1] = c;
+        return;
+    }
     if (out_len < sizeof(out_buf) - 1) { out_buf[out_len++] = c; out_buf[out_len] = 0; }
 }
 

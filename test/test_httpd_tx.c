@@ -298,7 +298,6 @@ void send_l2(uint16_t idx) { (void)idx; }
 static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
-void send_config(void) { }
 void send_lag(void) { }
 void send_stp(void) { }
 void send_stp_counters(void) { }
@@ -2241,6 +2240,7 @@ static void scenario_connect_during_job(void)
 	drain(MSS_FULL);
 	CHECK(first_body_mismatch() == -1, "and its GET is served whole");
 	CHECK(!connect_during_job(FL_UPLOAD), "a connection during an upload's job is reset");
+	CHECK(connect_during_job(FL_SAVE), "a connection during a save is taken (its records are in flash_buf)");
 }
 
 static void scenario_side_effect_gets(void)

@@ -50,6 +50,54 @@ void print_byte(uint8_t a)
 
 void memcpyc(uint8_t *dst, const uint8_t *src, uint16_t len) { memcpy(dst, src, len); }
 
+/* the flash (flash_dev.c's model) and the flash job's FL_SAVE, as flash_job.c runs it */
+#include "rtl837x_flash.h"
+#include "flash_job.h"
+#include "layout.h"
+#include "flash_dev.h"
+#include <setjmp.h>
+static flashdev_t fl;
+static jmp_buf fl_cut;		/* a power cut: the CPU dies where it is */
+struct flash_region_t flash_region;
+uint8_t flash_buf[FLASH_BUF_SIZE];
+void flash_read_bulk(uint8_t *dst) { fd_read(&fl, flash_region.addr, dst, flash_region.len); }
+void flash_sector_erase(void) { fd_erase_sector(&fl, flash_region.addr); if (fl.powercut) longjmp(fl_cut, 1); }
+void flash_write_bytes(uint8_t *p) { fd_write(&fl, flash_region.addr, p, flash_region.len); if (fl.powercut) longjmp(fl_cut, 1); }
+
+uint8_t fl_req, fl_kind;
+uint16_t fl_len;
+static int fl_busy;		/* the job is taken by something else */
+
+uint8_t flash_job_start(void)
+{
+	if (fl_kind || fl_busy)
+		return 0;
+	fl_kind = fl_req;
+	return 1;
+}
+
+uint32_t fl_addr;
+
+static void fl_run(void)	/* the job to its end, as flash_job.c steps it */
+{
+	if (fl_kind != FL_SAVE)
+		return;
+	fl_addr = CONFIG_START;
+	flash_region.addr = fl_addr;
+	flash_sector_erase();
+	do {
+		uint16_t n = om_save_chunk();
+		flash_region.addr = fl_addr;
+		flash_region.len = n;
+		flash_write_bytes(flash_buf);
+		fl_addr += n;
+		fl_len -= n;
+	} while (fl_len);
+	while (om_save_end())
+		;
+	fl_kind = 0;
+}
+
 /* cmd_parser.c's tokenizer, as far as om.c needs it */
 static void tokenize(void)
 {
@@ -386,6 +434,8 @@ static const char *run(const char *line)
 	om_cmd();
 	while (cli_job) {
 		job_step();		/* the cfg job and the cli take turns */
+		if (fl_kind)
+			fl_run();	/* and the flash job */
 		if (!om_line())
 			cli_job = 0;
 	}
@@ -828,7 +878,7 @@ static void kinds(void)
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.confirm_s 0\nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.cfg.load.skipped 0\nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.mgmt.ip 192.168.2.3\n") &&
 		      strstr(o, "state.loop.blocked 2\nstate.sys.version ") &&
 		      strstr(o, "state.sys.reset.states.8 B_STEP\nstate.loader.present on\nstate.sched.passes ") &&
@@ -845,7 +895,7 @@ static void staging(void)
 	memset(applied, 0, sizeof applied);
 
 	printf("staging\n");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
 	CHECK(!t_strcmp(prompt(), ""), "the prompt: nothing to add");
 	expect("set port.3.mtu 1500", "ok\n");
 	expect("set port.3.pvid 7", "ok\n");
@@ -858,7 +908,7 @@ static void staging(void)
 	      "apply: the job applies port 3, the old value in the rollback copy");
 	CHECK(job_steps == 3, "apply: a step for each changed instance (port.3, tlag.2), and the last");
 	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
 	memset(applied, 0, sizeof applied);
 	job_steps = 0;
 	expect("apply", "ok\n");
@@ -1000,6 +1050,351 @@ static void staging(void)
 	om_boot_apply();
 	expect("get state.cfg.apply", "state.cfg.apply idle\nok\n");
 }
+
+/* ---- the saved config: binary records, save, load, boot ----------------- */
+
+uint16_t crc16_host_buf(const uint8_t *d, uint32_t n);
+
+static void boot(void)		/* as rtlplayground.c: defaults, the saved config, apply */
+{
+	out_reset();
+	om_init();
+	int v = om_boot_load(0);
+	if (v == E_CFGFORMAT_BLANK || v == E_CFGFORMAT_BAD)
+		om_boot_load(1);	/* cmd_parser.c execute_config(): the default */
+	om_boot_apply();		/* (old text is replayed there: not here) */
+	out_buf[out_len] = 0;
+}
+
+static uint8_t sec[CONFIG_LEN];
+static char out_dir[400] = ".";	/* the binary's: test_om_codec.py reads what binary() leaves there */
+
+static void sec_read(void)
+{
+	fd_read(&fl, CONFIG_START, sec, CONFIG_LEN);
+}
+
+/* records r (n bytes) as the saved config, with their header */
+static void sec_write(const uint8_t *r, int n)
+{
+	uint16_t c = crc16_host_buf(r, n);
+	uint8_t h[8] = { 0, 'R', 'C', '1', n, n >> 8, c, c >> 8 };
+	fd_erase_sector(&fl, CONFIG_START);
+	fd_write(&fl, CONFIG_START, h, 8);
+	fd_write(&fl, CONFIG_START + 8, r, n);
+}
+
+static int cfg_is(const struct cfg *c) { return !memcmp(&cfg_run, c, sizeof(struct cfg)); }
+static int cand_moved(void) { return memcmp(&cfg_cand, &cfg_run, sizeof(struct cfg)); }
+
+static const char *big_lines[] = {
+	"set port.1.name the first port of this test, 31", "set port.2.name the second port of the test, 31",
+	"set port.3.name the third port of this test, 31", "set port.4.name the fourth port of the test, 31",
+	"set port.5.name the fifth port of this test, 31", "set port.6.name the sixth port of this test, 31",
+	"set port.7.name the seventh port of the test, 31", "set port.8.name the eighth port of the test, 31",
+	"set port.9.name the ninth port of this test, 31", "set tsys.hostname twenty-three-characters",
+	"set tsys.password twenty-character-pwd", "set tvlan.2.name fifteen-chars-a", "set tvlan.3.name fifteen-chars-b",
+	"set tvlan.4.name fifteen-chars-c", "set tvlan.1.name fifteen-chars-d",
+	"set tstp.port.cost 199999999", "set port.tstorm.bcast.rate 1000", "set port.tstorm.ucast.unit kbps", NULL,
+};
+
+static void dump(const char *name, int n)	/* the sector and get -d, for test_om_codec.py */
+{
+	char fn[512];
+	static char d[8192];
+	FILE *f;
+	sec_read();
+	snprintf(fn, sizeof fn, "%s/om_codec_%s.bin", out_dir, name);
+	f = fopen(fn, "wb");
+	fwrite(sec, 1, 8 + (sec[4] | sec[5] << 8), f);
+	fclose(f);
+	snprintf(d, sizeof d, "%s", run(n ? "get -s" : "get -d"));
+	snprintf(fn, sizeof fn, "%s/om_codec_%s.txt", out_dir, name);
+	f = fopen(fn, "w");
+	fwrite(d, 1, strlen(d) - 3, f);		/* without "ok\n" */
+	/* what get -d can't say of a keyed object (P4-2): a default entry
+	 * deleted, an entry with every field at its default */
+	int one = 0;
+	for (int k = 0; !n && k < 4; k++) {
+		struct cfg_tvlan *e = &cfg_run.tvlan[k];
+		one |= e->key == 1;
+		if (e->key && !e->name[0] && !e->members && !e->tagged)
+			fprintf(f, "tvlan.%d\n", e->key);
+	}
+	if (!n && !one)
+		fprintf(f, "del tvlan.1\n");
+	fclose(f);
+}
+
+/* random configs over every object and type, saved: test_om_codec.py encodes
+ * each one's get -d and must make the same bytes */
+static void codec_samples(void)
+{
+	static const char *v[][6] = {
+		{ "port.%d.name", "a b", "x", "port %d", "~!@#$%%^&*()", "" },
+		{ "port.%d.mtu", "64", "9000", "16383", "1500", "1518" },
+		{ "port.%d.pvid", "0", "100", "4094", "1", "2" },
+		{ "port.%d.isolate", "none", "1-3,cpu", "all", "9", "2,4,6,8" },
+		{ "port.%d.lldp", "block", "permit", "block", "permit", "block" },
+		{ "port.%d.eee", "off", "on", "off", "on", "off" },
+		{ "port.%d.tstorm.ucast.rate", "1", "1048575", "0", "77", "500" },
+		{ "tstp.port.%d.edge", "on", "off", "auto", "on", "off" },
+		{ "tvlan.%d0.members", "1-3", "none", "9", "1-9", "4" },
+		{ "tvlan.%d0.name", "v", "fifteen-chars-x", "a b", "", "q" },
+		{ "tlag.%d.members", "1,2", "3-4", "none", "8,9", "5" },
+		{ "tsys.offset", "-600", "600", "0", "-1", "1" },
+		{ "tsys.tz", "+14:00", "-12:00", "+05:45", "-03:30", "+00:00" },
+		{ "tsys.mac", "auto", "ff:ff:ff:ff:ff:ff", "00:11:22:33:44:55", "02:00:00:00:00:01", "auto" },
+		{ "tsys.mirror", "none", "1", "9", "5", "none" },
+		{ "tsys.hash", "none", "spa,dport", "sip", "smac,dmac", "dip,sport,spa" },
+		{ "tsys.lp", "none", "10h,10g", "5g", "100f,1000f,2g5", "10f" },
+		{ "tsys.password", "x", "twenty-character-pwd", "1234", "p", "a~b" },
+		{ "tsys.ip", "0.0.0.0", "255.255.255.255", "192.168.2.2", "10.1.2.3", "1.1.1.1" },
+		{ "tsys.mask", "0.0.0.0", "255.255.255.255", "255.255.255.0", "255.128.0.0", "255.255.254.0" },
+	};
+	char line[160], path[64], name[16];
+	srand(7);
+	for (int k = 0; k < 20; k++) {
+		om_init();
+		for (int j = 0; j < 30; j++) {
+			int r = rand() % (int)(sizeof v / sizeof v[0]);
+			snprintf(path, sizeof path, v[r][0], 1 + rand() % (r == 8 || r == 9 ? 3 : r == 10 ? 4 : 9));
+			snprintf(line, sizeof line, "set %s %s", path, v[r][1 + rand() % 5]);
+			run(line);
+		}
+		if (rand() % 3 == 0)
+			run("del tvlan.1");
+		run("apply");
+		CHECK(!t_strcmp(run("save"), "ok\n"), "a random config saves");
+		snprintf(name, sizeof name, "r%02d", k);
+		dump(name, 0);
+	}
+}
+
+static void binary(void)
+{
+	static struct cfg a, b, dflt;
+	int n;
+
+	printf("save, load, get -s, get -d\n");
+	fd_init(&fl, 0x100000);
+	fd_fail_after(&fl, -1);
+	om_init();
+	memcpy(&dflt, &cfg_run, sizeof dflt);
+	expect("get -s", "err get: blank\n");
+	expect("load saved", "err load: blank\n");
+	expect("load", "err load: saved or default\n");
+	expect("save", "ok\n");
+	sec_read();
+	/* all defaults: tvlan's reset, and tvlan.1 (members 1-9 against an entry's 0) */
+	static const uint8_t empty[] = { 0, 'R', 'C', '1', 12, 0 };
+	CHECK(!memcmp(sec, empty, 6) && sec[20] == 0xff, "save of the defaults: the header and 12 B of records");
+	expect("get -s", "tvlan.1.members 1-9\nok\n");
+	expect("get state.cfg.save state.cfg.saved_bytes", "state.cfg.save done\nstate.cfg.saved_bytes 20\nok\n");
+
+	expect("set port.3.mtu 9000", "ok\n");
+	expect("set port.5.name lab rack 2", "ok\n");
+	expect("set tsys.password s3cret", "ok\n");
+	expect("set tsys.ip 10.0.0.2", "ok\n");
+	expect("set tsys.mask 255.255.0.0", "ok\n");
+	expect("set tsys.mac 02:00:00:00:00:01", "ok\n");
+	expect("set tsys.offset -30", "ok\n");
+	expect("set tsys.tz -03:30", "ok\n");
+	expect("set tsys.mirror 4", "ok\n");
+	expect("set tsys.hash sip,dip", "ok\n");
+	expect("set tsys.lp 2g5,10g", "ok\n");
+	expect("set tvlan.10.name ten", "ok\n");
+	expect("set tvlan.10.members 1-3,9", "ok\n");
+	expect("set tlag.2.mode lacp", "ok\n");
+	expect("set tstp.port.4.cost 20000", "ok\n");
+	expect("set port.3.tstorm.mcast.rate 500", "ok\n");
+	expect("save", "err save: apply or discard first\n");
+	expect("apply", "ok\n");
+	expect("get state.cfg.dirty", "state.cfg.dirty on\nok\n");
+	expect("save", "ok\n");
+	expect("get state.cfg.dirty", "state.cfg.dirty off\nok\n");
+	memcpy(&a, &cfg_run, sizeof a);
+	{
+		static char d[4096], sv[4096];
+		snprintf(d, sizeof d, "%s", run("get -d"));
+		snprintf(sv, sizeof sv, "%s", run("get -s"));
+		CHECK(strstr(d, "tsys.password s3cret\n") && !strstr(sv, "password"), "get -d carries the Secret, get -s omits it");
+		CHECK(strstr(sv, "port.5.name lab rack 2\n") && strstr(sv, "tvlan.10.members 1-3,9\n") &&
+		      strstr(sv, "port.3.tstorm.mcast.rate 500\n") && strstr(sv, "tsys.tz -03:30\n"), "get -s: the saved fields");
+		char *pw = strstr(d, "tsys.password s3cret\n");
+		memmove(pw, pw + 21, strlen(pw + 21) + 1);
+		dump("save", 0);
+		CHECK(!strcmp(d, sv), "get -s is get -d's lines, the Secret left out");
+		if (strcmp(d, sv))
+			printf("        -d: \"%s\"\n        -s: \"%s\"\n", d, sv);
+	}
+	expect("get -d port.3", "port.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
+	expect("get -d tvlan.10", "tvlan.10.name ten\ntvlan.10.members 1-3,9\nok\n");
+
+	printf("boot loads it\n");
+	boot();
+	CHECK(cfg_is(&a) && !strstr(out_buf, "not applied"), "boot: running is the saved config");
+	expect("get state.cfg.format state.cfg.dirty state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.dirty off\nstate.cfg.load.skipped 0\nok\n");
+	expect("set port.3.mtu 1500", "ok\n");
+	expect("load saved", "ok\n");
+	expect("diff", "ok\n");
+	expect("set port.3.mtu 1500", "ok\n");
+	expect("apply", "ok\n");
+	expect("load saved", "ok\n");
+	expect("apply", "ok\n");
+	expect("get state.cfg.dirty", "state.cfg.dirty off\nok\n");
+	expect("load default", "err load: blank\n");
+	expect("apply 5", "ok\n");
+	expect("save", "err save: confirm first\n");
+	expect("load saved", "err load: confirm first\n");
+	expect("get -d", "err get: confirm first\n");	/* the rollback copy is in use */
+	expect("confirm", "ok\n");
+	fl_busy = 1;
+	expect("save", "err save: busy\n");
+	fl_busy = 0;
+
+	printf("unknown records, values out of range\n");
+	{
+		static const uint8_t r[] = {
+			250, 1, 0, 1,  1, 1, 0,			/* an unknown object */
+			1, 3, 0, 3,  5, 2, 0x28, 0x23,		/* port.3.mtu 9000 */
+			            99, 1, 7,			/* an unknown field */
+			            3, 1, 9,			/* speed: past its words */
+			1, 10, 0, 1,  5, 2, 0x28, 0x23,		/* port.10: not on this board */
+			1, 4, 0, 1,  5, 2, 10, 0,		/* port.4.mtu 10: under 64 */
+			1, 9, 0, 1,  2, 1, 0,			/* port.9.enabled: copper only */
+			1, 2, 0, 1,  5, 1, 100,			/* a U16 in one byte */
+			200, 0, 0, 2,  1, 3, 'a', '"', 'b',	/* tsys.hostname with a quote */
+			               2, 4, 10, 0, 0, 1,	/* tsys.ip 10.0.0.1 */
+			201, 0, 0, 0,				/* tvlan: no entries */
+			201, 7, 0, 1,  1, 3, 's', 'e', 'v',	/* tvlan.7.name sev */
+			204, 4, 0, 1,  1, 4, 0, 0, 0, 0x7f,	/* tstp.port.4.cost: past 200000000 */
+			205, 1, 3, 1,  1, 4, 0xf4, 1, 0, 0,	/* port.3.tstorm.mcast.rate 500 */
+		};
+		sec_write(r, sizeof r);
+		boot();
+		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
+		expect("get -d", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -s", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		dump("skip", 1);
+	}
+
+	printf("a sector boot doesn't take\n");
+	{
+		static const uint8_t r[] = { 1, 3, 0, 1,  5, 2, 0x28, 0x23 };
+		uint8_t before[CONFIG_LEN];
+		sec_write(r, sizeof r);
+		fd_read(&fl, CONFIG_START + 10, before, 1);
+		before[0] ^= 1;			/* a bit flipped */
+		fl.mem[CONFIG_START + 10] = before[0];
+		sec_read();
+		memcpy(before, sec, CONFIG_LEN);
+		boot();
+		expect("get state.cfg.format", "state.cfg.format bad\nok\n");
+		CHECK(cfg_is(&dflt), "a bad CRC loads nothing: the defaults");
+		sec_read();
+		CHECK(!memcmp(before, sec, CONFIG_LEN), "and the sector is left as it was");
+		expect("get -s", "err get: bad\n");		/* its job's CRC check */
+		expect("load saved", "err load: bad\n");
+		CHECK(cfg_is(&dflt) && !cand_moved(), "and the candidate as it was");
+
+		fd_erase_sector(&fl, CONFIG_START);
+		fd_write(&fl, CONFIG_START, (const uint8_t *)"ip 192.168.1.1\nvlan 100\n", 24);
+		sec_read();
+		memcpy(before, sec, CONFIG_LEN);
+		boot();
+		expect("get state.cfg.format", "state.cfg.format legacy\nok\n");
+		sec_read();
+		CHECK(cfg_is(&dflt) && !memcmp(before, sec, CONFIG_LEN), "old command text: the defaults, the sector untouched");
+		expect("load saved", "err load: bad, or old command text\n");
+
+		fd_erase_sector(&fl, CONFIG_START);
+		boot();
+		expect("get state.cfg.format", "state.cfg.format blank\nok\n");
+		CHECK(cfg_is(&dflt), "blank: the defaults");
+
+		sec_write(r, sizeof r);		/* a recovery boot: the default sector */
+		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
+		fd_load(&fl, DEFAULT_CONFIG_START, fl.mem + CONFIG_START, 16);
+		fl.mem[DEFAULT_CONFIG_START + 14] = 0xdc;	/* port.3.mtu 1500 */
+		fl.mem[DEFAULT_CONFIG_START + 15] = 0x05;
+		{
+			uint16_t c = crc16_host_buf(fl.mem + DEFAULT_CONFIG_START + 8, 8);
+			fl.mem[DEFAULT_CONFIG_START + 6] = c;
+			fl.mem[DEFAULT_CONFIG_START + 7] = c >> 8;
+		}
+		om_init();
+		om_boot_load(1);
+		om_boot_apply();
+		expect("get port.3.mtu", "port.3.mtu 1500\nok\n");
+		expect("load default", "ok\n");
+		expect("load saved", "ok\n");
+		expect("get -c port.3.mtu", "port.3.mtu 9000\nok\n");
+		expect("discard", "ok\n");
+		fd_erase_sector(&fl, CONFIG_START);	/* blank: boot takes the default */
+		boot();
+		expect("get port.3.mtu state.cfg.format", "port.3.mtu 1500\nstate.cfg.format blank\nok\n");
+		sec_read();
+		CHECK(sec[0] == 0xff && sec[CONFIG_LEN - 1] == 0xff, "and leaves the saved sector blank");
+
+		fd_write(&fl, CONFIG_START, (const uint8_t *)"ip 192.168.1.1\n", 15);
+		boot();
+		expect("save", "saved; the old text config is replaced, its unmigrated commands are dropped\nok\n");
+		expect("get state.cfg.format", "state.cfg.format ok\nok\n");
+		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
+	}
+
+	printf("a power cut at every flash operation of a save\n");
+	{
+		int ops, bad = 0, seen_a = 0, seen_b = 0, seen_dflt = 0;
+		om_init();
+		expect("set port.3.mtu 2000", "ok\n");
+		expect("apply", "ok\n");
+		expect("save", "ok\n");
+		memcpy(&a, &cfg_run, sizeof a);
+		for (n = 0; big_lines[n]; n++)
+			run(big_lines[n]);
+		expect("apply", "ok\n");
+		memcpy(&b, &cfg_run, sizeof b);
+		expect("save", "ok\n");
+		sec_read();
+		CHECK((sec[4] | sec[5] << 8) > 512, "the big config takes two FL_PROG steps");
+		for (ops = 0; ; ops++) {
+			/* A saved; B running; cut after ops operations */
+			om_init();
+			memcpy(&cfg_run, &a, sizeof a);
+			memcpy(&cfg_cand, &a, sizeof a);
+			fd_fail_after(&fl, -1);
+			run("save");
+			memcpy(&cfg_run, &b, sizeof b);
+			memcpy(&cfg_cand, &b, sizeof b);
+			fd_fail_after(&fl, ops);
+			if (!setjmp(fl_cut))
+				run("save");
+			cli_job = 0;
+			fl_kind = 0;
+			int cut = fl.powercut;
+			fd_fail_after(&fl, -1);
+			boot();
+			if (cfg_is(&a))
+				seen_a++;
+			else if (cfg_is(&b))
+				seen_b++;
+			else if (cfg_is(&dflt))
+				seen_dflt++;
+			else
+				bad++;
+			if (!cut)
+				break;
+		}
+		CHECK(!bad && seen_b == 1 && seen_a >= 1 && seen_dflt >= 1,
+		      "each cut boots on A (untouched), B (written), or the defaults (blank or bad): never a mix");
+		printf("        %d operations: A %d, B %d, defaults %d\n", ops, seen_a, seen_b, seen_dflt);
+	}
+	codec_samples();
+	fd_free(&fl);
+}
+
 
 /* random valid values, set as text and read back: text and bytes agree */
 static void roundtrip(void)
@@ -1382,12 +1777,19 @@ static void services(void)
 	om_init();
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+	(void)argc;
+	snprintf(out_dir, sizeof out_dir, "%s", argv[0]);
+	if (strrchr(out_dir, '/'))
+		*strrchr(out_dir, '/') = 0;
+	else
+		snprintf(out_dir, sizeof out_dir, ".");
 	cases();
 	kinds();
 	services();
 	staging();
+	binary();
 	roundtrip();
 	roundtrip_kinds();
 	fuzz();

@@ -37,6 +37,7 @@
 #include "con_ring.h"
 #include "sched.h"
 #include "om.h"
+#include "om_gen.h"
 
 
 extern __code const struct machine machine;
@@ -1481,7 +1482,8 @@ void cmd_parser(void) __banked
 	if (cmd_words_len >= 1) {
 		if (cmd_compare(0, "get") || cmd_compare(0, "set") || cmd_compare(0, "del")
 		    || cmd_compare(0, "diff") || cmd_compare(0, "apply") || cmd_compare(0, "discard")
-		    || cmd_compare(0, "do") || cmd_compare(0, "confirm")) {
+		    || cmd_compare(0, "do") || cmd_compare(0, "confirm")
+		    || cmd_compare(0, "save") || cmd_compare(0, "load")) {
 			om_cmd();
 		} else if (cmd_compare(0, "sfp")) {
 			parse_sfp();
@@ -1616,31 +1618,39 @@ void clear_command_history(void) __banked
 void execute_config(void) __banked
 {
 	__xdata uint32_t pos = CONFIG_START;
-	__xdata uint8_t pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;
+	__xdata uint8_t pages_left;
+	__xdata uint8_t dflt = 0;	/* pos is DEFAULT_CONFIG_START (a byte: a compare costs a bit) */
 
 	if (loader_recovery()) {
 		print_string("Recovery boot: using the default configuration\n");
-		pos = DEFAULT_CONFIG_START;
+		dflt = 1;
 	}
 
 	save_cmd = 0;
 
 	// Coming from the standard layout, the saved config is moved to its
 	// compact place once. If the copy didn't take, keep the old one for the
-	// next try and boot on the default config, without seeding it.
-	if (config_migrate() == CONFIG_MOVE_FAILED) {
-		pos = DEFAULT_CONFIG_START;
-	} else {
-		// A blank saved-config sector (0xff) means the switch was flashed with an
-		// image that carries no saved config - e.g. a compact image, whose saved
-		// config lies outside it. Seed it from the default config so first boot
-		// applies the intended settings instead of parsing erased flash.
-		flash_region.addr = CONFIG_START;
-		flash_region.len = FLASH_READ_BURST_SIZE;
-		flash_read_bulk(flash_buf);
-		if (flash_buf[0] == 0xff)
-			flash_default_config();
+	// next try and boot on the default config.
+	if (config_migrate() == CONFIG_MOVE_FAILED)
+		dflt = 1;
+
+	// The saved config is binary records (om.c, DESIGN.md 15.3), loaded into
+	// the candidate. A blank or bad one boots on the default config and is
+	// left as it is until a save. Old command text (the saved config, or a
+	// default not yet in paths) is replayed below, as it always was, until
+	// the last object leaves the old commands (state.cfg.format legacy).
+	pages_left = om_boot_load(dflt);
+	if (pages_left == E_CFGFORMAT_BLANK || pages_left == E_CFGFORMAT_BAD) {
+		if (!dflt) {
+			dflt = 1;
+			pages_left = om_boot_load(1);
+		}
 	}
+	if (pages_left != E_CFGFORMAT_LEGACY)
+		goto config_done;
+	if (dflt)
+		pos = DEFAULT_CONFIG_START;
+	pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;
 
 	uint8_t cmd_idx = 0;
 	uint8_t skipping = 0;
@@ -1693,7 +1703,7 @@ void execute_config(void) __banked
 	} while(pages_left);
 
 config_done:
-	om_boot_apply();	/* the config's set lines */
+	om_boot_apply();	/* the records, or the text's set lines */
 	// Start saving commands to cmd_history
 	clear_command_history();
 	save_cmd = 1;

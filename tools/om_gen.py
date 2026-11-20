@@ -852,6 +852,32 @@ def js(objs, path):
         os.replace(tmp, path)
 
 
+CONFIG_LEN = 0x1000      # layout.h: the saved config's sector
+E_ROOM = 256             # om.c: a save step's records at most
+
+
+def saved_worst(objs):
+    """The binary saved config at its largest (DESIGN.md 15.3: every field off
+    its default), and its largest instance; the build fails if the sector or
+    a save step can't hold them."""
+    total, big = 8, (0, None)
+    for o in objs:
+        if o.state:
+            continue
+        inst = 4 + sum(2 + (f.typ.arg if f.typ.code in ("STR", "SECRET") else f.typ.size)
+                       for f in o.fields if f.access == "cfg")
+        n = 1
+        for lv in o.levels:
+            n *= lv[1]
+        total += n * inst + (4 if o.levels and o.levels[0][0] == "KEY" else 0)
+        big = max(big, (inst, o.regname))
+    if total > CONFIG_LEN:
+        raise SystemExit("schema: the saved config can reach %d B, more than its sector's %d" % (total, CONFIG_LEN))
+    if big[0] > E_ROOM:
+        raise SystemExit("schema: %s's record can reach %d B, more than a save step's %d" % (big[1], big[0], E_ROOM))
+    return total
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-s", "--schema", action="append")
@@ -870,7 +896,8 @@ def main():
         js(objs, a.js)
     n_cfg = sum(len(o.fields) for o in objs if not o.state)
     n_st = sum(len(o.fields) for o in objs if o.state)
-    print("om_gen: %d objects, %d config/action fields, %d state fields" % (len(objs), n_cfg, n_st))
+    print("om_gen: %d objects, %d config/action fields, %d state fields; saved config %d B at most"
+          % (len(objs), n_cfg, n_st, saved_worst(objs)))
 
 
 if __name__ == "__main__":
