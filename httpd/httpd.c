@@ -115,6 +115,7 @@ void httpd_init(void) __banked
 	webcmd_done = 0;
 	webcmd_busy = 0;
 	webcmd_cap = 0;
+	webcmd_wait = 0;
 	fl_kind = 0;		/* the flash job (flash_job.c) */
 	fl_finished = 0;
 	up_active = 0;
@@ -892,14 +893,16 @@ static void webcmd_queue(__xdata uint8_t *body)
 /* The command runs in the cli task over several steps (E1: a line a step,
  * a long dump a line a step): begin, then each step with the capture on
  * (WEBCMD_CAPTURE_ON/OFF: only cli's own output goes in the reply), then
- * end, which completes the reply. */
-__xdata uint8_t webcmd_cap, webcmd_busy, webcmd_gen;
-static __xdata uint16_t webcmd_hdr;
+ * end, which completes the reply. A reply longer than outbuf isn't cut
+ * (P3C): cli waits for room (webcmd_wait), httpd sends what is there, and
+ * once it is all ACKed hands outbuf back to cli, empty (webcmd_wait 0). */
+__xdata uint8_t webcmd_cap, webcmd_busy, webcmd_gen, webcmd_wait, webcmd_cli;
+static __xdata uint16_t webcmd_hdr;	/* 0: the header has gone, or a /cli */
 
 void httpd_webcmd_begin(void) __banked
 {
-	webcmd_hdr = strtox(outbuf, HTTP_RESPONSE_TXT);
-	slen = webcmd_hdr;
+	slen = strtox(outbuf, HTTP_RESPONSE_TXT);
+	webcmd_hdr = webcmd_cli ? 0 : slen;
 	webcmd_cap = 1;
 	exec_begin(config_buf);
 }
@@ -909,6 +912,10 @@ void httpd_webcmd_end(void) __banked
 	if (webcmd_cap == 2)
 		slen += strtox(outbuf + slen, CMD_TRUNCATED);
 	webcmd_cap = 0;
+	webcmd_done = 1;
+	/* a /cli, or a /cmd whose header has gone: the body says */
+	if (!webcmd_hdr)
+		return;
 	/* Commands that configure something print nothing at all. Saying
 	 * so beats an empty body, which reads the same as "nothing ran".
 	 * Only on success: a silent failure must not answer with "OK". */
@@ -924,7 +931,6 @@ void httpd_webcmd_end(void) __banked
 		outbuf[13] = 'N';
 		outbuf[14] = 'O';
 	}
-	webcmd_done = 1;
 }
 
 
@@ -936,7 +942,7 @@ static void run_login_body(__xdata uint8_t *body)
 		slen = strtox(outbuf, "HTTP/1.1 302 Found\r\nConnection: close\r\nLocation: index.html\r\n" \
 				      "Set-Cookie: session=");
 		session_new();
-		slen += strtox(outbuf + slen, "; SameSite=Strict\r\n\r\n");
+		slen += strtox(outbuf + slen, "; SameSite=Strict; HttpOnly\r\n\r\n");
 	} else {
 		dbg_string("Password invalid!\n");
 		slen = strtox(outbuf, "HTTP/1.1 302 Found\r\nConnection: close\r\nLocation: login.html\r\n\r\n");
@@ -1162,16 +1168,6 @@ void handle_post(uint16_t body_off)
 		else
 			handle_firmware_fragment(p);
 		return;
-	} else if (is_word(request_path, "cmd")) {
-		if (!authenticated) {
-			send_unauthorized();
-			return;
-		}
-		postbody_endpoint = POSTBODY_CMD;
-		if (!post_body_take(p))
-			return;
-		webcmd_queue(p);
-		return;
 	} else if (is_word(request_path, "login")) {
 		dbg_string("POST login\n");
 
@@ -1186,10 +1182,30 @@ void handle_post(uint16_t body_off)
 			return;
 		run_login_body(p);
 		return;
+	} else if (!authenticated) {
+		send_unauthorized();
+		return;
+	} else if (is_word(request_path, "cmd") || is_word(request_path, "cli")) {
+		webcmd_cli = request_path[1] == 'l';
+		postbody_endpoint = POSTBODY_CMD;
+		if (!post_body_take(p))
+			return;
+		webcmd_queue(p);
+		return;
+	/* these change something: POSTs, not GETs (P3C), until P6's actions */
+	} else if (is_word(request_path, "l2_del.json")) {
+		parse_short(request_path + 16);	/* l2_del.json?idx=10 */
+		l2_delete(short_parsed);
+		return;
+	} else if (is_word(request_path, "reset")) {
+		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
+	} else if (is_word(request_path, "cmd_log_clear")) {
+		clear_command_history();
 	} else {
 		send_not_found();
 		return;
 	}
+	slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
 }
 
 
@@ -1242,16 +1258,14 @@ void httpd_appcall(void)
 		}
 	} else if (uip_closed()) {
 		dbg_string("Connection closed\n");
-		if (s->tstate == TSTATE_WEBCMD)
-			webcmd_pending = webcmd_done = webcmd_busy = 0;	/* nobody waits for it */
+		webcmd_pending = webcmd_done = webcmd_busy = webcmd_wait = 0;	/* nobody waits for a /cmd */
 		up_active = 0;
 		s->tstate = TSTATE_CLOSED;
 		if (s->fw_reset_pending && uip_acked())
 			reset_chip();
 	} else if (uip_aborted() || uip_timedout()) {
 		dbg_string("Connection aborted\n");
-		if (s->tstate == TSTATE_WEBCMD)
-			webcmd_pending = webcmd_done = webcmd_busy = 0;
+		webcmd_pending = webcmd_done = webcmd_busy = webcmd_wait = 0;
 		up_active = 0;
 		uip_close();
 		s->tstate = TSTATE_CLOSED;
@@ -1270,8 +1284,8 @@ void httpd_appcall(void)
 				up_active = 0;	/* the part has ended */
 			if (up_state != TSTATE_POST && slen)
 				send_outbuf();
-		} else if (s->tstate == TSTATE_WEBCMD && webcmd_done) {
-			webcmd_done = webcmd_busy = 0;
+		} else if (s->tstate == TSTATE_WEBCMD && (webcmd_done || webcmd_wait)) {
+			/* done, or cli waits for room: what is there goes */
 			send_outbuf();
 		} else if (s->tstate == TSTATE_ACKED) {
 			dbg_string("Closing because everything has been transmitted\n");
@@ -1319,6 +1333,12 @@ void httpd_appcall(void)
 			cont_len -= slen;
 			cont_addr += slen;
 			s->tstate = TSTATE_TX;
+		} else if (webcmd_wait) {
+			/* a reply cli is still writing: outbuf back to it, empty
+			 * (rx wakes it), and the header has gone */
+			s->tstate = TSTATE_WEBCMD;
+			slen = webcmd_hdr = 0;
+			webcmd_wait = 0;
 		} else if (s->fw_reset_pending) {
 			// The upload verdict has been fully ACKed by the client;
 			// now it is safe to reset and apply the staged image
@@ -1436,9 +1456,6 @@ void httpd_appcall(void)
 			} else if (is_word(q, "/l2.json")) {
 				parse_short(q + 13); // e.g.: /l2.json?idx=10
 				send_l2(short_parsed);
-			} else if (is_word(q, "/l2_del.json")) {
-				parse_short(q + 17);
-				l2_delete(short_parsed);
 			} else if (is_word(q, "/mirror.json")) {
 				send_mirror();
 			} else if (is_word(q, "/lag.json")) {
@@ -1457,12 +1474,6 @@ void httpd_appcall(void)
 				send_config();
 			} else if (is_word(q, "/cmd_log")) {
 				send_cmd_log();
-			} else if (is_word(q, "/cmd_log_clear")) {
-				clear_command_history();
-				slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-			} else if (is_word(q, "/reset")) {
-				slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-				s->fw_reset_pending = FW_RESET_PENDING;
 			} else {
 				send_not_found();
 			}

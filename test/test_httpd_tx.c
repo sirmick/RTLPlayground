@@ -35,6 +35,7 @@
 /* Private to uip.c, and the client needs them to build segments. */
 #define TCP_FIN 0x01
 #define TCP_SYN 0x02
+#define TCP_RST 0x04
 #define TCP_PSH 0x08
 #define TCP_ACK 0x10
 
@@ -256,7 +257,8 @@ void set_sys_led_state(uint8_t state) { (void)state; }
 void cmd_parser(void) { }
 void execute_config(void) { }
 void exec_begin(uint8_t *p) { (void)p; }
-void clear_command_history(void) { }
+static int history_clears;
+void clear_command_history(void) { history_clears++; }
 void udp_callbacks(void) { }
 void tcpip_output(void) { }
 void get_random_32(void) { }
@@ -297,7 +299,8 @@ void send_storm(void) { }
 void send_isolation(void) { }
 void send_eee(void) { }
 void send_l2(uint16_t idx) { (void)idx; }
-void l2_delete(uint16_t idx) { (void)idx; }
+static int l2_deleted = -1;
+void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
 void send_config(void) { }
 void send_cmd_log(void) { }
@@ -1241,9 +1244,11 @@ static void scenario_fragmented_missing_content_length(void)
 static void scenario_reset_after_ack(void)
 {
 	static const char get[] =
-		"GET /reset HTTP/1.1\r\n"
+		"POST /reset HTTP/1.1\r\n"
 		"Host: sw\r\n"
 		"Cookie: session=0123456789ab\r\n"
+		"Content-Type: text/plain\r\n"
+		"Content-Length: 0\r\n"
 		"\r\n";
 
 	session_start(MSS_FULL);
@@ -1373,6 +1378,8 @@ static void scenario_login_with_valid_cookie_reuses_its_slot(void)
 	client_send(TCP_ACK | TCP_PSH, post, (int)strlen(post));
 	CHECK(stream_contains("Location: index.html\r\n"),
 	      "login with a valid cookie: accepted");
+	CHECK(stream_contains("; SameSite=Strict; HttpOnly\r\n"),
+	      "login: the session cookie is HttpOnly");
 	CHECK(strcmp(slot_id(0), "0123456789ab") != 0,
 	      "login with a valid cookie: its own slot gets the new id");
 	CHECK(others_kept(1, 2, 3),
@@ -2022,6 +2029,207 @@ static void scenario_flash_busy(void)
 	flash_size = saved_flash_size;
 }
 
+/* ---- POST /cli and /cmd: replies longer than outbuf (P3C) --------------- */
+
+/* cli's side, as tasks.c runs it: the command from config_buf
+ * (httpd_webcmd_begin), then lines into outbuf while there is room
+ * (WEBCMD_ROOM(CLI_WEB_ROOM), webcmd_wait clear), else webcmd_wait; at the
+ * end httpd_webcmd_end. A run whose connection ended (webcmd_busy 0) stops. */
+#define BENCH_CLI_ROOM	640
+static int cli_lines, cli_n, cli_running;
+static uint8_t cli_err;
+
+static int cli_line(char *buf, int n)
+{
+	return sprintf(buf, "state.port.%d.rx_good %d\n", n % 9 + 1, n * 7919);
+}
+
+static void cli_model(void)
+{
+	char line[64];
+	int n;
+
+	if (webcmd_pending) {
+		webcmd_pending = 0;
+		cli_running = 1;
+		cli_n = 0;
+		httpd_webcmd_begin();
+	}
+	if (!cli_running)
+		return;
+	if (!webcmd_busy) {		/* cli_web_drop */
+		cli_running = 0;
+		return;
+	}
+	while (cli_n < cli_lines) {
+		if (webcmd_wait || !WEBCMD_ROOM(BENCH_CLI_ROOM)) {
+			webcmd_wait = 1;
+			return;
+		}
+		n = cli_line(line, cli_n++);
+		memcpy(outbuf + slen, line, n);
+		slen += n;
+	}
+	err_status = cli_err;
+	httpd_webcmd_end();
+	cli_running = 0;
+}
+
+/* The whole expected body */
+static int cli_expect(char *buf)
+{
+	int len = 0;
+
+	for (int n = 0; n < cli_lines; n++)
+		len += cli_line(buf + len, n);
+	return len;
+}
+
+static int fin_seen;
+
+static void cli_post(const char *path, const char *body)
+{
+	char req[512];
+	int n = sprintf(req, "POST %s HTTP/1.1\r\nHost: sw\r\nCookie: session=0123456789ab\r\n"
+			"Content-Type: text/plain;charset=UTF-8\r\nContent-Length: %d\r\n\r\n%s",
+			path, (int)strlen(body), body);
+
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	fin_seen = 0;
+	client_send(TCP_ACK | TCP_PSH, req, n);
+}
+
+/* cli and the client in turn until the server's FIN, or drop_at bytes have
+ * come (then the client resets the connection) */
+static void cli_drive(int drop_at)
+{
+	for (int i = 0; i < 2000 && !fin_seen; i++) {
+		cli_model();
+		run_periodic(1);
+		if (srv_flags & TCP_FIN)
+			fin_seen = 1;
+		if (drop_at && stream_len >= drop_at) {
+			client_send(TCP_RST | TCP_ACK, NULL, 0);
+			return;
+		}
+		client_ack(MSS_FULL);
+		if (srv_flags & TCP_FIN)
+			fin_seen = 1;
+	}
+}
+
+static void scenario_cli_long_reply(void)
+{
+	static char want[STREAM_MAX];
+	int off, len;
+
+	cli_lines = 400;		/* ~11 KB: four and more outbufs */
+	cli_err = ERR_OK;
+	webcmd_cli = 0;
+	cli_post("/cli", "get state.port");
+	cli_drive(0);
+	len = cli_expect(want);
+	off = body_offset();
+	if (verbose)
+		printf("      /cli: %d lines, body %d B of %d, fin %d\n", cli_lines, stream_len - off, len, fin_seen);
+	CHECK(off > 0 && !memcmp(stream, "HTTP/1.1 200 OK\r\n", 17), "/cli: a 200 reply");
+	CHECK(len > 4 * TCP_OUTBUF_SIZE, "/cli: the reply is longer than four outbufs");
+	CHECK(stream_len - off == len && !memcmp(stream + off, want, len),
+	      "/cli: every line, once and in order (no truncation)");
+	CHECK(fin_seen, "/cli: the reply ends at close");
+	client_send(TCP_FIN | TCP_ACK, NULL, 0);	/* the client's side of it */
+	cli_model();
+	CHECK(!webcmd_busy && !webcmd_wait && !cli_running, "/cli: nothing left waiting");
+
+	/* a short failing /cli is still 200: its status lines are in the body */
+	cli_lines = 2;
+	cli_err = 1;
+	cli_post("/cli", "set port.1.mtu x");
+	cli_drive(0);
+	CHECK(!memcmp(stream, "HTTP/1.1 200 OK\r\n", 17), "/cli: a failure is 200, the body says");
+
+	/* /cmd keeps its status when the reply fits, and can't once it has gone */
+	cli_post("/cmd", "bogus");
+	cli_drive(0);
+	CHECK(!memcmp(stream, "HTTP/1.1 400 NO\r\n", 17), "/cmd: a short failure is still 400 NO");
+	cli_lines = 300;
+	cli_post("/cmd", "bogus");
+	cli_drive(0);
+	len = cli_expect(want);
+	off = body_offset();
+	CHECK(!memcmp(stream, "HTTP/1.1 200 OK\r\n", 17) && stream_len - off == len
+	      && !memcmp(stream + off, want, len),
+	      "/cmd: a long reply streams whole too (its header went out first)");
+	cli_err = ERR_OK;
+}
+
+static void scenario_cli_dropped(void)
+{
+	static char want[STREAM_MAX];
+	int off, len;
+
+	cli_lines = 400;
+	cli_err = ERR_OK;
+	cli_post("/cli", "get state.port");
+	cli_drive(3000);		/* the client goes, the reply half sent */
+	CHECK(!webcmd_busy && !webcmd_wait && !webcmd_pending && !webcmd_done,
+	      "/cli dropped: httpd forgets the reply");
+	cli_model();
+	CHECK(!cli_running, "/cli dropped: cli stops its run");
+
+	/* the next requests are served whole */
+	session_start(MSS_FULL);
+	request_file(MSS_FULL);
+	drain(MSS_FULL);
+	CHECK(first_body_mismatch() == -1 && stream_len >= body_offset() + FILE_LEN,
+	      "/cli dropped: the next GET is served whole");
+	cli_post("/cli", "get state.port");
+	cli_drive(0);
+	len = cli_expect(want);
+	off = body_offset();
+	CHECK(fin_seen && stream_len - off == len && !memcmp(stream + off, want, len),
+	      "/cli dropped: the next /cli is whole");
+}
+
+static void scenario_side_effect_gets(void)
+{
+	static const char *gets[] = { "/reset", "/cmd_log_clear", "/l2_del.json?idx=7" };
+	char req[256];
+
+	reset_calls = 0;
+	history_clears = 0;
+	l2_deleted = -1;
+	for (int i = 0; i < 3; i++) {
+		int n = sprintf(req, "GET %s HTTP/1.1\r\nHost: sw\r\nCookie: session=0123456789ab\r\n\r\n", gets[i]);
+
+		session_start(MSS_FULL);
+		strcpy(session_id, "0123456789ab");
+		client_send(TCP_ACK | TCP_PSH, req, n);
+		drain(MSS_FULL);
+		CHECK(stream_contains("404 Not found"), gets[i]);
+	}
+	CHECK(!reset_calls && !history_clears && l2_deleted < 0, "GET: none of them changes anything");
+
+	cli_post("/cmd_log_clear", "");
+	drain(MSS_FULL);
+	CHECK(history_clears == 1 && stream_contains("HTTP/1.1 200 OK"), "POST /cmd_log_clear clears the log");
+	cli_post("/l2_del.json?idx=7", "");
+	drain(MSS_FULL);
+	CHECK(l2_deleted == 7, "POST /l2_del.json?idx=7 deletes entry 7");
+
+	/* without a session: 401, nothing done */
+	session_start(MSS_FULL);
+	strcpy(session_id, "0123456789ab");
+	client_send(TCP_ACK | TCP_PSH, "POST /reset HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n", (int)strlen("POST /reset HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n"));
+	drain(MSS_FULL);
+	CHECK(stream_contains("401 Unauthorized") && !reset_calls, "POST /reset without a session: 401");
+	session_start(MSS_FULL);
+	client_send(TCP_ACK | TCP_PSH, "POST /cli HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\nget", (int)strlen("POST /cli HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\nget"));
+	drain(MSS_FULL);
+	CHECK(stream_contains("401 Unauthorized") && !webcmd_pending, "POST /cli without a session: 401");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc > 1 && !strcmp(argv[1], "-v"))
@@ -2047,6 +2255,9 @@ int main(int argc, char **argv)
 	scenario_oversized_post_header();
 	scenario_fragmented_missing_content_length();
 	scenario_reset_after_ack();
+	scenario_side_effect_gets();
+	scenario_cli_long_reply();
+	scenario_cli_dropped();
 	scenario_fragmented_get_cookie();
 	scenario_fragmented_get_cookie_value();
 	scenario_split_get_header_terminator();

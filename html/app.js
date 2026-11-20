@@ -2423,6 +2423,21 @@ function getJSON(p) {
     })
 }
 
+/* what changes something is a POST (no side effects on a GET) */
+function post() {
+    return {
+        method: "POST",
+        body: ""
+    }
+}
+
+function postJSON(p) {
+    return api(p, post()).then(function(r) {
+        if (!r.ok) throw new Error(p + " " + r.status);
+        return JSON.parse(r.body)
+    })
+}
+
 function getText(p) {
     return api(p).then(function(r) {
         if (!r.ok) throw new Error(p + " " + r.status);
@@ -4145,7 +4160,7 @@ function l2Render() {
             text: "\u2715",
             title: t("l2_del_t"),
             onclick: function() {
-                getJSON("/l2_del.json?idx=" + e.idx).then(function() {
+                postJSON("/l2_del.json?idx=" + e.idx).then(function() {
                     l2Rows = l2Rows.filter(function(x) {
                         return x !== e
                     });
@@ -4978,7 +4993,7 @@ function sysConsole() {
 }
 $("sy-reboot").addEventListener("click", function() {
     confirmModal(t("sy_reboot_q"), S.dirty ? t("sy_reboot_d") : "", function() {
-        api("/reset").catch(function() {});
+        api("/reset", post()).catch(function() {});
         toast(t("sy_rebooting"), "ok");
     });
 });
@@ -5341,7 +5356,7 @@ function doWriteConfig(txt, fromLog) {
         back = back.replace(/\0[\s\S]*$/, "").replace(/\r\n/g, "\n").trim();
         if (back !== txt.trim()) throw new Error(t("cw_verify_fail"));
         if (!fromLog) return false;
-        return api("/cmd_log_clear").then(function() {
+        return api("/cmd_log_clear", post()).then(function() {
             return true
         }, function() {
             return true

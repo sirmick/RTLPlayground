@@ -54,8 +54,8 @@ STEP(rx, idle)
 STEP(rx, step)
 {
 	tn = rx_service();
-	if (webcmd_pending)
-		task_wake(T_CLI);	/* httpd queued a /cmd */
+	if (webcmd_pending || webcmd_wait)
+		task_wake(T_CLI);	/* httpd queued a /cmd, or an ACK may have freed outbuf */
 	if (tn)
 		return STEP_STAY;	/* more waiting: again at the next position */
 	return STEP_WAIT(S_RX_STEP, HW_RX, SCHED_FOREVER);
@@ -100,13 +100,20 @@ STEP(con, edit)
 /* cli: one command at a time, a console line or a web /cmd (console.md).
  * The prompt only from CLI_PROMPT. A dump runs as a job, a line a step in
  * CLI_MORE (E1); a web /cmd a line a step in CLI_NEXT, each step with the
- * capture on, so only cli's own output goes into the reply. */
+ * capture on, so only cli's own output goes into the reply. A reply that
+ * outgrows outbuf isn't cut: cli waits (webcmd_wait) while httpd sends what
+ * is there, and is woken by rx on the ACKs; the timeout notices a
+ * connection that ended in the net task. */
 #define CLI_CON	1
 #define CLI_WEB	2
 /* Free TX ring a command starts with: more than any unchunked command
  * prints (the tour's most, lacp show, ~600 B), so it doesn't wait on the
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
+#define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
+/* outbuf's room a web step starts with: more than a command or a job's
+ * line prints (CLI_ROOM's bound is the ring's, not the commands') */
+#define CLI_WEB_ROOM	640
 static __xdata uint8_t cli_src, cli_web_more;
 static __xdata uint8_t cli_gen;		/* the web command this run serves (webcmd_gen) */
 static __xdata uint8_t cli_dropped;	/* its connection ended: no reply, no more lines */
@@ -162,6 +169,16 @@ static uint8_t cli_web_live(void)
 	return webcmd_gen == cli_gen;
 }
 
+/* 1: no room in outbuf for the step, or httpd is sending it: wait */
+static uint8_t cli_web_full(void)
+{
+	if (!webcmd_wait && WEBCMD_ROOM(CLI_WEB_ROOM))
+		return 0;
+	webcmd_wait = 1;
+	task_sleep(CLI_WEB_WAIT);
+	return 1;
+}
+
 /* Its connection ended: no reply and no more of its lines (config_buf may
  * hold the next request already). A pure dump stops; a job with side
  * effects (stp off's entries) runs to its end, its output discarded. */
@@ -180,6 +197,8 @@ STEP(cli, next)
 	}
 	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
 		return STEP_WAIT(S_CLI_NEXT, HW_CON_TX, SCHED_FOREVER);
+	if (cli_web_full())
+		return S_CLI_NEXT;
 	WEBCMD_CAPTURE_ON();
 	cli_web_more = exec_line();
 	WEBCMD_CAPTURE_OFF();
@@ -199,8 +218,11 @@ STEP(cli, more)
 	}
 	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
 		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
-	if (cli_src == CLI_WEB && !cli_dropped)
+	if (cli_src == CLI_WEB && !cli_dropped) {
+		if (cli_web_full())
+			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
+	}
 	cli_job_more();
 	if (cli_src == CLI_WEB && !cli_dropped)
 		WEBCMD_CAPTURE_OFF();
