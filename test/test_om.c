@@ -986,6 +986,16 @@ static void staging(void)
 	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
 	      !memcmp(&cfg_cand, &mid, sizeof mid), "a boot handler fails: rolled back, said once");
 	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	fail_check_on = 4;		/* the check refuses it: nothing applied */
+	memset(applied, 0, sizeof applied);
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	fail_check_on = -1;
+	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
+	      !memcmp(&cfg_cand, &mid, sizeof mid) && !applied[4], "a boot check refuses: none applied, the candidate kept");
+	expect("diff", "- port.5.mtu 16383\n+ port.5.mtu 5000\nok\n");
+	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
 	expect("discard", "ok\n");
 	om_boot_apply();
 	expect("get state.cfg.apply", "state.cfg.apply idle\nok\n");

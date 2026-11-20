@@ -1823,9 +1823,8 @@ void om_init(void) __banked
 void om_boot_apply(void) __banked
 {
 	if (!check_all()) {
-		cand_from_run();
-		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults */
-		goto not_applied;
+		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
+		goto not_applied;			/* the candidate what was refused (diff) */
 	}
 	apply_begin();
 	while ((v8 = om_apply_next()) != OM_A_DONE) {
