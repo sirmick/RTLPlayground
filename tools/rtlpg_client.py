@@ -39,6 +39,7 @@ import os
 import re
 import struct
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -613,6 +614,9 @@ def bin2txt(sch, data, secrets=True, skipped=None):
 
 # ---- the switch: login, /cli -------------------------------------------------
 
+APPLYING_TRIES = 20	# 0.5 s apart: "err: applying" while an apply job runs (as bench_check.py)
+
+
 class Switch:
     def __init__(self, host, password="1234"):
         import http.client
@@ -640,12 +644,21 @@ class Switch:
         self.cookie = m[1]
 
     def cli(self, lines):
+        """POST /cli's reply. One that is "err: applying" (an apply job still
+        runs: the engine refuses every line) is sent again, 0.5 s apart, for
+        ~10 s, then refused with that state named."""
         if not self.cookie:
             self.login()
-        r, b = self._req("POST", "/cli", "\n".join(lines), "text/plain")
-        if r.status != 200:
-            raise Bad("/cli %d" % r.status)
-        return b.decode("latin-1")
+        for _ in range(APPLYING_TRIES):
+            r, b = self._req("POST", "/cli", "\n".join(lines), "text/plain")
+            if r.status != 200:
+                raise Bad("/cli %d" % r.status)
+            out = b.decode("latin-1")
+            if not out.startswith("err: applying"):
+                return out
+            time.sleep(0.5)
+        raise Bad("still \"err: applying\" after %d s: the apply job (state.cfg.apply running or "
+                  "undo, or the copies a confirm queues) hasn't ended" % (APPLYING_TRIES // 2))
 
     def get_config(self):
         if not self.cookie:
