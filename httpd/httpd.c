@@ -1239,6 +1239,10 @@ void httpd_appcall(void)
 				reset_now();
 			}
 			s->fw_reset_pending = 0;
+		} else {
+			/* all of it sent and ACKed: closed now, not at the next poll */
+			uip_close();
+			s->tstate = TSTATE_CLOSED;
 		}
 	} else if (uip_newdata() && s->tstate == TSTATE_WEBCMD) {
 		/* A trailing CRLF or a pipelined request while the command waits

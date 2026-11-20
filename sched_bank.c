@@ -77,6 +77,14 @@ void sched_m_pass_start(void) __banked
 	p_cnt = sched_f_cnt;
 }
 
+uint16_t sched_step_fine(void) __banked	/* fine units since the step began */
+{
+	fine_read();
+	e_tick = s_tick;
+	e_cnt = s_cnt;
+	return fine_elapsed();
+}
+
 void sched_m_step_start(void) __banked
 {
 	hw_stuck = 0;		/* each step may wait out one poll timeout (E4) */

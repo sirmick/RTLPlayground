@@ -205,7 +205,8 @@ void isr_serial(void) __interrupt(4)
 
 
 /* Set by the httpd while it runs a command that arrived over the network, so
- * that everything the command prints lands in the response as well. */
+ * that everything the command prints lands in the response instead of on
+ * the console (P3L: the UART's 115200 baud paced every web reply). */
 __xdata uint8_t cmd_capture;
 extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];
 extern __xdata uint16_t slen;
@@ -221,6 +222,7 @@ void write_char_no_syslog(char c)
 			outbuf[slen++] = c;
 		else
 			cmd_capture = 2;	/* out of room, httpd says so */
+		return;
 	}
 
 	/* Into the TX ring; waits only while it is full */
@@ -237,7 +239,7 @@ void write_char(char c)
 	}
 	write_char_no_syslog(c);
 
-	if (syslog_state.enabled) {
+	if (syslog_state.enabled && !cmd_capture) {	/* a web reply: the web's only */
 		__xdata uint16_t next = (syslog_state.writeptr + 1) & (LOGBUF_SIZE - 1);
 
 		/* The ring is drained once per main loop pass, and a single command

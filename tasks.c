@@ -104,9 +104,10 @@ STEP(con, edit)
 }
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
- * The prompt only from CLI_PROMPT. A dump runs as a job, a line a step in
- * CLI_MORE (E1); a web /cmd a line a step in CLI_NEXT, each step with the
- * capture on, so only cli's own output goes into the reply. A reply that
+ * The prompt only from CLI_PROMPT. A dump runs as a job in CLI_MORE (E1), a
+ * line a step for the console, lines up to CLI_WEB_FINE for the web; a web
+ * /cmd a line a step in CLI_NEXT; a web step with the capture on, so only
+ * cli's own output goes into the reply (and not to the UART or syslog). A reply that
  * outgrows outbuf isn't cut: cli waits (webcmd_wait) while httpd sends what
  * is there, and is woken by rx on the ACKs; the timeout notices a
  * connection that ended in the net task. */
@@ -117,6 +118,11 @@ STEP(con, edit)
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
+/* a web reply's lines a step: another only if the step so far and the
+ * dearest line (~2.9 ms, a port's first field: its getter) stay under 5 ms.
+ * The last line's cost doesn't say: a cheap line may come before a getter's */
+#define CLI_LINE_MAX	3000000UL	/* ns */
+#define CLI_WEB_FINE	((uint16_t)((5000000UL - CLI_LINE_MAX) / SCHED_FINE_NS))
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
 #define CLI_WEB_ROOM	640
@@ -177,12 +183,21 @@ static uint8_t cli_web_live(void)
 	return webcmd_gen == cli_gen;
 }
 
+/* the connection polled at once (net, fl_poll), not at the next tick's:
+ * httpd sends what cli has written */
+static void web_poll(void)
+{
+	fl_poll = 1;
+	task_wake(T_NET);
+}
+
 /* 1: no room in outbuf for the step, or httpd is sending it: wait */
 static uint8_t cli_web_full(void)
 {
 	if (!webcmd_wait && WEBCMD_ROOM(CLI_WEB_ROOM))
 		return 0;
 	webcmd_wait = 1;
+	web_poll();
 	task_sleep(CLI_WEB_WAIT);
 	return 1;
 }
@@ -203,8 +218,6 @@ STEP(cli, next)
 		cli_web_drop();
 		return S_CLI_PROMPT;
 	}
-	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
-		return STEP_WAIT(S_CLI_NEXT, HW_CON_TX, SCHED_FOREVER);
 	if (cli_web_full())
 		return S_CLI_NEXT;
 	WEBCMD_CAPTURE_ON();
@@ -224,16 +237,20 @@ STEP(cli, more)
 		if (!cli_job)
 			return S_CLI_PROMPT;
 	}
-	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
-		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
-	if (cli_src == CLI_WEB && !cli_dropped) {
+	if (cli_src == CLI_WEB && !cli_dropped) {	/* the reply: outbuf, not the console */
 		if (cli_web_full())
 			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
-	}
-	cli_job_more();
-	if (cli_src == CLI_WEB && !cli_dropped)
+		do				/* lines while outbuf has room, to CLI_WEB_FINE */
+			cli_job_more();
+		while (cli_job && !cli_job_sleep && WEBCMD_ROOM(CLI_WEB_ROOM)
+		       && sched_step_fine() < CLI_WEB_FINE);
 		WEBCMD_CAPTURE_OFF();
+	} else {				/* the console's: a line a step, the UART paces it */
+		if (con_tx_room() < CON_TX_LINE)
+			return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
+		cli_job_more();
+	}
 	if (cli_job_sleep) {			/* the eee job's PHY reset (E4) */
 		cli_job_sleep = 0;
 		return STEP_SLEEP(S_CLI_MORE, CLI_JOB_SLEEP_MS);
@@ -251,7 +268,8 @@ STEP(cli, prompt)
 		return STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
 		if (!cli_dropped && cli_web_live()) {
-			httpd_webcmd_end();	/* httpd sends the reply on a poll */
+			httpd_webcmd_end();	/* httpd sends the reply on a poll: now */
+			web_poll();
 			cli_dropped = 1;	/* done with it: a reset's wait comes back here */
 			cli_reset_by = sched_now + CLI_RESET_TICKS;
 		}
