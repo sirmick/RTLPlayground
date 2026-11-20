@@ -46,6 +46,8 @@ var LANG = {
         stg_rolled: "Not confirmed: the switch rolled the change back",
         stg_lost: "No answer from the switch",
         stg_unapplied: "Not applied: the change is still staged",
+        stg_keep_q: "Keep the last change?",
+        stg_keep_d: "The switch rolls it back in {s} s unless it is confirmed from here.",
         stg_failed: "Apply failed: the switch runs the old config",
         stg_confirm: "confirming, {s} s",
         c_name: "Name",
@@ -2610,19 +2612,19 @@ var STG_WINDOW = 30;
 /* Apply, then follow the switch's state.cfg until it has
  * an outcome: confirm while it is open (the switch's countdown is the
  * deadline, not this browser's clock), wait while it walks */
-function stgApply() {
+function stgApply(win, go) {
     $("stgApply").disabled = true;
     stgHold = 2;		/* apply's reply may take long: 10 s */
     stgLock(1);
-    cli(["apply " + STG_WINDOW]).then(function(r) {
+    return cli(["apply " + (win || STG_WINDOW)]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
         stgHold = 1;
-        return stgWatch(60, 1);
+        return go ? stgGo(go) : stgWatch(60, 1);
     }, function() {
         /* its reply lost (the change may cut this browser off, or the
          * walk outlasts the reply): ask the switch */
         stgHold = 1;
-        return stgWatch(60, 0);
+        return go ? stgGo(go) : stgWatch(60, 0);
     }).then(function(a) {
         if (a === "done") toast(t("stg_applied"), "ok");
         else toast(t(a === "rolled_back" ? "stg_rolled" : a === "failed" ? "stg_failed" :
@@ -2646,6 +2648,29 @@ function stgLock(on) {
         W[k].el.classList.toggle("lock", !!on);
         if (W[k].inp) W[k].inp.disabled = !!on || W[k].el.classList.contains("na");
     }
+}
+
+/* the management address moved: confirm from the new one (the page there
+ * asks, stgAsk); this page never settles */
+function stgGo(go) {
+    location.href = go;
+    return new Promise(function() {});
+}
+
+/* a window open when the UI starts (an address change, or another
+ * client's apply): reaching the switch here is what confirm means, so ask */
+function stgAsk() {
+    return cli(["get state.cfg"]).then(function(r) {
+        var c = (parseLines(r.out[0] || []).state || {}).cfg || {};
+        if (c.apply === "confirm") confirmModal(t("stg_keep_q"), t("stg_keep_d", {
+            s: c.confirm_s
+        }), function() {
+            cli(["confirm"]).then(function(r) {
+                toast(r.errs.length ? t("stg_rolled") : t("stg_applied"), r.errs.length ? "err" : "ok");
+                omReload();
+            });
+        });
+    });
 }
 
 /* n tries 2 s apart: confirm while the window is open (at once if apply
@@ -2687,9 +2712,11 @@ function stgSave() {
 }
 $("stgDiffB").addEventListener("click", stgShowDiff);
 $("stgDiscard").addEventListener("click", stgDiscard);
-$("stgApply").addEventListener("click", stgApply);
+$("stgApply").addEventListener("click", function() {
+    stgApply()
+});
 $("stgSave").addEventListener("click", stgSave);
-stgRefresh().catch(function() {});
+stgRefresh().then(stgAsk).catch(function() {});
 
 var CONF_CMDS = [
     /^ip\s+(\d{1,3}\.){3}\d{1,3}$/,
@@ -3250,15 +3277,14 @@ function stSysLoad() {
     });
 }
 
-/* /information.json: the system tab's hostname, syslog, session timeout
- * and LEDs until their objects land (P4-1); the addresses are state.mgmt */
-function pollInfo() {
-    return getJSON("/information.json").then(function(j) {
-        S.info = j;
-        if (j.hostname) {
-            $("brandname").textContent = $("brandname").title = document.title = j.hostname;
+/* the switch's name in the header: sys.hostname (the derived one when empty) */
+function hostLoad() {
+    return stObj("sys").then(function(o) {
+        S.host = o.hostname || "";
+        if (S.host) {
+            $("brandname").textContent = $("brandname").title = document.title = S.host;
             try {
-                localStorage.setItem("rtl_host", j.hostname);
+                localStorage.setItem("rtl_host", S.host);
             } catch (e) {}
         }
     });
@@ -3945,9 +3971,10 @@ function rangeStr(list) {
 function vlanRefresh() {
     var tb = $("vtable").tBodies[0];
     tb.style = "cursor:pointer;"
-    return getJSON("/vlanlist.json").then(function(d) {
-        var vl = d.vlan || [];
-        $("vmgmtcur").dataset.id = d.mgmt;
+    return Promise.all([getJSON("/vlanlist.json"), stObj("mgmt")]).then(function(x) {
+        var d = x[0],
+            vl = d.vlan || [];
+        $("vmgmtcur").dataset.id = x[1].vlan;
         $("vempty").style.display = vl.length ? "none" : "";
         tb.innerHTML = "";
         var p = Promise.resolve();
@@ -4200,15 +4227,17 @@ function vlanApply() {
     for (const up of thisVlanInStructure.untagged) {
         tail_cmds.push(pvidcmd(vid, up));
     }
-    if ($("vmgmtpromote").checked) {
-        /*must be the last command*/
-        tail_cmds.push("vlan " + vid + " mgmt");
-    }
-    var cmd = top_cmds.concat(tail_cmds);
+    var cmd = top_cmds.concat(tail_cmds),
+        mg = $("vmgmtpromote").checked && $("vmgmtcur").dataset.id != vid;
     postCmd(cmd.join("\n"), true).then(function() {
         toast(t("t_cmds", {
             n: cmd.length
-        }), "ok")
+        }), "ok");
+        /* the management VLAN last, with the apply window: it can cut this browser off */
+        if (mg) return cli(["set mgmt.vlan " + vid]).then(function(r) {
+            if (r.errs.length) throw new Error(r.errs[0]);
+            return stgApply();
+        });
     }).then(vlanRefresh).catch(function() {}).then(function() {
         vlanLoad(vid)
     });
@@ -4845,73 +4874,112 @@ function okIp(s) {
     });
 }
 
-function mgmtDhcp() {		/* state.mgmt: DHCP runs (any state but off) */
-    var d = (S.mgmt || {}).dhcp || {};
-    return !!d.state && d.state !== "off";
+/* The system tab's fields: element id -> config path (P4-1); SY their
+ * candidate as get -c prints it */
+var SY_F = {
+        "sy-host": "sys.hostname",
+        "ledSel": "sys.led",
+        "sy-mode": "mgmt.mode",
+        "sy-ip": "mgmt.ip",
+        "sy-mask": "mgmt.netmask",
+        "sy-gw": "mgmt.gateway",
+        "sy-dns1": "dns.server1",
+        "sy-dns2": "dns.server2",
+        "sy-syslog": "syslog.enabled",
+        "sy-sysip": "syslog.server",
+        "sy-sysport": "syslog.port",
+        "sy-sesstmo": "web.session_timeout_s",
+        "sy-ntp": "ntp.enabled",
+        "sy-ntpsrv": "ntp.server",
+        "sy-ntpint": "ntp.interval_min",
+        "sy-tz": "ntp.timezone",
+        "sy-dst": "ntp.dst"
+    },
+    SY = {};
+
+function syField(id) {
+    var p = SY_F[id].split(".");
+    return omField(p[0], p[1]);
+}
+
+/* a field's value as set takes it; an empty address is 0.0.0.0 */
+function syGet(id) {
+    var e = $(id),
+        v = e.type === "checkbox" ? (e.checked ? "on" : "off") : e.value.trim();
+    return v === "" && syField(id).t === "ip" ? "0.0.0.0" : v;
+}
+
+function syPut(id, v) {
+    var e = $(id);
+    if (document.activeElement === e) return;
+    if (e.type === "checkbox") e.checked = v === "on";
+    else e.value = v === "0.0.0.0" && syField(id).t === "ip" ? "" : v || "";
 }
 
 function sysLoad() {
-    stObj("state.mgmt").then(function(m) {
-        S.mgmt = m;
-        $("sy-ip").value = m.ip || "";
-        $("sy-mask").value = m.netmask || "";
-        $("sy-gw").value = m.gateway || "";
-        $("sy-mode").value = mgmtDhcp() ? "dhcp" : "static";
-        syModeUi();
-    }).catch(function() {});
-    pollInfo().then(function() {
-        $("sy-host").value = S.info.hostname || "";
-        var sl = (S.info.syslog_server || "").split(":");
-        if (sl[0] && sl[0] !== "0.0.0.0") $("sy-sysip").value = sl[0];
-        if (sl[1]) $("sy-sysport").value = sl[1];
-        if (S.info.session_timeout) $("sy-sesstmo").value = S.info.session_timeout;
-        if (S.info.leds && document.activeElement !== $("ledSel")) $("ledSel").value = S.info.leds;
-    }).catch(function() {});
-    cfgReload();
-    dnsLoad();
-}
-
-$("ledSel").addEventListener("change", function() {
-    var cmd = {on: "led on", ports: "led off ports", off: "led off"}[this.value];
-    postCmd(cmd).then(function() {
-        return pollInfo();
-    }).catch(function() {});
-});
-
-function dnsLoad() {
-    return api("/cmd", {
-        method: "POST",
-        body: "dns"
-    }).then(function(r) {
-        var m = r.body.match(/DNS servers ([\d.]+) ([\d.]+)/);
-        if (!m) return;
-
-        function v(x) {
-            return x === "0.0.0.0" ? "" : x
+    cli(["get -c sys mgmt dns syslog ntp web"]).then(function(r) {
+        var o = parseLines(r.out[0] || []);
+        for (var id in SY_F) {
+            var p = SY_F[id].split(".");
+            SY[id] = (o[p[0]] || {})[p[1]];
+            syPut(id, SY[id]);
         }
-        $("sy-dns1").value = v(m[1]);
-        $("sy-dns2").value = v(m[2]);
-        return stObj("state.dns").then(function(d) {
-            $("sy-dnsdhcp").textContent = !d.dhcp_server || d.dhcp_server === "0.0.0.0" ? "" : t("sy_dns_dhcp", {
-                ip: d.dhcp_server
-            });
+        syModeUi();
+        if (SY["sy-mode"] === "dhcp") return stObj("state.mgmt").then(function(m) {
+            syPut("sy-ip", m.ip);	/* the lease, in the disabled fields */
+            syPut("sy-mask", m.netmask);
+            syPut("sy-gw", m.gateway);
         });
     }).catch(function() {});
+    stObj("state.dns").then(function(d) {
+        $("sy-dnsdhcp").textContent = !d.dhcp_server || d.dhcp_server === "0.0.0.0" ? "" : t("sy_dns_dhcp", {
+            ip: d.dhcp_server
+        });
+    }).catch(function() {});
+    cfgReload();
+}
+
+/* the fields that differ from the candidate as set (del when emptied)
+ * lines; null after a refusal */
+function sySets(ids) {
+    var l = [];
+    for (var i = 0; i < ids.length; i++) {
+        var id = ids[i],
+            v = syGet(id),
+            why = v === "" ? "" : omCheck(syField(id), v);
+        if (v === SY[id]) continue;
+        if (why) {
+            toast(SY_F[id] + ": " + why, "err");
+            return null;
+        }
+        l.push((v === "" ? "del " : "set ") + SY_F[id] + (v === "" ? "" : " " + v));
+    }
+    return l;
+}
+
+/* stage a card's fields, then the bar's Apply (its window; go: the new
+ * address to confirm from) */
+function syApply(ids, win, go) {
+    var l = sySets(ids);
+    if (!l || !l.length) return;
+    cli(l).then(function(r) {
+        if (r.errs.length) throw new Error(r.errs[0]);
+        return stgApply(win, go);
+    }).catch(function(e) {
+        toast(e.message, "err");
+    }).then(sysLoad);
 }
 
 function cfgParseKnown(txt) {
-    var igmp = false,
-        syslog = false;
+    var igmp = false;
     txt.split(/\r?\n/).forEach(function(l) {
         l = l.trim();
         if (/^igmp on$/.test(l)) igmp = true;
         if (/^igmp off$/.test(l)) igmp = false;
-        if (/^syslog on$/.test(l)) syslog = true;
-        if (/^syslog off$/.test(l)) syslog = false;
     });
     $("sy-igmp").checked = igmp;
-    $("sy-syslog").checked = syslog;
 }
+
 function syModeUi() {
     var dhcp = $("sy-mode").value === "dhcp";
     ["sy-ip", "sy-mask", "sy-gw", "sy-dns1", "sy-dns2"].forEach(function(id) {
@@ -4919,44 +4987,30 @@ function syModeUi() {
     });
 }
 $("sy-mode").addEventListener("change", syModeUi);
+$("ledSel").addEventListener("change", function() {
+    syApply(["ledSel"]);
+});
+/* A new static address: apply with a long window, then confirm from
+ * there (DESIGN 5.3); the switch rolls back if that never happens. To
+ * DHCP the address is unknown: a plain apply, no window */
 $("sy-apply").addEventListener("click", function() {
-    var dhcp = $("sy-mode").value === "dhcp",
-        ip = $("sy-ip").value.trim(),
-        mask = $("sy-mask").value.trim(),
-        gw = $("sy-gw").value.trim();
-    if (!dhcp && (!okIp(ip) || !okIp(mask) || !okIp(gw))) {
-        toast(t("sy_ip_err"), "err");
-        return;
-    }
-    var d1 = $("sy-dns1").value.trim(),
-        d2 = $("sy-dns2").value.trim();
-    if (!dhcp && ((d1 && !okIp(d1)) || (d2 && !okIp(d2)))) {
-        toast(t("sy_dns_err"), "err");
-        return;
-    }
-    var cmds = [];
-    var hn = $("sy-host").value.trim();
-    if (hn && hn !== S.info.hostname) {
-        if (!/^[\x21-\x7e]{1,23}$/.test(hn) || /["\\]/.test(hn)) {
-            toast(t("sy_host_err"), "err");
-            return;
-        }
-        cmds.push("hostname " + hn);
-    }
-    var toDhcp = dhcp && !mgmtDhcp();
-    if (toDhcp) cmds.push("dns server 0.0.0.0\nip dhcp");
-    else if (!dhcp) cmds.push("ip " + ip + "\nnetmask " + mask + "\ngw " + gw + "\ndns server " + (d1 || "0.0.0.0") + (d2 ? " " + d2 : ""));
-    if (!cmds.length) return;
-    var changingIp = !dhcp && ip !== (S.mgmt || {}).ip;
-    confirmModal(toDhcp ? t("sy_dhcp_q") : t("sy_net_q"), toDhcp ? t("sy_dhcp_d") : changingIp ? t("sy_net_d", {
+    var dhcp = syGet("sy-mode") === "dhcp",
+        toDhcp = dhcp && SY["sy-mode"] !== "dhcp",
+        ip = syGet("sy-ip"),
+        moving = !dhcp && (ip !== SY["sy-ip"] || SY["sy-mode"] === "dhcp"),
+        ids = dhcp ? ["sy-host", "sy-mode"] : ["sy-host", "sy-mode", "sy-ip", "sy-mask", "sy-gw", "sy-dns1", "sy-dns2"];
+    if (!sySets(ids)) return;
+    confirmModal(toDhcp ? t("sy_dhcp_q") : t("sy_net_q"), toDhcp ? t("sy_dhcp_d") : moving ? t("sy_net_d", {
         ip: ip
     }) : "", function() {
-        postCmds(cmds).then(function() {
-            if (changingIp) toast(t("sy_ip_changed", {
-                ip: ip
-            }), "ok");
-            else sysLoad();
-        }).catch(function() {});
+        if (!toDhcp) return syApply(ids, moving ? 120 : 0, moving ?
+            location.protocol + "//" + ip + (location.port ? ":" + location.port : "") + "/index.html" : "");
+        cli(sySets(ids)).then(function(r) {
+            if (r.errs.length) throw new Error(r.errs[0]);
+            return cli(["apply"]);
+        }).catch(function(e) {
+            if (e.message) toast(e.message, "err");
+        });
     });
 });
 $("sy-igmp").addEventListener("change", function() {
@@ -4966,38 +5020,13 @@ $("sy-igmp").addEventListener("change", function() {
     });
 });
 $("sy-syslog").addEventListener("change", function() {
-    var cmds = [],
-        el = this;
-    if (el.checked) {
-        var sip = $("sy-sysip").value.trim(),
-            sp = $("sy-sysport").value.trim();
-        if (sip && !okIp(sip)) {
-            toast(t("sy_sysip_err"), "err");
-            el.checked = false;
-            return;
-        }
-        if (sp && !(+sp >= 1 && +sp <= 65535)) {
-            toast(t("sy_sysport_err"), "err");
-            el.checked = false;
-            return;
-        }
-        if (sip) cmds.push("syslog ip " + sip);
-        if (sp) cmds.push("syslog port " + sp);
-        cmds.push("syslog on");
-    } else cmds.push("syslog off");
-    postCmds(cmds).catch(function() {});
+    syApply(["sy-syslog", "sy-sysip", "sy-sysport"]);
 });
 $("sy-sesstmo").addEventListener("change", function() {
-    var v = +this.value;
-    if (!(v >= 1 && v <= 65535)) {
-        toast(t("sy_sesstmo_err"), "err");
-        sysLoad();
-        return;
-    }
-    postCmd("session " + v).catch(function() {
-        sysLoad()
-    });
+    syApply(["sy-sesstmo"]);
 });
+/* a new password logs every session out at apply, so no window could be
+ * confirmed: a plain apply, then the login */
 $("sy-pwapply").addEventListener("click", function() {
     var a = $("sy-pw1").value,
         b = $("sy-pw2").value;
@@ -5005,7 +5034,7 @@ $("sy-pwapply").addEventListener("click", function() {
         toast(t("sy_pw_len"), "err");
         return;
     }
-    if (/\s/.test(a)) {
+    if (/[\s"\\]/.test(a)) {
         toast(t("sy_pw_space"), "err");
         return;
     }
@@ -5014,9 +5043,14 @@ $("sy-pwapply").addEventListener("click", function() {
         return;
     }
     confirmModal(t("sy_pw_q"), t("sy_pw_d"), function() {
-        postCmd("passwd " + a).then(function() {
-            $("sy-pw1").value = $("sy-pw2").value = "";
-        }).catch(function() {});
+        cli(["set web.password " + a]).then(function(r) {
+            if (r.errs.length) throw new Error(r.errs[0]);
+            return cli(["apply"]);
+        }).then(function() {
+            location.href = "/login.html";
+        }).catch(function(e) {
+            toast(e.message, "err");
+        });
     });
 });
 $("sy-send").addEventListener("click", sysConsole);
@@ -5090,7 +5124,7 @@ $("cfgdl").addEventListener("click", function() {
             href: URL.createObjectURL(new Blob([x.replace(/[\0\xff\ufffd][\s\S]*$/, "")], {
                 type: "text/plain"
             })),
-            download: (S.info.hostname || "switch") + "-config.txt"
+            download: (S.host || "switch") + "-config.txt"
         });
         document.body.appendChild(a);
         a.click();
@@ -5137,18 +5171,9 @@ function ntpTick() {
         p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" + p(d.getUTCSeconds()) + " UTC" + ntpBase.tz;
 }
 
-/* the config from the ntp command's line, the clock from state.ntp */
+/* the clock from state.ntp; the config is sysLoad's */
 function ntpLoad() {
-    var r;
-    return api("/cmd", {
-        method: "POST",
-        body: "ntp"
-    }).then(function(x) {
-        r = x;
-        return stObj("state.ntp");
-    }).then(function(n) {
-        var m = r.body.match(/NTP (on|off), server (\S*), address ([\d.]+), interval (\d+) min, timezone ([+-]\d\d:\d\d), dst (\w+)/);
-        if (!m) return;
+    return stObj("state.ntp").then(function(n) {
         var off = +n.local_offset_min || 0;	/* DST included */
         $("sy-ntpaddr").textContent = !n.server_ip || n.server_ip === "0.0.0.0" ? "-" : n.server_ip;
         if (n.synced === "on") {
@@ -5162,14 +5187,8 @@ function ntpLoad() {
         } else {
             ntpBase = null;
             $("sy-now").textContent = t("sy_nosync");
-            $("sy-sync").textContent = m[1] === "on" ? t("sy_waiting") : "-";
+            $("sy-sync").textContent = SY["sy-ntp"] === "on" ? t("sy_waiting") : "-";
         }
-        if ($("sy-ntpcard").dataset.dirty) return;
-        $("sy-ntp").checked = m[1] === "on";
-        $("sy-ntpsrv").value = m[2];
-        $("sy-ntpint").value = m[4];
-        $("sy-tz").value = m[5];
-        $("sy-dst").value = m[6];
     }).catch(function() {});
 }
 [-720, -660, -600, -570, -540, -480, -420, -360, -300, -240, -210, -180, -120, -60, 0, 60, 120, 180, 210, 240, 270, 300, 330, 345,
@@ -5180,26 +5199,8 @@ function ntpLoad() {
         text: "UTC" + tzText(z)
     }));
 });
-["change", "input"].forEach(function(ev) {
-    $("sy-ntpcard").addEventListener(ev, function() {
-        this.dataset.dirty = "1"
-    })
-});
 $("sy-ntpapply").addEventListener("click", function() {
-    var srv = $("sy-ntpsrv").value.trim(),
-        iv = $("sy-ntpint").value.trim();
-    if (!/^[A-Za-z0-9.-]{1,47}$/.test(srv)) {
-        toast(t("sy_ntp_err"), "err");
-        return;
-    }
-    if (!(+iv >= 1 && +iv <= 1440)) {
-        toast(t("sy_ntpint_err"), "err");
-        return;
-    }
-    delete $("sy-ntpcard").dataset.dirty;
-    postCmds(["ntp server " + srv, "ntp interval " + iv, "ntp timezone " + $("sy-tz").value, "ntp dst " + $("sy-dst").value,
-        "ntp " + ($("sy-ntp").checked ? "on" : "off")
-    ]).then(ntpLoad).catch(function() {});
+    syApply(["sy-ntp", "sy-ntpsrv", "sy-ntpint", "sy-tz", "sy-dst"]);
 });
 $("sy-ntprefresh").addEventListener("click", ntpLoad);
 tabHooks.system = {
@@ -5760,7 +5761,7 @@ window.addEventListener("hashchange", function() {
     if (!TABS.some(function(tb) {
             return tb.id === id
         })) id = "dash";
-    pollInfo().catch(function() {});
+    hostLoad().catch(function() {});
     getText("/cmd_log").then(function(x) {
         x = x.replace(/\0[\s\S]*$/, "").trim();
         if (x && x.split(/\r?\n/).some(function(l) {
