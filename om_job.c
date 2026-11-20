@@ -10,10 +10,12 @@
 #include "sched.h"
 #include "om_gen.h"
 
-static __xdata uint8_t cfg_slot, cfg_r;
+static __xdata uint8_t cfg_slot, cfg_r, cfg_w;
+#define CFG_GET_WAIT	50	/* x 100 ms: a rollback waits for a get this long, at most */
 
 uint8_t om_job_start(void) __banked
 {
+	cfg_w = 0;
 	cfg_slot = task_claim(S_CFG_APPLY);
 	if (cfg_slot == SCHED_NONE)
 		return 0;
@@ -49,17 +51,15 @@ STEP(cfg, window)
 		om_settle(OM_A_DONE);
 		return STEP_END;		/* exit: confirmed */
 	}
-	if (!om_confirm_s) {
-		if (cli_job) {			/* a get or diff is streaming: it uses the engine */
-			task_sleep(20);		/* not STEP_SLEEP(STEP_STAY, ..): SDCC drops the call (report) */
-			return STEP_STAY;	/* exit: roll back when it ends */
-		}
-		om_undo();
-		return S_CFG_UNDO;		/* exit: the window ended unconfirmed */
+	if (om_confirm_s && --om_confirm_s)	/* a second gone: the window ends at N s */
+		return STEP_SLEEP(STEP_STAY, 1000);	/* exit: the next second, or confirm's wake */
+	if (cli_job == CLI_JOB_OM) {	/* a get or diff is streaming: it uses the engine */
+		if (++cfg_w <= CFG_GET_WAIT)
+			return STEP_SLEEP(STEP_STAY, 100);	/* exit: roll back when it ends */
+		om_cut = 1;		/* stalled (a slow web client): its next line ends it */
 	}
-	om_confirm_s--;		/* a second: a sleep drifts a tick or so, which a window can bear */
-	task_sleep(1000);
-	return STEP_STAY;			/* exit: the next second, or confirm's wake */
+	om_undo();
+	return S_CFG_UNDO;		/* exit: the window ended unconfirmed */
 }
 
 STEP(cfg, undo)

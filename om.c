@@ -1225,6 +1225,7 @@ static void job_start(uint8_t mode)
 {
 	j_mode = mode;
 	cli_job = mode == J_APPLY ? CLI_JOB_OMAPPLY : CLI_JOB_OM;
+	om_cut = 0;
 	j_new = 1;
 	j_hit = 0;
 	r_first = 0xff;
@@ -1329,7 +1330,7 @@ static void next_instance(void)
  * walks again. The walk has its own cursor (a_o, a_e) and takes the element
  * index straight: no get can run meanwhile (om_cmd() refuses while om_busy).
  */
-__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
+__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut;
 static uint8_t check_all(void);
 static __xdata uint8_t a_o, a_e, a_n, a_fo, a_fe, a_timeout;
 
@@ -1492,6 +1493,10 @@ static uint8_t apply_wait(void)
 
 uint8_t om_line(void) __banked
 {
+	if (om_cut) {			/* a rollback took the engine (om_job.c) */
+		err_line("err: cut by a rollback\n");
+		return 0;
+	}
 	if (j_mode == J_APPLY) {
 		if (apply_wait())
 			return 1;
@@ -1821,9 +1826,9 @@ void om_init(void) __banked
 void om_boot_apply(void) __banked
 {
 	if (!check_all()) {
-		print_string("Boot config not applied\n");
 		cand_from_run();
-		return;
+		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults */
+		goto not_applied;
 	}
 	apply_begin();
 	while ((v8 = om_apply_next()) != OM_A_DONE) {
@@ -1834,7 +1839,12 @@ void om_boot_apply(void) __banked
 		}
 	}
 	om_settle(v8);
-	om_apply_st = E_CFGAPPLY_IDLE;
+	if (om_apply_st == E_CFGAPPLY_DONE) {
+		om_apply_st = E_CFGAPPLY_IDLE;
+		return;
+	}
+not_applied:				/* state.cfg.apply keeps rolled_back or failed */
+	print_string("Boot config not applied\n");
 }
 
 /* state.cfg (schema/state_cfg.py) */

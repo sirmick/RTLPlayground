@@ -182,7 +182,7 @@ uint8_t om_get_tsys(uint8_t idx)
 }
 
 /* om_job.c's cfg job, as the scheduler would run it: apply, window, undo */
-static int job_on, job_st, job_steps, job_wakes;
+static int job_on, job_st, job_steps, job_wakes, job_due, job_arg;
 
 uint8_t om_job_start(void)
 {
@@ -190,6 +190,7 @@ uint8_t om_job_start(void)
 		return 0;
 	job_on = 1;
 	job_st = 0;
+	job_arg = 0;
 	return 1;
 }
 
@@ -219,14 +220,28 @@ static void job_step(void)
 		om_apply_st = E_CFGAPPLY_CONFIRM;
 		job_st = 1;
 		return;
-	case 1:			/* CFG_WINDOW */
+	case 1:			/* CFG_WINDOW: due a second at a time (seconds()), then 100 ms */
 		if (om_confirmed) {
 			om_settle(OM_A_DONE);
 			job_on = 0;
-		} else if (!om_confirm_s && !cli_job) {
-			om_undo();
-			job_st = 2;
+			return;
 		}
+		if (om_confirm_s) {
+			if (!job_due)
+				return;
+			job_due = 0;
+			if (--om_confirm_s)
+				return;
+		}
+		if (cli_job == CLI_JOB_OM) {
+			if (job_arg < 50) {
+				job_arg++;
+				return;
+			}
+			om_cut = 1;
+		}
+		om_undo();
+		job_st = 2;
 		return;
 	default:		/* CFG_UNDO */
 		r = om_apply_next();
@@ -246,8 +261,7 @@ static void job_run(void)	/* the job to its end, or into its window */
 static void seconds(int n)	/* the window's clock */
 {
 	while (n-- && job_on && job_st == 1) {
-		if (om_confirm_s)
-			om_confirm_s--;
+		job_due = 1;
 		job_step();
 	}
 	job_run();
@@ -760,6 +774,61 @@ static void staging(void)
 	cli_job = 0;
 	job_run();
 	expect("get port.2.mtu", "port.2.mtu 2000\nok\n");
+
+	printf("a get streaming at the window's end\n");
+	memcpy(&before, &cfg_run, sizeof before);
+	expect("set port.3.mtu 3000", "ok\n");
+	expect("apply 2", "ok\n");
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "get port.*");
+	tokenize();
+	out_reset();
+	om_cmd();
+	om_line();
+	seconds(1);
+	CHECK(om_confirm_s == 1, "a second gone");
+	job_due = 1;		/* seconds(1) without its job_run(): the cli is streaming */
+	job_step();
+	CHECK(om_apply_st == E_CFGAPPLY_CONFIRM && !om_confirm_s && cli_job == CLI_JOB_OM, "the window ends at N s");
+	job_step();
+	job_step();
+	CHECK(om_apply_st == E_CFGAPPLY_CONFIRM, "the rollback waits for a get");
+	while (cli_job && om_line())
+		;
+	cli_job = 0;
+	job_run();
+	out_buf[out_len] = 0;
+	CHECK(!strstr(out_buf, "err") && strstr(out_buf, "port.9.mtu") && om_apply_st == E_CFGAPPLY_ROLLED_BACK &&
+	      !memcmp(&cfg_run, &before, sizeof before), "a get that ends: whole, then the rollback");
+	expect("set port.3.mtu 3000", "ok\n");
+	expect("apply 1", "ok\n");
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "get port.*");
+	tokenize();
+	out_reset();
+	om_cmd();
+	om_line();
+	seconds(1);		/* the get stalls (a slow web client): job_run steps only the job */
+	CHECK(om_apply_st == E_CFGAPPLY_ROLLED_BACK && !memcmp(&cfg_run, &before, sizeof before),
+	      "a stalled get holds the rollback 5 s at most");
+	out_reset();
+	CHECK(!om_line(), "the get's next line ends it");
+	out_buf[out_len] = 0;
+	CHECK(!t_strcmp(out_buf, "err: cut by a rollback\n"), "and says why");
+	cli_job = 0;
+	expect("get port.3.mtu", "port.3.mtu 9000\nok\n");
+
+	printf("boot\n");
+	expect("set port.5.mtu 5000", "ok\n");
+	memcpy(&mid, &cfg_cand, sizeof mid);
+	fail_apply_on = 4;
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
+	      !memcmp(&cfg_cand, &mid, sizeof mid), "a boot handler fails: rolled back, said once");
+	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	expect("discard", "ok\n");
+	om_boot_apply();
+	expect("get state.cfg.apply", "state.cfg.apply idle\nok\n");
 }
 
 /* random valid values, set as text and read back: text and bytes agree */
