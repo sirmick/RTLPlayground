@@ -30,9 +30,12 @@ order:
      mgmt.ip (config.txt), then the schema's (or --boot-host);
   4. set the converted lines, apply them (the switch moves back to its
      address), save, and compare get -s with the plan.
-Step 1 writes the plan to HOST.plan (--plan): if the update stops after
-2, `fwupdate.py --resume HOST.plan HOST` redoes step 4 from it.  The file
-holds the web password: it is written readable by its owner only.
+Step 4 applies with a confirm window (apply 120): if the switch can't be
+reached at its address after it, it rolls back to its factory default.
+Step 1 writes the plan to HOST.plan (--save-plan): if the update stops
+after 2, `fwupdate.py --plan HOST.plan HOST` redoes step 4 from it.  The
+web password is shown and written as * (step 4 sets the -p password); the
+file is readable by its owner only.
 
 Usage:
     fwupdate.py [options] IMAGE [HOST]
@@ -41,7 +44,7 @@ Usage:
     fwupdate.py -p secret --health output/rtlplayground_....bin 192.168.10.247
     fwupdate.py -p secret --check 192.168.10.247
     fwupdate.py -p secret --dry-run output/.../rtlplayground-install-....bin 192.168.10.247
-    fwupdate.py -p secret --resume 192.168.10.247.plan 192.168.10.247
+    fwupdate.py -p secret --plan 192.168.10.247.plan 192.168.10.247
     RTLP_PASSWORD=secret fwupdate.py output/rtlplayground_....bin --no-wait
 
 Exit status:
@@ -517,7 +520,7 @@ def machine_of(args):
 
 class Plan:
     """An old config, converted: lines (path lines), legacy ((line, node)),
-    bad, warn; the new firmware's built-in address and password."""
+    bad, warn; the new firmware's factory default address and password."""
 
     def __init__(self, args, text, machine=None, lines=None):
         sys.path.insert(0, HERE)
@@ -526,28 +529,53 @@ class Plan:
         self.rc = rtlpg_client
         self.machine = machine or machine_of(args)
         self.sch = rtlpg_client.Schema(args.schema, rtlpg_client.Board(self.machine))
-        self.warn = []
-        if lines is None:
-            self.lines, self.legacy, self.bad = legacy_map.convert(
-                text, self.sch.board, self.warn, self.sch)
-        else:			# a written plan (--resume)
-            self.lines, self.legacy, self.bad = lines, [], []
-        self.empty = not (self.lines or self.legacy or self.bad)
-        # where the new firmware comes back: its factory default
-        # (config.txt, DESIGN.md 15.1), else the schema's built-ins
-        cfg = self.rc.Config(self.sch)
+        self.warn, self.filled = [], []
+        # the factory default (config.txt, DESIGN.md 15.1): what the new
+        # firmware boots on, and where it answers then
+        cfg, factory = self.rc.Config(self.sch), []
         try:
             for ln in open(os.path.join(HERE, "..", "config.txt")):
                 cfg.line(ln)
+                w = ln.split()
+                if w and not w[0].startswith("#"):
+                    factory.append(w[1] if w[0] == "set" else w[0])
         except (OSError, self.rc.Bad) as error:
             print(f"warning: config.txt: {error}", file=sys.stderr)
         self.boot_ips = list(dict.fromkeys([self.value(cfg, "mgmt.ip"),
                                             self.value(self.rc.Config(self.sch), "mgmt.ip")]))
         self.boot_password = self.value(cfg, "web.password")
+        if lines is not None:		# a written plan (--plan)
+            self.lines, self.legacy, self.bad = lines, [], []
+            self.empty = not lines
+            return
+        self.lines, self.legacy, self.bad = legacy_map.convert(
+            text, self.sch.board, self.warn, self.sch)
+        self.empty = not (self.lines or self.legacy or self.bad)
+        # a field the factory default sets and the old config didn't (no ip
+        # line: the old switch ran the built-in address) goes back to the
+        # built-in, so the switch stays where it was and get -s is the plan
+        have = {ln.split()[0] for ln in self.lines}
+        built = self.rc.Config(self.sch)
+        for path in dict.fromkeys(factory):
+            if path not in have and not self.empty:
+                self.filled.append(f"{path} {self.value(built, path)}")
+        self.lines += self.filled
+
+    def secret(self, path):
+        try:
+            o, ix, f = self.sch.resolve(path)
+        except self.rc.Bad:
+            return False
+        return f is not None and f.typ.code == "SECRET"
+
+    def masked(self, line):
+        """A line as shown or written: a Secret's value as *."""
+        path = line.split()[0]
+        return f"{path} *" if self.secret(path) and " " in line else line
 
     def write(self, path, host, port):
-        """The path lines, for --resume; the old lines it drops as
-        comments. It holds web.password: readable by the owner only."""
+        """The plan for --plan: the path lines, a Secret as * (the -p
+        password is put back), the old lines it drops as comments."""
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(f"# fwupdate plan: {host}:{port}, machine {self.machine}\n")
@@ -556,10 +584,12 @@ class Plan:
             for line in self.bad:
                 f.write(f"# dropped, untranslated: {line}\n")
             for line in self.lines:
-                f.write(line + "\n")
+                f.write(self.masked(line) + "\n")
 
     @classmethod
-    def read(cls, args, path):
+    def read(cls, args, path, password):
+        """A written plan; web.password * is the -p password (the old
+        switch's, the one it is logged in with)."""
         try:
             text = open(path).read()
         except OSError as error:
@@ -568,14 +598,24 @@ class Plan:
         if not m:
             raise Failure(f"{path}: not a plan fwupdate wrote", 1)
         lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+        lines = [f"web.password {password}" if ln == "web.password *" else ln for ln in lines]
         try:
-            return cls(args, None, args.machine or m.group(1), lines)
+            plan = cls(args, None, args.machine or m.group(1), lines)
         except OSError as error:
             raise Failure(f"the schema or the board: {error}", 1)
+        for ln in lines:
+            if ln.endswith(" *") and plan.secret(ln.split()[0]):
+                raise Failure(f"{path}: {ln.split()[0]} is masked; set it by hand", 1)
+        return plan
 
     def value(self, cfg, path):
         o, ix, f = self.sch.resolve(path)
         return self.sch.fmt(o, f, cfg.v[(o.regname, ix)][f.name])
+
+    def mgmt_ip(self):
+        """The address the lines give the switch, or None (DHCP)."""
+        v = dict(ln.split(" ", 1) for ln in self.lines if " " in ln and not ln.startswith("del "))
+        return None if v.get("mgmt.mode") == "dhcp" else v.get("mgmt.ip")
 
     def saved(self):
         """What get -s will print once the lines are saved."""
@@ -589,7 +629,9 @@ class Plan:
               f"legacy, {len(self.bad)} untranslated, {len(self.warn)} "
               "warnings")
         for line in self.lines:
-            print(f"  set {line}" if not line.startswith("del ") else f"  {line}")
+            line = self.masked(line)
+            note = "  (the factory default sets it; the old config didn't)" if line in self.filled else ""
+            print(f"  set {line}{note}" if not line.startswith("del ") else f"  {line}")
         for line, node in self.legacy:
             print(f"  legacy ({node}): {line}")
         for line in self.bad:
@@ -603,12 +645,27 @@ class Plan:
 
 def read_plan(args, host, port, cookie):
     """The plan; and why the config isn't readable, or None."""
-    why = None
+    why, body = None, b""
     try:
-        status, _, _, body = http_request(
-            host, port, args.timeout, "GET", "/config", cookie=cookie)
-        if status != 200:
-            why, body = f"GET /config returned HTTP {status}", b""
+        # no Content-Length (the old reply ends at its close): read it
+        # twice, so a transfer cut short doesn't convert as a shorter config
+        for n in range(2):
+            for attempt in range(3):	# a connection lost: ask again
+                try:
+                    status, _, _, got = http_request(
+                        host, port, args.timeout, "GET", "/config", cookie=cookie)
+                    break
+                except Failure:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1)
+            if status != 200:
+                why, body = f"GET /config returned HTTP {status}", b""
+                break
+            if n and got != body:
+                why, body = "GET /config read twice differs (a cut transfer?)", b""
+                break
+            body = got
     except Failure as error:
         why, body = str(error), b""
     try:
@@ -632,52 +689,70 @@ def state(args, host, port, cookie, what, busy):
         time.sleep(0.5)
 
 
+CONFIRM_S = 120		# apply's confirm window: a wrong address rolls back
+
+
 def carry_over(args, plan, host, port, password, at, cookie):
-    """Set the plan's lines on the new firmware at `at`, apply them (the
-    switch may move to host:port, logging the session out), save (the old
-    text goes), and compare get -s with the plan."""
+    """Step 4: set the plan's lines on the new firmware at `at`, apply them
+    with a confirm window, find the switch at its address (HOST, or the
+    plan's mgmt.ip, or still `at`) with its password, confirm, save, and
+    compare get -s with the plan. Not reached in the window, the switch
+    rolls back to its factory default."""
     if cookie is None:
         raise Failure(f"can't log in at {at[0]}:{at[1]} after the update", 5)
-    if plan.lines:
-        out = cli(at[0], at[1], args.timeout, cookie,
-                  [f"set {ln}" if not ln.startswith("del ") else ln for ln in plan.lines])
-        errs = [ln for ln in out.splitlines() if ln.startswith("err")]
-        if errs:
-            cli(at[0], at[1], args.timeout, cookie, ["discard"])
-            raise Failure("the switch refused lines: " + "; ".join(errs[:5]), 5)
-        print(f"Set {len(plan.lines)} lines; applying ...", file=sys.stderr)
-        try:
-            cli(at[0], at[1], min(args.timeout, 10), cookie, ["apply"])
-        except Failure:
-            pass		# the address moved under the reply
-        # back at its old address (or still where it is), with its password
-        cookie = None
-        start = time.monotonic()
-        targets = list(dict.fromkeys([(host, port), at]))
-        while cookie is None:
-            for host, port in targets:
-                for pw in dict.fromkeys([password, plan.boot_password]):
-                    try:
-                        cookie = login(host, port, min(args.timeout, 5), pw)
-                        break
-                    except Failure:
-                        pass
-                if cookie:
+    out = cli(at[0], at[1], args.timeout, cookie,
+              [f"set {ln}" if not ln.startswith("del ") else ln for ln in plan.lines])
+    errs = [ln for ln in out.splitlines() if ln.startswith("err")]
+    if errs:
+        cli(at[0], at[1], args.timeout, cookie, ["discard"])
+        raise Failure("the switch refused lines: " + "; ".join(errs[:5]), 5)
+    print(f"Set {len(plan.lines)} lines; apply {CONFIRM_S} ...", file=sys.stderr)
+    try:
+        out = cli(at[0], at[1], min(args.timeout, 10), cookie, [f"apply {CONFIRM_S}"])
+        if "err" in out:
+            raise Failure(f"apply: {out.strip()}", 5)
+    except Failure as error:
+        if error.status == 5:
+            raise
+        pass		# the address moved under the reply
+    targets = [(host, port)]
+    ip = plan.mgmt_ip()
+    if ip:
+        targets.append((ip, port))
+    targets.append(at)
+    targets = list(dict.fromkeys(targets))
+    cookie = None
+    start = time.monotonic()
+    while cookie is None:
+        for host, port in targets:
+            for pw in dict.fromkeys([password, plan.boot_password]):
+                try:
+                    cookie = login(host, port, min(args.timeout, 5), pw)
                     break
-            if cookie is None:
-                if time.monotonic() - start > args.wait_timeout:
-                    raise Failure("the switch didn't answer after the apply", 5)
-                time.sleep(2)
-        print(f"Logged in to {host}:{port} after the apply", file=sys.stderr)
-    else:
-        host, port = at
-    st = state(args, host, port, cookie, "apply", ("running", "undo"))
+                except Failure:
+                    pass
+            if cookie:
+                break
+        if cookie is None:
+            if time.monotonic() - start > CONFIRM_S * 0.8:
+                raise Failure("the switch didn't answer at "
+                              + ", ".join(f"{h}:{p}" for h, p in targets)
+                              + f" within the confirm window: it rolls back to "
+                              "its factory default", 5)
+            time.sleep(2)
+    print(f"Logged in to {host}:{port} after the apply; confirming",
+          file=sys.stderr)
+    out = cli(host, port, args.timeout, cookie, ["confirm"])
+    if not out.rstrip().endswith("ok"):
+        raise Failure(f"confirm: {out.strip()}", 5)
+    st = state(args, host, port, cookie, "apply", ("running", "undo", "confirm"))
     if st not in ("idle", "done"):
         raise Failure(f"apply: state.cfg.apply {st}", 5)
     out = cli(host, port, args.timeout, cookie, ["save"])
     st = state(args, host, port, cookie, "save", ("erasing", "writing"))
     if not out.rstrip().endswith("ok") or st != "done":
         raise Failure(f"save: {out.strip()} (state.cfg.save {st})", 5)
+    plan.saved_ok = True
     got = [ln for ln in cli(host, port, args.timeout, cookie, ["get -s"]).splitlines()
            if ln and ln != "ok"]
     want = plan.saved()
@@ -687,15 +762,29 @@ def carry_over(args, plan, host, port, password, at, cookie):
     print(f"Saved: get -s is the plan ({len(got)} lines)", file=sys.stderr)
 
 
-def resume(args):
-    """Step 4 again, from a written plan, on a switch that runs the new
+def step4(args, plan, plan_file, host, port, password, at, cookie):
+    """carry_over(), and on a failure what state the switch is in and how
+    to redo it."""
+    plan.saved_ok = False
+    try:
+        carry_over(args, plan, host, port, password, at, cookie)
+    except Failure as error:
+        where = " or ".join(plan.boot_ips)
+        state_ = ("the config was saved, but get -s doesn't match the plan" if plan.saved_ok else
+                  f"nothing is saved: the switch runs (or comes back to) its factory default, at {where}")
+        raise Failure(f"{error}\nStep 4 didn't finish: {state_}. Redo it with "
+                      f"`fwupdate.py -p ... --plan {plan_file} {host}`", error.status)
+
+
+def plan_only(args):
+    """Step 4 alone, from a written plan, on a switch that runs the new
     firmware: at HOST, else where it boots (--boot-host or the plan's)."""
     if args.host is not None:
-        raise Failure("--resume takes only the host; do not pass an image", 1)
+        raise Failure("--plan takes only the host; do not pass an image", 1)
     host, port = parse_target(args.image or DEFAULT_HOST, args.port)
     password = resolve_password(args, host)
-    plan = Plan.read(args, args.resume)
-    print(f"{args.resume}: {len(plan.lines)} path lines", file=sys.stderr)
+    plan = Plan.read(args, args.plan, password)
+    print(f"{args.plan}: {len(plan.lines)} path lines", file=sys.stderr)
     targets = [(host, port)] + ([parse_target(args.boot_host, args.port)] if args.boot_host
                                 else [(ip, 80) for ip in plan.boot_ips])
     for at in dict.fromkeys(targets):
@@ -710,7 +799,7 @@ def resume(args):
                               "update it first", 5)
             print(f"Logged in to {at[0]}:{at[1]}; step 4/4: setting, "
                   "applying and saving the config", file=sys.stderr)
-            carry_over(args, plan, host, port, password, at, cookie)
+            step4(args, plan, args.plan, host, port, password, at, cookie)
             print("Config carried over.")
             return 0
     raise Failure("can't log in to the switch at "
@@ -767,12 +856,13 @@ def parse_args(argv):
                              "reboot, on its factory default (default: "
                              "HOST, then config.txt's mgmt.ip, then the "
                              "schema's)")
-    parser.add_argument("--plan",
+    parser.add_argument("--save-plan", metavar="FILE",
                         help="where to write the converted plan before the "
                              "upload (default: HOST.plan)")
-    parser.add_argument("--resume", metavar="PLAN",
-                        help="redo step 4 (set, apply, save, compare) from "
-                             "a written plan; give the host as the only "
+    parser.add_argument("--plan", metavar="FILE",
+                        help="step 4 alone (set, apply, confirm, save, "
+                             "compare) from a written plan, on a switch "
+                             "already updated; give the host as the only "
                              "positional")
     parser.add_argument("--machine",
                         help="the board, machine/<M>.c (default: from the "
@@ -827,8 +917,8 @@ def run(args):
             raise Failure("--check takes a host, not a firmware image", 1)
         return check_switch(args, target)
 
-    if args.resume:
-        return resume(args)
+    if args.plan:
+        return plan_only(args)
     if args.image is None:
         raise Failure("IMAGE is required unless --check is used", 1)
     if args.health and args.no_wait:
@@ -894,10 +984,10 @@ def run(args):
         if args.no_wait:
             raise Failure("the config is set after the reboot; remove "
                           "--no-wait", 1)
-        plan_file = args.plan or f"{host}.plan"
+        plan_file = args.save_plan or f"{host}.plan"
         plan.write(plan_file, host, port)
         print(f"Plan written to {plan_file}: if step 4 fails, "
-              f"`fwupdate.py --resume {plan_file} {host}` redoes it",
+              f"`fwupdate.py -p ... --plan {plan_file} {host}` redoes it",
               file=sys.stderr)
 
     if plan:
@@ -930,7 +1020,7 @@ def run(args):
     if plan:
         print("Step 4/4: setting, applying and saving the config",
               file=sys.stderr)
-        carry_over(args, plan, host, port, password, at, cookie)
+        step4(args, plan, plan_file, host, port, password, at, cookie)
         cookie = None
     if args.health:
         print_health(host, port, args.timeout, password, cookie)

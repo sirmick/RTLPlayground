@@ -60,9 +60,10 @@ def crc_fixed(n, pcb=b""):
 class Fake:
     """The switch: old firmware with `text` saved, password `pw`."""
 
-    def __init__(self, text, pw="secret9", refuse=()):
+    def __init__(self, text, pw="secret9", refuse=(), lost=False):
         self.text, self.pw, self.refuse = text, pw, refuse	# text None: GET /config fails
-        self.om, self.at, self.uploads = False, "old", 0
+        self.om, self.at, self.uploads, self.lost = False, "old", 0, lost	# lost: unreachable after apply
+        self.drops, self.texts = 0, None	# GET /config: connections dropped first; texts to answer in turn
         self.cand, self.run, self.saved = [], [], []
         self.log = []
         self.sch = rc.Schema(board=rc.Board(M))
@@ -95,7 +96,7 @@ class Fake:
                 self.cand.append(ln)
             elif ln == "discard":
                 self.cand = []
-            elif ln == "apply":
+            elif ln.startswith("apply"):
                 self.run += self.cand
                 self.cand = []
                 for x in self.run:
@@ -103,6 +104,8 @@ class Fake:
                         self.pw = x.split()[2]
                 if any(x.startswith("set mgmt.ip ") for x in self.run):
                     self.at = "old"
+                if self.lost:
+                    self.at = "nowhere"
             elif ln == "save":
                 self.saved = list(self.run)
             elif ln == "get state.cfg.apply":
@@ -144,7 +147,11 @@ class Fake:
                 elif self.path == "/information.json" and not fake.om:
                     self.reply(200, ('{"sw_ver":"v-old","hw_ver":"8x","pcb_ver":"%s"}' % PCB).encode())
                 elif self.path == "/config" and not fake.om and fake.text is not None:
-                    self.reply(200, fake.text.encode())
+                    if fake.drops:
+                        fake.drops -= 1
+                        self.close_connection = True
+                        return
+                    self.reply(200, (fake.texts.pop(0) if fake.texts else fake.text).encode())
                 elif self.path == "/status.json":
                     self.reply(200, b"[]")
                 else:
@@ -172,7 +179,7 @@ PLAN = os.path.join(tempfile.mkdtemp(), "sw.plan")
 
 def run(fake, image, *extra):
     out, err = io.StringIO(), io.StringIO()
-    argv = ["-p", "secret9", "--timeout", "5", "--wait-timeout", "30", "--plan", PLAN,
+    argv = ["-p", "secret9", "--timeout", "5", "--wait-timeout", "30", "--save-plan", PLAN,
             "--boot-host", "127.0.0.1:%d" % fake.port("boot"), *extra]
     argv += [image, "127.0.0.1:%d" % fake.port("old")] if image else ["127.0.0.1:%d" % fake.port("old")]
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -222,8 +229,9 @@ def main():
     f = Fake(CLEAN)
     st, out, err = run(f, img, "--dry-run")
     check(st == 0 and f.uploads == 0 and not f.om, "nothing uploaded", err)
-    check("Config: 7 path lines, 0 legacy, 0 untranslated, 0 warnings" in out
+    check("Config: 8 path lines, 0 legacy, 0 untranslated, 0 warnings" in out
           and "  set mgmt.ip 127.0.0.1" in out and "at 192.168.10.247 or 192.168.2.2 until" in out, "the plan, and where it comes back", out)
+    check("  set web.password *" in out and "secret9" not in out, "the password is shown as *", out)
     f.close()
 
     print("legacy lines: refused, then --drop-legacy")
@@ -236,15 +244,17 @@ def main():
     check(st == 0 and f.uploads == 1 and "Dropping 3 config lines" in err, "--drop-legacy updates", err)
     check(f.saved == ["set " + ln for ln in ["mgmt.mode static", "mgmt.ip 127.0.0.1", "mgmt.gateway 192.168.10.1",
                                              "sys.hostname old-one", "web.password secret9", "port.3.mtu 9000",
-                                             "port.5.enabled off"]] and "Saved: get -s is the plan (5 lines)" in err,
+                                             "port.5.enabled off", "mgmt.netmask 255.255.255.0"]]
+          and "Saved: get -s is the plan (5 lines)" in err,
           "the path lines set, applied and saved; get -s compared", (f.saved, err))
-    check(f.log.index("apply") < f.log.index("save") and f.at == "old" and f.pw == "secret9",
-          "back at its address with its password after the apply", f.log)
+    check(f.log.index("apply 120") < f.log.index("confirm") < f.log.index("save") and f.at == "old"
+          and f.pw == "secret9", "apply 120, back at its address with its password, confirm, save", f.log)
     text = open(PLAN).read()
     check(os.stat(PLAN).st_mode & 0o777 == 0o600 and text.startswith("# fwupdate plan: 127.0.0.1:")
           and "# dropped, legacy (P4-3): lag 1 7 8\n" in text and "# dropped, untranslated: frobnicate\n" in text
-          and "\nmgmt.ip 127.0.0.1\n" in text and err.find("Plan written to") < err.find("Uploading"),
-          "the plan is written before the upload, owner-only, with what it drops", text)
+          and "\nmgmt.ip 127.0.0.1\n" in text and "\nweb.password *\n" in text and "secret9" not in text
+          and err.find("Plan written to") < err.find("Uploading"),
+          "the plan is written before the upload, owner-only, with what it drops, the password masked", text)
     steps = [err.find("Step %d/4" % n) for n in range(1, 5)]
     check(-1 not in steps and steps == sorted(steps) and err.find("Uploading") > steps[1],
           "read and convert, upload, wait, set: in that order", err)
@@ -255,6 +265,34 @@ def main():
     st, out, err = run(f, img)
     check(st == 5 and "refused lines: err set: refused" in err and "discard" in f.log and "save" not in f.log,
           "discarded, not applied or saved (5)", err)
+    f.close()
+
+    print("GET /config: a lost connection is asked again; two reads must agree")
+    f = Fake(CLEAN)
+    f.drops = 2
+    st, out, err = run(f, img, "--dry-run")
+    check(st == 0 and "Config: 8 path lines" in out and f.drops == 0, "two dropped connections, then read", out + err)
+    f.texts = [CLEAN, CLEAN[:20]]
+    st, out, err = run(f, img)
+    check(st == 5 and f.uploads == 0 and "read twice differs" in out, "a read that differs: refused (5)", out + err)
+    f.close()
+
+    print("an old config without an ip line: the built-in address, not config.txt's")
+    f = Fake("hostname no-ip\nmtu 3 9000\n")
+    st, out, err = run(f, img)
+    check(st == 0 and "set mgmt.ip 192.168.2.2  (the factory default sets it" in out
+          and "set mgmt.ip 192.168.2.2" in f.saved and "Saved: get -s is the plan (2 lines)" in err,
+          "config.txt's mgmt.* go back to the built-ins; get -s is the plan", (out, f.saved, err))
+    f.close()
+
+    print("not reached after the apply: the confirm window rolls back")
+    fwupdate.CONFIRM_S, keep = 1, fwupdate.CONFIRM_S
+    f = Fake(CLEAN, lost=True)
+    st, out, err = run(f, img)
+    fwupdate.CONFIRM_S = keep
+    check(st == 5 and "within the confirm window" in err and "confirm" not in f.log and "save" not in f.log
+          and "nothing is saved" in err and "--plan %s 127.0.0.1" % PLAN in err,
+          "exit 5, no confirm or save, and how to redo step 4", err)
     f.close()
 
     print("--no-wait can't carry a config")
@@ -274,23 +312,23 @@ def main():
               "%s: --boot-defaults updates, sets nothing" % why, (f.log, err))
         f.close()
 
-    print("--resume: step 4 again from the written plan")
+    print("--plan: step 4 alone, from the written plan")
     f = Fake("")
     f.om, f.at, f.pw = True, "boot", "1234"		# updated, the config never set
-    st, out, err = run(f, None, "--resume", PLAN)
+    st, out, err = run(f, None, "--plan", PLAN)
     check(st == 0 and f.uploads == 0 and f.at == "old" and f.pw == "secret9" and "save" in f.log
           and "Saved: get -s is the plan (5 lines)" in err and "Config carried over" in out,
           "set, applied, saved and compared, no upload", (f.log, err))
-    st, out, err = run(f, None, "--resume", PLAN)
+    st, out, err = run(f, None, "--plan", PLAN)
     check(st == 0 and f.log.count("save") == 2, "and again: it is idempotent", err)
     f.close()
     f = Fake(CLEAN)
-    st, out, err = run(f, None, "--resume", PLAN)
+    st, out, err = run(f, None, "--plan", PLAN)
     check(st == 5 and "doesn't run the object model" in err and not f.om, "refused on the old firmware (5)", err)
     f.close()
     open(PLAN + "x", "w").write("mgmt.ip 1.2.3.4\n")
     f = Fake("")
-    st, out, err = run(f, None, "--resume", PLAN + "x")
+    st, out, err = run(f, None, "--plan", PLAN + "x")
     check(st == 1 and "not a plan fwupdate wrote" in err, "refused: a file fwupdate didn't write", err)
     f.close()
 
