@@ -65,6 +65,13 @@ a{color:var(--ac);text-decoration:none}
   border:1px solid var(--warn);border-radius:20px;padding:2px 10px;
 }
 #dirty.show{display:inline-block}
+#stg{display:inline-flex;gap:6px;align-items:center}
+#stgSave{display:none}#stgSave.show{display:inline-block}
+#stgN{color:var(--warn)}#stgN:empty{display:none}
+.stg{box-shadow:0 0 0 2px var(--warn);border-radius:7px}
+.bad{box-shadow:0 0 0 2px var(--bad);border-radius:7px}
+.na{opacity:.3}
+.seg.pm button{padding:2px 5px;font-size:11px}
 select.ctl,button.ctl{
   background:var(--panel2);border:1px solid var(--bd);border-radius:7px;
   padding:5px 9px;cursor:pointer;font-size:13px;white-space:nowrap;
@@ -237,6 +244,11 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
     </button>
     <span id="ttitle"></span>
     <div id="strip"></div>
+    <span id="stg"><span id="stgN" class="badge"></span>
+      <button class="ctl" id="stgDiffB" data-i18n="stg_diff">Diff</button>
+      <button class="ctl" id="stgDiscard" data-i18n="stg_discard">Discard</button>
+      <button class="ctl pri" id="stgApply" data-i18n="stg_apply">Apply</button>
+      <button class="ctl" id="stgSave" data-i18n="stg_save">Save</button></span>
     <span id="dirty" data-i18n="hdr_dirty" data-i18n-t="hdr_dirty_t">unsaved changes</span>
     <button class="ctl" id="saveBtn" data-i18n="hdr_save" data-i18n-t="hdr_save_t">Save to flash</button>
   </header>
@@ -255,11 +267,9 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
 
     <section class="tab" id="tab-ports">
       <div class="card"><h2 data-i18n="pt_title">Port configuration</h2>
-        <div class="scrollx"><table class="t" id="ptable">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_name">Name</th><th data-i18n="c_link">Link</th><th data-i18n="pt_conn">Devices learned</th><th data-i18n="pt_speed">Speed</th><th data-i18n="c_enabled">Enabled</th><th data-i18n="pt_mtu">MTU</th><th></th></tr></thead>
-          <tbody></tbody></table></div>
-        <p class="small mut" style="margin-top:8px" data-i18n="pt_sfp_note">SFP speed is set per slot and is not saved in the startup config.</p>
-      </div>
+        <div class="scrollx"><table class="t" id="ptable"></table></div></div>
+      <div class="card"><h2 data-i18n="pt_state">Port state</h2>
+        <div class="scrollx"><table class="t" id="pstate"></table></div></div>
     </section>
 
     <section class="tab" id="tab-stp">
@@ -368,18 +378,6 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
       </div>
     </section>
 
-    <section class="tab" id="tab-isolate">
-      <div class="card"><h2 data-i18n="iso_title">Port isolation</h2>
-        <p class="small mut" style="margin-bottom:10px" data-i18n="iso_intro">A frame entering a port may only leave through the ports ticked in its row.</p>
-        <div class="scrollx"><table class="t" id="isotbl" style="width:auto"><thead></thead><tbody></tbody></table></div>
-        <p class="small mut" style="margin-top:6px" data-i18n="iso_legend">The cell of the port itself is always allowed.</p>
-        <div style="display:flex;gap:12px;margin-top:10px">
-          <button class="ctl pri" id="isoapply" data-i18n="c_apply">Apply</button>
-          <button class="ctl" id="isoall" data-i18n="iso_all">Allow all</button>
-        </div>
-      </div>
-    </section>
-
     <section class="tab" id="tab-lag">
       <div id="lagwrap" class="grid2"></div>
       <div class="card" style="margin-top:14px"><h2 data-i18n="lacp_heading">LACP (802.3ad)</h2>
@@ -388,15 +386,6 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <tbody></tbody></table></div>
       </div>
       <p class="small mut" style="margin-top:10px" data-i18n="lag_note">A LAG needs at least one member to be saved in the startup config; applying an empty group clears it.</p>
-    </section>
-
-    <section class="tab" id="tab-eee">
-      <div class="card"><h2 data-i18n="e_title">Energy Efficient Ethernet</h2>
-        <div class="scrollx"><table class="t" id="etable">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="e_adv">Advertised</th><th data-i18n="e_lp">Link partner</th><th data-i18n="e_active">Active</th><th data-i18n="e_enable">Enable</th></tr></thead>
-          <tbody></tbody></table></div>
-        <p class="small mut" style="margin-top:8px" data-i18n="e_note">Advertised and link-partner flags per speed: 100M, 1G, 2.5G. SFP ports do not support EEE.</p>
-      </div>
     </section>
 
     <section class="tab" id="tab-bw">
