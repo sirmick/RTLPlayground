@@ -7,8 +7,8 @@ on one firmware image, through ovs-rtlpg's old-vs-new bench (tests/oldnew).
 
 S0: past the loader's confirm (LDR_CONFIRM_S, 15 s after the boot), whose
     boot-count erase is the flash job's: one FL_ERASE, HOUSE_SEC short.
-Then `health clear`, then each of these, each followed by
-the longest step per state (`health tasks`, or for the factory reset, which
+Then `do sched.clear`, then each of these, each followed by
+the longest step per state (`get state.sched.state`, or for the factory reset, which
 resets, the scheduler's per-state maxima read from xdata as it ends):
 S1: a firmware upload whose CRC is wrong (the payload with its last byte
     flipped), so it is written, read back and refused, without a reset:
@@ -52,9 +52,18 @@ LIMIT_US = 50000				# the step limit (decision 25)
 FINE_NS = 6144					# sched.h SCHED_FINE_NS
 
 
+HEALTH = "get state.sched.state"		# P5-2: health tasks went to state.sched
+HEALTH_CLEAR = "do sched.clear"
+
+
 def health(out):
-    """state -> (runs, longest µs) from `health tasks`"""
+    """state -> (runs, longest µs) from get state.sched.state (max_us, 402640
+    and more: saturated), or an older image's `health tasks`"""
     res = {}
+    for m in re.finditer(r"^state\.sched\.state\.(\w+)\.runs (\d+)\nstate\.sched\.state\.\1\.max_us (\d+)$", out, re.M):
+        res[m[1]] = (int(m[2]), int(m[3]))
+    if res:
+        return res
     for l in out.split("state\truns\tmax", 1)[-1].splitlines():
         m = re.match(r"(\w+)\t(\d+)\t(>?)(\d+)(us|ms)$", l)
         if m:
@@ -295,7 +304,7 @@ def main(argv):
             return out or ""
 
         # S0
-        steps = health(ask("health tasks"))
+        steps = health(ask(HEALTH))
         hs = steps.get("HOUSE_SEC", (0, 0))
         ok = judge("S0", steps) and hs[1] < 5000 and steps.get("FL_ERASE", (0, 0))[0] == 1
         print(f"S0 the loader's confirm, {r.b.now / 1e6:.1f} s after power-on: {'PASS' if ok else 'FAIL'}")
@@ -303,7 +312,7 @@ def main(argv):
             fails.append("S0")
 
         # S1
-        ask("health clear")
+        ask(HEALTH_CLEAR)
         bad = bytearray(r.payload)
         bad[-1] ^= 0xff
         req = upload_req(r, bytes(bad), "bad.bin")
@@ -316,7 +325,7 @@ def main(argv):
         print(f"   S1 upload of {len(bad)} B: {(t1 - t0) / 1e6:.3f} s firmware time; answer "
               f"{resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; staged image "
               f"{'= the payload' if staged == bytes(bad) else 'DIFFERS'}")
-        ok = judge("S1", health(ask("health tasks"))) and ok
+        ok = judge("S1", health(ask(HEALTH))) and ok
         print(f"S1 upload (refused by CRC): {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S1")
@@ -324,7 +333,7 @@ def main(argv):
         # S2: uIP has one connection, and the bench doesn't ACK the switch's
         # FIN: S1's connection holds it in LAST_ACK for a while
         r.b.advance(r.b.now + 20 * 1000000)
-        ask("health clear")
+        ask(HEALTH_CLEAR)
         text = "set sys.hostname flashjob\napply\nvlan 10 " + " ".join(f"{f}" for f in r.F[1:3]) + "\n"
         body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
                 f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
@@ -335,13 +344,13 @@ def main(argv):
         ok = isinstance(resp, bytes) and resp.startswith(b"HTTP/1.1 200") and saved == text.encode() + b"\0"
         print(f"   S2 answer {resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; config sector "
               f"{'= the text' if saved == text.encode() + b'\0' else repr(saved[:40])}")
-        ok = judge("S2", health(ask("health tasks"))) and ok
+        ok = judge("S2", health(ask(HEALTH))) and ok
         print(f"S2 config save: {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S2")
 
         # S3
-        ask("health clear")
+        ask(HEALTH_CLEAR)
         r.b.pending()
         r.b.sim.uart_write("factory-reset\r")
         r.b.sim.run_until_uart("Written default config to flash", 5000)
@@ -366,7 +375,7 @@ def main(argv):
         r.wait(8000)
         r._now()
         r.b.pending()
-        r.b.console("health clear", r.b.now + 8000000)
+        r.b.console(HEALTH_CLEAR, r.b.now + 8000000)
         adv = r.b.advance
         r.b.advance = lambda until, stop=None: adv(until, lambda: (stop() if stop else False)
                                                     or "Checksum OK" in r.b.take_uart())
@@ -398,9 +407,9 @@ def main(argv):
         t0 = r.b.now
         resp = r.host.http(upload_req(r, bytes(bad), "bad.bin"), r.b.now + 120 * 1000000)
         t1 = r.b.now
-        mid = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        mid = health(r.b.console(HEALTH, r.b.now + 8000000)[1] or "")
         r.b.advance(r.b.now + 3000000)
-        after = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        after = health(r.b.console(HEALTH, r.b.now + 8000000)[1] or "")
         staged = r.b.flash(UPLOAD_START, len(bad))
         bc1 = r.b.flash(LDR_BOOTCNT, 2)
         sectors = (len(bad) + 0xfff) // 0x1000
