@@ -32,6 +32,7 @@
 #define T_BRID		20	/* bridge ID: priority (big endian) and MAC, as prio/4096.MAC */
 #define T_TYPE		0x1f	/* om_field.tw: the type; the when rule above it */
 #define T_WHEN		5
+#define T_DERIVED	0x80	/* a Str stored empty is printed as the object's derive handler's */
 
 /* om_obj.flags */
 #define OM_CFG		0
@@ -53,7 +54,7 @@
 struct om_field {
 	__code const char *name;
 	uint8_t id;		/* stable ID (schema/registry.txt), config fields */
-	uint8_t tw;		/* type | when << T_WHEN */
+	uint8_t tw;		/* type | when << T_WHEN | T_DERIVED */
 	uint8_t off;		/* offsetof in the element's struct */
 	uint8_t arg;		/* enum, string length, decimals, om_lim[] row, handler, flag */
 };

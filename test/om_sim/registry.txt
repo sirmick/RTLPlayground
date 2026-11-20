@@ -1,0 +1,5 @@
+base 220
+obj 220 svlan
+field 220.1 svlan.name Str(15)
+field 220.2 svlan.members PMASK
+field 220.3 svlan.tagged PMASK

@@ -5,14 +5,20 @@
 # field has no ID (tools/om_gen.py --register adds them; commit the result).
 
 OM_GEN = $(BUILDDIR)/om
-OM_SCHEMA = $(wildcard schema/*.py) schema/registry.txt
+# OM_SIM=1: rtlsim measurements, with test/om_sim's schema (a 64-entry keyed
+# object) and leds_dump stubbed out for the room; use its own BUILDDIR
+OM_DIRS = schema $(if $(OM_SIM),test/om_sim)
+OM_SCHEMA = $(foreach d,$(OM_DIRS),$(wildcard $(d)/*.py) $(d)/registry.txt)
+ifneq ($(OM_SIM),)
+SRCS := $(filter-out rtl837x_leds_dump.c,$(SRCS)) test/om_sim/leds_stub.c
+endif
 CC_FLAGS += -I$(OM_GEN)
 OM_SRCS = om.c om_port.c om_gen.c
 SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 
 $(OM_GEN)/gen.stamp: $(OM_SCHEMA) tools/om_gen.py
-	python3 tools/om_gen.py -s schema -o $(OM_GEN)
+	python3 tools/om_gen.py $(addprefix -s ,$(OM_DIRS)) -o $(OM_GEN)
 	touch $@
 $(OM_GEN)/om_gen.h $(OM_GEN)/om_gen.c: $(OM_GEN)/gen.stamp ;
 $(BUILDDIR)/om_gen.rel: $(OM_GEN)/om_gen.c $(BUILDDIR)/.ccflags | create_build_dir

@@ -135,13 +135,15 @@ def Scaled(decimals):
 
 
 class Field:
-    def __init__(self, name, typ, access, default=None, when="always", tip="", fn=None):
+    def __init__(self, name, typ, access, default=None, when="always", tip="", fn=None,
+                 derived=False):
         if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z0-9_]+)*", name):
             raise SystemExit("bad field name %r" % name)
         self.name, self.typ, self.access = name, typ, access
         self.default, self.when, self.tip, self.fn = default, WHEN[when], tip, fn
         self.cname = name.replace(".", "_")
         self.id = 0
+        self.derived = derived
 
 
 class Obj:
@@ -161,9 +163,9 @@ class Obj:
         pat = []
         if parent is not None:
             par = [o for o in SCHEMA["objs"] if o.regname == parent and o.state == state]
-            if not par or len(par[0].levels) != 1:
-                raise SystemExit("%s: parent %s must be a numbered object declared before it"
-                                 % (name, parent))
+            if not par or len(par[0].levels) != 1 or par[0].levels[0][0] not in ("PORT", "NUM"):
+                raise SystemExit("%s: parent %s must be an object numbered by port or 1-n, "
+                                 "declared before it" % (name, parent))
             lv.append(par[0].levels[0])
             pat.append(par[0].pattern)
         pat.append(name)
@@ -204,10 +206,14 @@ def state(name, **kw):
     return _add(Obj(name, True, **kw))
 
 
-def cfg(name, typ, default, when="always", tip=""):
+def cfg(name, typ, default, when="always", tip="", derived=False):
+    """derived: a Str whose empty value means "work it out" (the object's derive=
+    handler gives it; get prints that)."""
     o = SCHEMA["cur"]
     assert not o.state, "cfg() in a state object"
-    o.fields.append(Field(name, typ, "cfg", default, when, tip))
+    if derived and (typ.code != "STR" or default != ""):
+        raise SystemExit("%s.%s: only a Str with default \"\" can be derived" % (o.regname, name))
+    o.fields.append(Field(name, typ, "cfg", default, when, tip, derived=derived))
 
 
 def st(name, typ, when="always", tip=""):
@@ -275,6 +281,9 @@ def load_schema(dirs):
             for n in vals:
                 if n not in [f.cname for f in o.fields]:
                     raise SystemExit("%s: default entry sets no field %s" % (o.regname, n))
+        dv = [f.name for f in o.fields if f.derived]
+        if bool(dv) != bool(o.derive):
+            raise SystemExit("%s: derive= and derived fields go together" % o.regname)
         if o.entries and len(o.entries) > o.levels[0][1]:
             raise SystemExit("%s: more default entries than max" % o.regname)
     return objs
@@ -654,8 +663,9 @@ def gen(objs, outdir):
                     arg = str(lim(t.lo + 0x8000, t.hi + 0x8000))
                 else:
                     arg = str(t.arg)
-            C("\t{ om_str + %d, %d, T_%s | %d << T_WHEN, %s, %s }," %
-              (at[("f", (o.cname, f.cname))], f.id, t.code, f.when, off, arg))
+            C("\t{ om_str + %d, %d, T_%s | %d << T_WHEN%s, %s, %s }," %
+              (at[("f", (o.cname, f.cname))], f.id, t.code, f.when,
+               " | T_DERIVED" if f.derived else "", off, arg))
         C("};")
     for o in objs:
         for lv in o.levels:

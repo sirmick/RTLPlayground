@@ -60,7 +60,7 @@ for name, schema, want in [
      "declared twice with different words"),
     ("keyed without max", 'obj("v", keyed=U16(1, 4094))\ncfg("a", Bool, True)\n', "needs max="),
     ("parent not numbered", 'obj("s")\nobj("t", parent="s", count=4)\ncfg("a", Bool, True)\n',
-     "must be a numbered object"),
+     "must be an object numbered by port or 1-n"),
     ("when off a port object", 'obj("s")\ncfg("a", Bool, True, when="copper")\n', "needs an object numbered by port"),
     ("default entry out of range", 'obj("v", keyed=U16(1, 10), max=4)\ncfg("a", Bool, True)\ndefault_entry(11)\n',
      "default entry 11 outside 1-10"),
@@ -75,6 +75,13 @@ for name, schema, want in [
     ("port default", 'obj("s")\ncfg("a", Port(none=True), "3")\n', "can only be none"),
     ("message twice", 'obj("s")\nmessage("m", "a")\nmessage("m", "b")\n', "declared twice with different text"),
     ("message quote", 'obj("s")\nmessage("m", "say \\"hi\\"")\n', "printable text without"),
+    ("keyed parent", 'obj("v", keyed=U16(1, 10), max=4)\ncfg("a", Bool, True)\nobj("t", parent="v", count=2)\n'
+     'cfg("b", Bool, True)\n', "must be an object numbered by port or 1-n"),
+    ("word parent", 'obj("w", count=Enum("e", "x y"))\ncfg("a", Bool, True)\nobj("t", parent="w", count=2)\n'
+     'cfg("b", Bool, True)\n', "must be an object numbered by port or 1-n"),
+    ("derived not a Str", 'obj("s", derive="f")\ncfg("a", U8(), 0, derived=True)\n', "only a Str"),
+    ("derived without derive=", 'obj("s")\ncfg("a", Str(5), "", derived=True)\n', "go together"),
+    ("derive= without a derived field", 'obj("s", derive="f")\ncfg("a", Str(5), "")\n', "go together"),
     ("i16 default", 'obj("s")\ncfg("a", I16(-5, 5), -6)\n', "outside -5-5"),
 ]:
     rc, out, _ = gen(schema, register=True)

@@ -73,7 +73,9 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 static __xdata uint8_t j_hit;		/* get, this path: 1 a field matched, 2 done, 3 failed */
 /* numbers */
-static __xdata uint8_t num[8], num_len, dig[21], k, i, v8, w, save_n;
+static __xdata uint8_t num[8], num_len, dig[21], k, i, v8, w;
+static __xdata uint8_t pn, sg, pf;	/* a port mask's front number; a sign; path_err's separator */
+static __xdata uint8_t r_first;	/* the first object a get or set path matched */
 static __xdata uint8_t zero;
 static __xdata uint16_t v16, pm;	/* pm: a port mask being built */
 static __code const uint8_t * __xdata cp;
@@ -161,7 +163,7 @@ static uint8_t log_of(uint8_t n)
 
 static uint8_t om_when(void)		/* fd exists on cur_l */
 {
-	switch (fdx.tw >> T_WHEN) {
+	switch ((fdx.tw >> T_WHEN) & 3) {
 	case W_COPPER:
 		return !machine.is_sfp[cur_l];
 	case W_SFP:
@@ -360,20 +362,20 @@ static void emit_pmask(void)
 {
 	v16 = vp[0] | (uint16_t)vp[1] << 8;
 	k = 0;				/* printed something */
-	for (save_n = 1; save_n <= 9; save_n++) {
-		v8 = log_of(save_n);
+	for (pn = 1; pn <= 9; pn++) {
+		v8 = log_of(pn);
 		if (v8 == 0xff || !(v16 & (1 << v8)))
 			continue;
 		/* a run of members: n, or n-m */
-		i = save_n;
-		while (save_n < 9 && (v8 = log_of(save_n + 1)) != 0xff && (v16 & (1 << v8)))
-			save_n++;
+		i = pn;
+		while (pn < 9 && (v8 = log_of(pn + 1)) != 0xff && (v16 & (1 << v8)))
+			pn++;
 		if (k)
 			write_char(',');
 		itoa_short(i);
-		if (save_n != i) {
+		if (pn != i) {
 			write_char('-');
-			itoa_short(save_n);
+			itoa_short(pn);
 		}
 		k = 1;
 	}
@@ -448,8 +450,10 @@ static void emit_value(void)		/* fd's value at vp */
 		return;
 #endif
 #if OM_USE_BRID
-	case T_BRID:
+	case T_BRID:			/* priority / 4096, the system ID extension, the MAC */
 		itoa_short(vp[0] >> 4);
+		write_char('.');
+		itoa_short((uint16_t)(vp[0] & 15) << 8 | vp[1]);
 		write_char('.');
 		vp += 2;
 		emit_mac();
@@ -533,7 +537,7 @@ static void emit_line(void)		/* "path value" */
 	emit_path();
 	write_char(' ');
 #if OM_USE_DERIVE
-	if (obx.derive != 0xff && !*vp) {	/* empty: the derived value */
+	if ((fdx.tw & T_DERIVED) && !*vp) {	/* empty: the derived value */
 		om_fid = fdx.id;
 		if (om_fns[obx.derive](cur_e) == OM_OK)
 			vp = om_val;
@@ -563,8 +567,8 @@ static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, in
 		return 1;
 	}
 	if (seg_is("all")) {
-		for (save_n = 1; save_n <= 9; save_n++)
-			if ((v8 = log_of(save_n)) != 0xff)
+		for (pn = 1; pn <= 9; pn++)
+			if ((v8 = log_of(pn)) != 0xff)
 				pm |= 1 << v8;
 		if (fdx.arg)
 			pm |= PMASK_CPU;
@@ -580,8 +584,8 @@ static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, in
 			return 0;
 		i = num[0];
 	}
-	for (save_n = k; save_n <= i; save_n++) {
-		if ((v8 = log_of(save_n)) == 0xff)
+	for (pn = k; pn <= i; pn++) {
+		if ((v8 = log_of(pn)) == 0xff)
 			return 0;
 		pm |= 1 << v8;
 	}
@@ -646,13 +650,16 @@ static uint8_t parse_value(void)
 	case T_SECRET:
 #endif
 		for (k = 0; (v8 = take()); k++) {
-			if (k >= fdx.arg || v8 < 0x20 || v8 > 0x7e || v8 == '"' || v8 == '\\') {
-				fail("printable text without \" or \\, at most its length");
+			if (k >= fdx.arg || v8 < 0x20 || v8 > 0x7e || v8 == '"' || v8 == '\\' ||
+			    (v8 == ' ' && ft == T_SECRET)) {
+				fail(ft == T_SECRET ? "printable text without \" \\ or a space, at most its length" :
+				     "printable text without \" or \\, at most its length");
 				return 0;
 			}
 			om_val[k] = v8;
 		}
-		om_val[k] = 0;
+		while (k <= fdx.arg)		/* the rest zero: equal text is equal bytes */
+			om_val[k++] = 0;
 		return 1;
 	case T_PMASK:
 		pm = 0;
@@ -711,7 +718,10 @@ bad_ip:
 		if (!byte_dec() || num[0] > 15 || take() != '.')
 			goto bad_mac;
 		om_val[0] = num[0] << 4;
-		om_val[1] = 0;
+		if (!parse_dec() || num[2] | num[3] || num[1] > 15 || take() != '.')
+			goto bad_mac;
+		om_val[0] |= num[1];
+		om_val[1] = num[0];
 		w = 2;
 		if (!parse_mac())
 			goto bad_mac;
@@ -719,7 +729,7 @@ bad_ip:
 #endif
 #if OM_USE_MAC || OM_USE_BRID
 bad_mac:
-		fail(ft == T_BRID ? "0-15.aa:bb:cc:dd:ee:ff" :
+		fail(ft == T_BRID ? "0-15.0-4095.aa:bb:cc:dd:ee:ff" :
 			fdx.arg ? "aa:bb:cc:dd:ee:ff or auto" : "aa:bb:cc:dd:ee:ff");
 		return 0;
 #endif
@@ -760,7 +770,7 @@ bad_mac:
 #endif
 #if OM_USE_I16 || OM_USE_TZ
 	case T_I16: case T_TZ:
-		save_n = ch() == '-';
+		sg = ch() == '-';
 		if (ch() == '-' || ch() == '+')
 			take();
 		if (!parse_dec() || num[2] | num[3])
@@ -775,7 +785,7 @@ bad_mac:
 			v16 = k * 60 + num[0];
 		}
 #endif
-		if (save_n) {
+		if (sg) {
 			if (v16 > 0x8000)
 				goto bad_signed;
 			v16 = 0x8000 - v16;
@@ -847,8 +857,9 @@ bad_range:
 /* ---- the cursor ---------------------------------------------------------- */
 
 #if OM_USE_KEY
-static __xdata uint8_t j_copies;	/* where entries are looked for: 1 running, 2 candidate */
-static __xdata uint8_t ks, kb, kc;
+static __xdata uint8_t j_copies;	/* where entries are looked for: 1 running, 2 candidate, */
+#define K_SORT	4			/* and in key order (get, diff); else in slot order */
+static __xdata uint8_t ks, kb;
 static __xdata uint16_t kv, kbest;
 
 static uint16_t key_at(__xdata uint8_t *base)	/* slot ks's key in a copy */
@@ -858,20 +869,46 @@ static uint16_t key_at(__xdata uint8_t *base)	/* slot ks's key in a copy */
 	return vp[0] | (uint16_t)vp[1] << 8;
 }
 
-/* the smallest key at or after cv that the path allows: its slot */
+/* kv: slot ks's key in the copies looked at, if the path allows it; else 0 (a
+ * slot's key is the same in running and the candidate, or 0 in one: key_new()) */
+static void slot_key(void)
+{
+	kv = 0;
+	if (j_copies & 1)
+		kv = key_at(RUN);
+	if (!kv && (j_copies & 2))
+		kv = key_at(CAND);
+	if ((r_fix & 1) && kv != r_v)
+		kv = 0;
+}
+
+/*
+ * The next entry, as cv (its key) and ce (its slot). In key order, the
+ * smallest key at or after cv: a pass over the slots (get and diff, which
+ * print, and step an instance at a time). In slot order, the next slot in
+ * use after ce (cv 0: the first): set, del, do and the checks walk every
+ * entry in one step.
+ */
 static uint8_t key_step(void)
 {
+	if (!(j_copies & K_SORT)) {
+		for (ks = cv ? ce + 1 : 0; ks < obx.n[0]; ks++) {
+			slot_key();
+			if (kv) {
+				cv = kv;
+				ce = ks;
+				return 1;
+			}
+		}
+		return 0;
+	}
 	kbest = 0xffff;
 	kb = 0xff;
 	for (ks = 0; ks < obx.n[0]; ks++) {
-		for (kc = 1; kc <= 2; kc++) {
-			if (!(j_copies & kc))
-				continue;
-			kv = key_at(kc == 1 ? RUN : CAND);
-			if (kv && kv >= cv && kv < kbest && (!(r_fix & 1) || kv == r_v)) {
-				kbest = kv;
-				kb = ks;
-			}
+		slot_key();
+		if (kv && kv >= cv && kv < kbest) {
+			kbest = kv;
+			kb = ks;
 		}
 	}
 	if (kb == 0xff)
@@ -1117,8 +1154,8 @@ static uint8_t has_field(void)		/* a field of obx's under the rest of the path *
 static void path_err(void)
 {
 	err_head();
-	if (save_n != 0xff) {
-		sel_obj(save_n);
+	if (r_first != 0xff) {
+		sel_obj(r_first);
 		for (cur_f = 0; cur_f < obx.nf; cur_f++) {
 			sel_field();
 			if (cur_f)
@@ -1127,14 +1164,14 @@ static void path_err(void)
 		}
 	} else {
 		e_star = 1;
-		w = 0;
+		pf = 0;
 		for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
 			sel_obj(r_o);
 			if ((obx.flags & OM_STATE) == r_st) {
-				if (w)
+				if (pf)
 					write_char(' ');
 				emit_obj();
-				w = 1;
+				pf = 1;
 			}
 		}
 		e_star = 0;
@@ -1171,9 +1208,11 @@ static void job_start(uint8_t mode)
 	cli_job = mode == J_APPLY ? CLI_JOB_OMAPPLY : CLI_JOB_OM;
 	j_new = 1;
 	j_hit = 0;
-	save_n = 0xff;
+	r_first = 0xff;
 #if OM_USE_KEY
-	if (mode != J_GET)
+	if (mode == J_DIFF)
+		j_copies = 3 | K_SORT;
+	if (mode == J_APPLY)
 		j_copies = 3;
 #endif
 }
@@ -1214,8 +1253,8 @@ static uint8_t next_obj(void)
 					goto fail;
 				if (!v8)
 					continue;
-				if (save_n == 0xff)
-					save_n = j_o;
+				if (r_first == 0xff)
+					r_first = j_o;
 				if (!has_field())
 					continue;
 				j_hit |= 1;
@@ -1248,7 +1287,7 @@ static uint8_t next_obj(void)
 			return 0;
 		j_o = 0;
 		j_hit = 0;
-		save_n = 0xff;
+		r_first = 0xff;
 	}
 fail:
 	j_hit = 3;
@@ -1317,6 +1356,8 @@ uint8_t om_line(void) __banked
 			return 1;
 		}
 		next_instance();
+		if (j_mode != J_APPLY)
+			return 1;		/* an instance a step: a keyed one is a pass over the slots */
 	}
 done:
 	if (!j_quiet && j_hit != 3)
@@ -1335,7 +1376,7 @@ static void om_get(void)
 		c_pw = 2;
 	}
 #if OM_USE_KEY
-	j_copies = c_cand ? 2 : 1;
+	j_copies = (c_cand ? 2 : 1) | K_SORT;
 #endif
 	if (cmd_words_len <= c_pw) {
 		e_star = 1;
@@ -1364,7 +1405,7 @@ static uint8_t target(uint8_t del)
 		return 0;
 	}
 	path_start();
-	save_n = 0xff;
+	r_first = 0xff;
 	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
 		sel_obj(r_o);
 		v8 = match();
@@ -1372,8 +1413,8 @@ static uint8_t target(uint8_t del)
 			return 0;
 		if (!v8)
 			continue;
-		if (save_n == 0xff)
-			save_n = r_o;
+		if (r_first == 0xff)
+			r_first = r_o;
 		cur_f = 0xff;
 		if (del && at_end())		/* p is r_rest */
 			goto found;
@@ -1426,6 +1467,26 @@ static uint8_t key_new(void)
 }
 #endif
 
+#if OM_USE_KEY
+/* del of a keyed object: every entry gone, then its default entries again */
+static uint8_t key_reset(void)
+{
+	for (cur_e = 0; cur_e < obx.n[0]; cur_e++)
+		memcpyc(inst(CAND), obx.def, obx.size);
+	cp = obx.def;
+	for (k = 0; k < obx.ndef; k++) {
+		cp += obx.size;
+		r_v = cp[0] | (uint16_t)cp[1] << 8;
+		if (!key_new()) {
+			fail("no free entry");
+			return 0;
+		}
+		memcpyc(vp, cp, obx.size);
+	}
+	return 1;
+}
+#endif
+
 static void om_set(uint8_t del)
 {
 	if (!target(del))
@@ -1439,6 +1500,13 @@ static void om_set(uint8_t del)
 		if (!parse_value())
 			return;
 	}
+#if OM_USE_KEY
+	if (cur_f == 0xff && obx.k[0] == IX_KEY && !(r_fix & 1)) {
+		if (key_reset())
+			ok();
+		return;
+	}
+#endif
 	first_inst();
 #if OM_USE_KEY
 	if (!cur_ok && !del && (r_fix & 1)) {
@@ -1504,7 +1572,7 @@ static uint8_t check_all(void)
 {
 	c_pw = 0;
 #if OM_USE_KEY
-	j_copies = 2;
+	j_copies = 3;		/* entries deleted in the candidate too: a check may refuse it */
 #endif
 	r_fix = 0;
 	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
@@ -1547,8 +1615,8 @@ void om_init(void) __banked
 		sel_obj(r_o);
 		if (obx.flags & OM_STATE)
 			continue;
-		save_n = obx.n[0] * obx.n[1];
-		for (cur_e = 0; cur_e < save_n; cur_e++)
+		r_first = obx.n[0] * obx.n[1];
+		for (cur_e = 0; cur_e < r_first; cur_e++)
 			memcpyc(inst(RUN), def_ptr(), obx.size);
 #if OM_USE_KEY
 		cp = obx.def;

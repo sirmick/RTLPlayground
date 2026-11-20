@@ -141,6 +141,15 @@ uint8_t om_derive_tsys(uint8_t idx)
 
 uint8_t om_do_tsys_rnd(uint8_t idx) { t_rnd++; return OM_OK; }
 
+uint8_t om_check_tvlan(uint8_t idx)
+{
+	if (cfg_run.tvlan[idx].key == 4000 && !cfg_cand.tvlan[idx].key) {
+		om_fail(OM_E_TVLAN_KEEP);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
+
 uint8_t om_apply_tvlan(uint8_t idx)
 {
 	t_vlan++;
@@ -375,7 +384,8 @@ static void kinds(void)
 	expect("set tsys.password s3cret", "ok\n");
 	expect("get -c tsys.password", "tsys.password *\nok\n");
 	CHECK(!t_strcmp(cfg_cand.tsys.password, "s3cret"), "a secret is stored as typed");
-	expect("set tsys.password 012345678901234567890", "err tsys.password: printable text without \" or \\, at most its length\n");
+	expect("set tsys.password two words", "err tsys.password: printable text without \" \\ or a space, at most its length\n");
+	expect("set tsys.password 012345678901234567890", "err tsys.password: printable text without \" \\ or a space, at most its length\n");
 
 	expect("set tsys.offset -600", "ok\n");
 	expect("get -c tsys.offset", "tsys.offset -600\nok\n");
@@ -440,7 +450,7 @@ static void kinds(void)
 	CHECK(!t_strcmp(cfg_cand.tsys.password, "1234"), "del of a singleton: every field back to its default");
 
 	printf("state types\n");
-	expect("get state.tsys", "state.tsys.bridge 8.20:7c:14:a2:25:fa\nstate.tsys.ip 10.0.0.7\n"
+	expect("get state.tsys", "state.tsys.bridge 8.0.20:7c:14:a2:25:fa\nstate.tsys.ip 10.0.0.7\n"
 	       "state.tsys.offset -5\nstate.tsys.lp 2g5,5g,10g\nok\n");
 	expect("set state.tsys.ip 1.2.3.4", "err state.tsys.ip: read only\n");
 
@@ -481,8 +491,17 @@ static void kinds(void)
 	CHECK(t_vlan_old[2] == 10 && !t_vlan_new[2], "apply of a deletion: the slot's old key in roll");
 	expect("del tvlan.99", "err tvlan.99: no such entry\n");
 	expect("del tvlan", "ok\n");
+	expect("get -c tvlan", "tvlan.1.name \ntvlan.1.members 1-9\ntvlan.1.tagged none\nok\n");
+	CHECK(cfg_cand.tvlan[0].key == 1, "del tvlan: the default entry back, in running's slot for it");
+	expect("del tvlan.1", "ok\n");
 	expect("get -c tvlan", "ok\n");
 	expect("set tvlan.*.name z", "err tvlan.*.name: no such entry\n");
+	expect("discard", "ok\n");
+	expect("set tvlan.4000.name keep", "ok\n");
+	expect("apply", "ok\n");
+	expect("del tvlan.4000", "ok\n");
+	expect("apply", "err tvlan.4000: test: tvlan.4000 stays\n");
+	CHECK(cfg_run.tvlan[1].key == 4000, "a check sees an entry deleted in the candidate, and can refuse it");
 	expect("discard", "ok\n");
 
 	printf("numbered\n");
@@ -785,14 +804,19 @@ static void roundtrip_kinds(void)
 	}
 	CHECK(bad == 0, "round trip: 4000 random sets of the new types and kinds read back as the same text");
 
-	/* the whole config tree as text, replayed into a default config */
+	/* the whole config tree as text, replayed into a default config: Secret
+	 * prints as *, and an empty derived field as what it derives to, so those
+	 * two aren't replayed (the random sets leave the password alone) */
+	static struct cfg orig;
+	memcpy(&orig, &cfg_cand, sizeof orig);
 	snprintf(t1, sizeof t1, "%s", run("get -c port tsys tvlan tlag tstp"));
 	om_init();
-	run("del tvlan");
+	run("del tvlan.1");
 	bad = 0;
 	for (char *l = t1, *e; (e = strchr(l, '\n')); l = e + 1) {
 		*e = 0;
-		if (strcmp(l, "ok") && !strstr(l, ".password ")) {
+		if (strcmp(l, "ok") && !strstr(l, ".password ") &&
+		    !(orig.tsys.hostname[0] == 0 && !strncmp(l, "tsys.hostname ", 14))) {
 			snprintf(line, sizeof line, "set %.150s", l);
 			const char *o = run(line);
 			if (t_strcmp(o, "ok\n") && !bad++)
@@ -803,6 +827,25 @@ static void roundtrip_kinds(void)
 	snprintf(t2, sizeof t2, "%s", run("get -c port tsys tvlan tlag tstp"));
 	CHECK(bad == 0 && !strcmp(t1, t2) && t_strlen(t1) > 3000,
 	      "round trip: the whole tree printed, replayed as set lines, prints the same");
+	{
+		/* and is the same bytes: keyed entries may sit in other slots */
+		struct cfg a = cfg_cand, b = orig;
+		int same = 1;
+		for (int x = 0; x < 4; x++) {
+			if (!b.tvlan[x].key)
+				continue;
+			int y = 0;
+			while (y < 4 && a.tvlan[y].key != b.tvlan[x].key)
+				y++;
+			same &= y < 4 && !memcmp(&a.tvlan[y], &b.tvlan[x], sizeof a.tvlan[0]);
+		}
+		for (int x = 0; x < 4; x++)
+			same &= !a.tvlan[x].key || b.tvlan[0].key == a.tvlan[x].key || b.tvlan[1].key == a.tvlan[x].key ||
+				b.tvlan[2].key == a.tvlan[x].key || b.tvlan[3].key == a.tvlan[x].key;
+		memset(a.tvlan, 0, sizeof a.tvlan);
+		memset(b.tvlan, 0, sizeof b.tvlan);
+		CHECK(same && !memcmp(&a, &b, sizeof a), "round trip: the replayed config is the original's bytes");
+	}
 	run("apply");
 	CHECK(!memcmp(&cfg_run, &cfg_cand, sizeof cfg_run), "round trip: apply makes running equal the candidate");
 }

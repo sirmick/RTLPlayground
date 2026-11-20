@@ -3,7 +3,7 @@
 # "t" so they never meet a real object's. Its IDs (registry.txt) start at 200.
 
 obj("tsys", apply="om_apply_tsys", check="om_check_tsys", derive="om_derive_tsys")
-cfg("hostname", Str(23), "", tip="derived: empty is RTLPlayground-<mac>")
+cfg("hostname", Str(23), "", derived=True, tip="empty: RTLPlayground-<mac>")
 cfg("ip", IPv4, "192.168.2.2")
 cfg("mask", Mask4, "255.255.255.0")
 cfg("mac", MAC(auto=True), "auto")
@@ -17,7 +17,8 @@ cfg("lp", Flags("tlp", "10h 10f 100h 100f 1000h 1000f 2g5 5g 10g"), "none")
 action("rnd", "om_do_tsys_rnd")
 message("test", "test check failed")
 
-obj("tvlan", keyed=U16(1, 4094), max=4, apply="om_apply_tvlan")
+obj("tvlan", keyed=U16(1, 4094), max=4, apply="om_apply_tvlan", check="om_check_tvlan")
+message("tvlan_keep", "test: tvlan.4000 stays")
 cfg("name", Str(15), "")
 cfg("members", PortMask(), 0)
 cfg("tagged", PortMask(), 0)
