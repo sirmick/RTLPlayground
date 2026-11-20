@@ -281,7 +281,7 @@ DSL = {k: v for k, v in globals().items() if k in (
     "obj state cfg st action default_entry message const".split())}
 
 
-def load_schema(dirs, skip=()):
+def load_schema(dirs, skip=(), js=False):
     for d in dirs:
         SCHEMA["dir"] = d
         for fn in sorted(os.listdir(d)):
@@ -314,7 +314,7 @@ def load_schema(dirs, skip=()):
             if f.typ.code == "ENUM" and f.typ.words is None:
                 if o.state is False:
                     raise SystemExit("%s.%s: Enum(%r) without words in a config object" % (o.regname, f.name, f.typ.enum))
-                if f.typ.enum not in SCHEMA["enums"]:
+                if f.typ.enum not in SCHEMA["enums"] and not js:
                     raise SystemExit("%s.%s: Enum(%r) is declared nowhere" % (o.regname, f.name, f.typ.enum))
         dv = [f.name for f in o.fields if f.derived]
         if bool(dv) != bool(o.derive):
@@ -790,6 +790,8 @@ def gen(objs, outdir):
 # 1 copper, 2 sfp, 3 10g. A default that depends on the chip or is a C
 # expression is null. label: the UI string naming the field (app.js's
 # LANG), when not the default f_<object>_<field> with "_" for ".".
+# An e without words: a state field whose words are the build's (the
+# scheduler's, state.sys.reset.slot): get prints them, schema/ hasn't them.
 JS_T = {"BOOL": "b", "ENUM": "e", "FLAGS": "f", "FLAGS16": "f", "U8": "n", "U16": "n",
         "U32": "n", "I16": "n", "U64": "n", "SCALED": "d", "STR": "s", "SECRET": "p",
         "PMASK": "m", "IPV4": "ip", "MASK4": "ip", "MAC": "mac", "PORT": "pt", "TZ": "tz",
@@ -810,7 +812,7 @@ def js_default(f):
 def js_field(f):
     t = f.typ
     a = b = None
-    if t.code in ("ENUM", "FLAGS", "FLAGS16"):
+    if t.code in ("ENUM", "FLAGS", "FLAGS16") and t.words:
         a = " ".join(t.words)
     elif t.code in ("U8", "U16", "U32", "I16", "TZ"):
         a, b = t.lo, t.hi
@@ -853,7 +855,7 @@ def main():
     ap.add_argument("--js", help="write the web UI's schema.js here")
     a = ap.parse_args()
     dirs = a.schema or ["schema"]
-    objs = load_schema(dirs, a.skip)
+    objs = load_schema(dirs, a.skip, js=a.js and not a.out)
     regs = {d: read_registry(os.path.join(d, "registry.txt")) for d in dirs}
     apply_registry(objs, regs, a.register)
     if a.out:
