@@ -193,14 +193,19 @@ $(BUILDDIR)/test_resource_gate: test_resource_gate.py $(wildcard gate/*) $(SRCRO
 # (swept with the host's preprocessor, as sched.mk does with SDCC's) and
 # sched_core/sequence.def.
 SCHED_T = $(BUILDDIR)/sched_core
-$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: test_sched.c sched_core/hw.h sched_core/sequence.def \
+$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h $(SCHED_T)/sched_gen_tasks.c $(SCHED_T)/om/state_sched.py &: test_sched.c sched_core/hw.h sched_core/sequence.def \
 		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR) $(BUILDDIR)/om/om_gen.h
 	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -I$(BUILDDIR)/om -include sched_core/hw.h' test_sched.c >/dev/null
-	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
+	python3 $(SRCROOT)/tools/sched_gen.py --om $(SCHED_T)/om --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
+# its om_gen.h: the real schema and test_sched's own state.sched rows (the
+# header only: test_sched.c has om_st, and no handler is linked)
+$(SCHED_T)/omgen/om_gen.h: $(OM_SCHEMA) $(SCHED_T)/om/state_sched.py $(SRCROOT)/tools/om_gen.py
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -o $(SCHED_T)/omgen > /dev/null
+$(BUILDDIR)/test_sched: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(SCHED_T)/omgen,$(CFLAGS))
 $(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
 	'-DCRASH_RESET()=host_reset()' '-DCRASH_JUMP()=crash_die()' '-DCRASH_IDATA(a)=host_idata[(uint8_t)(a)]'
 $(BUILDDIR)/test_sched: test_sched.c $(SRCROOT)/sched.c $(SRCROOT)/sched_bank.c $(SRCROOT)/con_ring.c $(SRCROOT)/crash.c $(SRCROOT)/sched_health.c \
-		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c | $(SCHED_T)/sched_gen.h
+		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen_tasks.c | $(SCHED_T)/sched_gen.h $(SCHED_T)/omgen/om_gen.h
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
 

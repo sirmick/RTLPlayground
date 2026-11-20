@@ -538,6 +538,8 @@ static void test_crash(void)
 
 static void test_health(void)
 {
+	int n;
+
 	printf("health tasks\n");
 	reset_all(100);
 	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 11;	/* 55 ms: an overrun (decision 25) */
@@ -553,6 +555,42 @@ static void test_health(void)
 	CHECK(strstr(out, "B_STEP\t1\t") != NULL && strstr(out, "overruns 1 last B_STEP") != NULL, "per-state runs, the overrun");
 	CHECK(strstr(out, "A_STEP\t2\t0us") != NULL, "a short step in us");
 	CHECK(strstr(out, "last reset: reset command in") == NULL, "no reset record after a bad sum");
+
+	/* state.sched: the getters the object model prints */
+	om_get_sched_slot(T_W);
+	CHECK(om_st.sched_slot.state == E_SSTATE_W_STEP && om_st.sched_slot.task == E_STASK_W &&
+	      om_st.sched_slot.mask == (HW_LINK | EV_FOREVER) && om_st.sched_slot.wake > 30000,
+	      "state.sched.slot.w: task, state, mask, ticks to its horizon");
+	om_get_sched_slot(T_A);
+	CHECK(om_st.sched_slot.state == E_SSTATE_A_STEP && om_st.sched_slot.wake == 0, "state.sched.slot.a: due, wake 0");
+	om_get_sched_slot(T_JOB4);
+	CHECK(om_st.sched_slot.state == E_SSTATE_NONE && om_st.sched_slot.task == E_STASK_NONE &&
+	      om_st.sched_slot.mask == 0, "state.sched.slot.job4: free, none");
+	om_get_sched_state(S_B_STEP - 1);
+	CHECK(om_st.sched_state.runs == 1 && om_st.sched_state.max_us > 50000 &&
+	      om_st.sched_state.max_us <= sched_st_max[S_B_STEP] * 6.144 + 3 &&
+	      om_st.sched_state.max_us + 1 >= sched_st_max[S_B_STEP] * 6.144,
+	      "state.sched.state.B_STEP: runs, max in us");
+	om_get_sched_task(E_STASK_B - 1);
+	CHECK(om_st.sched_task.max_us == om_st.sched_state.max_us && om_st.sched_task.max_us > 50000,
+	      "state.sched.task.b: its state's longest");
+	om_get_sched(0);
+	CHECK(om_st.sched.passes == 1 && om_st.sched.idle == 0 && om_st.sched.overruns == 1 &&
+	      om_st.sched.overrun_last == E_SSTATE_B_STEP && om_st.sched.slots == SCHED_SLOTS &&
+	      om_st.sched.fixed == T_FIXED, "state.sched: passes, idle, the overrun");
+	n = 0;
+	for (uint32_t f = 0; f <= 0xffff; f++) {	/* max_us: x 6.144, 3 us at the top, under 1 to 7281 */
+		sched_st_max[S_A_STEP] = f;
+		om_get_sched_state(S_A_STEP - 1);
+		double us = f * 6.144;
+		n += om_st.sched_state.max_us > us + (f <= 7281 ? 1 : 3) || om_st.sched_state.max_us + 1 < us;
+	}
+	CHECK(n == 0, "max_us: fine x 6.144, within 1 us to 7281 units (44.7 ms), 3 us above");
+	hw_timeouts = 3;
+	hw_timeout_reg = 0x1234;
+	om_do_sched_clear(0);
+	CHECK(hw_timeouts == 0 && hw_timeout_reg == 0 && sched_overruns == 0 && sched_st_max[S_B_STEP] == 0,
+	      "do sched.clear: the stats and the hw timeouts");
 	sched_health_clear();
 	out_reset();
 	sched_health_tasks();

@@ -93,8 +93,6 @@ void crc16_bank1(__xdata uint8_t *v) __naked;
 #endif
 #define SYSTICK_TIMER2_VALUE (0x10000 - TIMER2_DIV)
 
-__xdata uint8_t idle_ready;
-
 __code const uint8_t ownIP[] = { 192, 168, 2, 2 };
 __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
 __code const uint8_t netmask[] = { 255, 255, 255, 0};
@@ -148,7 +146,6 @@ __xdata uint8_t linkbits_last_p89;
 // on top of them, and the byte was never zero (idle() never slept).
 volatile __bit link_irq;
 volatile __bit rx_irq;
-volatile __bit tick_pending;
 // Last known state of the SFP detection/Loss of Signal pins
 __xdata bool button_last;
 __xdata uint8_t button_sec_counter_last;
@@ -174,7 +171,6 @@ void isr_timer0(void) __interrupt(1)
 void isr_timer2(void) __interrupt(5)
 {
 	ticks++;
-	tick_pending = 1;
 	SWDT_ISR(ISR_T2_PUSHES);	/* the push count is checked against the .asm */
 
 	// Clear TF2 & EXF2 by software
@@ -573,7 +569,7 @@ void reg_read(uint16_t reg_addr)
  * hw_start(n), then poll until done or hw_expired(), n + 1 ticks at most
  * (n to n + 1 whole ticks: the current one's rest first). A poll that
  * gives up calls hw_timeout(): counted, with the register (or an HW_TO_
- * pseudo-register), for `health tasks`; the caller moves on. After one
+ * pseudo-register), for state.health; the caller moves on. After one
  * in a step, hw_stuck: the step's later polls give up at their first busy
  * read (hw_expired() is 1), so a step waits out one timeout at most,
  * whatever its loop; the scheduler clears it at each step's start. Not
@@ -925,7 +921,6 @@ void handle_rx(void)
 			REG_SET(RTL837X_REG_NIC_RXCMD, 1);
 			return;
 		}
-		health_rx_frame();
 
 #ifdef RXTXDBG
 		print_string("\n<< ");
@@ -1426,7 +1421,6 @@ static void firmware_init(void)
 	IE = 0;
 	EIE = 0;  // SFR e8: EIE. Disable all external IRQs
 
-	idle_ready = 0;
 	// HW setup, serial, timer, external IRQs
 	setup_clock();
 	setup_timer2();
@@ -1613,7 +1607,6 @@ void main(void)
 	firmware_init();
 	crash_boot();		/* a recorded reset's line, before the prompt */
 	print_cmd_prompt();
-	idle_ready = 1;
 
 	cmd_editor_init();
 

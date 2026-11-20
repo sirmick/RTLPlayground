@@ -158,6 +158,12 @@ uint8_t om_do_sys_factory_reset(uint8_t idx)
 }
 uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
 
+/* state.health, state.con, do sched.clear (om_health.c, sched_health.c) */
+static int sched_clears;
+uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
+uint8_t om_get_con(uint8_t idx) { memset(&om_st.con, 0, sizeof(om_st.con)); om_st.con.tx_free = 2047; return OM_OK; }
+uint8_t om_do_sched_clear(uint8_t idx) { sched_clears++; return OM_OK; }
+
 /* the test schema's (om_schema/t.py) */
 static int t_sys, t_rnd, t_lag[4], t_stpp[OM_PORTS], t_storm[OM_PORTS * 4], t_vlan;
 static uint16_t t_vlan_old[4], t_vlan_new[4];
@@ -376,10 +382,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: port.* sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get vlan.1", "err vlan.1: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.sys\nstate.sys.reset\nstate.loader\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.sys\nstate.sys.reset\nstate.loader\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -594,6 +600,11 @@ static void kinds(void)
 	       "state.sys.reset.state \nstate.sys.reset.step_ms 0\nstate.sys.reset.pc 0\n"
 	       "state.sys.reset.bank 0\nstate.sys.reset.states CLI_RUN CLI_NEXT\nok\n");
 	expect("get state.loader", "state.loader.present on\nok\n");
+	expect("get state.health", "state.health.hw_timeouts 2\nstate.health.hw_timeout_reg 0\n"
+	       "state.health.stack_headroom 40\nok\n");
+	expect("get state.con.tx_free", "state.con.tx_free 2047\nok\n");
+	expect("do sched.clear", "ok\n");
+	CHECK(sched_clears == 1, "do sched.clear: its handler, once");
 	{
 		const char *o = run("get state.sys");
 		CHECK(!strncmp(o, "state.sys.version ", 18) && strstr(o, "state.sys.button off\nstate.sys.reset.cause web\n") &&
@@ -727,13 +738,14 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: port.* sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.confirm_s 0\nstate.sys.version ") &&
+		      strstr(o, "state.cfg.confirm_s 0\nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.con.tx_free 2047\nstate.sys.version ") &&
 		      strstr(o, "state.sys.reset.states CLI_RUN CLI_NEXT\nstate.loader.present on\nstate.tsys.bridge ") &&
 		      status_ok(o) && !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state: the whole state tree");
 	}

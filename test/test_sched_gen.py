@@ -365,6 +365,53 @@ SWEEP_BROKEN = [
 ]
 
 
+def test_om_rows():
+    """--om: state_task maps each state to its task (1-based), and the rows
+    load in tools/om_gen.py as state.sched's objects, named by slot, state and
+    task; the plain outputs (golden) don't change."""
+    defs = plausible_defs()
+    rows = sched_gen.om_rows(defs, 24, 2, None)
+    check(set(rows) == {"sched_gen_tasks.h", "sched_gen_tasks.c", "state_sched.py"}, f"--om writes {sorted(rows)}")
+    out, _, _ = gen(defs)
+    check(not set(rows) & set(out), "--om's files are its own: the golden outputs stay as they are")
+    tasks = [t for m in map(sched_gen.parse_def, defs) for t in m.tasks]
+    states = [s for t in tasks for s in t.states]
+    with tempfile.TemporaryDirectory() as d:
+        for name, text in list(out.items()) + list(rows.items()):
+            open(os.path.join(d, name), "w").write(text)
+        main = ['#include <stdio.h>', '#include "sched_gen_tasks.h"', "int main(void)\n{\n\tint bad = state_task[S_NONE] != 0;"]
+        main += [f"\tbad |= state_task[S_{s.name}] != {tasks.index(s.task) + 1};" for s in states]
+        main.append(f"\tbad |= SCHED_TASKS != {len(tasks)};")
+        main.append("\treturn bad;\n}")
+        open(os.path.join(d, "main.c"), "w").write("\n".join(main) + "\n")
+        exe = os.path.join(d, "t")
+        r = subprocess.run(["gcc", "-std=gnu11", "-Wall", "-Werror", "-include", os.path.join(HERE, "sdcc_shim.h"),
+                            "-I", d, os.path.join(d, "main.c"), os.path.join(d, "sched_gen_tasks.c"), "-o", exe],
+                           capture_output=True, text=True)
+        check(r.returncode == 0, f"sched_gen_tasks.c doesn't build:\n{r.stderr}")
+        if r.returncode == 0:
+            check(subprocess.run([exe]).returncode == 0, "state_task doesn't match the .def files")
+        # the rows through the object model's generator
+        sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+        import om_gen
+        om_gen.SCHEMA.update({"objs": [], "enums": {}, "msgs": {}, "cur": None})
+        sd = os.path.join(d, "om")
+        os.makedirs(sd)
+        open(os.path.join(sd, "state_sched.py"), "w").write(rows["state_sched.py"])
+        objs = {o.regname: o for o in om_gen.load_schema([sd])}
+        check(set(objs) == {"sched", "sched.slot", "sched.state", "sched.task"}, f"the objects: {sorted(objs)}")
+        slot = objs.get("sched.slot")
+        check(slot is not None and slot.levels[0][0] == "WORD" and slot.levels[0][1] == 24
+              and slot.levels[0][2].words[:2] == [tasks[0].name, tasks[1].name], "state.sched.slot.<slot>: 24, by slot name")
+        st = objs.get("sched.state")
+        check(st is not None and st.levels[0][2].words == [s.name for s in states], "state.sched.state.<STATE>: every state")
+        check(om_gen.SCHEMA["enums"]["sstate"] == ["none"] + [s.name for s in states],
+              "a slot's state: none, then the states (a word's number is the state's)")
+        check(om_gen.SCHEMA["enums"]["stask"] == ["none"] + [t.name for t in tasks], "a slot's task: none, then the tasks")
+        om_gen.gen(list(objs.values()), os.path.join(d, "omout"))
+        check(os.path.exists(os.path.join(d, "omout", "om_gen.h")), "om_gen writes their tables")
+
+
 def main():
     update = "--update" in sys.argv
     os.chdir(HERE)
@@ -377,6 +424,7 @@ def main():
     test_cross_module_warning()
     test_sweep()
     test_sweep_checks()
+    test_om_rows()
     print(f"sched_gen: {checks} checks, {fails} failed")
     return 1 if fails else 0
 

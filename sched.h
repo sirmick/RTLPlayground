@@ -137,9 +137,10 @@ void sched_m_step_end(void) __banked;
 void sched_m_pass_end(void) __banked;
 
 /* health (banked, with the names) */
+/* schedtest's health tasks (and the host tests'); the firmware's is get state.sched */
 void sched_health_tasks(void) __banked;
-void sched_health_begin(void) __banked;	/* health tasks as the cli's job (E1): */
-uint8_t sched_health_line(void) __banked;	/* a line a call, 0 after the last */
-void sched_health_clear(void) __banked;
+void sched_health_begin(void) __banked;	/* a line a call, 0 after the last: */
+uint8_t sched_health_line(void) __banked;
+void sched_health_clear(void) __banked;	/* do sched.clear: stats, con overruns, hw timeouts */
 
 #endif
