@@ -281,8 +281,10 @@ row(r"loop (on|off)", lambda m, b, p: {"loop.enabled": m[1]})
 
 
 def _mirror(m, b, p):
-    """mirror <monitor> <p>[r|t]...: no suffix both ways, r received, t sent."""
-    rx, tx = [], []
+    """mirror <monitor> <p>[r|t]...: no suffix both ways, r received, t sent.
+    The old one took the monitor port as a source too; the new mirror check
+    refuses that (P4-5), so it is left out."""
+    rx, tx, mon = [], [], int(m[1])
     for w in m[2].split():
         a = re.fullmatch(r"(\d)(\D?)", w)
         if not a:
@@ -291,7 +293,11 @@ def _mirror(m, b, p):
             rx.append(int(a[1]))
         if a[2] != "r":
             tx.append(int(a[1]))
-    return {"mirror.enabled": "on", "mirror.port": m[1], "mirror.rx": plist(rx), "mirror.tx": plist(tx)}
+    out = {"mirror.enabled": "on", "mirror.port": m[1], "mirror.rx": plist(x for x in rx if x != mon),
+           "mirror.tx": plist(x for x in tx if x != mon)}
+    if mon in rx + tx:
+        out[WARN] = "the mirror port %d left out of its own sources" % mon
+    return out
 
 
 row(r"mirror off", lambda m, b, p: {"mirror.enabled": "off"})
@@ -354,10 +360,7 @@ def convert(data, board, warn=None, sch=None):
         if out is None:
             bad.append(ln)
             continue
-        if WARN in out:
-            if warn is not None:
-                warn.append("%s: %s" % (ln, out[WARN]))
-            del out[WARN]
+        note = out.pop(WARN, None)	# said only if the line is taken
         if cfg is not None:
             why, path = _check(cfg, out)
             if why in ("legacy", "port"):
@@ -369,6 +372,8 @@ def convert(data, board, warn=None, sch=None):
                 if warn is not None:
                     warn.append("%s: %s" % (ln, why))
                 continue
+        if note and warn is not None:
+            warn.append("%s: %s" % (ln, note))
         _take(seen, out)
         _take(vals, out)
     if warn is not None:

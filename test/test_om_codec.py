@@ -192,6 +192,11 @@ def convert():
     check(lines == ["web.session_timeout_s 60"] and len(warn) == 1 and "raised to 60" in warn[0],
           "a session under 60 is raised to 60, with a warning", (lines, warn))
     check(bad == ["passwd a b", 'passwd a"b', "passwd a\\b"], "a passwd with a space or quote isn't translated", bad)
+    warn = []
+    lines, _, _ = legacy_map.convert(b"mirror 1 1 2r 3t\n", rc.Board(), warn)
+    check(lines == ["mirror.enabled on", "mirror.port 1", "mirror.rx 2", "mirror.tx 3"] and
+          warn == ["mirror 1 1 2r 3t: the mirror port 1 left out of its own sources"],
+          "the mirror port isn't one of its sources, with a warning", (lines, warn))
     print("pvid on a LAG member: spread over the LAG, as the old port_pvid_set did")
     for text, want, w in ((b"lag 1 2 4\npvid 2 7\n", ["port.2.pvid 7", "port.4.pvid 7"], 0),
                           (b"lag 1 lacp 2 4\npvid 4 7\n", ["port.2.pvid 7", "port.4.pvid 7"], 0),
