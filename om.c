@@ -1028,17 +1028,33 @@ static uint16_t key_at(__xdata uint8_t *base)	/* slot ks's key in a copy */
 	return vp[0] | (uint16_t)vp[1] << 8;
 }
 
-/* kv: slot ks's key in the copies looked at, if the path allows it; else 0 (a
- * slot's key is the same in running and the candidate, or 0 in one: key_new()) */
+/* kv: slot ks's key in the copies looked at, if the path allows it; else 0. A
+ * slot's key is the same in running and the candidate, or 0 in one (key_new()),
+ * but after a boot that didn't apply: its load may have given the candidate a
+ * slot running holds (k_boot). Then the candidate's, or the one the path names;
+ * a walk in key order looks at running's too (key_step()). */
+static __xdata uint16_t kv2;
+
 static void slot_key(void)
 {
 	kv = 0;
 	if (j_copies & 1)
 		kv = key_at(RUN);
-	if (!kv && (j_copies & 2))
-		kv = key_at(CAND);
+	if (j_copies & 2) {
+		kv2 = key_at(CAND);
+		if (kv2 && (!(r_fix & 1) || kv2 == r_v))
+			kv = kv2;
+	}
 	if ((r_fix & 1) && kv != r_v)
 		kv = 0;
+}
+
+static void key_best(void)		/* kv, the smallest key at or after cv so far? */
+{
+	if (kv && kv >= cv && kv < kbest) {
+		kbest = kv;
+		kb = ks;
+	}
 }
 
 /*
@@ -1065,9 +1081,11 @@ static uint8_t key_step(void)
 	kb = 0xff;
 	for (ks = 0; ks < obx.n[0]; ks++) {
 		slot_key();
-		if (kv && kv >= cv && kv < kbest) {
-			kbest = kv;
-			kb = ks;
+		key_best();
+		if ((j_copies & 3) == 3 && kv == kv2) {	/* running's, if the candidate's differs */
+			kv = key_at(RUN);
+			if (!(r_fix & 1) || kv == r_v)
+				key_best();
 		}
 	}
 	if (kb == 0xff)
@@ -1975,6 +1993,11 @@ found:
  * The boot's load (k_boot) may also take a slot running holds for an entry
  * the candidate deleted: running is the defaults, applied over whole, and
  * a saved config that deletes vlan.1 and has 64 others needs every slot.
+ * It relies on the records in key order (om.c's save and rtlpg_client sort
+ * them): a default entry's record comes before a slot is short, so the
+ * entry has its running slot already; in another order a later record for
+ * it could find its slot taken (table full). Until the boot applies, a slot
+ * may hold different keys in the two copies: slot_key().
  * 0 if no slot is free.
  */
 static __xdata uint8_t * __xdata kp;

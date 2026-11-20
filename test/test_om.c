@@ -1757,6 +1757,23 @@ static void binary(void)
 		CHECK(!strstr(out_buf, "not applied") && strstr(vlan_ops, "-1 ") && strstr(vlan_ops, "+65 "),
 		      "and applied: VLAN 1 out of the table, 65 in");
 		vlan_ops[0] = 0;
+		/* the same sector, a handler failing: the boot undoes, running is the defaults (vlan.1 in
+		 * the slot the candidate's vlan.65 took) */
+		fail_apply_on = 3;
+		boot();
+		CHECK(strstr(out_buf, "not applied") != NULL, "a handler fails: the boot undoes");
+		o = run("diff");
+		int ok_ = strstr(o, "- vlan.1\n") && strstr(o, "+ vlan.65\n") && strstr(o, "+ vlan.65.members 1\n") &&
+		      strstr(o, "+ vlan.2\n") && status_ok(o);
+		CHECK(ok_, "diff: vlan.1 deleted, vlan.65 made, each of its own");
+		if (!ok_)
+			printf("%.600s\n", o);
+		expect("get -c vlan.65.members vlan.1", "vlan.65.members 1\nerr vlan.1: no such entry\n");
+		expect("get vlan.1.members vlan.65", "vlan.1.members 1-9\nerr vlan.65: no such entry\n");
+		expect("apply", "ok\n");		/* and the apply takes the candidate */
+		expect("get vlan.65.members state.cfg.pending", "vlan.65.members 1\nstate.cfg.pending 0\nok\n");
+		CHECK(strstr(vlan_ops, "-1 ") && strstr(vlan_ops, "+65 "), "apply: VLAN 1 out, 65 in");
+		vlan_ops[0] = 0;
 		for (int v = 2; v < 2 + MAX_VLANS; v++) {
 			snprintf(c, sizeof c, "del vlan.%d", v);
 			expect(c, "ok\n");
