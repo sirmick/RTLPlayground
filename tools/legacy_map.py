@@ -6,11 +6,14 @@ Each row is a regex an old line must match in full, and what it sets:
 cmd_parser.c forms (CONF_CMDS and the rest a config file can hold:
 mac, sfp, port N duplex), after ovs-rtlpg's tests/oldnew/translate.py,
 which checks each against the old firmware. The paths are DESIGN.md
-section 6's: an object not yet on the object model is converted all the
-same, and its lines are refused by a firmware that lacks it. A line no row
-takes is reported, never dropped; one a row changes to fit says why (WARN).
+section 6's. Given the schema the new firmware was built from, a line whose
+paths it has becomes path lines, checked as set takes them; a line with a
+path it lacks (an object not migrated yet) stays legacy, the old text as it
+was, with the plan node that migrates it (OWNER). A line no row takes is
+reported, never dropped; one a row changes to fit says why (WARN).
 """
 import re
+import sys
 
 DEL = object()
 WARN = object()
@@ -72,12 +75,29 @@ row(r"pvid (\d+) (\d+)", lambda m, b, p: {f"port.{m[1]}.pvid": m[2]})
 row(r"mtu (\d+) (\d+)", lambda m, b, p: {f"port.{m[1]}.mtu": m[2]})
 row(r"port (\d+) name (\S.*)", lambda m, b, p: {f"port.{m[1]}.name": "".join(map(name_char, m[2]))[:31]})
 row(r"port (\d+) lldp (block|permit)", lambda m, b, p: {f"port.{m[1]}.lldp": m[2]})
-row(r"port (\d+) on", lambda m, b, p: {f"port.{m[1]}.enabled": "on", f"port.{m[1]}.speed": "auto",
-                                       f"port.{m[1]}.duplex": "auto"})
+def _sfp_port(b, n):
+    lp = b.log_of(int(n))
+    return lp is not None and b.sfp[lp]
+
+
+def _port_on(m, b, p):
+    """port N on: an SFP port has no speed or duplex field (copper only)."""
+    out = {f"port.{m[1]}.enabled": "on"}
+    if not _sfp_port(b, m[1]):
+        out.update({f"port.{m[1]}.speed": "auto", f"port.{m[1]}.duplex": "auto"})
+    return out
+
+
+def _port_speed(m, b, p):
+    out = {f"port.{m[1]}.enabled": "on", f"port.{m[1]}.speed": m[2]}
+    if not _sfp_port(b, m[1]):
+        out[f"port.{m[1]}.duplex"] = m[3] if m[2] in ("10m", "100m") and m[3] in ("half", "full") else "auto"
+    return out
+
+
+row(r"port (\d+) on", _port_on)
 row(r"port (\d+) off", lambda m, b, p: {f"port.{m[1]}.enabled": "off"})
-row(r"port (\d+) (auto|10m|100m|1g|2g5|5g|10g)(?: (\S+).*)?",
-    lambda m, b, p: {f"port.{m[1]}.enabled": "on", f"port.{m[1]}.speed": m[2], f"port.{m[1]}.duplex":
-                     m[3] if m[2] in ("10m", "100m") and m[3] in ("half", "full") else "auto"})
+row(r"port (\d+) (auto|10m|100m|1g|2g5|5g|10g)(?: (\S+).*)?", _port_speed)
 row(r"port (\d+) duplex(?: (\S+).*)?", lambda m, b, p: {f"port.{m[1]}.duplex": "full" if m[2] == "full" else "half"})
 row(r"isolate (\d+) off", lambda m, b, p: {f"port.{m[1]}.isolate": plist(b.fronts(), True)})
 row(r"isolate (\d+)((?: \d+)+)", lambda m, b, p: {f"port.{m[1]}.isolate": plist(
@@ -265,6 +285,16 @@ row(r"mirror off", lambda m, b, p: {"mirror.enabled": "off"})
 row(r"mirror (\d)((?: \S+)*)", _mirror)
 
 
+# the plan node that moves a path's object to the object model (plan.toml)
+OWNER = [(r"vlan\.", "P4-2"), (r"lag\.", "P4-3"), (r"stp\.", "P4-4"),
+         (r"(igmp|lldp|loop|mirror)\.", "P4-5"), (r"port\.\d+\.(bw_|storm\.)", "P4-6"),
+         (r"sys\.mac$", "sys.mac (deferred in P4-1)")]
+
+
+def owner(path):
+    return next((n for rx, n in OWNER if re.match(rx, path)), "?")
+
+
 def text_of(data):
     """The sector's text: up to the first NUL or erased byte, as the old
     firmware read it."""
@@ -285,12 +315,19 @@ def undump(data):
     return bytes(int(x, 16) for r in rows for x in r.split())
 
 
-def convert(data, board, warn=None):
+def convert(data, board, warn=None, sch=None):
     """Old command text (bytes, or a flash dump of it) -> ("path value" /
-    "del path" lines, the lines no row took). A later line overrides an
-    earlier one, as at boot. Lines changed to fit go to warn, a list."""
+    "del path" lines, legacy, the lines no row took). A later line overrides
+    an earlier one, as at boot. Lines changed to fit go to warn, a list.
+    With sch (rtlpg_client.Schema), legacy is the old lines with a path sch
+    lacks, as (line, owner node), in order, their paths left out; a line
+    whose value sch refuses is not taken (the reason to warn). Without it,
+    every line is converted and legacy is empty."""
     data = undump(data)
-    vals, bad = {}, []
+    vals, seen, bad, legacy = {}, {}, [], []	# seen: every row's, what a row reads
+    cfg = None
+    if sch is not None:		# rtlpg_client's Config, from sch's module (__main__ too)
+        cfg = sys.modules[type(sch).__module__].Config(sch)
     for ln in re.split(r"\r?\n|\r", text_of(data)):
         ln = ln.strip()
         if not ln:
@@ -299,7 +336,7 @@ def convert(data, board, warn=None):
         for rx, fn in ROWS:
             m = rx.fullmatch(ln)
             if m:
-                out = fn(m, board, vals)
+                out = fn(m, board, seen)
                 break
         if out is None:
             bad.append(ln)
@@ -308,11 +345,56 @@ def convert(data, board, warn=None):
             if warn is not None:
                 warn.append("%s: %s" % (ln, out[WARN]))
             del out[WARN]
-        for path, v in out.items():
-            if v is DEL:
-                for q in [q for q in vals if q.startswith(path + ".")]:
-                    del vals[q]
-            vals.pop(path, None)
-            vals[path] = v
+        if cfg is not None:
+            why, path = _check(cfg, out)
+            if why in ("legacy", "port"):
+                legacy.append((ln, owner(path) if why == "legacy" else "P4-6"))
+                _take(seen, out)
+                continue
+            if why:
+                bad.append(ln)
+                if warn is not None:
+                    warn.append("%s: %s" % (ln, why))
+                continue
+        _take(seen, out)
+        _take(vals, out)
     lines = ["del %s" % p if v is DEL else "%s %s" % (p, v) for p, v in vals.items()]
-    return lines, bad
+    return lines, legacy, bad
+
+
+def _take(vals, out):
+    for path, v in out.items():
+        if v is DEL:
+            for q in [q for q in vals if q.startswith(path + ".")]:
+                del vals[q]
+        vals.pop(path, None)
+        vals[path] = v
+
+
+def _bad(sch):
+    return sys.modules[type(sch).__module__].Bad
+
+
+def _known(sch, path):
+    """sch has the path's field (or keyed entry): its object is migrated."""
+    try:
+        sch.resolve(path)
+    except _bad(sch) as e:
+        return not str(e).endswith("no such path")
+    return True
+
+
+def _check(cfg, out):
+    """(None, None) if cfg takes every path of a row's result (it keeps
+    them); ("legacy", path) for the first path the schema lacks, ("port",
+    path) for one it has but not on this port (an SFP's, P4-6); else (why
+    it is refused, path)."""
+    for path in out:
+        if not _known(cfg.s, path):
+            return "legacy", path
+    for path, v in out.items():
+        try:
+            cfg.line("del %s" % path if v is DEL else "%s %s" % (path, v))
+        except _bad(cfg.s) as e:
+            return ("port" if str(e).endswith("not on this port") else str(e)), path
+    return None, None

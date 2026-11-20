@@ -162,28 +162,75 @@ web.password hunter2
 sys.mac 02:11:22:33:44:55""".split("\n")
 
 
+def p41_schema(board=None):
+    """The objects P4-1 left on the model, whatever has moved since: a
+    schema of their files alone, so the legacy split below stays put."""
+    import shutil
+    import tempfile
+    d = tempfile.mkdtemp()
+    for f in ("port", "sys", "mgmt", "web", "ntp", "dns", "syslog"):
+        shutil.copy(os.path.join(HERE, "..", "schema", f + ".py"), d)
+    shutil.copy(os.path.join(HERE, "..", "schema", "registry.txt"), d)
+    sch = rc.Schema([d], board)
+    shutil.rmtree(d)
+    return sch
+
+
 def convert():
     import legacy_map
     print("convert: old command text to paths")
-    lines, bad = legacy_map.convert(OLD.encode(), rc.Board())
+    lines, _, bad = legacy_map.convert(OLD.encode(), rc.Board())
     check(lines == WANT, "every old form a config holds", "\n".join(lines))
     check(bad == ["a typo here"], "a line it can't translate is reported", bad)
     dump = "".join("%06x  %s  |\n" % (a, " ".join("%02x" % c for c in b"ip 10.0.0.9\nhostname x\n\0\xff"[a:a + 16]))
                    for a in (0, 16))
-    lines, bad = legacy_map.convert(("flash r 7f000 20\n" + dump).encode(), rc.Board())
+    lines, _, bad = legacy_map.convert(("flash r 7f000 20\n" + dump).encode(), rc.Board())
     check(lines == ["mgmt.mode static", "mgmt.ip 10.0.0.9", "sys.hostname x"] and not bad,
           "a console flash dump of the old sector", lines)
     warn = []
-    lines, bad = legacy_map.convert(b"session 30\npasswd a b\npasswd a\"b\npasswd a\\b\n", rc.Board(), warn)
+    lines, _, bad = legacy_map.convert(b"session 30\npasswd a b\npasswd a\"b\npasswd a\\b\n", rc.Board(), warn)
     check(lines == ["web.session_timeout_s 60"] and len(warn) == 1 and "raised to 60" in warn[0],
           "a session under 60 is raised to 60, with a warning", (lines, warn))
     check(bad == ["passwd a b", 'passwd a"b', "passwd a\\b"], "a passwd with a space or quote isn't translated", bad)
+    print("convert against the schema: path lines, legacy, refused")
+    sch = p41_schema()
+    warn = []
+    lines, legacy, bad = legacy_map.convert(OLD.encode(), sch.board, warn, sch)
+    mine = [ln for ln in WANT if not ln.split()[1 if ln.startswith("del ") else 0].startswith(
+        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac", "port.2.storm", "port.3.bw_", "port.9."))]
+    check(lines == mine, "the schema's paths are path lines (%d)" % len(lines), "\n".join(lines))
+    check(rc.txt2bin(sch, lines)[:4] == b"\0RC1", "and txt2bin takes them all")
+    want = [("vlan 100 lab 1 2t 9t", "P4-2"), ("vlan 200 3 4", "P4-2"), ("vlan 200 d", "P4-2"),
+            ("lag 1 lacp 7 8", "P4-3"), ("lag 2 lacp 8", "P4-3"), ("laghash 1 sip dip", "P4-3"),
+            ("stp on", "P4-4"), ("stp prio 8", "P4-4"), ("stp port 3 cost 20000", "P4-4"),
+            ("stp lag 1 edge on", "P4-4"), ("storm 2 bcast 1000 pps", "P4-6"), ("bw in 3 1f4", "P4-6"),
+            ("sfp 1 10g", "P4-6"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
+    check(legacy == want, "the rest is legacy, in order, each with the node that migrates it", legacy)
+    check(bad == ["a typo here"] and not warn, "the typo is still reported", (bad, warn))
+    warn = []
+    lines, legacy, bad = legacy_map.convert(b"mtu 2 10\nport 12 off\npvid 3 5000\nport 9 on\nport 9 name up\n"
+                                            b"port 9 auto\nsfp 1 10g\nhostname ok\n", sch.board, warn, sch)
+    check(lines == ["port.9.name up", "sys.hostname ok"], "values the schema refuses aren't taken", lines)
+    check(bad == ["mtu 2 10", "port 12 off", "pvid 3 5000"] and
+          warn == ["mtu 2 10: port.2.mtu: 64-16383", "port 12 off: port.12.enabled: no such port",
+                   "pvid 3 5000: port.3.pvid: 0-4094"], "they are reported, with set's reason", (bad, warn))
+    check(legacy == [("port 9 on", "P4-6"), ("port 9 auto", "P4-6"), ("sfp 1 10g", "P4-6")],
+          "an SFP port's copper fields are P4-6's legacy", legacy)
+    lines, legacy, _ = legacy_map.convert(b"port 9 auto\nsfp 1 10g\nport 4 off\n", sch.board, None, sch)
+    check(lines == ["port.4.enabled off"] and len(legacy) == 2, "a legacy line's paths never reach the output",
+          lines)
+    b = rc.Board("SWGT024_V2_0_UNMANAGED")
+    lines, legacy, bad = legacy_map.convert(b"port 1 on\neee on\nstp on\n", b, None, p41_schema(b))
+    check(lines[:3] == ["port.1.enabled on", "port.1.speed auto", "port.1.duplex auto"] and
+          all(not ln.startswith("port.%d.eee" % n) for ln in lines for n in b.fronts() if b.sfp[b.log_of(n)])
+          and legacy == [("stp on", "P4-4")] and not bad, "the SWGT024's ports", (lines, legacy, bad))
     # the corpus: every saved config the bench kept (outside the tree)
     corpus = sorted(glob.glob(os.path.expanduser("~/rtlpg-bench/cfg-*.txt")) +
                     glob.glob(os.path.expanduser("~/rtlpg-bench/spare2-config*.txt")))
     for f in corpus:
-        lines, bad = legacy_map.convert(open(f, "rb").read(), rc.Board())
-        check(lines and not bad, "corpus %s: %d lines, all translated" % (os.path.basename(f), len(lines)), bad)
+        lines, legacy, bad = legacy_map.convert(open(f, "rb").read(), sch.board, None, sch)
+        check(lines and not bad and not legacy, "corpus %s: %d lines, all path lines" % (
+            os.path.basename(f), len(lines)), (bad, legacy))
     if not corpus:
         print("  (no corpus in ~/rtlpg-bench: skipped)")
 

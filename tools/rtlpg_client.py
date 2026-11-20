@@ -5,7 +5,7 @@ switch's /cli. Python's standard library only.
 
   rtlpg_client.py txt2bin [--machine M] in.txt out.bin   path lines -> records
   rtlpg_client.py bin2txt [--machine M] in.bin           records -> path lines
-  rtlpg_client.py convert old.txt                        old commands -> path lines
+  rtlpg_client.py convert [--machine M] old.txt [out.bin] old commands -> path lines (records)
   rtlpg_client.py default [--machine M] in.txt out       the build's default config sector
   rtlpg_client.py --host H [--password P] cli LINE...    POST /cli, print the reply
   rtlpg_client.py --host H [--password P] get-config     GET /config (get -s)
@@ -14,6 +14,12 @@ The codec reads the schema with tools/om_gen.py (its IDs from the registry)
 and the board from machine/<M>.c (port numbers, SFP ports): a port mask is
 logical ports inside, front-panel numbers outside. The default board is the
 8x: nine ports, the ninth an SFP, RTL8373.
+
+convert prints the path lines for the objects the schema has, and the old
+lines of those it doesn't yet as "# legacy (<plan node>): <line>"
+(legacy_map.py); the lines it can't translate go to stderr; the exit
+status is 1 if any line wasn't converted. With out.bin, the path lines'
+records too.
 
 txt2bin writes what the firmware's save writes for the same config: the
 fields off their default, the instances that have one, a keyed object as a
@@ -624,14 +630,21 @@ def main():
         if a.cmd == "convert":
             import legacy_map
             warn = []
-            lines, bad = legacy_map.convert(open(a.args[0], "rb").read(), Board(a.machine), warn)
+            sch = Schema(a.schema, Board(a.machine))
+            lines, legacy, bad = legacy_map.convert(open(a.args[0], "rb").read(), sch.board, warn, sch)
             for ln in lines:
                 print(ln)
+            for ln, node in legacy:
+                print("# legacy (%s): %s" % (node, ln))
             for w in warn:
                 print("convert: warning: %s" % w, file=sys.stderr)
             for b in bad:
                 print("convert: not translated: %s" % b, file=sys.stderr)
-            return 1 if bad else 0
+            if len(a.args) > 1:
+                data = txt2bin(sch, lines)
+                open(a.args[1], "wb").write(data)
+                print("convert: %s: %d B of records" % (a.args[1], len(data)), file=sys.stderr)
+            return 1 if bad or legacy else 0
         if a.cmd == "default":
             # the board's default config (DESIGN.md 15.1): path lines, as records
             text = open(a.args[0]).read()
