@@ -83,6 +83,11 @@ uint8_t flash_job_start(void)
 
 uint32_t fl_addr;
 
+/* sched_step_fine(): the step's time, t_fine_inc more each call (0: never out of time) */
+static uint16_t t_fine, t_fine_inc;
+static int fl_steps;		/* FL_PROG steps of the last save */
+uint16_t sched_step_fine(void) { return t_fine += t_fine_inc; }
+
 static void fl_run(void)	/* the job to its end, as flash_job.c steps it */
 {
 	if (fl_kind != FL_SAVE)
@@ -90,11 +95,16 @@ static void fl_run(void)	/* the job to its end, as flash_job.c steps it */
 	fl_addr = CONFIG_START;
 	flash_region.addr = fl_addr;
 	flash_sector_erase();
+	fl_steps = 0;
 	do {
+		t_fine = 0;		/* a step */
+		fl_steps++;
 		uint16_t n = om_save_chunk();
-		flash_region.addr = fl_addr;
-		flash_region.len = n;
-		flash_write_bytes(flash_buf);
+		if (n) {
+			flash_region.addr = fl_addr;
+			flash_region.len = n;
+			flash_write_bytes(flash_buf);
+		}
 		fl_addr += n;
 		fl_len -= n;
 	} while (fl_len);
@@ -1717,6 +1727,15 @@ static void binary(void)
 		CHECK(!fl.page_wraps, "ops cut at the page: none wraps");
 		sec_read();
 		CHECK((sec[4] | sec[5] << 8) > 2 * 256, "the save took 3 chunks or more");
+		static uint8_t whole[CONFIG_LEN];
+		int steps = fl_steps;
+		memcpy(whole, sec, sizeof whole);
+		t_fine_inc = 326 / 3 + 1;	/* E_FINE (2 ms) after 3 instances: the walk stops mid-object, mid-chunk */
+		expect("save", "ok\n");
+		t_fine_inc = 0;
+		sec_read();
+		CHECK(!memcmp(sec, whole, sizeof whole) && fl_steps > 2 * steps,
+		      "a save whose walk runs out of time every 3 instances: the same sector, in more steps");
 		boot();
 		CHECK(cfg_is(&big) && !strstr(out_buf, "not applied"), "boot loads the several-chunk save");
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 0\nok\n");

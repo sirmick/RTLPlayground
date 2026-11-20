@@ -46,6 +46,7 @@ extern __code const struct om_lim om_lim[];
 extern __code const char * __code const om_msg[];
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
+uint16_t sched_step_fine(void) __banked;	/* sched.h: the step so far, 6.144 us units */
 extern __xdata uint16_t crc_value;
 extern __xdata uint8_t cmd_capture;	/* rtlplayground.c: write_char's capture (a web reply) */
 void crc16_bank1(__xdata uint8_t *v) __naked;	/* crc16.asm: *v into crc_value */
@@ -2316,7 +2317,7 @@ static __xdata uint16_t w_len, w_crc;	/* the save's, to check the read-back agai
 static __xdata uint16_t e_n, l_crc;
 static __xdata uint8_t e_b, e_nf, l_phase;
 /* the save's cursor: the next object, and (e_st) the instance to go on at */
-static __xdata uint8_t e_o, e_st, e_ce, e_k;
+static __xdata uint8_t e_o, e_st, e_ce, e_k, e_more;
 static __xdata uint16_t e_cv;
 #if OM_USE_IX2
 static __xdata uint8_t e_cv1;
@@ -2481,14 +2482,20 @@ static uint8_t pend_step(void)
  * The next records into flash_buf (e_n bytes), whole instances, none
  * started past E_ROOM, at most E_KN of them (each two passes over its
  * fields: 1.9 ms a VLAN), from the cursor. An instance at its defaults is
- * one compare with the element default.
+ * one compare with the element default. The walk stops at E_FINE of the
+ * step too, by the timer (silicon runs it ~5x slower than rtlsim: 38.9 ms
+ * for a 78 B save, P8): e_more then says the records go on, e_n may be 0.
  */
 #define E_KN	4
+#define E_FINE	326		/* 2 ms of sched_step_fine()'s 6.144 us: an instance started under it
+				 * (~1.2 ms here, ~6 on silicon) and the chunk's program stay
+				 * under FL_PROG's 10 */
 
 static void enc_chunk(void)
 {
 	e_n = 0;
 	e_k = 0;
+	e_more = 0;
 	crc_value = b_crc;
 	for (; e_o < OM_N_OBJ; e_o++) {
 		sel_obj(e_o);
@@ -2520,6 +2527,15 @@ static void enc_chunk(void)
 			e_st = 1;
 		}
 		for (; cur_ok; next_inst()) {
+			if (sched_step_fine() >= E_FINE) {	/* the next step's, from here */
+				e_more = 1;
+				e_cv = cv;
+				e_ce = ce;
+#if OM_USE_IX2
+				e_cv1 = om_ix1;
+#endif
+				goto full;
+			}
 			vp = inst(RUN);
 			cp = def_ptr();
 			x_k = obx.size;
@@ -3158,7 +3174,7 @@ uint16_t om_save_chunk(void) __banked
 	bs.save = E_CFGSAVE_WRITING;
 	enc_chunk();
 	fl_len = e_n + 1;
-	if (e_n)
+	if (e_n || e_more)
 		return e_n;
 	fl_addr = CONFIG_START;		/* the records are written: the header */
 	w_len = b_len;
