@@ -689,6 +689,14 @@ uint8_t upload_verify(void) __banked
 	return UP_DONE;
 }
 
+/* The stage's room behind a preamble being collected in it */
+static uint16_t up_room(void)
+{
+	if (pre_acc >= UP_STAGE_LEN)
+		return 0;
+	return UP_STAGE_LEN - pre_acc;
+}
+
 /* FL_DONE: 1 if more of the body has come since the job's last FL_PROG (rx
  * can run several times before this step): FL_PROG again. Else the stage
  * starts again, in the same step as the job ends, and the window opens. */
@@ -701,11 +709,15 @@ uint8_t upload_done(void) __banked
 		upload_settings.bptr = 0;
 		upload_settings.plen = 0;
 	}
-	/* The window: the empty stage, also when a config save or the boot
+	/* The window: the stage's room, also when a config save or the boot
 	 * count's erase ends (no upload then, or one between its segments
-	 * with its stage empty). Harmless: there is one connection and its
-	 * stage has that room, and no window before it was larger. */
-	uip_rcv_wnd = UP_STAGE_LEN;
+	 * with its stage empty). A multipart preamble being collected holds
+	 * pre_acc of it: the room behind that, where upload_go() puts the
+	 * right edge, so it never moves left. There is one connection. */
+	if (uip_conns[0].appstate.tstate == TSTATE_MULTIPART)
+		uip_rcv_wnd = up_room();
+	else
+		uip_rcv_wnd = UP_STAGE_LEN;
 	return 0;
 }
 
@@ -813,6 +825,11 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 	pre_acc += frag_len;
 	payload_start = preamble_payload_start(pre_acc);
 	if (!payload_start) {
+		/* no more than the room behind it: a job's end may have opened
+		 * the window (upload_done()), and its right edge stays put */
+		frag_len = up_room();
+		if (uip_rcv_wnd > frag_len)
+			uip_rcv_wnd = frag_len;
 		s->tstate = TSTATE_MULTIPART;
 		return;
 	}

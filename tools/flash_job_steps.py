@@ -30,6 +30,12 @@ S6: a refused upload from a client that keeps to the window and, as Linux's
     after a zero window is lost (the client ignores it). The probe's ACK
     reopens the window: the upload ends with its answer, every byte staged,
     in far less than the 30 s abort.
+S7: as S5, but the upload's multipart preamble comes 2 bytes a segment, so
+    the confirm's erase ends while it is collected; then the client sends
+    to the right edge the switch advertised, as Linux may. That edge never
+    moves left (a job's end advertises the stage's room behind the
+    preamble, not all of it), nothing is sent again, and the upload ends
+    with its answer and every byte staged.
 Each passes if no step took over 50 ms (the step limit, decision 25; a
 sector erase, ~40 ms, is inside it now), and the flash holds what
 it should. The upload's firmware time is printed. Needs a bench whose client
@@ -141,6 +147,97 @@ def probe_upload(r, req, until, probe_us=200000):
         else:
             run(complete, 1000000)
     return (st["resp"] if complete() else None), probes, st["zero"], st["dropped"]
+
+
+def edge_upload(r, req, head_len, until, dribble=2, pace_us=250000):
+    """req on a new connection: its first head_len bytes in one segment, then
+    `dribble` bytes a segment, one every pace_us, until a window over an MSS
+    is seen (a job's end opened it); then the rest sent up to the right edge
+    the switch advertised (ACK + window), without waiting for ACKs. Whatever
+    isn't ACKed in 1 s is sent again (go-back-N); a zero window is probed.
+    -> (response, the byte the window opened at, times the right edge
+    moved left, the most it moved left by, go-backs)"""
+    import struct
+    h, b = r.host, r.b
+    if not h.arp(until):
+        return None, None, 0, 0, 0
+    sport, h.next_port = h.next_port, h.next_port + 1
+    iss = 1000 + (sport - 40000) * 100000
+    st = {"snd": iss + 1, "una": iss, "rcv": None, "wnd": 1, "resp": b"", "mss": 536,
+          "edge": 0, "left": 0, "short": 0}
+    h.rx = []
+
+    def segs():
+        for sg in h.rx:
+            if struct.unpack("!H", sg[2:4])[0] != sport:
+                continue
+            seq, ack, off, fl, wnd = struct.unpack("!IIBBH", sg[4:16])
+            data = sg[(off >> 4) * 4:]
+            if fl & 0x02 and st["rcv"] is None:
+                st["rcv"] = seq + 1
+                o = sg[20:(off >> 4) * 4]
+                if len(o) >= 4 and o[0] == 2:
+                    st["mss"] = min(h.MSS, struct.unpack("!H", o[2:4])[0])
+                st["una"], st["wnd"], st["edge"] = ack, wnd, ack + wnd
+                continue
+            if fl & 0x10:
+                if ack + wnd < st["edge"]:
+                    st["left"] += 1
+                    st["short"] = max(st["short"], st["edge"] - ack - wnd)
+                st["edge"] = max(st["edge"], ack + wnd)
+                if ack >= st["una"]:
+                    st["una"], st["wnd"] = ack, wnd
+            if st["rcv"] is not None and seq == st["rcv"] and data:
+                st["resp"] += data
+                st["rcv"] += len(data)
+                h._tcp(sport, st["snd"], st["rcv"], 0x10)
+        h.rx = []
+
+    def complete():
+        head, sep, body = st["resp"].partition(b"\r\n\r\n")
+        m = re.search(rb"(?im)^content-length: *(\d+)", head) if sep else None
+        return m is not None and len(body) >= int(m.group(1))
+
+    def run(cond, us):
+        return b.advance(min(until, b.now + us), lambda: (segs(), cond())[1])
+
+    def send(n):
+        off = st["snd"] - iss - 1
+        h._tcp(sport, st["snd"], st["rcv"], 0x18, req[off:off + n])
+        st["snd"] += len(req[off:off + n])
+
+    h._tcp(sport, iss, 0, 0x02, mss=True)
+    run(lambda: st["rcv"] is not None, 1000000)
+    h._tcp(sport, st["snd"], st["rcv"], 0x10)
+    send(head_len)
+    run(lambda: st["una"] >= st["snd"], 1000000)
+    opened = None
+    while opened is None and st["snd"] - iss - 1 < len(req) and b.now < until:
+        send(dribble)
+        run(lambda: st["una"] >= st["snd"], pace_us)
+        run(lambda: False, pace_us)
+        if st["wnd"] > st["mss"]:
+            opened = st["snd"] - iss - 1
+    resends, last = 0, (st["una"], b.now)
+    while not complete() and b.now < until:
+        n = min(st["mss"], st["una"] + st["wnd"] - st["snd"], len(req) - (st["snd"] - iss - 1))
+        if n > 0:
+            send(n)
+            continue
+        if st["wnd"] == 0:
+            if not run(lambda: st["wnd"] > 0 or complete(), 200000):
+                h._tcp(sport, st["una"] - 1, st["rcv"], 0x10)	# the probe
+            continue
+        u = st["una"]
+        run(lambda: st["una"] != u or complete(), 200000)
+        if st["una"] != last[0]:
+            last = (st["una"], b.now)
+        elif st["una"] < st["snd"] and b.now - last[1] > 1000000:
+            st["snd"] = st["una"]		# go back: send it again
+            resends += 1
+            last = (st["una"], b.now)
+    resp = st["resp"] if complete() else None
+    return resp, opened, st["left"], st["short"], resends
 
 
 def main(argv):
@@ -344,6 +441,32 @@ def main(argv):
         print(f"S6 a lost window update, repaired by a probe: {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S6")
+    finally:
+        r.b.close()
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    try:
+        r.boot(slot=12000)	# as S5: the confirm at ~17.6 s, during the preamble
+        r.login(slot=1000)
+        r._now()
+        bad = bytearray(r.payload)
+        bad[-1] ^= 0xff
+        req = upload_req(r, bytes(bad), "bad.bin")
+        t0 = r.b.now
+        resp, opened, left, short, resends = edge_upload(r, req, req.index(b"\r\n\r\n") + 4,
+                                                         r.b.now + 120 * 1000000)
+        t1 = r.b.now
+        staged = r.b.flash(UPLOAD_START, len(bad))
+        pre = req.index(b"\r\n\r\n", req.index(b"\r\n\r\n") + 4) + 4
+        ok = (isinstance(resp, bytes) and b"checksum failed" in resp and staged == bytes(bad)
+              and opened is not None and opened < pre and not left and not resends)
+        print(f"   S7 upload {t0 / 1e6:.1f}..{t1 / 1e6:.1f} s after power-on; window opened at byte "
+              f"{opened} (the preamble ends at {pre}); answer "
+              f"{resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; staged image "
+              f"{'= the payload' if staged == bytes(bad) else 'DIFFERS'}; right edge moved left {left}x "
+              f"(by up to {short} B), go-backs {resends}")
+        print(f"S7 a job's end during a slow preamble: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            fails.append("S7")
     finally:
         r.b.close()
     print("flash_job_steps:", "FAIL " + " ".join(fails) if fails else "PASS")
