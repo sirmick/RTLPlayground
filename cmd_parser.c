@@ -15,7 +15,6 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_bandwidth.h"
-#include "rtl837x_lldp.h"
 #include "rtl837x_storm.h"
 #include "rtl837x_trap.h"
 #include "rtl837x_cabletest.h"
@@ -38,7 +37,6 @@
 
 extern __code const struct machine machine;
 extern __code const uint8_t log_to_phys_port[9];
-extern __xdata bool lldp_enabled;
 
 extern volatile __xdata uint32_t ticks;
 extern volatile __xdata uint8_t sfr_data[4];
@@ -1264,20 +1262,7 @@ void cmd_parser(void) __banked
 			parse_bw();
 		} else if (cmd_compare(0, "storm")) {
 			parse_storm();
-		} else if (cmd_compare(0, "lldp")) {
-			if (cmd_compare(1, "on")) {
-				print_string("LLDP enabled\n");
-				lldp_enabled = 1;
-				trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_TRAP);
-			} else {
-				print_string("LLDP disabled\n");
-				if (lldp_enabled)
-					lldp_shutdown(lldp_logical_port_status);
-				lldp_enabled = 0;
-				trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_FORWARD);
-			}
-		}
-		else {
+		} else {
 			cmd_error("Unknown command\n");
 		}
 

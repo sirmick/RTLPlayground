@@ -41,8 +41,6 @@ extern __xdata uint8_t sfp_pins_last;
 
 extern __xdata struct flash_region_t flash_region;
 
-extern __xdata uint16_t lldp_logical_port_status;
-extern __xdata bool lldp_enabled;
 
 
 __code const char * __code const http_storm_names[STORM_TYPES] = { "bcast", "mcast", "ucast", "umcast" };
@@ -205,35 +203,6 @@ void send_mirror(void)
 	char_to_html('}');
 }
 
-
-void send_lldp(void)
-{
-	dbg_string("send_lldp called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-
-	str_code_to_html("{" JSONQUOTE("on") ":");
-	bool_to_json(lldp_enabled);
-	str_code_to_html("," JSONQUOTE("portStatus") ":[");
-
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-
-		str_code_to_html("," JSONQUOTE("name") ":\"");
-		for (uint8_t j = 0; j < PORT_NAME_SIZE && cfg_run.port[i].name[j]; j++) {
-			json_char_to_html(cfg_run.port[i].name[j]);
-		}
-
-		str_code_to_html("\"," JSONQUOTE("permitted") ":");
-		bool_to_json(1 & (lldp_logical_port_status >> i));
-		char_to_html('}');
-
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
-	char_to_html('}');
-}
 
 static void port_list_to_json(__xdata uint16_t mask)
 {

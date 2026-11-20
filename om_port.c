@@ -22,7 +22,7 @@
 
 extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
-extern __xdata bool lldp_enabled;
+extern __xdata bool lldp_was_enabled;
 
 static __xdata struct cfg_port r;	/* running: what to program */
 static __xdata struct cfg_port o;	/* what the hardware had */
@@ -80,7 +80,7 @@ uint8_t om_apply_port(uint8_t idx) __banked
 		port_isolate(l, r.isolate);
 	if (r.lldp != o.lldp) {
 		if (r.lldp == E_LLDP_BLOCK) {
-			if (lldp_enabled)
+			if (lldp_was_enabled)
 				lldp_shutdown((uint16_t)1 << l);
 			lldp_logical_port_status &= ~((uint16_t)1 << l);
 		} else {
