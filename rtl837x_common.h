@@ -173,7 +173,7 @@ void reg_bit_clear(uint16_t reg_addr, char bit);
 uint8_t reg_bit_test(uint16_t reg_addr, char bit);
 void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set);
 void sfr_set_zero(void);
-void reset_chip(void);
+void reset_chip(uint8_t cause);	/* crash.h's CRASH_*: recorded, then the reset */
 /* Firmware implementations that shadow libc names. Host unit-test builds
  * (RTLP_HOST_TEST) hide these prototypes so they don't clash with glibc;
  * argument order matches libc, so on-host callers transparently use the

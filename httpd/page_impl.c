@@ -13,7 +13,6 @@
 #include "html_data.h"
 #include <stdint.h>
 #include "phy.h"
-#include "version.h"
 #include "machine.h"
 #include "rtl837x_stp.h"
 #include "rtl837x_lacp.h"
@@ -24,7 +23,6 @@
 #include "dhcp.h"
 #include "update_apply.h"
 
-extern __xdata uint32_t flash_size;
 
 // #define DEBUG
 #include "debug.h"
@@ -36,12 +34,9 @@ extern __code const struct machine machine;
 extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];
 extern __xdata uint16_t slen;
 extern __xdata uint16_t management_vlan;
-extern __xdata uint16_t session_timeout;
-extern __xdata struct dhcp_state dhcp_state;
 extern __xdata uint16_t cont_len;
 extern __xdata uint32_t cont_addr;
 extern __code const uint8_t * __code const hex;
-extern __xdata uip_ipaddr_t uip_hostaddr, uip_draddr, uip_netmask;
 
 extern __xdata uint8_t sfr_data[4];
 extern __xdata uint8_t sfp_pins_last;
@@ -95,23 +90,6 @@ void itoa16_html(uint16_t v) /* up to five digits (65535) */
 	d = (v / 10) % 10;
 	if (d || print_zeros) char_to_html('0' + d);
 	char_to_html('0' + (v % 10));
-}
-
-static void temp_to_html(void)
-{
-	int16_t v;
-
-	reg_read(RTL837X_TM_RESULT);
-	v = SFR_DATA_U16;
-	if (v < 0) {
-		char_to_html('-');
-		v = -v;
-	}
-	itoa_html(v >> 7);
-	char_to_html('.');
-	itoa_html(((v & 0x7f) * 10) >> 7);
-	char_to_html(' ');
-	char_to_html('C');
 }
 
 uint16_t stat_content(void)
@@ -185,21 +163,6 @@ void counter_to_html(void)
 }
 
 
-/* The module's Vendor-name, Vendor PN and Vendor rev ASCII fields, from the
- * sfp task's cache (sfp.c, E2: no I2C in a page); nothing before it is read */
-void send_sfp_info(uint8_t sfp)
-{
-	if (!sfp_id_ok[sfp])
-		return;
-	for (uint8_t i = 0; i < SFP_ID_LEN; i++) {
-		if (i >= 36 - 20 && i < 40 - 20) // Skip Non-ASCII codes (the OUI)
-			continue;
-		if (sfp_id[sfp][i])
-			json_char_to_html(sfp_id[sfp][i]);
-	}
-}
-
-
 /* Diagnostics bytes reg.. (0x51, SFP_DDM_FIRST..), from the cache the sfp
  * task refreshes every 2 s; nothing until it holds this module's */
 void sfp_send_data(uint8_t slot, uint8_t reg, uint8_t len)
@@ -211,92 +174,6 @@ void sfp_send_data(uint8_t slot, uint8_t reg, uint8_t len)
 		byte_to_html(sfp_diag[slot][reg - SFP_DDM_FIRST + i]);
 }
 
-
-void send_basic_info(void)
-{
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	dbg_string("send_basic_info called\n");
-	str_code_to_html("{" JSONQUOTE("ip_address") ":\"");
-	itoa_html(uip_hostaddr[0]); char_to_html('.');
-	itoa_html(uip_hostaddr[0] >> 8); char_to_html('.');
-	itoa_html(uip_hostaddr[1]); char_to_html('.');
-	itoa_html(uip_hostaddr[1] >> 8);
-	str_code_to_html("\"," JSONQUOTE("ip_gateway") ":\"");
-	itoa_html(uip_draddr[0]); char_to_html('.');
-	itoa_html(uip_draddr[0] >> 8); char_to_html('.');
-	itoa_html(uip_draddr[1]); char_to_html('.');
-	itoa_html(uip_draddr[1] >> 8);
-	str_code_to_html("\"," JSONQUOTE("ip_netmask") ":\"");
-	itoa_html(uip_netmask[0]); char_to_html('.');
-	itoa_html(uip_netmask[0] >> 8); char_to_html('.');
-	itoa_html(uip_netmask[1]); char_to_html('.');
-	itoa_html(uip_netmask[1] >> 8);
-	str_code_to_html("\"," JSONQUOTE("syslog_server") ":\"");
-	itoa_html(syslog_state.server_ip[0]); char_to_html('.');
-	itoa_html(syslog_state.server_ip[1]); char_to_html('.');
-	itoa_html(syslog_state.server_ip[2]); char_to_html('.');
-	itoa_html(syslog_state.server_ip[3]); char_to_html(':');
-	itoa16_html(syslog_state.server_port);
-	str_code_to_html("\"," JSONQUOTE("session_timeout") ":");
-	itoa16_html(session_timeout);
-	slen += strtox(outbuf + slen, dhcp_state.state == DHCP_OFF ? ("," JSONQUOTE("ip_source") ":" JSONQUOTE("static")) : ("," JSONQUOTE("ip_source") ":" JSONQUOTE("dhcp")));
-	slen += strtox(outbuf + slen, "," JSONQUOTE("mac_address") ":\"");
-	byte_to_html(uip_ethaddr.addr[0]); char_to_html(':');
-	byte_to_html(uip_ethaddr.addr[1]); char_to_html(':');
-	byte_to_html(uip_ethaddr.addr[2]); char_to_html(':');
-	byte_to_html(uip_ethaddr.addr[3]); char_to_html(':');
-	byte_to_html(uip_ethaddr.addr[4]); char_to_html(':');
-	byte_to_html(uip_ethaddr.addr[5]);
-	str_code_to_html("\"," JSONQUOTE("hostname") ":\"");
-	{
-		__xdata char *hp = hostname;	/* sanitized on ingest, emit verbatim */
-		while (*hp)
-			char_to_html(*hp++);
-	}
-	str_code_to_html("\","JSONQUOTE("sw_ver") ":\"");
-	str_code_to_html(VERSION_SW);
-	str_code_to_html("\"," JSONQUOTE("build_date") ":\"");
-	str_code_to_html(BUILD_DATE);
-	str_code_to_html("\"," JSONQUOTE("uptime") ":\"0x");
-	reg_to_html_long(RTL837X_REG_SEC_COUNTER);
-	str_code_to_html("\"," JSONQUOTE("hw_ver") ":\"");
-	str_code_to_html(machine.machine_name);
-	str_code_to_html("\"," JSONQUOTE("pcb_ver") ":\"");
-	str_code_to_html(MACHINE_PCB_INFO);
-	str_code_to_html("\"," JSONQUOTE("chip_temp") ":\"");
-	temp_to_html();
-	str_code_to_html("\"," JSONQUOTE("flash_size") ":\"");
-	str_code_to_html(get_flash_size_str());
-	/* The size a firmware upload must have for this build's flash layout. */
-	str_code_to_html("\"," JSONQUOTE("img_size") ":\"" STR(IMAGE_SIZE));
-	str_code_to_html(has_loader ? "\"," JSONQUOTE("loader") ":\"yes" : "\"," JSONQUOTE("loader") ":\"no");
-#ifdef MACHINE_POE
-	/* the PoE firmware's upload (/mdata) needs the machine data region */
-	str_code_to_html("\"," JSONQUOTE("poe") ":\"");
-#ifdef LAYOUT_COMPACT
-	if (flash_size < MDATA_START + MDATA_LEN)
-#endif
-		str_code_to_html("no room");
-#ifdef LAYOUT_COMPACT
-	else
-		str_code_to_html(poe_state == POE_OK ? "ok" : poe_state == POE_NO_IMAGE ? "no image" :
-				 poe_state == POE_NO_ANSWER ? "no answer" : poe_state == POE_NO_CHIP_IMAGE ? "no image for this chip" : "failed");
-#endif
-#endif
-	str_code_to_html("\"," JSONQUOTE("leds") ":\"");
-	str_code_to_html(leds_mode == 2 ? "off" : leds_mode == 1 ? "ports" : "on");
-
-	if (machine.n_sfp) {
-		str_code_to_html("\"," JSONQUOTE("sfp_slot_0") ":\"");
-		send_sfp_info(0);
-		if (machine.n_sfp == 2) {
-			str_code_to_html("\"," JSONQUOTE("sfp_slot_1") ":\"");
-			send_sfp_info(1);
-		}
-	}
-	char_to_html('"');
-	char_to_html('}');
-}
 
 void send_vlan(uint16_t vlan)
 {

@@ -5,9 +5,13 @@
  * which the C start-up does not clear, so it survives a chip reset. The
  * scheduler keeps the slot, state, step start and a ring of the last states
  * current before each step (CRASH_NOTE); crash_die() fills in the rest and
- * the sum, and resets the chip. The next boot prints it once (crash_boot),
- * if this image wrote it: the record carries the build's identity
- * (CRASH_IMAGE_*, build_id.h, generated per build by sched.mk).
+ * the sum, and resets the chip. The next boot keeps it for state.sys.reset
+ * (crash_boot), if this image wrote it: the record carries the build's identity
+ * (CRASH_IMAGE_*, build_id.h, generated per build by sched.mk). An update's
+ * record is kept from the image before, without its slot and states.
+ *
+ * Every reset goes through here with its cause: reset_chip(cause) from main
+ * code (the console drained first), the ISRs by CRASH_FROM_ISR.
  *
  * From an ISR (the watchdog in isr_timer2, ^R ^R in isr_serial) the path is a
  * jump, not a call: a call anywhere in an ISR makes SDCC save every register
@@ -27,10 +31,12 @@
 
 #define CRASH_SWDT	1		/* software watchdog */
 #define CRASH_CTRL_R	2		/* ^R ^R on the console */
-#define CRASH_RESET_CMD	3		/* the reset command */
-/*			4		   reserved, was an update: the image the update boots
-					   isn't the one that wrote the record; the loader
-					   reports an update (watchdog.md) */
+#define CRASH_RESET_CMD	3		/* do sys.reset on the console */
+#define CRASH_UPDATE	4		/* a firmware update: kept by the image it boots
+					   (crash_boot), which isn't the one that wrote it */
+#define CRASH_WEB	5		/* do sys.reset over the web, GET /reset */
+#define CRASH_BUTTON	6		/* the reset button, either hold */
+#define CRASH_FACTORY	7		/* do sys.factory_reset */
 
 #define SWDT_TICKS	1000		/* 5 s */
 
@@ -59,6 +65,7 @@ extern __xdata struct crash_rec crash_last;	/* the record found at boot, for hea
 extern __xdata uint8_t  crash_prior;		/* recorded resets before this boot */
 extern __xdata uint8_t  crash_cause;		/* set before crash_die() */
 extern __xdata uint8_t  crash_pc_sp;		/* address of the PC's high byte, 0 = none */
+extern __xdata uint8_t  crash_pending;		/* a reset's cause, once its reply is out (cli, httpd) */
 extern volatile __xdata uint16_t swdt_cnt;	/* ticks left */
 extern __xdata uint8_t  swdt_on;
 

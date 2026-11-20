@@ -31,6 +31,7 @@
 #include "html_data.h"
 #include "../loader/layout.h"
 #include "flash_job.h"
+#include "crash.h"
 
 /* Private to uip.c, and the client needs them to build segments. */
 #define TCP_FIN 0x01
@@ -146,7 +147,10 @@ uint16_t flash_crc16_more(void) { crc_value = readback_crc; return crc_value; }
 uint32_t mdata_at;
 uint32_t mdata_len_at(void) { return 0; }
 static unsigned reset_calls;
-void reset_chip(void) { reset_calls++; }
+static uint8_t reset_cause;
+static int stream_len, reset_len;	/* the bytes the client had at the reset */
+void reset_chip(uint8_t cause) { reset_calls++; reset_cause = cause; reset_len = stream_len; }
+uint8_t crash_pending;
 
 /* The flash job (flash_job.c), the bench's: it runs at once, through the
  * same calls (httpd.c's upload_prog() and upload_verify() for an upload; the
@@ -293,7 +297,6 @@ bool send_counters(uint8_t phys_port) { (void)phys_port; return false; }
 void send_ports(void) { }
 void send_traffic(void) { }
 void send_vlan(uint16_t vlan) { (void)vlan; }
-void send_basic_info(void) { }
 void send_bandwidth(void) { }
 void send_storm(void) { }
 void send_isolation(void) { }
@@ -864,8 +867,8 @@ static void scenario_upload_reset_owner(void)
 	      "partial verdict ACK sends the remainder without resetting");
 	uip_flags = UIP_ACKDATA;
 	httpd_appcall();
-	CHECK(reset_calls == 1 && slen == 0,
-	      "final verdict ACK resets after all response bytes are acknowledged");
+	CHECK(reset_calls == 1 && slen == 0 && reset_cause == CRASH_UPDATE,
+	      "final verdict ACK resets after all response bytes are acknowledged, cause update");
 
 	reset_calls = 0;
 	loader_update_calls = 0;
@@ -1259,7 +1262,8 @@ static void scenario_reset_after_ack(void)
 	CHECK(reset_calls == 0 && stream_contains("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n"),
 	      "reset: the answer goes out before the switch resets");
 	client_ack(MSS_FULL);
-	CHECK(reset_calls == 1, "reset: the switch resets once the answer is acknowledged");
+	CHECK(reset_calls == 1 && reset_cause == CRASH_WEB,
+	      "reset: the switch resets once the answer is acknowledged, cause web");
 
 	session_start(MSS_FULL);
 	strcpy(session_id, "0123456789ab");
@@ -1269,6 +1273,7 @@ static void scenario_reset_after_ack(void)
 	      "reset: the answer goes out before a closing client resets");
 	client_send(TCP_FIN | TCP_ACK, NULL, 0);
 	CHECK(reset_calls == 1, "reset: a FIN carrying the acknowledgement resets as well");
+	crash_pending = 0;
 }
 
 static void scenario_fragmented_get_cookie(void)
@@ -2249,6 +2254,30 @@ static void scenario_cli_dropped(void)
 	      "/cli dropped: the next /cli is whole");
 }
 
+/* do sys.reset over POST /cli: cli queues the cause; the reply, longer than
+ * outbuf and ended by the close, goes out whole, and the switch resets once
+ * the connection has closed */
+static void scenario_cli_reset_after_ack(void)
+{
+	static char want[STREAM_MAX];
+	int off, len;
+
+	reset_calls = 0;
+	cli_lines = 300;
+	cli_err = ERR_OK;
+	cli_post("/cli", "do sys.reset");
+	crash_pending = CRASH_WEB;	/* what its handler queues */
+	cli_drive(0);
+	len = cli_expect(want);
+	off = body_offset();
+	CHECK(fin_seen && reset_calls == 0 && len > TCP_OUTBUF_SIZE && stream_len - off == len
+	      && !memcmp(stream + off, want, len), "/cli do sys.reset: the whole reply and its FIN, no reset yet");
+	client_send(TCP_FIN | TCP_ACK, NULL, 0);
+	CHECK(reset_calls == 1 && reset_cause == CRASH_WEB && reset_len == stream_len,
+	      "/cli do sys.reset: the reset at the close, cause web");
+	crash_pending = 0;
+}
+
 static void scenario_side_effect_gets(void)
 {
 	static const char *gets[] = { "/reset", "/cmd_log_clear", "/l2_del.json?idx=7" };
@@ -2316,6 +2345,7 @@ int main(int argc, char **argv)
 	scenario_cli_long_reply();
 	scenario_cli_overflow();
 	scenario_cli_dropped();
+	scenario_cli_reset_after_ack();
 	scenario_fragmented_get_cookie();
 	scenario_fragmented_get_cookie_value();
 	scenario_split_get_header_terminator();

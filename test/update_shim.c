@@ -51,7 +51,7 @@ void print_string(const char *p)      { if (shim_verbose) fputs(p, stdout); }
 void print_string_x(char *p)          { if (shim_verbose) fputs(p, stdout); }
 void write_char(char c)               { if (shim_verbose) putchar(c); }
 void write_char_no_syslog(char c)     { if (shim_verbose) putchar(c); }
-void reset_chip(void)                 { longjmp(reset_jmp, 1); }
+void reset_chip(uint8_t cause)        { (void)cause; longjmp(reset_jmp, 1); }
 
 int update_run(void)
 {

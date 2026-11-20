@@ -122,6 +122,42 @@ uint8_t om_do_port_cabletest(uint8_t idx)
 	return OM_OK;
 }
 
+/* sys, state.sys (om_sys.c, sched_health.c) */
+static int sys_resets, sys_factory, sys_rnd;
+
+uint8_t om_get_sys(uint8_t idx)
+{
+	memset(&om_st.sys, 0, sizeof(om_st.sys));
+	strcpy(om_st.sys.version, "v0.1.0-test");
+	om_st.sys.chip = E_CHIP_RTL8373;
+	om_st.sys.ports = 0x1ff;
+	om_st.sys.sfp_ports = 0x100;
+	om_st.sys.uptime_s = 70000;
+	om_st.sys.temp_c = 415;
+	om_st.sys.flash_size = 0x200000;
+	return OM_OK;
+}
+
+uint8_t om_get_sys_reset(uint8_t idx)
+{
+	memset(&om_st.sys_reset, 0, sizeof(om_st.sys_reset));
+	om_st.sys_reset.cause = E_RCAUSE_WEB;
+	strcpy(om_st.sys_reset.slot, "cli");
+	strcpy(om_st.sys_reset.states, "CLI_RUN CLI_NEXT");
+	return OM_OK;
+}
+
+uint8_t om_get_loader(uint8_t idx) { om_st.loader.present = 1; return OM_OK; }
+
+uint8_t om_do_sys_reset(uint8_t idx) { sys_resets++; return OM_OK; }
+uint8_t om_do_sys_factory_reset(uint8_t idx)
+{
+	sys_factory++;
+	om_fail(OM_E_FLASH_BUSY);
+	return OM_ERR;
+}
+uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
+
 /* the test schema's (om_schema/t.py) */
 static int t_sys, t_rnd, t_lag[4], t_stpp[OM_PORTS], t_storm[OM_PORTS * 4], t_vlan;
 static uint16_t t_vlan_old[4], t_vlan_new[4];
@@ -340,10 +376,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: port.* tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get vlan.1", "err vlan.1: port.* sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.sys\nstate.sys.reset\nstate.loader\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -539,6 +575,30 @@ static void kinds(void)
 	expect("get -c tsys.led", "tsys.led off\nok\n");
 
 	expect("do tsys.rnd", "ok\n");
+
+	printf("sys, state.sys\n");
+	expect("do sys.reset", "ok\n");
+	CHECK(sys_resets == 1, "do sys.reset: its handler, once");
+	expect("do sys.rnd", "ok\n");
+	expect("do sys.factory_reset", "err sys.factory_reset: the flash is busy\n");
+	CHECK(sys_rnd == 1 && sys_factory == 1, "do sys.rnd, sys.factory_reset: their handlers");
+	expect("set sys.reset on", "err sys.reset: an action: do it\n");
+	expect("do sys", "err sys: reset factory_reset rnd\n");
+	expect("get state.sys.version state.sys.chip state.sys.ports state.sys.sfp_ports state.sys.ports_10g",
+	       "state.sys.version v0.1.0-test\nstate.sys.chip rtl8373\nstate.sys.ports 1-9\n"
+	       "state.sys.sfp_ports 9\nstate.sys.ports_10g none\nok\n");
+	expect("get state.sys.uptime_s state.sys.temp_c state.sys.flash.size state.sys.poe",
+	       "state.sys.uptime_s 70000\nstate.sys.temp_c 41.5\nstate.sys.flash.size 2097152\n"
+	       "state.sys.poe none\nok\n");
+	expect("get state.sys.reset", "state.sys.reset.cause web\nstate.sys.reset.slot cli\n"
+	       "state.sys.reset.state \nstate.sys.reset.step_ms 0\nstate.sys.reset.pc 0\n"
+	       "state.sys.reset.bank 0\nstate.sys.reset.states CLI_RUN CLI_NEXT\nok\n");
+	expect("get state.loader", "state.loader.present on\nok\n");
+	{
+		const char *o = run("get state.sys");
+		CHECK(!strncmp(o, "state.sys.version ", 18) && strstr(o, "state.sys.button off\nstate.sys.reset.cause web\n") &&
+		      !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state.sys: state.sys.reset as well, after it");
+	}
 	CHECK(t_rnd == 1, "a singleton's action");
 	expect("set tsys.offset 13", "ok\n");
 	expect("apply", "err tsys: test check failed\n");
@@ -667,12 +727,14 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: port.* tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: port.* sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
 		const char *o = run("get state");
-		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") && strstr(o, "state.cfg.confirm_s 0\nstate.tsys.bridge ") &&
+		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
+		      strstr(o, "state.cfg.confirm_s 0\nstate.sys.version ") &&
+		      strstr(o, "state.sys.reset.states CLI_RUN CLI_NEXT\nstate.loader.present on\nstate.tsys.bridge ") &&
 		      status_ok(o) && !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state: the whole state tree");
 	}
 }

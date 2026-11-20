@@ -1066,7 +1066,7 @@ void handle_button(void)
 			else if (diff_sec_counter > 3)
 			{
 				print_string(">3s button detected; resetting chip...\n");
-				reset_chip();
+				reset_chip(CRASH_BUTTON);
 			}
 			else
 			{
@@ -1197,12 +1197,10 @@ uint8_t rx_service(void)
 #endif
 
 
-void reset_chip(void)
+void reset_chip(uint8_t cause)
 {
 	con_drain();	/* what was printed before the reset goes out first */
-	FLASH_READ_FOR_RESET();	/* see rtl837x_sfr.h */
-	REG_SET(RTL837X_REG_RESET, 1);
-	while(1);
+	crash_reset(cause);
 }
 
 

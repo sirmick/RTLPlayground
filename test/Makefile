@@ -194,8 +194,8 @@ $(BUILDDIR)/test_resource_gate: test_resource_gate.py $(wildcard gate/*) $(SRCRO
 # sched_core/sequence.def.
 SCHED_T = $(BUILDDIR)/sched_core
 $(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: test_sched.c sched_core/hw.h sched_core/sequence.def \
-		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -include sched_core/hw.h' test_sched.c >/dev/null
+		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR) $(BUILDDIR)/om/om_gen.h
+	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -I$(BUILDDIR)/om -include sched_core/hw.h' test_sched.c >/dev/null
 	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
 $(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
 	'-DCRASH_RESET()=host_reset()' '-DCRASH_JUMP()=crash_die()' '-DCRASH_IDATA(a)=host_idata[(uint8_t)(a)]'

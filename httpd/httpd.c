@@ -13,6 +13,7 @@
 #include "loader/layout.h"
 #include "update_apply.h"
 #include "flash_job.h"
+#include "crash.h"
 
 // #define DEBUG
 #include "debug.h"
@@ -1208,6 +1209,7 @@ void handle_post(uint16_t body_off)
 		return;
 	} else if (is_word(request_path, "reset")) {
 		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
+		crash_pending = CRASH_WEB;
 	} else if (is_word(request_path, "cmd_log_clear")) {
 		clear_command_history();
 	} else {
@@ -1242,6 +1244,12 @@ static void send_outbuf(void)
 	uip_conn->appstate.tstate = TSTATE_TX;
 }
 
+/* After the reply: the reset queued (do sys.reset, POST /reset), else an update's */
+static void reset_now(void)
+{
+	reset_chip(crash_pending ? crash_pending : CRASH_UPDATE);
+}
+
 void httpd_appcall(void)
 {
 	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
@@ -1270,11 +1278,14 @@ void httpd_appcall(void)
 		webcmd_pending = webcmd_done = webcmd_busy = webcmd_wait = 0;	/* nobody waits for a /cmd */
 		up_active = 0;
 		s->tstate = TSTATE_CLOSED;
-		if (s->fw_reset_pending && uip_acked())
-			reset_chip();
+		/* do sys.reset: a /cli reply ends at the close; POST /reset at its ACK */
+		if (crash_pending || (s->fw_reset_pending && uip_acked()))
+			reset_now();
 	} else if (uip_aborted() || uip_timedout()) {
 		dbg_string("Connection aborted\n");
 		webcmd_pending = webcmd_done = webcmd_busy = webcmd_wait = 0;
+		if (crash_pending)		/* a do sys.reset whose reply was lost */
+			reset_now();
 		up_active = 0;
 		uip_close();
 		s->tstate = TSTATE_CLOSED;
@@ -1354,7 +1365,7 @@ void httpd_appcall(void)
 			// now it is safe to reset and apply the staged image
 			if (s->fw_reset_pending != FW_UPDATE_PENDING || !upload_loader || loader_update()) {
 				print_string("Resetting to apply update\n");
-				reset_chip();
+				reset_now();
 			}
 			s->fw_reset_pending = 0;
 		}
@@ -1450,8 +1461,6 @@ void httpd_appcall(void)
 				send_ports();
 			} else if (!strcmp(q, "/traffic.json")) {
 				send_traffic();
-			} else if (!strcmp(q, "/information.json")) {
-				send_basic_info();
 			} else if (!strcmp(q, "/vlan.json")) {
 				parse_short(q + 15);
 				send_vlan(short_parsed);
