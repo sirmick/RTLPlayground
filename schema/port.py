@@ -25,6 +25,7 @@ message("speed_10g", "speed 5g and 10g only on a 10G port")
 message("ct_running", "a cable test is running")
 message("ct_phy", "no cable test on this PHY")
 message("ct_off", "the port is off")
+message("pvid", "pvid: no such vlan")
 
 state("port", count=PORTS, get="om_get_port")
 st("link", Enum("link", "down up"), label="c_link")

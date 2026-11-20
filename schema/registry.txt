@@ -40,3 +40,7 @@ field 8.4 mgmt.gateway IPV4
 field 8.5 mgmt.vlan U16
 field 2.1 sys.hostname Str(23)
 field 2.2 sys.led Enum(led)
+obj 9 vlan
+field 9.1 vlan.name Str(15)
+field 9.2 vlan.members PMASK
+field 9.3 vlan.tagged PMASK

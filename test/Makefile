@@ -39,7 +39,6 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_om_codec \
         $(BUILDDIR)/test_fwupdate \
         $(BUILDDIR)/test_port_tables \
-        $(BUILDDIR)/test_page_json \
         $(BUILDDIR)/test_httpd_tx \
         $(BUILDDIR)/test_httpd_tx_compact \
         $(BUILDDIR)/test_tick_gate \
@@ -83,12 +82,13 @@ $(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(SR
 $(filter-out $(BUILDDIR)/test_om_gen $(BUILDDIR)/test_sfp_cal,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
 
 # om.c, the engine, UNMODIFIED, over the real schema and om_schema/ (every
-# kind and type no real object uses yet); the handlers are stubs in the test.
+# kind and type no real object uses yet); the handlers are stubs in the test,
+# but om_vlan.c's (the VLAN table calls are).
 OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
 $(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t > /dev/null
 $(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
-OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om_t/om_gen.c
+OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_vlan.c $(BUILDDIR)/om_t/om_gen.c
 $(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
@@ -148,10 +148,6 @@ $(BUILDDIR)/test_ntp: test_ntp.c $(SRCROOT)/ntp.c | $(BUILDDIR)
 # Discard unused TX functions so this RX fixture needs no TX register mocks.
 $(BUILDDIR)/test_nic_rx: test_nic_rx.c $(SRCROOT)/rtl837x_nic.c $(SRCROOT)/rtl837x_nic.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections $(filter %.c,$^) -o $@ $(LDFLAGS) -Wl,--gc-sections
-	$(DEPEND)
-
-$(BUILDDIR)/test_page_json: test_page_json.c $(TABLE_ENV) hw_mock.h | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
 
 # rtl837x_lacp.c is compiled UNMODIFIED from the firmware tree.

@@ -177,6 +177,7 @@ class Obj:
         self.fields, self.entries = [], []
         self.id = 0
         self.dir = SCHEMA["dir"]
+        self.parent = None
         lv = []
         pat = []
         if parent is not None:
@@ -184,6 +185,7 @@ class Obj:
             if not par or len(par[0].levels) != 1 or par[0].levels[0][0] not in ("PORT", "NUM"):
                 raise SystemExit("%s: parent %s must be an object numbered by port or 1-n, "
                                  "declared before it" % (name, parent))
+            self.parent = par[0]
             lv.append(par[0].levels[0])
             pat.append(par[0].pattern)
         pat.append(name)
@@ -308,6 +310,10 @@ def load_schema(dirs, skip=(), js=False):
                 p = os.path.join(d, fn)
                 exec(compile(open(p).read(), p, "exec"), dict(DSL, PORTS="ports"))
     objs = SCHEMA["objs"]
+    # the config objects in apply order (DESIGN 6.21; a child at its parent's), stable,
+    # in the slots config objects had: the state objects stay where the files put them
+    cfg = iter(sorted((o for o in objs if not o.state), key=lambda o: (o.parent or o).order))
+    objs[:] = [o if o.state else next(cfg) for o in objs]
     seen = set()
     for o in objs:
         key = ("state." if o.state else "") + o.regname

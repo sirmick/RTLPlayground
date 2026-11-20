@@ -38,7 +38,6 @@ extern __code const uint8_t * __code const hex;
 
 extern __xdata uint8_t sfr_data[4];
 extern __xdata uint8_t sfp_pins_last;
-extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 
 
 extern __xdata struct flash_region_t flash_region;
@@ -116,66 +115,6 @@ void sfr_data_to_html(void)
 	}
 }
 
-
-void send_vlan(uint16_t vlan)
-{
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	dbg_string("sending VLAN\n");
-	vlan_get(vlan);
-	str_code_to_html("{" JSONQUOTE("untagged_members") ":[");
-
-	// in xdata, as #305 did for the old send_vlan(): internal RAM is full
-	__xdata uint32_t m = ((uint32_t)sfr_data[0] << 24) |
-				((uint32_t)sfr_data[1] << 16) |
-				((uint32_t)sfr_data[2] <<  8) |
-				((uint32_t)sfr_data[3]);
-
-	__xdata uint16_t members = (uint16_t)(m & 0x3FF);
-	__xdata uint16_t untagged = (uint16_t)(((m >> 10) & 0x3FF) & members);
-
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if(members & (1<<i)) {
-			if((untagged & (1<<i))) {
-				itoa_html(machine.log_to_phys_port[i]);
-				json_char_to_html(',');
-			}
-		}
-	}
-	if(outbuf[slen - 1] == ',') {
-		slen--;
-	}
-
-	str_code_to_html("]," JSONQUOTE("tagged_members") ":[");
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if(members & (1<<i)) {
-			if(!(untagged & (1<<i))) {
-				itoa_html(machine.log_to_phys_port[i]);
-				json_char_to_html(',');
-			}
-		}
-	}
-	if(outbuf[slen - 1] == ','){
-		slen--;
-	}
-
-	str_code_to_html("]," JSONQUOTE("name") ":\"");
-	__xdata uint16_t n = vlan_name(vlan);
-	if (n== 0xffff) {
-		dbg_string("VLAN has no name\n");
-	} else {
-		while(vlan_names[n] && vlan_names[n] != ' ')
-			json_char_to_html(vlan_names[n++]);
-	}
-
-	str_code_to_html("\"," JSONQUOTE("pvid") ":[");
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if (port_pvid_get(i) == vlan) { // i is _logical port_
-			json_add_array_uint_item(machine.log_to_phys_port[i]);
-		}
-	}
-	char_to_html(']');
-	char_to_html('}');
-}
 
 void l2_delete(uint16_t idx)
 {
@@ -499,41 +438,3 @@ void send_storm(void)
 	char_to_html(']');
 }
 
-
-void send_vlanlist(void)
-{
-	/* Worst case per entry: {"id":4094,"name":"<117-char name>"} = 138 bytes
-	 * (name bound: CMD_BUF_SIZE=128 minus command prefix); +1 for closing ']'.
-	 * At worst case ~18 VLANs fit; typical configs with short names fit many more. */
-	__xdata uint16_t i;
-	__xdata uint16_t n;
-	uint8_t first = 1;
-
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	str_code_to_html("{" JSONQUOTE("vlan") ":[");
-
-	for (i = vlan_next(1); i < 4095; i = vlan_next(i + 1)) {	/* E4: the bitmap */
-		if (slen + 141 > TCP_OUTBUF_SIZE) /* comma + 138-byte worst-case entry + closing "]}" */
-			break;
-
-		if (!first)
-			char_to_html(',');
-		first = 0;
-
-		str_code_to_html("{" JSONQUOTE("id") ":");
-		itoa16_html(i);
-		str_code_to_html("," JSONQUOTE("name") ":\"");
-
-		n = vlan_name(i);
-		if (n != 0xffff) {
-			while (vlan_names[n] && vlan_names[n] != ' ')
-				json_char_to_html(vlan_names[n++]);
-		}
-
-		char_to_html('"');
-		char_to_html('}');
-
-	}
-	char_to_html(']');
-	char_to_html('}');
-}

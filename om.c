@@ -90,12 +90,17 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 /* the job */
 #define J_GET	1
 #define J_DIFF	2
-#define J_SAVED	3	/* get -s: a record a step */
+#define J_SAVED	3	/* get -s: the sector loaded into the candidate, printed as get -d */
 #define J_SAVE	4	/* the cli waits for the flash job */
 #define J_LOAD	5	/* a load, 256 B of records a step */
 #define J_APPLY	6	/* J_SAVE on: the job runs to its end (CLI_JOB_OMAPPLY) */
 #define J_COPY	7	/* discard: the queued copy */
+#define J_CHECK	8	/* apply's checks, CHECK_N instances a step; then J_APPLY */
+#define J_SET	9	/* set and del, SET_N instances a step (a get's cli job: a window waits) */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
+static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
+static __xdata uint8_t kd;		/* a default entry */
+static __xdata uint8_t j_sv;		/* get -s: printing the loaded sector (bin_line()) */
 static __xdata uint8_t j_hit;		/* get, this path: 1 a field matched, 2 done, 3 failed */
 /* numbers */
 static __xdata uint8_t num[8], num_len, dig[21], k, i, v8, w;
@@ -240,8 +245,9 @@ static __xdata uint8_t *inst(__xdata uint8_t *base)
 #define X_RUN_CAND	2
 #define X_RUN_ROLL	3
 #define X_ROLL_CAND	4
-static __xdata uint8_t * __code const x_dst[] = { CAND, ROLL, RUN, RUN, ROLL };
-static __xdata uint8_t * __code const x_src[] = { RUN, RUN, CAND, ROLL, CAND };
+#define X_CAND_ROLL	5
+static __xdata uint8_t * __code const x_dst[] = { CAND, ROLL, RUN, RUN, ROLL, CAND };
+static __xdata uint8_t * __code const x_src[] = { RUN, RUN, CAND, ROLL, CAND, ROLL };
 #define X_STEPS	((sizeof(struct cfg) + X_CHUNK - 1) / X_CHUNK)
 #define X_LAST	(sizeof(struct cfg) - (X_STEPS - 1) * X_CHUNK)
 static __xdata uint8_t x_q[4], x_n, x_i, x_c;
@@ -1365,6 +1371,7 @@ static void job_inst(void)		/* entering an instance */
 	}
 	cur_f = 0;
 	j_in = 3;
+	j_pr = 0;
 #if OM_USE_KEY
 	/* diff: an entry made or deleted is a line of its own */
 	if (j_mode == J_DIFF && obx.k[0] == IX_KEY) {
@@ -1397,6 +1404,10 @@ static void job_start(uint8_t mode)
 }
 
 static uint8_t f_diff(void);
+static void inst_def(void);
+#if OM_USE_KEY
+static void key_dels(void);
+#endif
 
 /* the next field to print, or 0 at the end of the instance */
 static uint8_t next_field(void)
@@ -1406,7 +1417,7 @@ static uint8_t next_field(void)
 		if (ft == T_ACT || !om_when())
 			continue;
 		if (j_mode == J_GET) {
-			if (fmatch(0) && (!c_def || f_diff()))
+			if (fmatch(0) && (!c_def || f_diff()) && !(j_sv && ft == T_SECRET))
 				return 1;
 		} else {
 			vp = inst(RUN) + fdx.off;
@@ -1439,8 +1450,13 @@ static uint8_t next_obj(void)
 				if (!has_field())
 					continue;
 				j_hit |= 1;
-				if (c_def)
+				if (c_def) {
 					j_hit = 2;	/* -d: a path may have nothing off its default */
+#if OM_USE_KEY
+					if (obx.k[0] == IX_KEY)
+						key_dels();
+#endif
+				}
 			} else if (obx.flags & OM_STATE) {
 				continue;
 			} else {
@@ -1497,9 +1513,13 @@ static void next_instance(void)
  * walks again. The walk has its own cursor (a_o, a_e) and takes the element
  * index straight: no get can run meanwhile (om_cmd() refuses while om_busy).
  */
-__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut;
+__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut, om_full;
 static __xdata uint8_t l_saved;		/* the candidate is the saved config, as loaded */
 static uint8_t check_all(void);
+static void check_start(void);
+static uint8_t check_step(void);
+static uint8_t set_step(void);
+static void set_end(void);
 static __xdata uint8_t a_o, a_e, a_n, a_fo, a_fe, a_timeout;
 
 static void cv_of_e(void)		/* cur_e's indices, for its path in a message */
@@ -1561,7 +1581,7 @@ static uint8_t walk_next(void)
 			if (!a_left--)
 				return 2;
 			cur_e = a_e++;
-			if (memcmp(inst(RUN), inst(a_other), obx.size))
+			if (memcmp(inst(RUN), inst(a_other), obx.size) || (om_full && obx.k[0] != IX_KEY))
 				return 1;
 		}
 	}
@@ -1664,16 +1684,21 @@ static void apply_cmd(void)
 	}
 	if (in_window())
 		return;
-	if (!check_all())
-		return;
 	om_confirm_s = v16;
+	check_start();
+	job_start(J_CHECK);		/* the checks, then the walk: the cli waits, then says how it went */
+}
+
+static void apply_go(void)		/* the checks passed: hand the candidate to the cfg job */
+{
 	if (!om_job_start()) {
 		err_line("err apply: busy\n");
+		j_hit = 3;
 		return;
 	}
 	apply_begin();
 	om_confirmed = 0;
-	job_start(J_APPLY);		/* the cli waits for the walk, then says how it went */
+	j_mode = J_APPLY;
 }
 
 /* the cli's wait for the walk: 1 while it runs; then ok, or err with the instance */
@@ -1710,6 +1735,26 @@ uint8_t om_line(void) __banked
 			return 1;
 		goto done;
 	}
+	if (j_mode == J_SET) {
+		if (set_step())
+			return 1;
+		set_end();
+		j_hit = 3;		/* set_end() said it */
+		goto done;
+	}
+	if (j_mode == J_CHECK) {
+		v8 = check_step();
+		if (v8 == 1)
+			return 1;
+		if (v8) {
+			j_hit = 3;		/* refused: the check said why */
+			goto done;
+		}
+		apply_go();
+		if (j_hit == 3)
+			goto done;
+		return 1;
+	}
 	if (j_mode >= J_SAVED) {
 		if (bin_line())
 			return 1;
@@ -1733,6 +1778,7 @@ uint8_t om_line(void) __banked
 				vp = inst(c_cand ? CAND : RUN) + fdx.off;
 				emit_line();
 				j_hit = 2;
+				j_pr = 1;
 			} else {
 				if (j_in & 1) {
 					print_string("- ");
@@ -1747,11 +1793,31 @@ uint8_t om_line(void) __banked
 			cur_f++;
 			return 1;
 		}
+#if OM_USE_KEY
+		/* get -d: an entry with nothing off its default is one line that
+		 * makes it, its first field; a default entry is just there */
+		if (c_def && !j_pr && j_mode == J_GET && obx.k[0] == IX_KEY) {
+			inst_def();
+			cur_f = 0;
+			sel_field();
+			if (cp == obx.def && fmatch(0)) {
+				vp = inst(c_cand ? CAND : RUN) + fdx.off;
+				emit_line();
+			}
+		}
+#endif
 		next_instance();
 		if (j_mode != J_APPLY)
 			return 1;		/* an instance a step: a keyed one is a pass over the slots */
 	}
 done:
+	if (j_sv) {			/* get -s printed: the candidate back, then running's copy */
+		j_sv = 0;
+		x_add(X_CAND_ROLL);
+		x_add(X_ROLL_RUN);
+		j_mode = J_COPY;
+		return 1;
+	}
 	if (!j_quiet && j_hit != 3)
 		ok();
 	return 0;
@@ -1768,7 +1834,9 @@ static void om_get(void)
 	if (cmd_words_len > 1 && cmd_buffer[cmd_words_b[1]] == '-') {
 		v8 = cmd_buffer[cmd_words_b[1] + 1];
 		c_pw = 2;
-		if (v8 == 's') {		/* the saved config, all of it */
+		if (v8 == 's') {		/* the saved config, all of it: get -d's lines of it */
+			if (in_window())
+				return;
 			if (sector_ok(0))
 				job_start(J_SAVED);
 			return;
@@ -1885,29 +1953,50 @@ static uint8_t key_new(void)
 #endif
 
 #if OM_USE_KEY
-static void key_clear(void)		/* the candidate's entries of obx gone */
+/* get -d: "del <path>" for each default entry the copy lacks, before the
+ * object's other lines (a replay of them can't make it again) */
+static __code const uint8_t * __xdata kdp;
+
+static void def_next(void)		/* the next default entry (kdp from obx.def): its key in kbest */
 {
-	for (ks = 0; ks < obx.n[0]; ks++) {
-		if (!key_at(CAND))	/* cur_e is ks: a free slot is the default already */
-			continue;
-		pend_pre();
-		memcpyc(inst(CAND), obx.def, obx.size);
-		pend_post();
-	}
+	kdp += obx.size;
+	kbest = kdp[0] | (uint16_t)kdp[1] << 8;
 }
 
-/* del of a keyed object: every entry gone, then its default entries again */
-static uint8_t key_reset(void)
+static __xdata uint8_t kf;
+static __xdata uint16_t kr, kk;
+
+static void key_dels(void)
 {
-	key_clear();
+	kf = r_fix;			/* the path's, for next_obj() */
+	kr = r_v;
+	kdp = obx.def;
+	for (kd = 0; kd < obx.ndef; kd++) {
+		def_next();
+		kk = kbest;		/* first_inst() uses kbest */
+		r_fix = 1;		/* the entry, looked up as a path naming it */
+		r_v = kk;
+		first_inst();
+		if (cur_ok)
+			continue;
+		cv = kk;
+		print_string("del ");
+		emit_obj();
+		write_char('\n');
+	}
+	r_fix = kf;
+	r_v = kr;
+}
+
+/* del of a keyed object, after every entry is gone: its default entries again */
+static uint8_t key_defs(void)
+{
 	cp = obx.def;
 	for (k = 0; k < obx.ndef; k++) {
 		cp += obx.size;
 		r_v = cp[0] | (uint16_t)cp[1] << 8;
-		if (!key_new()) {
-			fail("no free entry");
+		if (!key_new())
 			return 0;
-		}
 		pend_pre();
 		memcpyc(vp, cp, obx.size);
 		pend_post();
@@ -1915,6 +2004,62 @@ static uint8_t key_reset(void)
 	return 1;
 }
 #endif
+
+/*
+ * set and del's instances from the cursor, SET_N a step (each two compares
+ * and a copy: 130 us a VLAN): 1 while there are more. j_del 2: del of a
+ * keyed object, its slots from ks, then its default entries.
+ */
+#define SET_N	16
+static __xdata uint8_t j_del, j_any;
+
+static uint8_t set_step(void)
+{
+	a_left = SET_N;
+#if OM_USE_KEY
+	if (j_del == 2) {
+		for (; ks < obx.n[0]; ks++) {
+			if (!a_left--)
+				return 1;
+			if (!key_at(CAND))	/* cur_e is ks: a free slot is the default already */
+				continue;
+			pend_pre();
+			memcpyc(inst(CAND), obx.def, obx.size);
+			pend_post();
+		}
+		j_any = key_defs();
+		return 0;
+	}
+#endif
+	for (; cur_ok; next_inst()) {
+		if (cur_f != 0xff && !om_when())
+			continue;
+		if (!a_left--)
+			return 1;
+		pend_pre();
+		vp = inst(CAND);
+		if (cur_f == 0xff) {
+			memcpyc(vp, def_ptr(), obx.size);
+		} else {
+			vp += fdx.off;
+			if (j_del)
+				memcpyc(vp, def_ptr() + fdx.off, k);
+			else
+				memcpy(vp, om_val, k);
+		}
+		pend_post();
+		j_any = 1;
+	}
+	return 0;
+}
+
+static void set_end(void)		/* ok, or why not */
+{
+	if (j_any)
+		ok();
+	else
+		fail(j_del == 2 ? "table full" : "not on this port");
+}
 
 static void om_set(uint8_t del)
 {
@@ -1930,18 +2075,20 @@ static void om_set(uint8_t del)
 		if (!parse_value())
 			return;
 	}
+	j_del = del;
+	j_any = 0;
 #if OM_USE_KEY
 	if (cur_f == 0xff && obx.k[0] == IX_KEY && !(r_fix & 1)) {
-		if (key_reset())
-			ok();
-		return;
+		j_del = 2;
+		ks = 0;
+		goto step;
 	}
 #endif
 	first_inst();
 #if OM_USE_KEY
 	if (!cur_ok && !del && (r_fix & 1)) {
 		if (!key_new()) {
-			fail("no free entry");
+			fail("table full");
 			return;
 		}
 		first_inst();
@@ -1952,29 +2099,13 @@ static void om_set(uint8_t del)
 		return;
 	}
 	k = fsize();
-	v8 = 0;
-	for (; cur_ok; next_inst()) {
-		if (cur_f != 0xff && !om_when())
-			continue;
-		pend_pre();
-		vp = inst(CAND);
-		if (cur_f == 0xff) {
-			memcpyc(vp, def_ptr(), obx.size);
-		} else {
-			vp += fdx.off;
-			if (del)
-				memcpyc(vp, def_ptr() + fdx.off, k);
-			else
-				memcpy(vp, om_val, k);
-		}
-		pend_post();
-		v8 = 1;
-	}
-	if (!v8) {
-		fail("not on this port");
+step:
+	if (set_step()) {
+		job_start(J_SET);
+		cli_job = CLI_JOB_OM;
 		return;
 	}
-	ok();
+	set_end();
 }
 
 static void om_do(void)
@@ -1999,23 +2130,49 @@ static void om_do(void)
 	ok();
 }
 
-/* every instance's check, on the candidate */
-static uint8_t check_all(void)
+/* every instance's check, on the candidate: CHECK_N instances a step from
+ * (r_o, its cursor). 1: more; 0: all passed; 2: one refused (err printed) */
+#define CHECK_N	8
+static __xdata uint8_t c_go;		/* r_o's instances are being walked */
+
+static void check_start(void)
+{
+	r_o = 0;
+	c_go = 0;
+}
+
+static uint8_t check_step(void)
 {
 	c_inst = 1;
 #if OM_USE_KEY
 	j_copies = 3;		/* entries deleted in the candidate too: a check may refuse it */
 #endif
 	r_fix = 0;
-	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
+	a_left = CHECK_N;
+	for (; r_o < OM_N_OBJ; r_o++, c_go = 0) {
 		sel_obj(r_o);
 		if ((obx.flags & OM_STATE) || obx.check == 0xff)
 			continue;
-		for (first_inst(); cur_ok; next_inst()) {
+		if (!c_go) {
+			first_inst();
+			c_go = 1;
+		}
+		for (; cur_ok; next_inst()) {
+			if (!a_left--)
+				return 1;
 			if (call(obx.check) != OM_OK)
-				return 0;
+				return 2;
 		}
 	}
+	return 0;
+}
+
+static uint8_t check_all(void)		/* at boot: at once */
+{
+	check_start();
+	while ((v8 = check_step()) == 1);
+	if (v8)
+		return 0;
 	return 1;
 }
 
@@ -2043,10 +2200,10 @@ static uint8_t check_all(void)
 					/* one record at most (OM_REC_MAX, tools/om_gen.py) */
 static __xdata uint16_t b_len, b_crc;	/* the records' length and CRC */
 static __xdata uint16_t w_len, w_crc;	/* the save's, to check the read-back against */
-static __xdata uint16_t e_n, l_crc, l_stop;
+static __xdata uint16_t e_n, l_crc;
 static __xdata uint8_t e_b, e_nf, l_phase;
 /* the save's cursor: the next object, and (e_st) the instance to go on at */
-static __xdata uint8_t e_o, e_st, e_ce;
+static __xdata uint8_t e_o, e_st, e_ce, e_k;
 static __xdata uint16_t e_cv;
 #if OM_USE_IX2
 static __xdata uint8_t e_cv1;
@@ -2080,13 +2237,32 @@ static uint8_t code_differs(void)
 	return 0;
 }
 
-/* fdx's value in running is off its default (vp at it); not for actions */
+/* cp: the instance's default. get -d's (c_def): a default entry of a keyed
+ * object has its own (vlan.1's members); else, and for save, the element's */
+static void inst_def(void)
+{
+	cp = def_ptr();
+#if OM_USE_KEY
+	if (!c_def || obx.k[0] != IX_KEY)
+		return;
+	kdp = obx.def;
+	for (kd = 0; kd < obx.ndef; kd++) {
+		def_next();
+		if (kbest == cv)
+			cp = kdp;
+	}
+#endif
+}
+
+/* fdx's value in running (get -c -d: the candidate) is off its default (vp at
+ * it); not for actions */
 static uint8_t f_diff(void)
 {
-	vp = inst(RUN) + fdx.off;
+	vp = inst(c_def && c_cand ? CAND : RUN) + fdx.off;
 	if (ft == T_ACT || !om_when())
 		return 0;
-	cp = def_ptr() + fdx.off;
+	inst_def();
+	cp += fdx.off;
 	x_k = fsize();
 	return code_differs();
 }
@@ -2124,24 +2300,26 @@ static void inst_fields(void)
 }
 
 /* every config element of d_base at its default, and the default entries
- * of keyed objects with the object's last: WALK_N elements a step, from
- * (d_o, d_e); 1 while there are more */
+ * of keyed objects with the object's last: DEF_B bytes a step (an element
+ * at least), from (d_o, d_e); 1 while there are more */
 static __xdata uint8_t * __xdata d_base;
 static __xdata uint8_t d_o, d_e;
+static __xdata uint16_t d_b;
 
-#define DEF_N	8			/* elements a step: from code, slower than a compare */
+#define DEF_B	160			/* bytes a step: from code, ~50 instructions a byte */
 
 static uint8_t def_step(void)
 {
-	a_left = DEF_N;
+	d_b = 0;
 	for (; d_o < OM_N_OBJ; d_o++, d_e = 0) {
 		sel_obj(d_o);
 		if (obx.flags & OM_STATE)
 			continue;
 		r_first = obx.n[0] * obx.n[1];
 		while (d_e < r_first) {
-			if (!a_left--)
+			if (d_b >= DEF_B)
 				return 1;
+			d_b += obx.size;
 			cur_e = d_e++;
 			memcpyc(inst(d_base), def_ptr(), obx.size);
 		}
@@ -2181,12 +2359,16 @@ static uint8_t pend_step(void)
 
 /*
  * The next records into flash_buf (e_n bytes), whole instances, none
- * started past E_ROOM, from the cursor. An instance at its defaults is
+ * started past E_ROOM, at most E_KN of them (each two passes over its
+ * fields: 1.9 ms a VLAN), from the cursor. An instance at its defaults is
  * one compare with the element default.
  */
+#define E_KN	4
+
 static void enc_chunk(void)
 {
 	e_n = 0;
+	e_k = 0;
 	crc_value = b_crc;
 	for (; e_o < OM_N_OBJ; e_o++) {
 		sel_obj(e_o);
@@ -2227,7 +2409,7 @@ static void enc_chunk(void)
 			inst_fields();
 			if (!e_nf && obx.k[0] != IX_KEY)
 				continue;
-			if (e_n >= E_ROOM) {	/* the next step's */
+			if (e_n >= E_ROOM || e_k == E_KN) {	/* the next step's */
 				e_cv = cv;
 				e_ce = ce;
 #if OM_USE_IX2
@@ -2247,6 +2429,7 @@ static void enc_chunk(void)
 			put(e_nf);
 			e_put = 1;
 			inst_fields();
+			e_k++;
 		}
 		e_st = 0;
 	}
@@ -2317,17 +2500,16 @@ static void rd_head(void)
 	b_fmt = E_CFGFORMAT_OK;
 }
 
-/* the CRC over the next 256 B of records: 1 while there are more; then b_fmt
- * ok (rd() at the first record again) or bad */
+/* the CRC over the next CRC_N B of records (a byte is a read and a banked
+ * CRC call: 16 us): 1 while there are more; then b_fmt ok (rd() at the first
+ * record again) or bad */
+#define CRC_N	128
+
 static uint8_t crc_step(void)
 {
 	crc_value = l_crc;
-	i = 0;
-	do {				/* 256 */
-		if (!rd_left)
-			break;
+	for (i = 0; i < CRC_N && rd_left; i++)
 		rd();
-	} while (++i);
 	l_crc = crc_value;
 	if (rd_left)
 		return 1;
@@ -2378,9 +2560,17 @@ static uint8_t dec_next(void)		/* the next instance or field: D_* */
 }
 
 /* the record's object, and its index as a path's (r_fix, r_v, r_v1): 0 if
- * this build has no such object */
+ * this build has no such object. A record's object is mostly the last one's
+ * (d_lo, 0xff none yet): the table isn't searched again for it */
+static __xdata uint8_t d_lo;
+
 static uint8_t d_obj(void)
 {
+	r_o = d_lo;
+	if (r_o != 0xff && om_obj[r_o].id == d_oid) {
+		sel_obj(r_o);
+		goto found;
+	}
 	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {	/* the ID from the table: a descriptor copy each is slow */
 		if (om_obj[r_o].id != d_oid)
 			continue;
@@ -2390,6 +2580,7 @@ static uint8_t d_obj(void)
 	}
 	return 0;
 found:
+	d_lo = r_o;
 	r_fix = 1;
 	r_v = d_ix;
 #if OM_USE_IX2
@@ -2454,6 +2645,7 @@ static uint8_t val_ok(void)
 /* load: rd() at the records; the candidate from the defaults (def_step()
  * first), the records (load_step()), then om_pend (pend_step()) */
 static __xdata uint8_t l_def, l_rec;
+static __xdata uint16_t sv_pend, sv_skip;	/* get -s: what its load mustn't change */
 
 static void load_begin(void)
 {
@@ -2464,6 +2656,7 @@ static void load_begin(void)
 	pend_off = 1;
 	bs.skipped = 0;
 	d_nf = 0;
+	d_lo = 0xff;
 #if OM_USE_KEY
 	j_copies = 2;
 #endif
@@ -2492,25 +2685,26 @@ static uint8_t d_inst(void)
 	return cur_ok;
 }
 
-/* the next 64 B of records into the candidate, or LOAD_KN keyed entries
- * (each a pass over the slots): 0 when they are all in. A record this
- * build can't take is skipped and counted: an unknown object, field or
- * index (its fields with it), a value outside the range */
-#define LOAD_KN	4
-static __xdata uint8_t l_kn;
+/* the next records into the candidate, LOAD_N units a step: an instance or a
+ * field 1 (a field is printed and parsed: val_ok()), a keyed entry LOAD_KU
+ * (three passes over the slots): 0 when they are all in. The budget is per
+ * record, so more objects don't make a step longer. A record this build
+ * can't take is skipped and counted: an unknown object, field or index (its
+ * fields with it), a value outside the range */
+#define LOAD_N	8
+#define LOAD_KU	7
+static __xdata uint8_t l_u;
 
 static uint8_t load_step(void)
 {
-	l_stop = rd_left > 64 ? rd_left - 64 : 0;
-	l_kn = 0;
+	l_u = 0;
 	while (1) {
-		if (rd_left && rd_left <= l_stop)
-			return 1;
-		if (l_kn == LOAD_KN)
+		if (l_u >= LOAD_N)
 			return 1;
 		v8 = dec_next();
 		if (v8 == D_END)
 			return 0;
+		l_u++;
 		if (v8 == D_INST) {
 #if OM_USE_KEY
 			if (d_obj() && obx.k[0] == IX_KEY && !d_ix) {
@@ -2527,7 +2721,7 @@ static uint8_t load_step(void)
 				bs.skipped++;
 #if OM_USE_KEY
 			if (obx.k[0] == IX_KEY)
-				l_kn++;
+				l_u += LOAD_KU - 1;
 #endif
 			continue;
 		}
@@ -2539,36 +2733,6 @@ static uint8_t load_step(void)
 		}
 		memcpy(inst(CAND) + fdx.off, om_val, fsize());
 	}
-}
-
-/* get -s: the saved config's next field that a load takes, as a line (not a
- * Secret); 0 at the end */
-static uint8_t saved_line(void)
-{
-	while ((v8 = dec_next()) != D_END) {
-		if (v8 == D_INST) {
-			d_ok = d_obj();
-#if OM_USE_KEY
-			if (d_ok && obx.k[0] == IX_KEY) {
-				cv = r_v;		/* the key; 0: the object's reset */
-				if (!cv)
-					d_ok = 0;
-				continue;
-			}
-#endif
-			if (d_ok) {
-				first_inst();
-				d_ok = cur_ok;
-			}
-			continue;
-		}
-		if (d_ok && d_field() && ft != T_SECRET && om_when() && val_ok()) {
-			vp = om_val;		/* what a load takes */
-			emit_line();
-			return 1;
-		}
-	}
-	return 0;
 }
 
 static void rd_sector(uint8_t dflt)	/* the saved or the default sector: rd_open() it */
@@ -2655,7 +2819,7 @@ uint16_t om_save_chunk(void) __banked
 	return OM_HDR;
 }
 
-/* its FL_VERIFY steps: the sector's CRC read back, 256 B a step: 1 while
+/* its FL_VERIFY steps: the sector's CRC read back, CRC_N B a step: 1 while
  * there is more */
 uint8_t om_save_end(void) __banked
 {
@@ -2677,14 +2841,15 @@ uint8_t om_save_end(void) __banked
 }
 
 /* boot: the saved config (or the default) into the candidate, all at once;
- * then om_boot_apply(). bs.boot says what the saved sector held. */
+ * then om_boot_apply(). bs.boot says what the saved sector held, on a
+ * recovery boot (the default straight away) too. */
 uint8_t om_boot_load(uint8_t dflt) __banked
 {
-	rd_sector(dflt);
-	if (!dflt) {
-		bs.boot = b_fmt;
-		bs.saved = 0;
-	}
+	rd_sector(0);
+	bs.boot = b_fmt;
+	bs.saved = 0;
+	if (dflt)
+		rd_sector(1);
 	if (b_fmt != E_CFGFORMAT_OK)
 		return b_fmt;
 	load_begin();
@@ -2713,23 +2878,48 @@ static uint8_t bin_line(void)
 			j_hit = 3;
 			return 0;
 		}
-		if (j_mode == J_LOAD)
+		if (j_mode == J_SAVED)		/* the candidate aside, into the rollback copy */
+			x_add(X_ROLL_CAND);
+		if (j_mode != J_SAVE) {
+			sv_pend = om_pend;
+			sv_skip = bs.skipped;
 			load_begin();
+		}
 		return 1;
 	}
-	if (j_mode == J_LOAD) {
-		if (l_def)
+	if (j_mode != J_SAVE) {		/* load; get -s: the sector into the candidate (it aside first) */
+		if (x_step())
+			return 1;
+		if (l_def) {
 			l_def = def_step();
-		else if (l_rec) {
+			return 1;
+		}
+		if (l_rec) {
 			l_rec = load_step();
-			if (!l_rec)
+			if (!l_rec && j_mode == J_LOAD)
 				pend_start();
-		} else
+			return 1;
+		}
+		if (j_mode == J_LOAD)
 			return pend_step();
+		pend_off = 0;			/* get -s: get -c -d of it */
+		om_pend = sv_pend;
+		bs.skipped = sv_skip;
+		c_def = 1;
+		c_cand = 1;
+		j_sv = 1;
+		cmd_words_b[2] = cmd_words_b[1] + 2;	/* every path, as get -d */
+		cmd_words_len = 3;
+		c_pw = 2;
+		r_first = 0xff;
+		j_hit = 0;
+		j_mode = J_GET;
+		j_new = 1;
+#if OM_USE_KEY
+		j_copies = 2 | K_SORT;
+#endif
 		return 1;
 	}
-	if (j_mode == J_SAVED)
-		return saved_line();
 	if (fl_kind == FL_SAVE)
 		return 1;
 	if (bs.save != E_CFGSAVE_DONE) {
@@ -3062,19 +3252,41 @@ void om_init(void) __banked
 }
 
 /* after the boot config's set lines: check and apply them, at once */
+static __xdata uint8_t b_fail, b_fo, b_fe;
+
 void om_boot_apply(void) __banked
 {
 	if (!check_all()) {
 		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
 		goto not_applied;			/* the candidate what was refused (diff) */
 	}
+	/* A soft reset keeps the chip and the PHYs as they were: every instance
+	 * but keyed entries (vlan_setup clears those) is applied whole, at its
+	 * default too, so the defaults are what the chip has after a boot */
+	om_full = 1;
+	b_fail = 0;
 	apply_begin();
 	while ((v8 = om_apply_next()) != OM_A_DONE) {
-		if (v8 == OM_A_FAIL) {
-			if (om_apply_st == E_CFGAPPLY_UNDO)
-				break;
-			om_undo();
+		if (v8 != OM_A_FAIL)
+			continue;
+		if (om_apply_st == E_CFGAPPLY_UNDO)
+			break;			/* the undo failed too */
+		if (!b_fail) {			/* the first is the one to name */
+			b_fail = 1;
+			b_fo = a_fo;
+			b_fe = a_fe;
 		}
+	}
+	om_full = 0;
+	if (b_fail && om_apply_st != E_CFGAPPLY_UNDO) {
+		/* a handler failed: the rest went in whole all the same (the
+		 * hardware is known everywhere); now back to the defaults */
+		a_fo = b_fo;
+		a_fe = b_fe;
+		om_undo();
+		while ((v8 = om_apply_next()) != OM_A_DONE)
+			if (v8 == OM_A_FAIL)
+				break;
 	}
 	om_settle(v8);
 	while (x_step());

@@ -38,8 +38,12 @@ static __code const uint8_t ingress_hw[] = { VLAN_ALL, VLAN_TAGGED, VLAN_UNTAGGE
 uint8_t om_apply_port(uint8_t idx) __banked
 {
 	l = idx;
+	if (!MACHINE_PORT_VALID(l))	/* a logical port this board hasn't (the boot applies them all) */
+		return OM_OK;
 	memcpy(&r, &cfg_run.port[l], sizeof(r));
 	memcpy(&o, &cfg_roll.port[l], sizeof(o));
+	if (om_full)			/* the boot: every field written */
+		memset(&o, 0xff, sizeof(o));
 
 	if (!machine.is_sfp[l]) {
 		chg = r.eee != o.eee;
@@ -90,6 +94,10 @@ uint8_t om_check_port(uint8_t idx) __banked
 {
 	l = idx;
 	memcpy(&r, &cfg_cand.port[l], sizeof(r));
+	if (!om_vlan_known(r.pvid)) {
+		om_fail(OM_E_PVID);
+		return OM_ERR;
+	}
 	if (machine.is_sfp[l])
 		return OM_OK;
 	if (r.duplex != E_DUPLEX_AUTO && r.speed != E_SPEED_10M && r.speed != E_SPEED_100M) {

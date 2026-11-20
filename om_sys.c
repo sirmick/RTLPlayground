@@ -65,7 +65,7 @@ uint8_t om_apply_sys(uint8_t idx) __banked
 	memcpy(hostname, cfg_run.sys.hostname, sizeof(hostname));
 	set_hostname_default();		/* empty: from the MAC */
 	l = cfg_run.sys.led;
-	if (l != cfg_roll.sys.led)	/* the LED registers only for a new setting */
+	if (l != cfg_roll.sys.led || om_full)	/* the LED registers for a new setting, and at boot */
 		leds_off(l != E_LED_ON, l == E_LED_OFF);
 	return OM_OK;
 }

@@ -255,6 +255,8 @@ class Schema:
         t = f.typ
         if isinstance(d, str) and d == "OM_ISOLATE_DEFAULT":
             return struct.pack("<H", self.board.isolate_default())
+        if isinstance(d, str) and d == "OM_PORTS_USER":
+            return struct.pack("<H", self.board.isolate_default() & ~(1 << CPU))
         if t.code == "PMASK":
             return struct.pack("<H", int(d, 0) if isinstance(d, str) else d)
         if t.code == "PORT":
@@ -484,6 +486,35 @@ class Config:
         except Bad as e:
             raise Bad("%s: %s" % (path, e))
 
+    def text(self, secrets=True):
+        """get -d's lines (om.c): each instance's fields off its default (a
+        default entry's own); a keyed object's missing default entries as
+        "del" first; an entry with nothing off its default as its first field."""
+        s, out = self.s, []
+        for o in s.objs:
+            keyed = o.levels and o.levels[0][0] == "KEY"
+            ed = dict(o.entries) if keyed else {}
+            if keyed:
+                for k in [k for k, _ in o.entries if k not in self.keys[o.regname]]:
+                    p = s.path(o, (k,), o.cfields[0])
+                    out.append("del " + p[:p.rindex(".")])
+                insts = [(k,) for k in sorted(self.keys[o.regname])]
+            else:
+                insts = s.instances(o)
+            for ix in insts:
+                lp, vals, shown = s.lport(o, ix), self.v[(o.regname, ix)], False
+                for f in o.cfields:
+                    if not s.board.when(f.when, lp) or vals[f.name] == s.default(o, f, ed.get(ix[0]) if keyed else None):
+                        continue
+                    if f.typ.code == "SECRET" and not secrets:
+                        continue
+                    out.append("%s %s" % (s.path(o, ix, f), s.fmt(o, f, vals[f.name])))
+                    shown = True
+                if keyed and not shown and ix[0] not in ed:
+                    f = o.cfields[0]
+                    out.append("%s %s" % (s.path(o, ix, f), s.fmt(o, f, vals[f.name])))
+        return out
+
     def records(self):
         """The firmware's enc_pass(): the records, without the header."""
         s, out = self.s, bytearray()
@@ -523,8 +554,8 @@ def txt2bin(sch, lines, errs=None):
 
 
 def bin2txt(sch, data, secrets=True, skipped=None):
-    """The lines a load takes (as get -s prints them, with the Secrets unless
-    secrets is False); what it would skip goes to skipped."""
+    """The lines get -s prints (get -d's of the loaded config, with the Secrets
+    unless secrets is False); what the load would skip goes to skipped."""
     if len(data) < HDR or data[:4] != MAGIC:
         raise Bad("blank" if not data or data[0] == 0xff else "bad")
     n, c = struct.unpack("<HH", data[4:8])
@@ -533,16 +564,22 @@ def bin2txt(sch, data, secrets=True, skipped=None):
         raise Bad("bad")
     skipped = [] if skipped is None else skipped
     by_id = {o.id: o for o in sch.objs}
-    out, i = [], 0
+    cfg, i = Config(sch), 0
     while i + 4 <= n:
         oid, rix, nf = r[i], r[i + 1] | r[i + 2] << 8, r[i + 3]
         i += 4
         o = by_id.get(oid)
         ix = sch.from_rec_ix(o, rix) if o else None
-        if o and o.levels and o.levels[0][0] == "KEY" and rix == 0:
+        keyed = o and o.levels and o.levels[0][0] == "KEY"
+        if keyed and rix == 0:          # the reset: its entries follow
+            for k in list(cfg.keys[o.regname]):
+                cfg.keys[o.regname].pop(k)
+                cfg.v.pop((o.regname, (k,)), None)
             ix = None
         elif ix is None:
             skipped.append("object %d index %d" % (oid, rix))
+        elif keyed and (o.regname, ix) not in cfg.v:
+            cfg._entry(o, ix)
         for _ in range(nf):
             fid, ln = r[i], r[i + 1]
             v = bytes(r[i + 2:i + 2 + ln])
@@ -561,16 +598,13 @@ def bin2txt(sch, data, secrets=True, skipped=None):
                 skipped.append(p)
                 continue
             v = v.ljust(size, b"\0")
-            text = sch.fmt(o, f, v)
             try:
-                sch.parse(o, f, text)       # what set takes, as the load checks it
+                sch.parse(o, f, sch.fmt(o, f, v))     # what set takes, as the load checks it
             except Bad:
                 skipped.append(p)
                 continue
-            if f.typ.code == "SECRET" and not secrets:
-                continue
-            out.append("%s %s" % (p, text))
-    return out
+            cfg.v[(o.regname, ix)][f.name] = v
+    return cfg.text(secrets)
 
 
 # ---- the switch: login, /cli -------------------------------------------------

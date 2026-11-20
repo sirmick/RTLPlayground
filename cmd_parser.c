@@ -57,9 +57,6 @@ extern __xdata struct flash_region_t flash_region;
 
 extern __xdata struct dhcp_state dhcp_state;
 
-__xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
-__xdata uint16_t vlan_ptr;
-
 
 extern __xdata uint16_t management_vlan;
 extern __xdata struct uip_eth_addr uip_ethaddr;
@@ -97,17 +94,6 @@ __xdata uint8_t err_status;
 
 __xdata uint16_t atoi_results_short;
 __xdata uint8_t atoi_results_u8;
-
-inline uint8_t isletter(uint8_t l)
-{
-	// return (l >= 'a' && l <= 'z') || (l >= 'A' && l <= 'Z');
-
-	// Make it lowercase
-	l |= 0x20;
-	l -= 'a';
-	return (l <= ('z'-'a'));
-}
-
 
 inline uint8_t isnumber(uint8_t l)
 {
@@ -531,14 +517,6 @@ void parse_mac_cmd(void)
 	print_string("Save the startup config to keep it across reboots\n");
 }
 
-static uint8_t name_char(uint8_t c)
-{
-	if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
-		return '.';
-	return c;
-}
-
-
 void parse_lag(void)
 {
 	__xdata uint8_t group;
@@ -656,117 +634,6 @@ err:
 	cmd_error("laghash <1-4> [smac|dmac|sip|dip|sport|dport]\n");
 }
 
-
-void parse_vlan(void)
-{
-	vlan_settings.vlan = 0;
-	vlan_settings.members = 0;
-	vlan_settings.tagged = 0;
-
-	if (cmd_words_len < 2)
-		goto err;
-
-	// Parse the VLAN number
-	if (atoi_short(cmd_words_b[1]) != 0) {
-		if (atoi_results_short > 4094)
-			goto err;
-		vlan_settings.vlan = atoi_results_short;
-
-		/* the management VLAN is mgmt.vlan now: not a name, the VLAN untouched */
-		if (cmd_compare(2, "mgmt")) {
-			cmd_error("set mgmt.vlan\n");
-			return;
-		}
-
-		// Other commands vlan 0 is invalid
-		if (!vlan_settings.vlan)
-			goto err;
-
-		if (cmd_words_len == 3 && cmd_buffer[cmd_words_b[2]] == 'd') {
-			vlan_delete(vlan_settings.vlan);
-			return;
-		}
-
-		uint8_t w = 2;
-		uint8_t pos = cmd_words_b[w];
-		if (cmd_words_len > w && isletter(cmd_buffer[pos])) {
-			uint8_t i = 0;
-			while (!cmd_is_space_or_nul(pos + i))
-				i++;
-			if (vlan_ptr + i > (VLAN_NAMES_SIZE - 5)) {
-				print_string("VLAN name table full, name ignored\n");
-			} else {
-				vlan_name_remove(vlan_settings.vlan);
-				__xdata uint8_t *vlan_str = &vlan_names[vlan_ptr];
-				*vlan_str++ = hex[(vlan_settings.vlan >> 8) & 0xf];
-				*vlan_str++ = hex[(vlan_settings.vlan >> 4) & 0xf] ;
-				*vlan_str++ = hex[vlan_settings.vlan & 0xf];
-				while(!cmd_is_space_or_nul(pos)) {
-					uint8_t c = name_char(cmd_buffer[pos++]);
-					write_char(c);
-					*vlan_str++ = c;
-				}
-				*vlan_str++ = ' '; *vlan_str = NUL;
-				vlan_ptr = vlan_str - vlan_names;
-				print_string("<\n");
-			}
-			w++;
-		}
-
-		uint8_t ret;
-		uint8_t idx;
-		while (cmd_words_len > w) {
-			idx = cmd_words_b[w++];
-			ret = cmd_parse_port(idx);
-			if (ret == 0)
-				goto err;
-
-			idx += ret;
-			uint16_t pmask = ((uint16_t)1) << atoi_results_u8;
-			vlan_settings.members |= pmask;
-
-			if (cmd_buffer[idx] == 't') {
-				vlan_settings.tagged |= pmask;
-				idx++;
-			}
-
-			if (!cmd_is_space_or_nul(idx))
-				goto err;
-		}
-		vlan_create();
-	} else if (cmd_compare(1, "show")) {
-		vlan_dump();
-	} else {
-		goto err;
-	}
-
-	if (cmd_words_len >= 3 && isletter(cmd_buffer[cmd_words_b[2]])) {
-		print_string("vlan_ptr "); print_short(vlan_ptr); write_char(':');
-		write_char('>'); print_string_x(&vlan_names[0]); write_char('<'); write_char('\n');
-	}
-	return;
-err:
-	cmd_error("vlan (<vlan-id>|show) [port][t]...\n");
-}
-
-
-bool vlan_ingress_mode_parse(char c, __xdata vlan_ingress_mode_t *mode)
-{
-	switch (c) {
-	case 'u':
-		*mode = VLAN_UNTAGGED;
-		return true;
-	case 't':
-		*mode = VLAN_TAGGED;
-		return true;
-	case 'a':
-		*mode = VLAN_ALL;
-		return true;
-	default:
-		*mode = VLAN_INVALID;
-		return false;
-	}
-}
 
 void parse_mirror(void)
 {
@@ -1499,8 +1366,6 @@ void cmd_parser(void) __banked
 				lacp_off();
 			else
 				cmd_error("lacp off; a group starts LACP with: lag <1-4> lacp <port>...\n");
-		} else if (cmd_compare(0, "vlan")) {
-			parse_vlan();
 		} else if (cmd_compare(0, "mirror")) {
 			parse_mirror();
 		} else if (cmd_compare(0, "lag")) {

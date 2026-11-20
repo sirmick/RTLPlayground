@@ -15,7 +15,7 @@ CC_FLAGS += -I$(OM_GEN)
 # schedtest has its own `health`: no state.sched, state.health or state.con
 # (the scheduler's words stay, state.sys.reset's)
 OM_SKIP = $(if $(SCHEDTEST),state_health.py)
-OM_SRCS = om.c om_port.c om_sys.c om_svc.c $(if $(SCHEDTEST),,om_health.c) om_gen.c
+OM_SRCS = om.c om_port.c om_vlan.c om_sys.c om_svc.c $(if $(SCHEDTEST),,om_health.c) om_gen.c
 SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 
