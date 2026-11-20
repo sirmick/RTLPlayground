@@ -59,11 +59,13 @@ static void unblock_all(void)
 }
 
 
-void rldp_set(uint8_t on) __banked
+/* loop (schema/loop.py) */
+uint8_t om_apply_loop(uint8_t idx) __banked
 {
 	__xdata uint16_t pmask = 0;
 
-	if (on) {
+	(void)idx;
+	if (cfg_run.loop.enabled) {
 		if (!rldp_enabled)
 			rldp_blocked = 0;
 		for (uint8_t p = MACHINE_MIN_PORT; p <= MACHINE_MAX_PORT; p++)
@@ -85,7 +87,8 @@ void rldp_set(uint8_t on) __banked
 	rldp_looped = 0;
 	REG_SET(RTL837X_RLDP_LOOP, 0x3ff);
 	REG_SET(RTL837X_RLDP_LEAVE_LOOP, 0x3ff);
-	rldp_enabled = on;
+	rldp_enabled = cfg_run.loop.enabled;
+	return OM_OK;
 }
 
 
@@ -135,13 +138,6 @@ void rldp_tick(void) __banked
 	rldp_blocked = block;
 }
 
-
-/* on or off; the ports: get state.loop */
-void rldp_show(void) __banked
-{
-	print_string("Loop detection: ");
-	print_string(rldp_enabled ? "on\n" : "off\n");
-}
 
 /* state.loop (schema/state_svc.py): none while detection is off */
 uint8_t om_get_loop(uint8_t idx) __banked

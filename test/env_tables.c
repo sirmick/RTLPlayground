@@ -89,7 +89,6 @@ struct flash_region_t flash_region;
 struct syslog_state syslog_state;
 struct dhcp_state dhcp_state;
 bool     stp_enabled;
-bool lldp_enabled;
 uint16_t lldp_logical_port_status;
 uint8_t  leds_mode;
 uint8_t  rldp_enabled;

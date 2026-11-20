@@ -54,8 +54,6 @@ void port_l2mc_set(uint8_t mac_last, __xdata uint16_t vid, __xdata uint16_t pmas
 void port_l2_forget_port(uint8_t port) __banked;
 void vlan_create(void) __banked;
 void vlan_delete(uint16_t vlan) __banked;
-void port_mirror_set(uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked;
-void port_mirror_del(void) __banked;
 bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type) __banked;
 void port_l2_setup(void) __banked;
 uint16_t port_lag_members_get(uint8_t lag) __banked;

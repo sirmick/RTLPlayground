@@ -15,7 +15,6 @@
 #include "phy.h"
 #include "machine.h"
 #include "rtl837x_stp.h"
-#include "rtl837x_rldp.h"
 #include "rtl837x_leds.h"
 #include "page_impl.h"
 #include "syslog.h"
@@ -41,8 +40,6 @@ extern __xdata uint8_t sfp_pins_last;
 
 extern __xdata struct flash_region_t flash_region;
 
-extern __xdata uint16_t lldp_logical_port_status;
-extern __xdata bool lldp_enabled;
 
 
 __code const char * __code const http_storm_names[STORM_TYPES] = { "bcast", "mcast", "ucast", "umcast" };
@@ -162,107 +159,6 @@ void l2_delete(uint16_t idx)
 			char_to_html('1');
 		}
 	}
-	char_to_html('}');
-}
-
-
-void send_mirror(void)
-{
-	dbg_string("send_mirror called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-
-	reg_read_m(RTL837x_MIRROR_CTRL);
-	uint8_t mPort = sfr_data[3];
-	if (mPort & 1) {
-		str_code_to_html("{" JSONQUOTE("enabled") ":true," JSONQUOTE("mirrorPort") ":");
-	} else {
-		str_code_to_html("{" JSONQUOTE("enabled") ":false," JSONQUOTE("mirrorPort") ":");
-	}
-	itoa_html(machine.log_to_phys_port[mPort >> 1]);
-
-	reg_read_m(RTL837x_MIRROR_CONF);
-	uint16_t m = (sfr_data[0] << 8) | sfr_data[1];
-	str_code_to_html("," JSONQUOTE("mirror_rx") ":[");
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if((m >> i) & 1) {
-			json_add_array_uint_item(machine.log_to_phys_port[i]);
-		}
-	}
-	if ((m >> CPU_LOGICAL_PORT) & 1)
-		json_add_array_uint_item(CPU_PHYSICAL_PORT);
-
-	str_code_to_html("]," JSONQUOTE("mirror_tx") ":[");
-	m = (sfr_data[2] << 8) | sfr_data[3];
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if((m >> i ) & 1) {
-			json_add_array_uint_item(machine.log_to_phys_port[i]);
-		}
-	}
-	if ((m >> CPU_LOGICAL_PORT) & 1)
-		json_add_array_uint_item(CPU_PHYSICAL_PORT);
-
-	char_to_html(']');
-	char_to_html('}');
-}
-
-
-void send_lldp(void)
-{
-	dbg_string("send_lldp called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-
-	str_code_to_html("{" JSONQUOTE("on") ":");
-	bool_to_json(lldp_enabled);
-	str_code_to_html("," JSONQUOTE("portStatus") ":[");
-
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-
-		str_code_to_html("," JSONQUOTE("name") ":\"");
-		for (uint8_t j = 0; j < PORT_NAME_SIZE && cfg_run.port[i].name[j]; j++) {
-			json_char_to_html(cfg_run.port[i].name[j]);
-		}
-
-		str_code_to_html("\"," JSONQUOTE("permitted") ":");
-		bool_to_json(1 & (lldp_logical_port_status >> i));
-		char_to_html('}');
-
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
-	char_to_html('}');
-}
-
-static void port_list_to_json(__xdata uint16_t mask)
-{
-	__xdata uint8_t first = 1;
-
-	char_to_html('[');
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		if (!(mask & (1 << i)))
-			continue;
-		if (!first)
-			char_to_html(',');
-		first = 0;
-		itoa_html(machine.log_to_phys_port[i]);
-	}
-	char_to_html(']');
-}
-
-/* Loop detection: {"on":..,"stp":..,"looped":[ports],"blocked":[ports]} */
-void send_loop(void)
-{
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	str_code_to_html("{" JSONQUOTE("on") ":");
-	bool_to_json(rldp_enabled);
-	str_code_to_html("," JSONQUOTE("stp") ":");
-	bool_to_json(stp_enabled);
-	str_code_to_html("," JSONQUOTE("looped") ":");
-	port_list_to_json(rldp_enabled ? rldp_looped : 0);
-	str_code_to_html("," JSONQUOTE("blocked") ":");
-	port_list_to_json(rldp_enabled ? rldp_blocked : 0);
 	char_to_html('}');
 }
 

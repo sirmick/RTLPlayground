@@ -14,8 +14,8 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_port.h"
 #include "phy.h"
+#include "rtl837x_trap.h"
 
-extern __xdata bool lldp_enabled;
 extern __xdata uint8_t sfr_data[4];
 extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
@@ -53,7 +53,7 @@ void lldp_service(void) __banked
 
     timer_reset(&lldp_timer);
 
-    if (!lldp_enabled) {
+    if (!cfg_run.lldp.enabled) {
         lldp_was_enabled = false;
         return;
     }
@@ -221,6 +221,21 @@ void lldp_send(void) __banked __reentrant
 void lldp_shutdown(uint16_t ports) __banked __reentrant
 {
     lldp_send_ports(0, ports);
+}
+
+/* lldp (schema/lldp.py): lldp_service() sends while it is on */
+uint8_t om_apply_lldp(uint8_t idx) __banked
+{
+    (void)idx;
+    if (cfg_run.lldp.enabled) {
+        trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_TRAP);
+        return OM_OK;
+    }
+    if (lldp_was_enabled)
+        lldp_shutdown(lldp_logical_port_status);
+    lldp_was_enabled = false;
+    trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_FORWARD);
+    return OM_OK;
 }
 
 void lldp_set_addresses(void) __banked {

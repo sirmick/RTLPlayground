@@ -16,7 +16,6 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_igmp.h"
 #include "rtl837x_bandwidth.h"
-#include "rtl837x_lldp.h"
 #include "rtl837x_storm.h"
 #include "rtl837x_trap.h"
 #include "rtl837x_cabletest.h"
@@ -29,7 +28,6 @@
 
 #include "machine.h"
 #include "rtl837x_leds.h"
-#include "rtl837x_rldp.h"
 #include "phy.h"
 #include "con_ring.h"
 #include "sched.h"
@@ -39,7 +37,6 @@
 
 extern __code const struct machine machine;
 extern __code const uint8_t log_to_phys_port[9];
-extern __xdata bool lldp_enabled;
 
 extern volatile __xdata uint32_t ticks;
 extern volatile __xdata uint8_t sfr_data[4];
@@ -514,74 +511,6 @@ void parse_mac_cmd(void)
 	write_char('\n');
 	print_string("Save the startup config to keep it across reboots\n");
 }
-
-void parse_mirror(void)
-{
-	__xdata uint8_t mirroring_port = 0;
-	__xdata uint16_t rx_pmask = 0;
-	__xdata uint16_t tx_pmask = 0;
-
-	if (cmd_compare(1, "status")) {
-		reg_read_m(RTL837x_MIRROR_CTRL);
-		uint8_t mPort = sfr_data[3];
-		if (mPort & 1) {
-			print_string("Enabled: ");
-		} else {
-			print_string("NOT Enabled: ");
-		}
-		print_string("Mirroring port: ");
-		print_phys_port(mPort >> 1);
-		reg_read_m(RTL837x_MIRROR_CONF);
-		uint16_t m = sfr_data[0];
-		m = (m << 8) | sfr_data[1];
-		print_string(", Port mask RX: ");
-		print_short(m);
-		m = sfr_data[2];
-		m = (m << 8) | sfr_data[3];
-		print_string(", Port mask TX: ");
-		print_short(m);
-		write_char('\n');
-		return;
-	} else if (cmd_compare(1, "off")) {
-		port_mirror_del();
-		return;
-	}
-
-	if (cmd_words_len < 2)
-		goto err;
-
-	// The first argument is the mirroring (monitor) port
-	uint8_t ret = cmd_parse_port(cmd_words_b[1]);
-	if (ret == 0)
-		goto err;
-	mirroring_port = atoi_results_u8;
-
-	uint8_t w = 2;
-	uint8_t port;
-	while (w < cmd_words_len) {
-		uint8_t idx = cmd_words_b[w++];
-		ret = cmd_parse_port(idx);
-		if (ret == 0)
-			goto err;
-
-		idx += ret;
-		port = atoi_results_u8;
-
-		ret = cmd_buffer[idx];
-		uint16_t pmask = ((uint16_t)1) << port;
-		if (ret != 't')
-			rx_pmask |= pmask;
-		if (ret != 'r')
-			tx_pmask |= pmask;
-	}
-	port_mirror_set(mirroring_port, rx_pmask, tx_pmask);
-	return;
-
-err:
-	cmd_error("Port/command missing: mirror [status/off/<mirroring port> [port][t/r]]...\n");
-	return;
-}
-
 
 void parse_sfp(void)
 {
@@ -1229,18 +1158,8 @@ void cmd_parser(void) __banked
 				cmd_error("\nUsage:\n\tl2 forget\n\t(the table: get state.l2)\n");
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
-		} else if (cmd_compare(0, "igmp")) {
-			if (cmd_compare(1, "on"))
-				igmp_enable();
-			else if (cmd_compare(1, "off"))
-				igmp_setup();
-			else if (cmd_compare(1, "show"))
-				igmp_show();
-			else {
-				cmd_error("igmp on|off|show\n");
-			}
-		} else if (cmd_compare(0, "mirror")) {
-			parse_mirror();
+		} else if (cmd_compare(0, "igmp") && cmd_compare(1, "show")) {
+			igmp_show();	/* the ports' IGMP_PORT_CFG; on or off: get igmp */
 		} else if (cmd_compare(0, "sds")) {
 			print_reg(RTL837X_REG_SDS_MODES);
 			write_char('\n');
@@ -1250,15 +1169,6 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
-		} else if (cmd_compare(0, "loop")) {
-			if (cmd_words_len == 2 && cmd_compare(1, "on"))
-				rldp_set(1);
-			else if (cmd_words_len == 2 && cmd_compare(1, "off"))
-				rldp_set(0);
-			else if (cmd_words_len == 1 || (cmd_words_len == 2 && cmd_compare(1, "show")))
-				rldp_show();
-			else
-				cmd_error("loop [on|off|show]\n");
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {
@@ -1275,20 +1185,7 @@ void cmd_parser(void) __banked
 			parse_bw();
 		} else if (cmd_compare(0, "storm")) {
 			parse_storm();
-		} else if (cmd_compare(0, "lldp")) {
-			if (cmd_compare(1, "on")) {
-				print_string("LLDP enabled\n");
-				lldp_enabled = 1;
-				trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_TRAP);
-			} else {
-				print_string("LLDP disabled\n");
-				if (lldp_enabled)
-					lldp_shutdown(lldp_logical_port_status);
-				lldp_enabled = 0;
-				trap_rma_set(RTL837X_RMA0E_CONF, RTL837X_RMA_ACT_FORWARD);
-			}
-		}
-		else {
+		} else {
 			cmd_error("Unknown command\n");
 		}
 

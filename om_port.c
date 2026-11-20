@@ -2,7 +2,7 @@
  * om_port.c - port.N for the object model (schema/port.py): apply a port's
  * config to the hardware, check it, read its state, start its cable test.
  * The hardware calls are the ones the old port, mtu, pvid, ingress, isolate
- * and eee commands made.
+ * and eee commands made. And mirror (schema/mirror.py), the old mirror's.
  *
  * The instance is copied into fixed xdata structs first: SDCC's code for a
  * fixed address is a fraction of its code through a pointer.
@@ -22,7 +22,7 @@
 
 extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
-extern __xdata bool lldp_enabled;
+extern __xdata bool lldp_was_enabled;
 
 static __xdata struct cfg_port r;	/* running: what to program */
 static __xdata struct cfg_port o;	/* what the hardware had */
@@ -80,7 +80,7 @@ uint8_t om_apply_port(uint8_t idx) __banked
 		port_isolate(l, r.isolate);
 	if (r.lldp != o.lldp) {
 		if (r.lldp == E_LLDP_BLOCK) {
-			if (lldp_enabled)
+			if (lldp_was_enabled)
 				lldp_shutdown((uint16_t)1 << l);
 			lldp_logical_port_status &= ~((uint16_t)1 << l);
 		} else {
@@ -270,4 +270,32 @@ uint8_t om_do_port_cabletest(uint8_t idx) __banked
 {
 	phy_settings.port = idx;
 	return cabletest_run();
+}
+
+/* mirror (schema/mirror.py): the sources, then the mirror port and on */
+uint8_t om_apply_mirror(uint8_t idx) __banked
+{
+	(void)idx;
+	REG_WRITE(RTL837x_MIRROR_CONF, cfg_run.mirror.rx >> 8, cfg_run.mirror.rx,
+		  cfg_run.mirror.tx >> 8, cfg_run.mirror.tx);
+	REG_WRITE(RTL837x_MIRROR_CTRL, 0, 0, 0,
+		  cfg_run.mirror.enabled ? (cfg_run.mirror.port << 1) | 0x1 : 0);
+	return OM_OK;
+}
+
+
+uint8_t om_check_mirror(uint8_t idx) __banked
+{
+	(void)idx;
+	if (cfg_cand.mirror.port == 0xff) {
+		if (!cfg_cand.mirror.enabled)
+			return OM_OK;
+		om_fail(OM_E_MIRROR_PORT);
+		return OM_ERR;
+	}
+	if ((cfg_cand.mirror.rx | cfg_cand.mirror.tx) & ((uint16_t)1 << cfg_cand.mirror.port)) {
+		om_fail(OM_E_MIRROR_SOURCE);
+		return OM_ERR;
+	}
+	return OM_OK;
 }

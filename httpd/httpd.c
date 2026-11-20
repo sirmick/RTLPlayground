@@ -1335,14 +1335,8 @@ void httpd_appcall(void)
 				send_bandwidth();
 			} else if (is_word(q, "/storm.json")) {
 				send_storm();
-			} else if (is_word(q, "/mirror.json")) {
-				send_mirror();
 			} else if (is_word(q, "/stp.json")) {
 				send_stp();
-			} else if (is_word(q, "/lldp.json")) {
-				send_lldp();
-			} else if (is_word(q, "/loop.json")) {
-				send_loop();
 			} else if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */
 				strtox(config_buf, "get -s");

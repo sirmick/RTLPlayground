@@ -15,6 +15,7 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_igmp.h"
 #include "machine.h"
+#include "om_gen.h"
 
 extern __code const struct machine machine;
 extern __xdata uint8_t igmpEnabled;
@@ -92,7 +93,6 @@ struct igmp_pkt {
 void igmp_setup(void) __banked
 {
 	uint8_t i;
-	print_string("igmp_setup called\n");
 	igmpEnabled = 0;
 	// For now, forward all unkown IP-MC pkts (2 bits per port. 00: flood via floodmask, 01: drop, 10: trap, 11: to rport)
 	REG_SET(RTL837X_IPV4_PORT_MC_LM_ACT, LOOKUP_MISS_FLOOD);
@@ -106,6 +106,7 @@ void igmp_setup(void) __banked
 	REG_SET(RTL837X_IPV6_UNKN_MC_FLD_PMSK, mask);
 
 	reg_bit_clear(RTL837X_L2_CTRL, L2_CTRL_LUT_IPMC_HASH);
+	REG_SET(RTL837X_IGMP_TRAP_CFG, 0);
 
 	/* Configure per-port IGMP operations when protocol messages are received
 	 * bits 0-9 enable MC protocol snooping
@@ -138,9 +139,14 @@ void igmp_setup(void) __banked
 }
 
 
-void igmp_enable(void) __banked
+/* igmp (schema/igmp.py): off is the setup again */
+uint8_t om_apply_igmp(uint8_t idx) __banked
 {
-	print_string("igmp_enable called\n");
+	(void)idx;
+	if (!cfg_run.igmp.enabled) {
+		igmp_setup();
+		return OM_OK;
+	}
 	igmpEnabled = 1;
 	// Enable lookup of IPv4 MC addresses in table
 	reg_bit_set(RTL837X_L2_CTRL, L2_CTRL_LUT_IPMC_HASH);
@@ -156,24 +162,12 @@ void igmp_enable(void) __banked
 	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
 		REG_SET(RTL837X_IGMP_PORT_CFG + (i << 2), IGMP_MAX_GROUP | IGMP_PROTOCOL_ENABLE | IGMP_TRAP);
 	}
+	return OM_OK;
 }
 
 
 /*
- * Configures the IGMP static router port(s) that will receive all IGMP
- * Report and Leave messages
- */
-void igmp_router_port_set(uint16_t pmask) __banked
-{
-	print_string("igmp_router_port_set: "); print_short(pmask); print_string(", currently set to:\n");
-	reg_read_m(RTL837X_IGMP_ROUTER_PORT);
-	print_sfr_data(); write_char('\n');
-	REG_WRITE(RTL837X_IGMP_ROUTER_PORT, sfr_data[0], sfr_data[1], pmask >> 8, pmask & 0xff);
-}
-
-
-/*
- * IGMP show the current entries and state
+ * IGMP show the current entries and state (until state.dbg.igmp.port.N, P7)
  */
 void igmp_show(void) __banked
 {

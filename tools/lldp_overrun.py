@@ -6,11 +6,12 @@ firmware image, through ovs-rtlpg's old-vs-new bench (tests/oldnew).
   tools/lldp_overrun.py BOOT_IMAGE [--ovs DIR] [--board FILE]
 
 Since D3 LLDP builds its frames in ctl_buf (net.md), not uip_buf. With the
-longest hostname (23), a 31-character port name and named VLANs, lldp on:
-every LLDP frame the switch sends parses to its End TLV and carries the
+longest hostname (23), a 31-character port name and named VLANs, lldp.enabled
+on: every LLDP frame the switch sends parses to its End TLV and carries the
 hostname, the port name and the version; and the VLAN names, the hostname
 and the port name read the same after the sends as before (ctl_buf is
-followed by ctl_len, tx_buf, tx_len and then cmd_parser's vlan_names).
+followed by ctl_len, tx_buf, tx_len; the names are in the object model's
+config copies since P4-2, read with get).
 Exit status 1 if any fails (expected at f142690: ctl_buf was 164 B).
 """
 import argparse, os, re, struct, sys
@@ -60,7 +61,7 @@ def main(argv):
     from oldnew import Run
 
     fails = []
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None, om=("state.mgmt",))	# its address: get state.mgmt.ip
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None, om=("state.mgmt", "vlan", "lldp"))	# its address: get state.mgmt.ip
     b = r.b
     try:
         r.boot()
@@ -71,22 +72,17 @@ def main(argv):
             before, out = b.console(line, b.now + ms * 1000)
             return out or ""
 
-        for line in (f"set sys.hostname {HOSTNAME}", f"vlan 10 tenname {F[1]} {F[2]}t",
-                     f"vlan 20 twentyname {F[2]} {F[1]}t", f"set port.{F[0]}.name {PORTNAME}", "apply"):
+        for line in (f"set sys.hostname {HOSTNAME}", "set vlan.10.name tenname", f"set vlan.10.members {F[1]},{F[2]}",
+                     f"set vlan.10.tagged {F[2]}", "set vlan.20.name twentyname", f"set vlan.20.members {F[1]},{F[2]}",
+                     f"set vlan.20.tagged {F[1]}", f"set port.{F[0]}.name {PORTNAME}", "apply"):
             cli(line)
-        r.login()
-        r._now()
 
-        def vlanlist():
-            resp = r.host.http(b"GET /vlanlist.json HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n",
-                               b.now + 5000000)
-            return (resp or b"").partition(b"\r\n\r\n")[2].decode("latin-1")
-
-        state = lambda: [vlanlist()] + [cli(c) for c in ("get sys.hostname", f"get port.{F[0]}.name")]
+        state = lambda: [cli(c) for c in ("get vlan.*.name", "get sys.hostname", f"get port.{F[0]}.name")]
         before = state()
         tap = Tap()
         b.devices.append(tap)
-        cli("lldp on")
+        cli("set lldp.enabled on")
+        cli("apply")
         b.advance(b.now + 70 * 1000000)
         after = state()
         version = re.search(r"state\.sys\.version (\S+)", cli("get state.sys.version"))

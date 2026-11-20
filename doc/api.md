@@ -74,7 +74,6 @@ Each is a GET, needs the cookie, and goes when its object moves:
 |---|---|---|
 | `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
 | `/stp.json` | P4-4 | `stp.*`, `state.stp` |
-| `/lldp.json`, `/loop.json`, `/mirror.json` | P4-5 | `lldp.*`, `loop.*`, `mirror.*` |
 | `/bandwidth.json`, `/storm.json` | P4-6 | `port.N.bw_*`, `port.N.storm.*` |
 
 ## bandwidth
@@ -96,47 +95,6 @@ Array of port properties (until P4-6)
 | `iAction` | Action to preform on limit exceedence, "drop" - drop frame "fc" - use TCP flow control
 | `eLimited` | Apply egress (outbound) limit
 | `eBW` | The egress rate limit applied
-
-## lldp (until P4-5)
-```json
-{
-    "on":1,
-    "portStatus":[
-        {"port":1,"name":"","permitted":true},
-        ...
-    ]
-}
-```
-| Property | Description
-|----------|------------
-| `on` | Global LLDP on/off, in off the switch will forward LLDPDU's (like a "dumb switch")
-| `PortStatus` | Array of LLDP Port Configurations
-
-### LLDP Port Configurations
-
-| Property | Description
-|----------|------------
-| `port` | Physical port number
-| `name` | The name of the port
-| `permitted` | if true, the switch transmits LLDPBUs on this port, if false it does not
-
-
-## mirror (until P4-5)
-```json
-{
-    "enabled":false,
-    "mirrorPort":1,
-    "mirror_rx":[],
-    "mirror_tx":[]
-}
-```
-| Property | Description
-|----------|------------
-| `enabled` | Whether port mirroring is enabled or not
-| `mirrorPort` | The port that will receive the mirrored data
-| `mirror_rx` | List of physical port numbers that the mirror will receive a copy of received packets for
-| `mirror_tx` | List of physical port numbers that the mirror will receive a copy of transmitted packets for
-
 
 ## stp (until P4-4)
 ```json
