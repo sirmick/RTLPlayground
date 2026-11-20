@@ -20,6 +20,9 @@
 #define CON_RX_SIZE	256	/* 8-bit indexes wrap by themselves: ~22 ms of input at
 				 * 115200, more than a 20 ms step (decision 19) */
 #define CON_RX_MASK	(CON_RX_SIZE - 1)
+#if CON_RX_SIZE != 256			/* the editor's and om_tab()'s uint8_t indexes wrap at it */
+#error CON_RX_SIZE must be 256
+#endif
 #define CON_TX_SIZE	2048	/* a power of 2: most commands print without waiting */
 #define CON_TX_MASK	(CON_TX_SIZE - 1)
 #define CON_TX_LINE	100	/* HW_CON_TX: room for a line */

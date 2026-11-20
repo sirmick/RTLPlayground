@@ -19,6 +19,7 @@
 #include "rtl837x_cabletest.h"
 #include "sfp.h"
 #include "cmd_editor.h"
+#include "om.h"
 #include "cmd_parser.h"
 #include "httpd/httpd.h"
 #include "flash_job.h"
@@ -97,6 +98,8 @@ STEP(con, edit)
 	cmd_edit();
 	if (con_line_ready)
 		task_wake(T_CLI);
+	if (con_tab == OM_TAB_MORE)	/* a Tab's walk: its next step, the next pass */
+		return S_CON_EDIT;
 	return STEP_WAIT(S_CON_EDIT, HW_CON_RX, SCHED_FOREVER);
 }
 

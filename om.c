@@ -35,6 +35,8 @@
 #include "flash_job.h"
 #include "layout.h"
 #include "om_gen.h"
+#include "cmd_editor.h"
+#include "con_ring.h"
 
 extern __code const struct machine machine;
 extern __xdata uint8_t cmd_words_len;
@@ -113,6 +115,11 @@ static void sel_field(void)		/* obx's field cur_f */
 {
 	memcpyc((__xdata uint8_t *)&fdx, (__code const uint8_t *)&obx.f[cur_f], sizeof(fdx));
 	ft = fdx.tw & T_TYPE;
+}
+
+static void word(uint8_t n)		/* p at the command's word n */
+{
+	p = cmd_buffer + cmd_words_b[n];
 }
 
 static uint8_t ch(void)			/* the character at p: a call is much smaller code */
@@ -330,7 +337,7 @@ static void emit_obj(void)		/* the instance's path: "port.3", "vlan.10" */
 
 static void print_path_word(void)	/* the command's path, as typed */
 {
-	p = cmd_buffer + cmd_words_b[c_pw];
+	word(c_pw);
 	while (!at_end()) {
 		write_char(ch() < 0x21 || ch() > 0x7e ? '?' : ch());
 		take();
@@ -1100,11 +1107,20 @@ static uint8_t call(uint8_t fn)
 
 /* ---- paths ------------------------------------------------------------ */
 
+static void path_at(void);
+
 static void path_start(void)		/* the path word c_pw: its tree */
 {
-	p = cmd_buffer + cmd_words_b[c_pw];
+	word(c_pw);
+	path_at();
+}
+
+static __code const char s_state[] = "state";
+
+static void path_at(void)		/* the path at p */
+{
 	r_st = OM_CFG;
-	if (seg_is("state")) {
+	if (seg_is(s_state)) {
 		r_st = OM_STATE;
 		if (ch() == '.')
 			take();
@@ -1240,6 +1256,7 @@ static uint8_t fmatch(uint8_t exact)
 	}
 	if (!(*q == ' ' || *q == 0))
 		return 0;
+	cp = (__code const uint8_t *)s;	/* the rest of the name (om_tab()) */
 	if (!*s)
 		return 1;
 	return !exact && (q == r_rest || *s == '.');
@@ -1578,7 +1595,7 @@ static void apply_cmd(void)
 	c_pw = 0;
 	v16 = 0;
 	if (cmd_words_len > 1) {
-		p = cmd_buffer + cmd_words_b[1];
+		word(1);
 		if (!parse_dec() || num[2] | num[3] || !at_end() ||
 		    !(v16 = num[0] | (uint16_t)num[1] << 8) || v16 > 3600) {
 			fail("1-3600 seconds");
@@ -2515,10 +2532,12 @@ static uint8_t sector_ok(uint8_t dflt)
 	return 0;
 }
 
+static __code const char w_load[] = "saved\0default\0";	/* load's words: om_tab() completes them */
+
 static void load_cmd(void)
 {
-	p = cmd_buffer + cmd_words_b[1];
-	if (cmd_words_len != 2 || !(seg_is("saved") || seg_is("default"))) {
+	word(1);
+	if (cmd_words_len != 2 || !(seg_is(w_load) || seg_is(w_load + 6))) {
 		err_line("err load: saved or default\n");
 		return;
 	}
@@ -2661,45 +2680,310 @@ static uint8_t bin_line(void)
 	return 0;
 }
 
-void om_cmd(void) __banked
+/* the verbs, in om_cmd()'s order: om_tab() completes them too */
+static __code const char om_verbs[] =
+	"get\0set\0del\0do\0diff\0apply\0confirm\0discard\0save\0load\0";
+#define V_DO	3
+#define V_PATH	4	/* get to diff: a path */
+#define V_LOAD	9
+
+static uint8_t verb_of(void)		/* the verb at p: its index, or 0xff */
 {
+	cp = (__code const uint8_t *)om_verbs;
+	for (k = 0; *cp; k++) {
+		if (seg_is((__code const char *)cp))
+			return k;
+		skip1();
+	}
+	return 0xff;
+}
+
+uint8_t om_cmd(void) __banked
+{
+	word(0);
+	k = verb_of();
+	if (k == 0xff)
+		return 0;
 	if (om_busy()) {			/* the walk shares the engine's cursor */
 		err_line("err: applying\n");
-		return;
+		return 1;
 	}
 	c_inst = 0;
 	c_def = 0;
-	p = cmd_buffer + cmd_words_b[0];
-	if (seg_is("get")) {
+	switch (k) {
+	case 0:
 		om_get();
-	} else if (seg_is("set")) {
-		om_set(0);
-	} else if (seg_is("del")) {
-		om_set(1);
-	} else if (seg_is("do")) {
+		break;
+	case 1: case 2:
+		om_set(k - 1);
+		break;
+	case 3:
 		om_do();
-	} else if (seg_is("diff")) {
+		break;
+	case 4:
 		job_start(J_DIFF);
-	} else if (seg_is("apply")) {
+		break;
+	case 5:
 		apply_cmd();
-	} else if (seg_is("confirm")) {
+		break;
+	case 6:
 		if (om_apply_st != E_CFGAPPLY_CONFIRM) {
 			err_line("err confirm: no window\n");
-			return;
+			break;
 		}
 		om_confirmed = 1;
 		om_job_wake();
 		ok();
-	} else if (seg_is("discard")) {
+		break;
+	case 7:
 		x_add(X_CAND_RUN);
 		om_pend = 0;
 		l_saved = 0;
 		job_start(J_COPY);
-	} else if (seg_is("save")) {
+		break;
+	case 8:
 		save_cmd();
-	} else if (seg_is("load")) {
+		break;
+	default:
 		load_cmd();
 	}
+	return 1;
+}
+
+/*
+ * Tab completion (DESIGN.md 13): con_line's last word, at the cursor, against
+ * the verbs, the tables' paths and load's words (not a value after set: the
+ * bytes). The line goes into cmd_buffer (cli is idle: no job) and the
+ * word's segments before its last '.' are matched as a command's path; each
+ * candidate is printed into om_txt (the capture) and t_best keeps their
+ * common prefix, or the list prints it (an object name's segment as often as
+ * objects have it: "stp. stp."). A step takes one object the path names
+ * (from t_o) and T_STEP of its candidates: it walks to them from the start
+ * again (the engine keeps nothing between steps) and builds only its own.
+ */
+#define T_STEP	4			/* candidates a step: the walk is again each step */
+static __xdata uint8_t t_list, t_n, t_v, t_i, t_from, t_more, t_o, t_adv;
+static __xdata uint8_t * __xdata t_pre;	/* the word's part a candidate starts with */
+static __xdata uint8_t t_best[OM_TXT];	/* the candidates' common part */
+
+static uint8_t t_skip(void)		/* a candidate, not this step's */
+{
+	if ((uint8_t)(t_i++ - t_from) < T_STEP)
+		return 0;
+	if (t_i > t_from)
+		t_more = 1;
+	return 1;
+}
+
+static void t_same(void)		/* p past its common prefix with om_txt, k its length */
+{
+	for (k = 0; ch() && ch() == om_txt[k]; k++)
+		take();
+}
+
+static void t_cand(void)		/* om_txt's candidate, if it starts as the word does */
+{
+	write_char(0);
+	om_cap = 0xff;
+	p = t_pre;
+	t_same();
+	if (ch())
+		return;
+	if (t_list) {
+		om_cap = 0;
+		write_char(' ');
+		print_string_x((__xdata char *)om_txt);
+		om_cap = 0xff;
+	} else if (!t_n) {
+		memcpy(t_best, om_txt, OM_TXT);
+	} else {
+		p = t_best;
+		t_same();
+		*p = 0;
+	}
+	t_n++;
+}
+
+static void t_seg(uint8_t end)		/* cp's segment, then '.' if one follows, else end */
+{
+	if (t_skip())
+		return;
+	om_cap = 1;
+	while (*cp && *cp != '.')
+		write_char(*cp++);
+	write_char(*cp == '.' ? '.' : end);
+	t_cand();
+}
+
+static void t_words(void)		/* cp's words */
+{
+	while (*cp) {
+		t_seg(' ');
+		skip1();
+	}
+}
+
+static void t_num(void)			/* v16 and '.' */
+{
+	if (t_skip())
+		return;
+	om_cap = 1;
+	itoa_short(v16);
+	write_char('.');
+	t_cand();
+}
+
+static void t_ix(void)			/* level lv's indices */
+{
+	lvl_load();
+#if OM_USE_WORD
+	if (lk == IX_WORD) {
+		words(la);
+		while (*cp) {
+			t_seg('.');
+			skip1();
+		}
+		return;
+	}
+#endif
+	for (w = 1; w <= ln; w++) {
+		v16 = w;
+#if OM_USE_KEY
+		if (lk == IX_KEY) {
+			ks = w - 1;
+			v16 = key_at(CAND);
+			if (!v16)
+				continue;
+		}
+#endif
+		if (lk != IX_PORT || log_of(w) != 0xff)
+			t_num();
+	}
+}
+
+uint8_t om_tab(uint8_t arg) __banked
+{
+	if (arg != OM_TAB_MORE) {
+		t_list = arg - OM_TAB_NEW;
+		t_from = 0;
+		t_o = 0;
+		t_n = 0;
+		t_best[0] = 0;
+		if (t_list)
+			write_char('\n');
+	}
+	if (cursor != cmd_line_len || om_busy() || cli_job)
+		goto bel;
+	con_line[cmd_line_len] = 0;
+	memcpy(cmd_buffer, con_line, CMD_BUF_SIZE);
+	cmd_tokenize();
+	if (err_status)
+		goto bel;
+	r_path = t_pre = cmd_buffer;		/* the last word; its part after its last '.' */
+	for (p = cmd_buffer; ch(); ) {
+		v8 = take();
+		if (v8 == ' ')
+			r_path = t_pre = p;
+		else if (v8 == '.')
+			t_pre = p;
+	}
+	if (*r_path)				/* none yet after a space */
+		cmd_words_len--;
+	t_i = 0;
+	t_more = 0;
+	t_adv = 0;
+	om_cap = 0xff;				/* ix_parse()'s err: nowhere */
+	if (!cmd_words_len) {
+		cp = (__code const uint8_t *)om_verbs;
+		goto words;
+	}
+	word(0);
+	t_v = verb_of();
+	if (t_v == V_LOAD && cmd_words_len == 1) {
+		cp = (__code const uint8_t *)w_load;
+		goto words;
+	}
+	if (t_v > V_PATH || (t_v && cmd_words_len > 1))
+		goto end;			/* a path: get's words, the others' first */
+	if (t_pre[-1] == '.') {			/* the path: the word to its last '.' */
+		t_pre[-1] = 0;
+		p = r_path;
+	} else {				/* none: an empty path */
+		if (!t_o) {
+			cp = (__code const uint8_t *)s_state;
+			t_seg('.');
+		}
+		p = &zero;
+	}
+	path_at();
+	for (r_o = t_o; r_o < OM_N_OBJ; r_o++) {	/* the next object the path names: one a step */
+		sel_obj(r_o);
+		if (match() != 1)
+			continue;
+		t_adv = 1;
+		if (nc() == '.')
+			np++;
+		if (nc()) {			/* the name's next segment */
+			if (nc() == '#') {
+				t_ix();
+			} else {
+				cp = (__code const uint8_t *)np;
+				t_seg('.');
+			}
+			break;
+		}
+		for (cur_f = 0; cur_f < obx.nf; cur_f++) {
+			sel_field();
+			if ((ft == T_ACT) != (t_v == V_DO))
+				continue;
+			if (!fmatch(0) || !*cp)		/* under the path: cp its rest */
+				continue;
+			if (*cp == '.')
+				cp++;
+			t_seg(' ');
+		}
+		break;
+	}
+	goto end;
+words:
+	t_words();
+end:
+	om_cap = 0;
+	if (t_more) {
+		t_from += T_STEP;
+		return OM_TAB_MORE;
+	}
+	if (t_adv) {				/* the object after it, next step */
+		t_o = r_o + 1;
+		t_from = 0;
+		return OM_TAB_MORE;
+	}
+	if (t_list) {
+		print_cmd_prompt();
+		print_string_x((__xdata char *)con_line);
+		return 1;
+	}
+	/*
+	 * The completion goes into the RX ring in front of what came after the
+	 * Tab, and the editor types it in. The reader's con_rx_tail moves back a
+	 * byte at a time, and never to within 3 of the ISR's head: the ISR never
+	 * writes the byte before the tail (CON_ISR_RX's full).
+	 */
+	if (t_n) {
+		memcpy(om_txt, t_best, OM_TXT);
+		p = t_pre;
+		t_same();			/* k: the word's part, t_best's start */
+		for (w = k; t_best[w]; w++);
+		if (w != k) {
+			while (w != k && (uint8_t)(con_rx_head - con_rx_tail) < CON_RX_SIZE - 3)
+				con_rx_buf[--con_rx_tail] = t_best[--w];
+			return 0;
+		}
+	}
+bel:
+	om_cap = 0;
+	write_char('\a');
+	return 1;
 }
 
 void om_init(void) __banked

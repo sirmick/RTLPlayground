@@ -29,7 +29,7 @@ uint8_t                  cmd_buffer[CMD_BUF_SIZE];   /* ASan-instrumented: OOB c
 uint8_t                  err_status;
 uint8_t                  cli_job;        /* cmd_parser.c: a dump as the cli's job (E1) */
 uint8_t                  cmd_history[CMD_HISTORY_SIZE];
-uint16_t                 cmd_history_ptr;
+uint8_t                  cmd_history_ptr;	/* 8 bits: CMD_HISTORY_SIZE is 256 */
 __xdata uint16_t         session_timeout = 200;   /* httpd global, referenced by page_impl.c */
 
 
@@ -54,6 +54,10 @@ static void out_putc(char c) {
     }
     if (out_len < sizeof(out_buf) - 1) { out_buf[out_len++] = c; out_buf[out_len] = 0; }
 }
+
+/* om.c's, which the editor calls: weak, for the tests that don't link om.c */
+__attribute__((weak)) void om_prompt(void) {}
+__attribute__((weak)) uint8_t om_tab(uint8_t list) { (void)list; return 1; }
 
 /* --- mocked print helpers (signatures match rtl837x_common.h post-shim) ---- */
 void write_char(char c)            { out_putc(c); }
