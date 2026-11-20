@@ -455,20 +455,7 @@ class Handler(SimpleHTTPRequestHandler):
                 "mtu": f"0x{16383 if i % 2 else 1522:04x}",
             }
 
-            if machine_config["is_sfp"][i]:
-                item.update({
-                    "sfp_vendor": "OEM",
-                    "sfp_model": "10G-SFP+",
-                    "sfp_serial": "12345678",
-                    "sfp_options": "0x68",
-                    "sfp_temp": f"0x{0x28fb + secrets.randbelow(100):04x}",
-                    "sfp_vcc": f"0x{0x7eda + secrets.randbelow(100):04x}",
-                    "sfp_txbias": f"0x{0x0d24 + secrets.randbelow(100):04x}",
-                    "sfp_txpower": f"0x{0x14bd + secrets.randbelow(100):04x}",
-                    "sfp_rxpower": "0x0000",
-                    "sfp_laser": "0x0000",
-                })
-            else:
+            if not machine_config["is_sfp"][i]:
                 if i == 1:
                     item["adv"] = [ "2.5G" ]
                 elif i == 2:
