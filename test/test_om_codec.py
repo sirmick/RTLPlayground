@@ -176,6 +176,30 @@ def p41_schema(board=None):
     return sch
 
 
+VLAN_PY = """const("MAX_VLANS", 64)
+obj("vlan", keyed=U16(1, 4094), max="MAX_VLANS", apply="om_apply_vlan", check="om_check_vlan", order=30, tip="A VLAN")
+cfg("name", Str(15), "", tip="A name")
+cfg("members", PortMask(), 0, tip="Its ports")
+cfg("tagged", PortMask(), 0, tip="The tagged members")
+default_entry(1)
+"""
+
+
+def vlan_schema_dir():
+    """The tree's schema and a vlan.V as P4-2's (its IDs, 64 entries,
+    VLAN 1 by default), until P4-2 brings the real one: a directory."""
+    import shutil
+    import tempfile
+    d = tempfile.mkdtemp()
+    for f in os.listdir(os.path.join(HERE, "..", "schema")):
+        shutil.copy(os.path.join(HERE, "..", "schema", f), d)
+    if not os.path.exists(os.path.join(d, "vlan.py")):
+        open(os.path.join(d, "vlan.py"), "w").write(VLAN_PY)
+        open(os.path.join(d, "registry.txt"), "a").write(
+            "obj 9 vlan\nfield 9.1 vlan.name Str(15)\nfield 9.2 vlan.members PMASK\nfield 9.3 vlan.tagged PMASK\n")
+    return d
+
+
 def convert():
     import legacy_map
     print("convert: old command text to paths")
@@ -208,6 +232,31 @@ def convert():
         got = [ln for ln in lines if ".pvid " in ln]
         check(got == want and len(warn) == w and all("lag.1: its members' pvids differ" in x for x in warn),
               "%r: %s%s" % (text.decode(), " ".join(want), ", warned" if w else ""), (got, warn))
+    print("VLANs the new firmware refuses: more than 64, a pvid on a missing VLAN")
+    text = b"vlan 10 1 2\npvid 3 99\npvid 1 10\npvid 2 0\n" + b"".join(b"vlan %d 1\n" % (100 + i) for i in range(64))
+    vs = rc.Schema([vlan_schema_dir()])
+    for sch in (None, vs):
+        issues, warn = [], []
+        lines, _, _ = legacy_map.convert(text, rc.Board(), warn, sch, issues)
+        check(issues == ["vlan 162: over the 64 VLANs the new firmware holds",
+                         "vlan 163: over the 64 VLANs the new firmware holds",
+                         "port 3: pvid 99, a VLAN the config doesn't have"] and "port.3.pvid 99" in lines,
+              "listed (VLAN 1 by default, 10 and 100-163: 66), %s" % ("the rows" if sch is None else "vlan.V's schema"),
+              issues)
+        issues, warn = [], []
+        lines, _, _ = legacy_map.convert(text, rc.Board(), warn, sch, issues, fit=True)
+        check(not issues and "port.3.pvid 0" in lines and "port.1.pvid 10" in lines
+              and not [x for x in lines if x.startswith(("vlan.162.", "vlan.163."))] and "vlan.161.members 1" in lines
+              and warn[-3:] == ["vlan 162: dropped, the new firmware holds 64 VLANs",
+                                "vlan 163: dropped, the new firmware holds 64 VLANs",
+                                "port 3: pvid 99 parked on 0, VLAN 99 isn't in the config"],
+              "fit: the highest VIDs dropped, the pvid parked on 0, each warned", (warn, [x for x in lines if "pvid" in x]))
+    issues = []
+    legacy_map.convert(b"vlan 1 d\npvid 2 1\n", rc.Board(), None, vs, issues)
+    check(issues == ["port 2: pvid 1, a VLAN the config doesn't have"], "VLAN 1 deleted: its pvid is one", issues)
+    issues = []
+    legacy_map.convert(text, rc.Board(), None, p41_schema(), issues)
+    check(not issues, "no vlan.V in the schema (before P4-2): no check, the VLAN lines are legacy", issues)
     print("convert against the schema: path lines, legacy, refused")
     sch = p41_schema()
     warn = []

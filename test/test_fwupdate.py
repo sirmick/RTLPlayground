@@ -23,6 +23,7 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+sys.path.insert(0, HERE)
 import fwupdate  # noqa: E402
 import rtlpg_client as rc  # noqa: E402
 
@@ -64,7 +65,7 @@ def crc_fixed(n, pcb=b""):
 class Fake:
     """The switch: old firmware with `text` saved, password `pw`."""
 
-    def __init__(self, text, pw="secret9", refuse=(), lost=False):
+    def __init__(self, text, pw="secret9", refuse=(), lost=False, schema=None):
         self.text, self.pw, self.refuse = text, pw, refuse	# text None: GET /config fails
         self.om, self.at, self.uploads, self.lost = False, "old", 0, lost	# lost: unreachable after apply
         self.drops, self.texts = 0, None	# GET /config: connections dropped first; texts to answer in turn
@@ -75,7 +76,7 @@ class Fake:
         self.imp_log = []
         self.cand, self.run, self.saved = [], [], []
         self.log = []
-        self.sch = rc.Schema(board=rc.Board(M))
+        self.sch = rc.Schema(schema and [schema], rc.Board(M))
         self.srv = {}
         for role in ("old", "boot", "lease"):	# lease: 127.0.0.2, the old port (a DHCP address)
             addr = ("127.0.0.2", self.srv["old"].server_address[1]) if role == "lease" else ("127.0.0.1", 0)
@@ -264,7 +265,7 @@ def main():
     f = Fake(CLEAN)
     st, out, err = run(f, img, "--dry-run")
     check(st == 0 and f.uploads == 0 and not f.om, "nothing uploaded", err)
-    check("Config: 8 path lines, 0 legacy, 0 untranslated, 0 warnings" in out
+    check("Config: 8 path lines, 0 legacy, 0 untranslated, 0 vlan problems, 0 warnings" in out
           and "  set mgmt.ip 127.0.0.1" in out and "at 192.168.10.247 or 192.168.2.2 until" in out, "the plan, and where it comes back", out)
     check("  set web.password *" in out and "secret9" not in out, "the password is shown as *", out)
     f.close()
@@ -408,6 +409,22 @@ def main():
     fwupdate.CONFIRM_S, fwupdate.ARP = keep, keep_arp
     check(st == 5 and "(or a DHCP lease this host saw)" in err and "rolls back" in err and "--plan" in err
           and "save" not in f.log, "no lease seen: exit 5, the rollback, the --plan line", err)
+    f.close()
+
+    print("VLANs the new firmware refuses (vlan.V as P4-2's): refused, then --fit-vlans")
+    from test_om_codec import vlan_schema_dir
+    vd = vlan_schema_dir()
+    text = CLEAN + "vlan 10 1 2\npvid 3 99\npvid 1 10\n" + "".join("vlan %d 1\n" % (100 + i) for i in range(64))
+    f = Fake(text, schema=vd)
+    st, out, err = run(f, img, "--schema", vd, "--save-plan", plan2)
+    check(st == 5 and f.uploads == 0 and "3 vlan problems" in out and "vlan problem: port 3: pvid 99" in out
+          and "vlan problem: vlan 163: over the 64" in out and "--fit-vlans" in err,
+          "each listed, refused before the upload (5)", out + err)
+    st, out, err = run(f, img, "--schema", vd, "--save-plan", plan2, "--fit-vlans")
+    check(st == 0 and f.uploads == 1 and "set port.3.pvid 0" in f.saved and "set port.1.pvid 10" in f.saved
+          and not [x for x in f.saved if x.startswith(("set vlan.162.", "set vlan.163."))]
+          and "warning: port 3: pvid 99 parked on 0" in out and "warning: vlan 163: dropped" in out
+          and "Saved: get -s is the plan" in err, "--fit-vlans: parked, dropped, warned, saved", (out[-600:], err))
     f.close()
 
     print("--no-wait can't carry a config")

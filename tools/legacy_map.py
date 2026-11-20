@@ -23,6 +23,7 @@ STP_G = {"prio": ("stp.priority", 0, 15), "hello": ("stp.hello_s", 1, 10), "maxa
          "fwd": ("stp.fwd_delay_s", 4, 30), "txhold": ("stp.txhold", 1, 10)}
 STORM_T = r"(bcast|mcast|ucast|umcast)"
 ROWS = []
+MAX_VLANS = 64		# P4-2's vlan.V table, when the schema doesn't say
 
 
 def row(rx, fn):
@@ -334,14 +335,19 @@ def undump(data):
     return bytes(int(x, 16) for r in rows for x in r.split())
 
 
-def convert(data, board, warn=None, sch=None):
+def convert(data, board, warn=None, sch=None, issues=None, fit=False):
     """Old command text (bytes, or a flash dump of it) -> ("path value" /
     "del path" lines, legacy, the lines no row took). A later line overrides
     an earlier one, as at boot. Lines changed to fit go to warn, a list.
     With sch (rtlpg_client.Schema), legacy is the old lines with a path sch
     lacks, as (line, owner node), in order, their paths left out; a line
     whose value sch refuses is not taken (the reason to warn). Without it,
-    every line is converted and legacy is empty."""
+    every line is converted and legacy is empty.
+    The VLANs, once vlan.V is on the model (or without sch): more than the
+    table holds, or a pvid on a VLAN the config doesn't have, the new
+    firmware refuses (the old took both). They go to issues, a list; with
+    fit, the extra VLANs (the highest VIDs) are dropped and such a pvid is
+    parked on 0, each with a warning."""
     data = undump(data)
     vals, seen, bad, legacy = {}, {}, [], []	# seen: every row's, what a row reads
     cfg = None
@@ -378,8 +384,44 @@ def convert(data, board, warn=None, sch=None):
         _take(vals, out)
     if warn is not None:
         warn += _lag_pvids(seen)
+    if sch is None or _known(sch, "vlan.1.name"):
+        _vlans(vals, sch, issues if issues is not None else [], fit, warn if warn is not None else [])
     lines = ["del %s" % p if v is DEL else "%s %s" % (p, v) for p, v in vals.items()]
     return lines, legacy, bad
+
+
+def _vlans(vals, sch, issues, fit, warn):
+    """The VLANs the converted config has (VLAN 1 by default, unless
+    deleted), against the table's size and the ports' pvids."""
+    mx, vids = MAX_VLANS, {1}
+    if sch is not None:
+        o = next(o for o in sch.objs if o.regname == "vlan")
+        mx = o.levels[0][1]		# the keyed level: max=
+        vids = {k for k, _ in o.entries}
+    for p, v in vals.items():
+        w = p.split(".")
+        if w[0] == "vlan" and len(w) >= 2 and w[1].isdigit():
+            if len(w) == 2 and v is DEL:
+                vids.discard(int(w[1]))
+            elif len(w) == 3:
+                vids.add(int(w[1]))
+    extra = sorted(vids)[mx:]
+    for vid in extra:
+        if fit:
+            for q in [q for q in vals if q == f"vlan.{vid}" or q.startswith(f"vlan.{vid}.")]:
+                del vals[q]
+            warn.append(f"vlan {vid}: dropped, the new firmware holds {mx} VLANs")
+        else:
+            issues.append(f"vlan {vid}: over the {mx} VLANs the new firmware holds")
+    keep = vids - set(extra)
+    for p, v in list(vals.items()):
+        m = re.fullmatch(r"port\.(\d+)\.pvid", p)
+        if m and v is not DEL and v != "0" and int(v) not in keep:
+            if fit:
+                vals[p] = "0"
+                warn.append(f"port {m[1]}: pvid {v} parked on 0, VLAN {v} isn't in the config")
+            else:
+                issues.append(f"port {m[1]}: pvid {v}, a VLAN the config doesn't have")
 
 
 def _lag_pvids(p):

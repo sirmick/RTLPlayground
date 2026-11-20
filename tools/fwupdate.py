@@ -22,9 +22,12 @@ order:
      (tools/legacy_map.py, against the schema of this tree); print the
      plan.  --dry-run stops here.  A line it can't translate, or one of an
      object not on the object model yet (legacy), would be lost: it
-     refuses unless --drop-legacy.  No readable config (GET /config fails,
-     or the sector is blank): it refuses unless --boot-defaults, and the
-     switch then keeps the factory default;
+     refuses unless --drop-legacy.  More VLANs than the new firmware
+     holds, or a pvid on a VLAN the config lacks (the old firmware took
+     both, the new refuses them): it refuses unless --fit-vlans.  No
+     readable config (GET /config fails, or the sector is blank): it
+     refuses unless --boot-defaults, and the switch then keeps the
+     factory default;
   2. upload the image;
   3. find the new firmware: at HOST, then at the factory default's
      mgmt.ip (config.txt), then the schema's (or --boot-host);
@@ -569,11 +572,12 @@ class Plan:
                                             self.value(self.rc.Config(self.sch), "mgmt.ip")]))
         self.boot_password = self.value(cfg, "web.password")
         if lines is not None:		# a written plan (--plan)
-            self.lines, self.legacy, self.bad = lines, [], []
+            self.lines, self.legacy, self.bad, self.vlans = lines, [], [], []
             self.empty = not lines
             return
+        self.vlans = []		# VLAN problems the new firmware would refuse
         self.lines, self.legacy, self.bad = legacy_map.convert(
-            text, self.sch.board, self.warn, self.sch)
+            text, self.sch.board, self.warn, self.sch, self.vlans, getattr(args, "fit_vlans", False))
         self.empty = not (self.lines or self.legacy or self.bad)
         # a field the factory default sets and the old config didn't (no ip
         # line: the old switch ran its built-in address) is pinned to what
@@ -668,8 +672,8 @@ class Plan:
 
     def show(self):
         print(f"Config: {len(self.lines)} path lines, {len(self.legacy)} "
-              f"legacy, {len(self.bad)} untranslated, {len(self.warn)} "
-              "warnings")
+              f"legacy, {len(self.bad)} untranslated, {len(self.vlans)} vlan "
+              f"problems, {len(self.warn)} warnings")
         for line in self.lines:
             line = self.masked(line)
             note = ("  (the factory default sets it, the old config didn't: as the old switch ran)"
@@ -679,6 +683,8 @@ class Plan:
             print(f"  legacy ({node}): {line}")
         for line in self.bad:
             print(f"  untranslated: {line}")
+        for line in self.vlans:
+            print(f"  vlan problem: {line}")
         for line in self.warn:
             print(f"  warning: {line}")
         print("After the reboot: the factory default config, at "
@@ -938,6 +944,10 @@ def parse_args(argv):
     parser.add_argument("--drop-legacy", action="store_true",
                         help="update even if config lines would be lost "
                              "(legacy or untranslated: listed)")
+    parser.add_argument("--fit-vlans", action="store_true",
+                        help="drop the VLANs over the new firmware's table "
+                             "(the highest VIDs) and park a pvid on a VLAN "
+                             "the config lacks on 0, each with a warning")
     parser.add_argument("--boot-defaults", action="store_true",
                         help="update even if the switch has no readable "
                              "config: it boots the factory default")
@@ -1068,6 +1078,11 @@ def run(args):
             raise Failure(
                 f"{plan.lost()} config lines would be lost (listed above); "
                 "--drop-legacy to update all the same", 5)
+        if plan.vlans:
+            raise Failure(
+                f"{len(plan.vlans)} VLAN problems the new firmware would refuse "
+                "(listed above); --fit-vlans drops the extra VLANs and parks "
+                "those pvids on 0", 5)
         if not re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", plan.mac or ""):
             raise Failure("the old switch didn't say its MAC (/information.json "
                           "mac_address): no way to tell it from another switch "
