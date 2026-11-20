@@ -251,7 +251,18 @@ void vlan_delete(uint16_t vlan) { sprintf(vlan_ops + strlen(vlan_ops), "-%u ", v
 volatile uint8_t SFR_DATA_24, SFR_DATA_16, SFR_DATA_8, SFR_DATA_0;
 static char lag_ops[256];
 void lacp_lag_set(uint8_t lag, uint16_t ports) { sprintf(lag_ops + strlen(lag_ops), "L%u %03x ", lag, ports); }
-void port_lag_members_set(uint8_t lag, uint16_t members) { sprintf(lag_ops + strlen(lag_ops), "S%u %03x ", lag, members); }
+static uint16_t trunk[4];
+static int two_trunks;		/* a port was in two trunks after a write */
+void port_lag_members_set(uint8_t lag, uint16_t members)
+{
+	sprintf(lag_ops + strlen(lag_ops), "S%u %03x ", lag, members);
+	trunk[lag] = members;
+	for (int a = 0; a < 4; a++)
+		for (int b = a + 1; b < 4; b++)
+			if (trunk[a] & trunk[b])
+				two_trunks = 1;
+}
+uint16_t port_lag_members_get(uint8_t lag) { return trunk[lag]; }
 void reg_write(uint16_t reg)
 {
 	sprintf(lag_ops + strlen(lag_ops), "H%u %02x ", (reg - RTL837X_TRK_HASH_CTRL_BASE) >> 2, SFR_DATA_0);
@@ -2287,6 +2298,21 @@ static void lags(void)
 	expect("set port.3.pvid 0", "ok\n");
 	expect("apply", "ok\n");
 	expect("get -d lag", "lag.1.mode static\nlag.1.members 2-4\nlag.1.hash spa\nlag.2.members 4-5\nlag.3.members 2\nok\n");
+	/* a static move (P4-3b): lag.1 takes port 3 from lag.2, which applies after it */
+	om_init();
+	memset(trunk, 0, sizeof(trunk));
+	expect("set lag.*.mode static", "ok\n");
+	expect("set lag.1.members 2", "ok\n");
+	expect("set lag.2.members 3-4", "ok\n");
+	expect("apply", "ok\n");
+	lag_ops[0] = 0;
+	two_trunks = 0;
+	expect("set lag.1.members 2-3", "ok\n");
+	expect("set lag.2.members 4", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!two_trunks && trunk[0] == 0x006 && trunk[1] == 0x008,
+	      "a port moving between static LAGs is never in two trunks");
+	CHECK(!strcmp(lag_ops, "S1 008 L0 000 S0 006 L1 000 S1 008 "), "out of lag.2's trunk first, then into lag.1's");
 	om_init();
 }
 

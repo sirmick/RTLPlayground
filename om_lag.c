@@ -29,6 +29,11 @@ uint8_t om_apply_lag(uint8_t idx) __banked
 	memcpy(&o, &cfg_roll.lag[l], sizeof(o));
 	m = USED(r);
 	if (r.mode != o.mode || m != USED(o)) {
+		for (j = 0; j < 4; j++) {	/* its ports out of any other trunk first: never in two */
+			pv = port_lag_members_get(j);
+			if (j != l && (pv & m))
+				port_lag_members_set(j, pv & ~m);
+		}
 		if (r.mode == E_LAGMODE_LACP) {
 			lacp_lag_set(l, m);
 		} else {

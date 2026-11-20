@@ -42,7 +42,7 @@ ok
 - **One connection at a time** (uIP with one connection): another is refused until the
   first closes, so a client retries. Closing the connection mid-reply stops the rest of
   the run.
-- **Commands not on the model** (`vlan`, `stp`, `lag`, ...) take their old syntax here too,
+- **Commands not on the model** (`stp`, ...) take their old syntax here too,
   until they move.
 - `POST /cmd` is the old endpoint for the old commands. It streams the same way, and is
   kept for the old UI's tabs until P6.
@@ -63,7 +63,8 @@ Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.por
 `port.*`); `/eee.json` (`port.N.eee`, `state.port.N.eee_active`); `/isolation.json`
 (`port.N.isolate`); `/information.json` (`get state.sys`, `state.sys.reset`,
 `state.loader`); `/l2.json` (`get state.l2`), `/counters.json` (`state.port.N.mib`);
-`/cmd_log`, `/cmd_log_clear` (no command history any more).
+`/cmd_log`, `/cmd_log_clear` (no command history any more); `/lag.json` (`get lag`,
+`state.lag`, `state.lacp.port`).
 
 ## The JSON pages left
 
@@ -72,7 +73,6 @@ Each is a GET, needs the cookie, and goes when its object moves:
 | Page | Until | Then |
 |---|---|---|
 | `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
-| `/lag.json` | P4-3 | `lag.L.*`, `state.lag`, `state.lacp.port` |
 | `/stp.json` | P4-4 | `stp.*`, `state.stp` |
 | `/lldp.json`, `/loop.json`, `/mirror.json` | P4-5 | `lldp.*`, `loop.*`, `mirror.*` |
 | `/bandwidth.json`, `/storm.json` | P4-6 | `port.N.bw_*`, `port.N.storm.*` |
@@ -96,55 +96,6 @@ Array of port properties (until P4-6)
 | `iAction` | Action to preform on limit exceedence, "drop" - drop frame "fc" - use TCP flow control
 | `eLimited` | Apply egress (outbound) limit
 | `eBW` | The egress rate limit applied
-
-## lag (until P4-3)
-```json
-{
-    "lags":[
-        {"lagNum":0,"type":"static","members":[],"hash":"3f"},
-        {"lagNum":1,"type":"lacp","members":[6,7],"active_members":[6],"valid":true,"aggregator":"ce11a001a010","hash":"7e"},
-        ...
-    ],
-    "ports":[
-        {"p":1,"lag":255,"a":"00","pt":"00","rs":0,"rx":"0000","psys":"000000000000"},
-        ...
-        {"p":6,"lag":1,"a":"3f","pt":"3f","rs":4,"rx":"0053","psys":"ce11a001a010"},
-        {"p":7,"lag":1,"a":"07","pt":"40","rs":0,"rx":"0000","psys":"000000000000"},
-        ...
-    ]
-}
-```
-Object representing static and LACP lags
-
-| Property | Description
-|----------|------------
-| `lags` | Array of LAG objects
-| `ports` | Array of current port status objects
-
-
-### LAG objects
-
-| Property | Description
-|----------|------------
-| `lagNum` | 0-4 the identifier for the LAG
-| `type` | `static` or `lacp`
-| `members` | The physical port numbers that are configured to be in the LAG
-| `active_members` | For LACP LAGs, the members that currently participating
-| `valid` | Whether the LACP LAG is currently valid
-| `aggregator` | MAC Address of the aggregating device
-| `hash` | Load balancing methods to use
-
-### Current port status objects
-
-| Property | Description
-|----------|------------
-| `p` | Physical port number
-| `lag` | Number of the LAG the port is participating in
-| `a` | Actor
-| `pt` | Partner
-| `rs` | RX State
-| `rx` | Number of received LACPDUs
-| `psys` | Remote system mac address
 
 ## lldp (until P4-5)
 ```json

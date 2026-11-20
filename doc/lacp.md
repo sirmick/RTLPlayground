@@ -34,9 +34,10 @@ and a difference would make the behaviour depend on that choice:
   port isolation
 * may differ: EEE, LED configuration, counters, cable diagnostics
 
-None of this is enforced yet — `port_lag_members_set()` writes a member mask and
-a hash setting and validates nothing. See #377 for the discussion of whether a
-mismatch should be rejected or applied to the whole group.
+Of these, apply enforces the pvid: a LAG whose members' `port.N.pvid` differ is
+refused ("they differ on 2,4"), for static and LACP groups alike. The rest is not
+checked yet. See #377 for the discussion of whether a mismatch should be
+rejected or applied to the whole group.
 
 ## Protocol timing
 
@@ -64,37 +65,38 @@ matches what it sent.
 
 ```
 void lacp_init(void) __banked;
-void lacp_off(void) __banked;
 void lacp_lag_set(uint8_t lag, __xdata uint16_t ports) __banked;
 void lacp_in(void) __banked;
 void lacp_timers(void) __banked;
 ```
 
-`lacp_init()` has to run before the startup configuration replays, because xdata
+`lacp_init()` has to run before the startup configuration applies, because xdata
 is not zeroed and the port-to-LAG map uses `0xff` as "no LAG"; a stray zero would
-make a port look like it belongs to LAG 0.
+make a port look like it belongs to LAG 0. It also writes every trunk empty and
+every hash the default, the config's defaults. `lag.L` (om_lag.c) calls
+`lacp_lag_set()`.
 
 ## LACP configuration on the serial console
 
-A group is put under LACP by adding `lacp` to the `lag` command:
+A group is put under LACP by its mode, `lag.L.mode lacp` (each block ends in `apply`):
 
 ```
-lag 1 lacp 7 8      # ports 7 and 8 become LACP candidates of group 1
-lag 1 lacp off      # group 1 leaves LACP, its trunk is cleared (so does "lag 1 lacp")
-lag 1 d             # group 1 disabled, whether it ran LACP or not
-lag 1 7 8           # plain static aggregation, no protocol
+set lag.1.mode lacp
+set lag.1.members 7-8    # ports 7 and 8 become LACP candidates of group 1
+set lag.1.mode off       # group 1 disabled, whether it ran LACP or not; its trunk is cleared
+set lag.1.mode static    # plain static aggregation, no protocol
 ```
 
 A group put under LACP gives up the static trunk it had: the hardware trunk is
-cleared and rebuilt from the ports that converge. The other way round, `lag 1 d`
-and a static member list take the group out of LACP before they touch the
-trunk. A port named in another LACP group moves to the new one. The protocol
-starts with the first group put under LACP and stops when the last one is taken
-out; there is no separate switch for it. One command acts on the whole engine,
-and `get` shows its state:
+cleared and rebuilt from the ports that converge. The other way round, mode off
+and static take the group out of LACP before they touch the trunk. A port is in
+one group at most (apply refuses a second one that isn't off); moving it means
+taking it out of the other group in the same apply. The protocol starts with the
+first group put under LACP and stops when the last one is taken out; there is no
+separate switch for it. Every group out of LACP, and the state:
 
 ```
-lacp off            # every group leaves LACP, protocol stopped
+set lag.*.mode off       # (was: lacp off)
 get state.lag state.lacp
 ```
 
@@ -111,9 +113,8 @@ Each group on the LAG page has a Static/LACP mode next to its member ports;
 for an LACP group it shows the elected aggregator and the active members. Below
 the groups a table has one row per LACP port with its group, actor and partner
 state, receive state, LACPDU count and partner system. The page reads
-`state.lag` and `state.lacp.port` over `POST /cli` every three seconds while it
-is open. The member checkboxes of a static group come from the hardware
-registers in `/lag.json` (until P4-3).
+`get lag` (the configuration) and `state.lag` and `state.lacp.port` over
+`POST /cli`, the state every three seconds while it is open.
 
 ## A test with a Linux 802.3ad bond
 
@@ -129,13 +130,15 @@ ip link set bond0 up
 On the switch, with those two ports as the group:
 
 ```
-lag 1 lacp 7 8
+set lag.1.mode lacp
+set lag.1.members 7-8
+apply
 ```
 
-`lacp show` should then give both ports an actor state of `0x3f` (ACTIVITY,
-TIMEOUT, AGGREGATION, SYNC, COLLECTING and DISTRIBUTING), a partner state with
-SYNC set, and the partner's system MAC. `lag show` lists the trunk members as
-programmed in the hardware and should show both ports.
+`get state.lacp` should then give both ports an actor state of
+`activity,timeout,aggregation,sync,collecting,distributing`, a partner state with
+sync set, and the partner's system MAC. `get state.lag.1.active` lists the trunk
+members as programmed in the hardware and should show both ports.
 
 On the host, `/proc/net/bonding/bond0` should show the same `Aggregator ID` for
 both slaves; different IDs mean that each link is in a group of its own. Both
@@ -159,4 +162,4 @@ slave rejoins after it comes back.
 * One aggregator per group.
 * Selection compares the partner's system only, not its key: two aggregates
   that one partner system offers on the same group land in one trunk here.
-* Member compatibility is not validated; see #377.
+* Member compatibility: only the pvid is validated; see #377.

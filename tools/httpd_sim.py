@@ -35,12 +35,6 @@ state = {
     },
     "cmd_history": [],
     "mgmt_vlan": 1,
-    "lags": [
-                {"cfg":[],"aggValid":0,"agg":"000000000000","members":[]},
-                {"cfg":[5,6], "aggValid": 1, "agg": "ce654f01cb99", "members": [5]},
-                {"cfg":[],"aggValid":0,"agg":"000000000000","members":[]},
-                {"cfg":[],"aggValid":0,"agg":"000000000000","members":[]}
-            ],
 }
 
 
@@ -66,7 +60,6 @@ class Handler(SimpleHTTPRequestHandler):
             "/information.json": self._api_information,
             "/isolation.json": self._api_isolation,
             "/lldp.json": self._api_lldp,
-            "/lag.json": self._api_lag,
             "/mirror.json": self._api_mirror,
             "/storm.json": self._api_storm,
             "/stp.json": self._api_stp,
@@ -448,39 +441,6 @@ class Handler(SimpleHTTPRequestHandler):
             "mirror_rx": [6,5],
             "mirror_tx": [6,4]
         }
-
-    def _api_lacp(self):
-        global state
-        return {
-            "on": False,
-            "lags": state["lags"],
-            "ports": [
-                {
-                    "p":i,
-                    "lag":255,
-                    "a":"00",
-                    "pt":"00",
-                    "rs":0,
-                    "rx":"0000",
-                    "psys":"000000000000"
-                } for i in range(1, PORTS + 1)
-            ]
-        }
-
-    def _api_lag(self):
-        return {
-            "lags":[
-                {"lagNum":0,"type":"static","members":[],"hash":"3f"},
-                {"lagNum":1,"type":"lacp","members":[5,6],"active_members":[6],"valid":1,"aggregator":"ce654f01cb99","hash":"7e"},
-                {"lagNum":2,"type":"static","members":[],"hash":"3f"},
-                {"lagNum":3,"type":"static","members":[],"hash":"3f"}
-            ],
-            "ports":[(
-                    {"p":5,"lag":1,"a":"07","pt":"40","rs":0,"rx":"0000","psys":"000000000000"} if i == 5 else 
-                    {"p":6,"lag":1,"a":"3f","pt":"3f","rs":4,"rx":"000d","psys":"ce654f01cb99"} if i == 6 else
-                    {"p":i,"lag":255,"a":"00","pt":"00","rs":0,"rx":"0000","psys":"000000000000"} ) for i in range(1, PORTS + 1)
-                ]
-            }
 
     def _api_loop(self):
         on = state["loop_enabled"]
