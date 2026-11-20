@@ -70,3 +70,11 @@ $(BUILDDIR)/isr_frame.ok: $(BUILDDIR)/rtlplayground.rel tools/isr_frame.py
 		isr_timer2=$(ISR_T2_PUSHES) isr_serial=$(ISR_SERIAL_PUSHES)
 	@touch $@
 $(BUILDDIR)/placed.stamp: $(BUILDDIR)/isr_frame.ok
+
+# SDCC 4.6.0 drops a STEP_SLEEP(STEP_STAY, ..)'s call unless sched.h casts the
+# state: the probe, compiled with this build's flags (not linked), keeps it so.
+$(BUILDDIR)/step_probe.ok: tools/step_probe.c tools/step_probe.py sched.h $(SCHED_GEN)/sched_gen.h | create_build_dir
+	$(CC) $(CC_FLAGS) -o $(BUILDDIR)/step_probe.rel -c tools/step_probe.c
+	python3 tools/step_probe.py $(BUILDDIR)/step_probe.asm
+	@touch $@
+$(BUILDDIR)/placed.stamp: $(BUILDDIR)/step_probe.ok

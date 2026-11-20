@@ -90,10 +90,13 @@ extern __xdata struct task * __xdata sched_cur_task;	/* &sched_task[sched_cur] *
  * error for the step sources: sched.mk). */
 #define STEP_END		0	/* the slot is free (state 0) */
 #define STEP_STAY		0xff	/* the same state again (no state is 0xff) */
+/* The cast: SDCC 4.6.0 drops the comma's left side (the call) when the state
+ * is a literal or an explicit enum, as STEP_STAY is (tools/step_probe.c,
+ * checked every build: sched.mk). */
 #ifndef SCHED_SWEEP		/* swept, they stay as written: the generator sees their state */
-#define STEP_SLEEP(s, ms)	(task_sleep(ms), (s))
-#define STEP_WAIT(s, hw, ms)	(task_mask(hw), task_sleep(ms), (s))
-#define STEP_ARG(s, a)		(task_set_arg(a), (s))
+#define STEP_SLEEP(s, ms)	(task_sleep(ms), (uint8_t)(s))
+#define STEP_WAIT(s, hw, ms)	(task_mask(hw), task_sleep(ms), (uint8_t)(s))
+#define STEP_ARG(s, a)		(task_set_arg(a), (uint8_t)(s))
 #endif
 
 /* The slot's own 16 bits, kept across steps: 0 when a fixed task starts
