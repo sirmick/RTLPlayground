@@ -626,10 +626,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lag.1", "err lag.1: dns mgmt ntp port.* sched sys syslog vlan.* web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get lag.1", "err lag.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nvlan.*\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntlag.*\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ndns\nntp\nsyslog\nweb\nport.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1093,7 +1093,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns mgmt ntp port.* sched sys syslog vlan.* web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -1545,8 +1545,8 @@ static void binary(void)
 		sec_write(r, sizeof r);
 		boot();
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
-		expect("get -d", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
-		expect("get -s", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
 		dump("skip", 1);
 	}
 

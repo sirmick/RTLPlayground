@@ -3,7 +3,7 @@
 # exists by default, every port an untagged member; it may be deleted.
 
 const("MAX_VLANS", 64)
-obj("vlan", keyed=U16(1, 4094), max="MAX_VLANS", apply="om_apply_vlan", check="om_check_vlan", order=30,
+obj("vlan", keyed=U16(1, 4094), max="MAX_VLANS", apply="om_apply_vlan", check="om_check_vlan", order=8,
     tip="A VLAN")
 cfg("name", Str(15), "", tip="A name, starting with a letter")
 cfg("members", PortMask(), 0, tip="Its ports")

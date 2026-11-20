@@ -55,12 +55,13 @@ def main():
     print("the real schema, other boards")
     sw = rc.Schema(board=rc.Board("SWGT024_V2_0_UNMANAGED"))
     b = rc.txt2bin(sw, ["set port.1.isolate 1,6", "port.6.mtu 9000"])
-    # vlan's reset and VLAN 1 (its members against an entry's 0), as the firmware saves the defaults
+    # vlan's reset and VLAN 1 (its members against an entry's 0), as the firmware saves the defaults:
+    # first, vlan applying before port (DESIGN 6.21)
     def vdef(members):
         return bytes([9, 0, 0, 0, 9, 1, 0, 1, 2, 2]) + struct.pack("<H", members)
     # front 1 is logical 4, front 6 logical 3: bits 4 and 3
-    check(b[8:] == bytes([1, 1, 0, 1, 11, 2, 0x18, 0]) + bytes([1, 6, 0, 1, 5, 2]) + struct.pack("<H", 9000) +
-          vdef(0x1f8), "SWGT024: front-panel numbers to logical bits, the index as typed", b[8:].hex())
+    check(b[8:] == vdef(0x1f8) + bytes([1, 1, 0, 1, 11, 2, 0x18, 0]) + bytes([1, 6, 0, 1, 5, 2]) +
+          struct.pack("<H", 9000), "SWGT024: front-panel numbers to logical bits, the index as typed", b[8:].hex())
     check(rc.bin2txt(sw, b) == ["port.1.isolate 1,6", "port.6.mtu 9000"], "and back", rc.bin2txt(sw, b))
     # keyed (P4-2): a default entry deleted, an entry with nothing off its default
     for t in (["del vlan.1", "vlan.20.name "], ["vlan.1.members 2", "vlan.20.name ", "vlan.30.tagged 1", "vlan.30.members 1"]):

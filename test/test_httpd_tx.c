@@ -286,7 +286,6 @@ bool strstart(const uint8_t *a, const uint8_t *b)
 
 bool strstart_x(const uint8_t *a, const uint8_t *b) { return strstart(a, b); }
 
-void send_vlan(uint16_t vlan) { (void)vlan; }
 void send_bandwidth(void) { }
 void send_storm(void) { }
 void send_isolation(void) { }
@@ -296,7 +295,6 @@ void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
 void send_lag(void) { }
 void send_stp(void) { }
-void send_vlanlist(void) { }
 void send_lldp(void) {}
 void send_loop(void) { }
 
