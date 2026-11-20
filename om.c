@@ -788,62 +788,46 @@ bad_mac:
 		break;
 #endif
 #if OM_SET_I16 || OM_SET_TZ
-	case T_I16: case T_TZ:
+	case T_I16: case T_TZ:		/* a sign, then the number, offset binary as its limits */
 		sg = ch() == '-';
-		if (ch() == '-' || ch() == '+')
+		if (sg || ch() == '+')
 			take();
 		if (!parse_dec() || num[2] | num[3])
-			goto bad_signed;
+			goto bad_range;
 		v16 = num[0] | (uint16_t)num[1] << 8;
 #if OM_SET_TZ
 		if (ft == T_TZ) {	/* hh:mm, mm 00, 30 or 45 */
 			k = num[0];
 			if (num[1] || take() != ':' || !byte_dec() ||
 			    !(num[0] == 0 || num[0] == 30 || num[0] == 45))
-				goto bad_signed;
+				goto bad_range;
 			v16 = k * 60 + num[0];
 		}
 #endif
-		if (sg) {
-			if (v16 > 0x8000)
-				goto bad_signed;
-			v16 = 0x8000 - v16;
-		} else {
-			if (v16 > 0x7fff)
-				goto bad_signed;
-			v16 += 0x8000;
-		}
+		if (v16 > 0x7fff + sg)
+			goto bad_range;
+		if (sg)
+			v16 = -v16;
+		v16 ^= 0x8000;
 		num[0] = v16;
 		num[1] = v16 >> 8;
-		cp = (__code const uint8_t *)&om_lim[fdx.arg];
-		if (!in_lim())
-			goto bad_signed;
-		om_val[0] = num[0];
-		om_val[1] = num[1] ^ 0x80;
-		break;
-bad_signed:		/* "lo..hi" */
-		err_head();
-		cp = (__code const uint8_t *)&om_lim[fdx.arg];
-		for (w = 0; w < 2; w++) {
-			om_val[0] = cp[0];
-			om_val[1] = cp[1] ^ 0x80;
-			vp = om_val;
-			emit_value();
-			if (!w)
-				print_string("..");
-			cp += 4;
-		}
-		err_end();
-		return 0;
+		goto in_range;
 #endif
 	case T_U8: case T_U16: case T_U32:
 		if (!parse_dec())
 			goto bad_range;
+#if OM_SET_I16 || OM_SET_TZ
+in_range:
+#endif
 		cp = (__code const uint8_t *)&om_lim[fdx.arg];
 		if (!in_lim())
 			goto bad_range;
 		for (i = 0; i < 4; i++)
 			om_val[i] = num[i];
+#if OM_SET_I16 || OM_SET_TZ
+		if (ft == T_I16 || ft == T_TZ)
+			om_val[1] ^= 0x80;
+#endif
 		break;
 	default:
 		fail("read only");
@@ -868,6 +852,19 @@ bad_words:
 bad_range:
 	err_head();
 	cp = (__code const uint8_t *)&om_lim[fdx.arg];
+#if OM_SET_I16 || OM_SET_TZ
+	if (ft == T_I16 || ft == T_TZ) {	/* "lo..hi", as the values print */
+		for (w = 0; w < 2; w++) {
+			om_val[0] = cp[0];
+			om_val[1] = cp[1] ^ 0x80;
+			vp = om_val;
+			emit_value();
+			if (!w)
+				print_string("..");
+			cp += 4;
+		}
+	} else
+#endif
 	print_lim();
 	err_end();
 	return 0;
