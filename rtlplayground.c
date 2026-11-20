@@ -570,11 +570,14 @@ void reg_read(uint16_t reg_addr)
  * hw_start(n), then poll until done or hw_expired(), n + 1 ticks at most
  * (n to n + 1 whole ticks: the current one's rest first). A poll that
  * gives up calls hw_timeout(): counted, with the register (or an HW_TO_
- * pseudo-register), for `health tasks`; the caller moves on. After one,
- * hw_stuck: the step's later polls give up at once (hw_expired() is 1),
- * so a step waits out one timeout at most, whatever its loop; the
- * scheduler clears it at each step's start. Common code: the flash's
- * WEL wait uses them too.
+ * pseudo-register), for `health tasks`; the caller moves on. After one
+ * in a step, hw_stuck: the step's later polls give up at their first busy
+ * read (hw_expired() is 1), so a step waits out one timeout at most,
+ * whatever its loop; the scheduler clears it at each step's start. Not
+ * before the scheduler runs (swdt_on): there it would last for the rest
+ * of the boot, and every table command after it would give up on the
+ * execute bit's first busy read, with stale data (reviewer2). Common
+ * code: the flash's WEL wait uses them too.
  */
 __xdata uint16_t hw_timeouts, hw_timeout_reg;
 __xdata uint8_t hw_stuck;
@@ -596,7 +599,8 @@ void hw_timeout(uint16_t reg)
 {
 	hw_timeouts++;
 	hw_timeout_reg = reg;
-	hw_stuck = 1;
+	if (swdt_on)		/* steps only: the boot's polls each wait their own bound */
+		hw_stuck = 1;
 }
 
 
