@@ -6,7 +6,7 @@ dotx_dx_1009n, through ovs-rtlpg's old-vs-new bench.
 
   tools/boot_stuck.py BOOT_IMAGE [--ovs DIR] [--board FILE] [--busy N]
 
-rtlsim (ovs-rtlpg feat/sched-sim 8c0b5fc) makes each table command take
+rtlsim (ovs-rtlpg feat/sched-sim 999584e) makes each table command take
 time, as on silicon: `reg busy 5cac 1 N` keeps TBL_CTRL's execute bit set
 for N reads, and only then applies the command. A command written while
 one is busy is dropped (`checks`: table-busy). A saved config with VLANs

@@ -148,3 +148,5 @@ Follow-ups (orchestrator) and reviewer2's E4 round, 2026-11-20
         written while `vlan 20 d` was busy)
       3b7886c: 0 dropped in both, the same table, page and `vlan show`
   sfp_raw kept (orchestrator); the flush time goes on the bench list (EB).
+  `reg busy` is ovs-rtlpg feat/sched-sim 999584e (sim2's correction).
+  3b7886c's message says 8c0b5fc, which is wrong.
