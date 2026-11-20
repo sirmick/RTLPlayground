@@ -125,6 +125,7 @@ F1 runs them all at once on the final branch (`evidence/f1-acceptance.txt`).
 | `boot_stuck.py` | a boot-time timeout doesn't spoil the boot's table work (E4) |
 | `vlan_eee.py` | `/vlanlist.json` and `eee`, old image against new (E4) |
 | `sfp_pull.py` | an SFP module pulled in the middle of its read (E2 review) |
+| `sched_rates.py` | `health tasks`' rates and load (decision 26): the periodic states at their periods' rates, the load against rtlsim's busy cycles, idle and during `l2` with 1000 hosts (FR) |
 | `isr_frame.py`, `resource_gate.py` | in every build: the ISR push counts, the gate |
 
 ## On silicon (the bench)
