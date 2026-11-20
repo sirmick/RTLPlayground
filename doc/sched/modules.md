@@ -151,7 +151,7 @@ What remains:
 |---|---|---|---|
 | `FL_ERASE` | 40 ms; 35.5-41.6 ms on the 8x | sim, 8x | the sanctioned exception |
 | RX_STEP while a config POST arrives (its multipart parse in one step) | 18.2 ms | 8x (EB); the sim didn't show it | F1b |
-| RX_STEP for `/vlanlist.json` with 40 VLANs of 20-character names | 34 ms (67-100 ms before) | sim (e4); not a reference scenario | open: the reply's JSON, ~1.5 ms an entry |
+| RX_STEP for `/vlanlist.json` with 40 VLANs of 20-character names | 34 ms (67-100 ms before) | sim (e4); not a reference scenario | F1b (the reply's JSON, ~1.5 ms an entry) |
 | `FL_VERIFY`, `FL_PROG` | 14.2, 8.1 ms | sim (e3) | under 20 ms, over the 5 ms target |
 | a forced poll timeout's step | 9.5-16.6 ms | sim (e4) | by design: one timeout a step |
 | the end of a `/loader` or install-image upload, `loader_update()` | not measured | - | rare paths (chapter 10) |

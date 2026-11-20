@@ -21,7 +21,7 @@ Each goal with where it stands at 72cee59. "Sim" is rtlsim (chapter 13),
    **Not met everywhere:**
    - over 20 ms outside the scenarios: `/vlanlist.json` with 40 VLANs of
      20-character names, 34 ms in one RX step (was 67-100 ms;
-     e4-polls-vlan-eee.txt: the reply's size bounds it);
+     e4-polls-vlan-eee.txt: the reply's size bounds it; F1b owns it);
    - over the 5 ms target: `FL_VERIFY` 14.2 ms and `FL_PROG` 8.1 ms
      (e3-flash-job.txt), a forced poll timeout's step 9.5-16.6 ms
      (modules.md), l2_big's RX_STEP 11.1 ms (es-loop-flags.txt), and on the
