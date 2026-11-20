@@ -16,7 +16,10 @@ a step, with three exceptions that change:
 1. **Uploads (firmware and config).** The callback copies each segment of
    the body into the stage, behind what the flash job (chapter 10) still
    has to write, and claims the job if it isn't running. uIP's receive
-   window is the room left in the stage, at most an MSS
+   window is the room left in the stage, all of it since F1b (it was
+   capped at an MSS, against which Linux sends half segments, one per round
+   trip; now the stage, 4480 B, comes in one burst of three full segments
+   and a short one; the NIC's RX ring, ~10 KiB, holds them)
    (`UIP_CONF_RECEIVE_WINDOW` is `uip_rcv_wnd`, set by httpd): the client
    sends only what fits, and the window's right edge (ACK + window) never
    moves left, so nothing it has sent inside the window is lost. The job
