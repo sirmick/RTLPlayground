@@ -43,7 +43,8 @@ var LANG = {
         stg_save: "Save",
         stg_saved: "Saved",
         stg_applied: "Applied",
-        stg_rolled: "Not confirmed: the switch rolls the change back",
+        stg_rolled: "Not confirmed: the switch rolled the change back",
+        stg_lost: "No answer from the switch",
         stg_confirm: "confirming, {s} s",
         c_name: "Name",
         c_link: "Link",
@@ -2215,7 +2216,8 @@ i18nApply();
 /* The firmware shares one output buffer across connections and delimits
  * responses by closing, so the next request must wait for the previous
  * BODY, not just its headers. */
-var _q = Promise.resolve();
+var _q = Promise.resolve(),
+    stgHold = 0;	/* a confirm window: pollers pause, requests wait 3 s */
 
 function api(path, opts) {
     return new Promise(function(resolve, reject) {
@@ -2225,7 +2227,7 @@ function api(path, opts) {
             if (ctl) opts.signal = ctl.signal;
             var to = setTimeout(function() {
                 if (ctl) ctl.abort()
-            }, 10000);
+            }, stgHold ? 3000 : 10000);
             return fetch(path, opts).then(function(r) {
                 if (r.status === 401) {
                     clearTimeout(to);
@@ -2588,38 +2590,43 @@ function stgDiscard() {
 var STG_WINDOW = 30;
 
 function stgApply() {
-    var until = Date.now() + STG_WINDOW * 1000,
-        rolled = 0;
+    var until = Date.now() + STG_WINDOW * 1000;
     $("stgApply").disabled = true;
     cli(["apply " + STG_WINDOW]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
     }, function() {}).then(function() {
         /* applied, or its reply lost (the change may cut this browser
-         * off): the window is open either way, confirm once through */
-        return stgConfirm(until).catch(function(e) {
-            rolled = 1;
-            throw e;
+         * off): the window is open either way, confirm once through;
+         * failing that, the switch says how it ended */
+        stgHold = 1;
+        return stgConfirm(until).then(function() {
+            return "done"
+        }, function() {
+            return stgBack(60)
         });
-    }).then(function() {
-        toast(t("stg_applied"), "ok");
+    }).then(function(a) {
+        if (a === "done") toast(t("stg_applied"), "ok");
+        else toast(a === "rolled_back" ? t("stg_rolled") : a ? "apply " + a : t("stg_lost"), "err");
     }, function(e) {
         toast(e.message, "err");
     }).then(function() {
-        return rolled && stgBack(60);
-    }).then(function() {
+        stgHold = 0;
         $("stgApply").disabled = false;
         omReload();
     });
 }
 
-/* after a rollback: wait, n tries 2 s apart, until the switch answers
- * with its window closed, then show what it runs */
+/* after a confirm that didn't get through: wait, n tries 2 s apart, until
+ * the switch answers with its window closed; its state.cfg.apply ("" if
+ * it never answers): done if a confirm got there with its reply lost */
 function stgBack(n) {
     return cli(["get state.cfg.apply"]).then(function(r) {
         var a = ((parseLines(r.out[0] || []).state || {}).cfg || {}).apply;
         if (a === "confirm" || a === "undo") throw 0;
+        return a || "";
     }).catch(function() {
-        if (n) return new Promise(function(ok) {
+        if (!n) return "";
+        return new Promise(function(ok) {
             setTimeout(ok, 2000)
         }).then(function() {
             return stgBack(n - 1)
@@ -2632,10 +2639,9 @@ function stgConfirm(until) {
         s: Math.max(0, Math.round((until - Date.now()) / 1000))
     });
     return cli(["confirm"]).then(function(r) {
-        /* no window: it ended, the switch rolled back */
-        if (r.errs.length) throw new Error(t("stg_rolled"));
+        if (r.errs.length) throw new Error(r.errs[0]);	/* no window */
     }, function() {
-        if (Date.now() > until) throw new Error(t("stg_rolled"));
+        if (Date.now() > until) throw new Error();
         return new Promise(function(ok) {
             setTimeout(ok, 2000)
         }).then(function() {
@@ -2928,7 +2934,7 @@ Poller.prototype.stop = function() {
 Poller.prototype.tick = function() {
     var self = this;
     if (!self.on) return;
-    var quiet = document.hidden || Date.now() - lastInput > IDLE_STOP_MS;
+    var quiet = stgHold || document.hidden || Date.now() - lastInput > IDLE_STOP_MS;
     var run = quiet ? Promise.resolve() : Promise.resolve().then(self.fn).catch(function() {});
     run.then(function() {
         if (self.on) self.t = setTimeout(function() {
