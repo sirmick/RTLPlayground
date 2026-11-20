@@ -1,7 +1,8 @@
 /*
  * om_sys.c - sys for the object model (schema/sys.py, schema/state_sys.py):
- * state.sys, the build, the board and the chip; state.loader; and the
- * actions reset, factory_reset and rnd. state.sys.reset is sched_health.c's
+ * the config (hostname, led: what the old hostname and led commands
+ * did); state.sys, the build, the board and the chip;
+ * state.loader; and the actions reset, factory_reset and rnd. state.sys.reset is sched_health.c's
  * (it reads the scheduler's names). The boot's version lines are printed
  * from here too, from the same strings.
  */
@@ -18,6 +19,8 @@
 #include "uip/uip.h"
 #include "update_apply.h"
 #include "om_gen.h"
+#include "rtl837x_leds.h"
+#include "boot.h"
 
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
@@ -26,6 +29,7 @@ extern __xdata uint8_t sfr_data[4];
 extern __xdata uint32_t flash_size;
 extern __xdata bool button_last;
 extern __xdata uint8_t cmd_capture;	/* a web command's output is being captured */
+extern __xdata char hostname[24];
 
 static __code const char s_version[] = VERSION_SW;
 static __code const char s_date[] = BUILD_DATE;
@@ -42,6 +46,25 @@ static __xdata uint8_t * __xdata dp;
 
 #define S	om_st.sys
 #define UP	((__xdata uint8_t *)&om_st.sys.uptime_s)
+
+uint8_t om_apply_sys(uint8_t idx) __banked
+{
+	(void)idx;
+	memcpy(hostname, cfg_run.sys.hostname, sizeof(hostname));
+	set_hostname_default();		/* empty: from the MAC */
+	l = cfg_run.sys.led;
+	if (l != cfg_roll.sys.led)	/* the LED registers only for a new setting */
+		leds_off(l != E_LED_ON, l == E_LED_OFF);
+	return OM_OK;
+}
+
+/* sys.hostname, empty: the name in use */
+uint8_t om_derive_sys(uint8_t idx) __banked
+{
+	(void)idx;
+	memcpy(om_val, hostname, sizeof(hostname));
+	return OM_OK;
+}
 
 void print_sw_version(void) __banked
 {

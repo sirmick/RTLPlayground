@@ -163,7 +163,9 @@ uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
 static int t_syslog;
 static struct cfg_syslog syslog_new;
 uint8_t om_apply_syslog(uint8_t idx) { t_syslog++; syslog_new = cfg_run.syslog; return OM_OK; }
-static int t_dns, t_ntp, t_web, t_mgmt, t_renew;
+static int t_dns, t_ntp, t_web, t_mgmt, t_renew, t_sysa;
+uint8_t om_apply_sys(uint8_t idx) { t_sysa++; return OM_OK; }
+uint8_t om_derive_sys(uint8_t idx) { strcpy((char *)om_val, "RTLPlayground-0a0b0c"); return OM_OK; }
 uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 {
@@ -651,7 +653,7 @@ static void kinds(void)
 	expect("do sys.factory_reset", "err sys.factory_reset: the flash is busy\n");
 	CHECK(sys_rnd == 1 && sys_factory == 1, "do sys.rnd, sys.factory_reset: their handlers");
 	expect("set sys.reset on", "err sys.reset: an action: do it\n");
-	expect("do sys", "err sys: reset factory_reset rnd\n");
+	expect("do sys", "err sys: hostname led reset factory_reset rnd\n");
 	expect("get state.sys.version state.sys.chip state.sys.ports state.sys.sfp_ports state.sys.ports_10g",
 	       "state.sys.version v0.1.0-test\nstate.sys.chip rtl8373\nstate.sys.ports 1-9\n"
 	       "state.sys.sfp_ports 9\nstate.sys.ports_10g none\nok\n");
@@ -1309,6 +1311,16 @@ static void services(void)
 {
 	printf("services\n");
 	om_init();
+	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nok\n");
+	expect("set sys.led ports_off", "ok\n");
+	expect("set sys.hostname lab1", "ok\n");
+	t_sysa = 0;
+	expect("apply", "ok\n");
+	expect("get sys.hostname sys.led", "sys.hostname lab1\nsys.led ports_off\nok\n");
+	CHECK(t_sysa == 1, "sys: one apply");
+	expect("set sys.hostname", "ok\n");
+	expect("apply", "ok\n");
+	expect("get sys.hostname", "sys.hostname RTLPlayground-0a0b0c\nok\n");
 	expect("get mgmt", "mgmt.mode static\nmgmt.ip 192.168.2.2\nmgmt.netmask 255.255.255.0\nmgmt.gateway 192.168.2.22\nmgmt.vlan 1\nok\n");
 	expect("do mgmt.dhcp_renew", "err mgmt.dhcp_renew: mgmt.mode is static\n");
 	expect("set mgmt.ip 10.0.0.5", "ok\n");

@@ -38,3 +38,5 @@ field 8.2 mgmt.ip IPV4
 field 8.3 mgmt.netmask MASK4
 field 8.4 mgmt.gateway IPV4
 field 8.5 mgmt.vlan U16
+field 2.1 sys.hostname Str(23)
+field 2.2 sys.led Enum(led)

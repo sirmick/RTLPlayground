@@ -438,6 +438,14 @@ void print_mac(__xdata uint8_t *ptr) __banked
 	}
 }
 
+static void cmd_error(__code const char *msg)
+{
+	err_status = ERR_INVALID_ARGUMENT;
+	print_string("Error: ");
+	print_string(msg);
+}
+
+
 // Parses a MAC address "aa:bb:cc:dd:ee:ff" (":" or "-" separators) from
 // cmd_buffer starting at idx into the global mac_parse_result[6]. Each octet
 // must be exactly two hex digits with a separator between octets and nothing
@@ -486,38 +494,6 @@ err:
 	return 0;
 }
 
-static void cmd_error(__code const char *msg)
-{
-	err_status = ERR_INVALID_ARGUMENT;
-	print_string("Error: ");
-	print_string(msg);
-}
-
-
-static uint8_t name_char(uint8_t c)
-{
-	if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
-		return '.';
-	return c;
-}
-
-
-// "led off" turns every LED off, "led off ports" only the port LEDs (the
-// system LED stays on), "led on" restores them. Saved in the startup
-// config like any command, so it holds across reboots.
-void parse_led(void)
-{
-	if (cmd_words_len == 2 && cmd_compare(1, "on"))
-		leds_off(0, 0);
-	else if (cmd_words_len == 2 && cmd_compare(1, "off"))
-		leds_off(1, 1);
-	else if (cmd_words_len == 3 && cmd_compare(1, "off") && cmd_compare(2, "ports"))
-		leds_off(1, 0);
-	else
-		cmd_error("led on|off [ports]\n");
-}
-
-
 // Sets the management MAC from a "mac <aa:bb:cc:dd:ee:ff>" command (or prints
 // the current one with a bare "mac"). Refuses blank/multicast/all-zero-OUI
 // addresses so the running MAC stays reachable, and
@@ -555,6 +531,13 @@ void parse_mac_cmd(void)
 	print_mac(uip_ethaddr.addr);
 	write_char('\n');
 	print_string("Save the startup config to keep it across reboots\n");
+}
+
+static uint8_t name_char(uint8_t c)
+{
+	if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
+		return '.';
+	return c;
 }
 
 
@@ -1505,6 +1488,8 @@ void cmd_parser(void) __banked
 				port_l2_forget();
 			else
 				port_l2_learned();
+		} else if (cmd_compare(0, "mac")) {
+			parse_mac_cmd();
 		} else if (cmd_compare(0, "igmp")) {
 			if (cmd_compare(1, "on"))
 				igmp_enable();
@@ -1514,29 +1499,6 @@ void cmd_parser(void) __banked
 				igmp_show();
 			else {
 				cmd_error("igmp on|off|show\n");
-			}
-		} else if (cmd_compare(0, "mac")) {
-			parse_mac_cmd();
-		} else if (cmd_compare(0, "hostname")) {
-			/* "hostname" alone reports the current name; "hostname <text>"
-			 * sets it, sanitized to JSON-safe printable ASCII. A name with
-			 * spaces would tokenize into several words - reject it instead
-			 * of silently keeping the first one. */
-			if (cmd_words_len == 1) {
-				print_string_x(hostname);
-				write_char('\n');
-			} else if (cmd_words_len == 2) {
-				__xdata uint8_t *hp = &cmd_buffer[cmd_words_b[1]];
-				__xdata char *dst = hostname;
-				for (uint8_t hn = 0; hn < sizeof(hostname) - 1; hn++) {
-					uint8_t c = *hp++;
-					if (c == NUL || c == '\r' || c == '\n')
-						break;
-					*dst++ = name_char(c);
-				}
-				*dst = NUL;
-			} else {
-				cmd_error("hostname [name] - the name must not contain spaces\n");
 			}
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
@@ -1564,8 +1526,6 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
-		} else if (cmd_compare(0, "led")) {
-			parse_led();
 		} else if (cmd_compare(0, "loop")) {
 			if (cmd_words_len == 2 && cmd_compare(1, "on"))
 				rldp_set(1);
