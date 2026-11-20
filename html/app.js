@@ -45,6 +45,8 @@ var LANG = {
         stg_applied: "Applied",
         stg_rolled: "Not confirmed: the switch rolled the change back",
         stg_lost: "No answer from the switch",
+        stg_unapplied: "Not applied: the change is still staged",
+        stg_failed: "Apply failed: the switch runs the old config",
         stg_confirm: "confirming, {s} s",
         c_name: "Name",
         c_link: "Link",
@@ -2217,7 +2219,7 @@ i18nApply();
  * responses by closing, so the next request must wait for the previous
  * BODY, not just its headers. */
 var _q = Promise.resolve(),
-    stgHold = 0;	/* a confirm window: pollers pause, requests wait 3 s */
+    stgHold = 0;	/* apply's window: pollers pause; 1: requests wait 3 s */
 
 function api(path, opts) {
     return new Promise(function(resolve, reject) {
@@ -2227,7 +2229,7 @@ function api(path, opts) {
             if (ctl) opts.signal = ctl.signal;
             var to = setTimeout(function() {
                 if (ctl) ctl.abort()
-            }, stgHold ? 3000 : 10000);
+            }, stgHold === 1 ? 3000 : 10000);
             return fetch(path, opts).then(function(r) {
                 if (r.status === 401) {
                     clearTimeout(to);
@@ -2589,24 +2591,25 @@ function stgDiscard() {
  * to the switch again and confirms, else the switch rolls it back */
 var STG_WINDOW = 30;
 
+/* Apply, then follow the switch's state.cfg until it has
+ * an outcome: confirm while it is open (the switch's countdown is the
+ * deadline, not this browser's clock), wait while it walks */
 function stgApply() {
-    var until = Date.now() + STG_WINDOW * 1000;
     $("stgApply").disabled = true;
+    stgHold = 2;		/* apply's reply may take long: 10 s */
     cli(["apply " + STG_WINDOW]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
-    }, function() {}).then(function() {
-        /* applied, or its reply lost (the change may cut this browser
-         * off): the window is open either way, confirm once through;
-         * failing that, the switch says how it ended */
         stgHold = 1;
-        return stgConfirm(until).then(function() {
-            return "done"
-        }, function() {
-            return stgBack(60)
-        });
+        return stgWatch(60, 1);
+    }, function() {
+        /* its reply lost (the change may cut this browser off, or the
+         * walk outlasts the reply): ask the switch */
+        stgHold = 1;
+        return stgWatch(60, 0);
     }).then(function(a) {
         if (a === "done") toast(t("stg_applied"), "ok");
-        else toast(a === "rolled_back" ? t("stg_rolled") : a ? "apply " + a : t("stg_lost"), "err");
+        else toast(t(a === "rolled_back" ? "stg_rolled" : a === "failed" ? "stg_failed" :
+            a === "unapplied" ? "stg_unapplied" : "stg_lost"), "err");
     }, function(e) {
         toast(e.message, "err");
     }).then(function() {
@@ -2616,36 +2619,32 @@ function stgApply() {
     });
 }
 
-/* after a confirm that didn't get through: wait, n tries 2 s apart, until
- * the switch answers with its window closed; its state.cfg.apply ("" if
- * it never answers): done if a confirm got there with its reply lost */
-function stgBack(n) {
-    return cli(["get state.cfg.apply"]).then(function(r) {
-        var a = ((parseLines(r.out[0] || []).state || {}).cfg || {}).apply;
-        if (a === "confirm" || a === "undo") throw 0;
-        return a || "";
+/* n tries 2 s apart: confirm while the window is open (at once if apply
+ * said ok), wait while it walks or undoes; then its outcome: done,
+ * rolled_back, failed, unapplied (apply never got there: the change is
+ * still pending), or "" if the switch never answers */
+function stgWatch(n, open) {
+    return (open ? Promise.resolve("confirm") : cli(["get state.cfg"]).then(function(r) {
+        var c = (parseLines(r.out[0] || []).state || {}).cfg || {},
+            a = c.apply;
+        $("stgN").textContent = t("stg_confirm", {
+            s: c.confirm_s || 0
+        });
+        if (a === "running" || a === "undo") throw 0;
+        if (a === "confirm" || a === "failed") return a;
+        return c.pending > 0 ? "unapplied" : a;
+    })).then(function(a) {
+        if (a !== "confirm") return a;
+        return cli(["confirm"]).then(function(r) {
+            if (r.errs.length) throw 0;		/* the window ended: ask again */
+            return "done";
+        });
     }).catch(function() {
         if (!n) return "";
         return new Promise(function(ok) {
             setTimeout(ok, 2000)
         }).then(function() {
-            return stgBack(n - 1)
-        });
-    });
-}
-
-function stgConfirm(until) {
-    $("stgN").textContent = t("stg_confirm", {
-        s: Math.max(0, Math.round((until - Date.now()) / 1000))
-    });
-    return cli(["confirm"]).then(function(r) {
-        if (r.errs.length) throw new Error(r.errs[0]);	/* no window */
-    }, function() {
-        if (Date.now() > until) throw new Error();
-        return new Promise(function(ok) {
-            setTimeout(ok, 2000)
-        }).then(function() {
-            return stgConfirm(until)
+            return stgWatch(n - 1, 0)
         });
     });
 }
