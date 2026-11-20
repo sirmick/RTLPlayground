@@ -3876,8 +3876,8 @@ $("stpcntd").addEventListener("toggle", function() {
     if (this.open) stpLoad()
 });
 /* loop.enabled (the box the candidate's, the line running's), the ports
- * from state.loop; with STP on (stpCur.on: running's stp.enabled once
- * P4-4's tab sets it) it only reports */
+ * from state.loop; with STP on (stpCur.on: running's stp.enabled, from
+ * stpLoad) it only reports */
 function loopLoad() {
     return cli(["get -c loop.enabled", "get loop.enabled", "get state.loop"]).then(function(r) {
         var c = parseLines(r.out[0] || []).loop || {},
@@ -3898,16 +3898,6 @@ function loopLoad() {
                 txt += " (" + t("loop_stp") + ")";
         }
         $("loopst").textContent = txt;
-    }).catch(function() {});
-}
-
-/* set lines into the candidate, then the bar's Apply; a refused set
- * stages undo, this batch's old values */
-function omSet(l, undo) {
-    return cli(l).then(function(r) {
-        if (!r.errs.length) return stgApply();
-        toast(r.errs[0], "err");
-        return cli(undo);
     }).catch(function() {});
 }
 
