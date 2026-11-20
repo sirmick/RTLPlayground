@@ -4478,7 +4478,8 @@ function l2Render() {
             text: "\u2715",
             title: t("l2_del_t"),
             onclick: function() {
-                postJSON("/l2_del.json?idx=" + e.idx).then(function() {
+                cli(["do l2.delete " + e.idx]).then(function(r) {
+                    if (r.errs.length) return toast(r.errs[0], "err");
                     l2Rows = l2Rows.filter(function(x) {
                         return x !== e
                     });

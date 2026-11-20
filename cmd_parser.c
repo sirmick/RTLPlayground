@@ -982,11 +982,6 @@ void cmd_parser(void) __banked
 			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
-		} else if (cmd_compare(0, "l2")) {
-			if (cmd_compare(1, "forget"))
-				port_l2_forget();
-			else
-				cmd_error("\nUsage:\n\tl2 forget\n\t(the table: get state.l2)\n");
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
 		} else if (cmd_compare(0, "igmp") && cmd_compare(1, "show")) {

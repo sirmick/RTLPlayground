@@ -1073,11 +1073,7 @@ void handle_post(uint16_t body_off)
 			return;
 		webcmd_queue(p);
 		return;
-	/* these change something: POSTs, not GETs (P3C), until P6's actions */
-	} else if (is_word(request_path, "l2_del.json")) {
-		parse_short(request_path + 16);	/* l2_del.json?idx=10 */
-		l2_delete(short_parsed);
-		return;
+	/* it changes something: a POST, not a GET (P3C) */
 	} else if (is_word(request_path, "reset")) {
 		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
 		crash_pending = CRASH_WEB;

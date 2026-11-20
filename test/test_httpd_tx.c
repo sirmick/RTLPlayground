@@ -290,8 +290,6 @@ void send_bandwidth(void) { }
 void send_storm(void) { }
 void send_isolation(void) { }
 void send_eee(void) { }
-static int l2_deleted = -1;
-void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_stp(void) { }
 
 extern uint8_t authenticated;
@@ -2239,7 +2237,6 @@ static void scenario_side_effect_gets(void)
 
 	reset_calls = 0;
 	history_clears = 0;
-	l2_deleted = -1;
 	for (int i = 0; i < 3; i++) {
 		int n = sprintf(req, "GET %s HTTP/1.1\r\nHost: sw\r\nCookie: session=0123456789ab\r\n\r\n", gets[i]);
 
@@ -2249,14 +2246,14 @@ static void scenario_side_effect_gets(void)
 		drain(MSS_FULL);
 		CHECK(stream_contains("404 Not found"), gets[i]);
 	}
-	CHECK(!reset_calls && !history_clears && l2_deleted < 0, "GET: none of them changes anything");
+	CHECK(!reset_calls && !history_clears, "GET: none of them changes anything");
 
 	cli_post("/cmd_log_clear", "");
 	drain(MSS_FULL);
 	CHECK(!history_clears && stream_contains("404 Not found"), "POST /cmd_log_clear: gone (P3B), 404");
 	cli_post("/l2_del.json?idx=7", "");
 	drain(MSS_FULL);
-	CHECK(l2_deleted == 7, "POST /l2_del.json?idx=7 deletes entry 7");
+	CHECK(stream_contains("404 Not found"), "POST /l2_del.json: gone (do l2.delete, P7), 404");
 
 	/* without a session: 401, nothing done */
 	session_start(MSS_FULL);

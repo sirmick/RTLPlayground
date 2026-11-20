@@ -344,6 +344,15 @@ static int sched_clears;
 uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
 uint8_t om_get_con(uint8_t idx) { memset(&om_st.con, 0, sizeof(om_st.con)); om_st.con.tx_free = 2047; return OM_OK; }
 uint8_t om_do_sched_clear(uint8_t idx) { sched_clears++; return OM_OK; }
+/* do l2.flush, do l2.delete (om_port.c): the argument they were given */
+static int l2_arg = -1;
+uint8_t om_do_l2_flush(uint8_t idx) { l2_arg = om_key; return OM_OK; }
+uint8_t om_do_l2_delete(uint8_t idx)
+{
+	l2_arg = om_key;
+	if (om_key != 0x20) { om_fail(OM_E_L2_NONE); return OM_ERR; }
+	return OM_OK;
+}
 /* state.mgmt, state.ntp, state.dns, state.loop (dhcp.c, ntp.c, dns.c, rtl837x_rldp.c) */
 uint8_t om_get_mgmt(uint8_t idx)
 {
@@ -725,10 +734,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
+	expect("get lacp.1", "err lacp.1: sched l2 sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\ndns\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nntp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsyslog\nweb\nlag.*\nport.*\nport.*.storm.*\nstp\nstp.lag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
+	expect("get", "sched\nl2\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ndns\nstate.l2.*\nntp\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsyslog\nweb\nlag.*\nport.*\nport.*.storm.*\nstp\nstp.lag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1059,6 +1068,17 @@ static void kinds(void)
 	       "state.lacp.port.1.rx_state current\nstate.lacp.port.1.rx_pdus 0\nstate.lacp.port.1.partner_sys 00:00:00:00:00:00\nok\n");
 	expect("do sched.clear", "ok\n");
 	CHECK(sched_clears == 1, "do sched.clear: its handler, once");
+	expect("do l2.flush", "ok\n");
+	CHECK(l2_arg == 0xffff, "do l2.flush: no argument, 0xffff");
+	expect("do l2.flush 3", "ok\n");
+	CHECK(l2_arg == 3, "do l2.flush 3: om_key 3");
+	expect("do l2.delete 32", "ok\n");
+	expect("do l2.delete 7", "err l2.delete: no such entry\n");
+	CHECK(l2_arg == 7, "do l2.delete 7: om_key 7");
+	l2_arg = -1;
+	expect("do l2.delete x", "err l2.delete: a number\n");
+	expect("do l2.delete 70000", "err l2.delete: a number\n");
+	CHECK(l2_arg == -1, "a bad argument: the handler isn't called");
 	{
 		const char *o = run("get state.sys");
 		CHECK(!strncmp(o, "state.sys.version ", 18) && strstr(o, "state.sys.button off\nstate.sys.reset.cause web\n") &&
@@ -1192,7 +1212,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched l2 sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{

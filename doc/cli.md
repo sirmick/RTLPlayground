@@ -119,8 +119,8 @@ once they move:
 | IGMP snooping, LLDP, loop detection, mirroring | `igmp`, `lldp`, `loop`, `mirror`, until P4-5 | `igmp.*`, `lldp.*`, `loop.*`, `mirror.*` |
 | the switch's MAC | `mac` | `sys.mac` (deferred) |
 
-`dns lookup <name>` stays a command, and so does `l2 forget` (it flushes the
-learned MAC entries; the table itself is `get state.l2`). The debugging
+`dns lookup <name>` stays a command. `l2 forget` is `do l2.flush` (it flushes the
+learned MAC entries; the table itself is `get state.l2`), and `do l2.delete K` deletes entry K. The debugging
 tools stay: `regget`, `regset`, `phyget`, `physet`, `sds`, `sdsget`,
 `sdsset`, `gpio`, `leds`, `flash`. Removed, with no command:
 `ip`, `gw`, `netmask`, `hostname`, `passwd`, `session`, `led`, `ntp ...`,

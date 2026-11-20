@@ -56,7 +56,6 @@ ok
 | `POST /loader` | A new loader image, staged; installed at the next boot. |
 | `POST /mdata` | The board's machine-data blob (PoE firmware) into its own region. |
 | `POST /reset` | Resets after the reply (`do sys.reset` does the same over `/cli`). |
-| `POST /l2_del.json?idx=N` | Deletes L2 entry N (the L2 tab's delete). |
 | `GET /`, `/index.html`, `/login.html`, `app.js`, `favicon.ico` | The web UI's files. |
 
 Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.port`,
@@ -65,7 +64,7 @@ Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.por
 `state.loader`); `/l2.json` (`get state.l2`), `/counters.json` (`state.port.N.mib`);
 `/bandwidth.json`, `/storm.json` (`port.N.bw_*`, `port.N.storm.T.*`);
 `/cmd_log`, `/cmd_log_clear` (no command history any more); `/lag.json` (`get lag`,
-`state.lag`, `state.lacp.port`).
+`state.lag`, `state.lacp.port`); `/l2_del.json` (`do l2.delete K`).
 
 ## The JSON pages left
 

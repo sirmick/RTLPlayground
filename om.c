@@ -2229,6 +2229,15 @@ static void om_do(void)
 		fail("not an action");
 		return;
 	}
+	om_key = 0xffff;			/* the argument (om.h): none */
+	if (cmd_words_len > 2) {
+		word(2);
+		if (!parse_dec() || num[2] || num[3] || !at_end()) {
+			fail("a number");
+			return;
+		}
+		memcpy(&om_key, num, 2);
+	}
 	for (first_inst(); cur_ok; next_inst()) {
 		if (!om_when()) {
 			if (r_fix & 1) {

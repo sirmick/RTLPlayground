@@ -21,9 +21,11 @@
 #include "phy.h"
 #include "sfp.h"
 #include "machine.h"
+#include "uip/uip.h"
 #include "om_gen.h"
 
 extern __code const struct machine machine;
+extern __xdata struct uip_eth_addr uip_ethaddr;
 extern __xdata uint8_t sfr_data[4];
 extern __xdata bool lldp_was_enabled;
 
@@ -371,7 +373,7 @@ uint8_t om_get_port_mib(uint8_t idx) __banked
 
 /* state.l2: the first entry at or after om_key (om.h), by its table index */
 #define L	om_st.l2
-static __xdata uint16_t ix;
+static __xdata uint16_t ix, want;
 
 uint8_t om_get_l2(uint8_t idx) __banked
 {
@@ -402,6 +404,45 @@ uint8_t om_get_l2(uint8_t idx) __banked
 	l |= (sfr_data[3] & 3) << 2;
 	L.port = l;
 	L.lag = port_lag_of(l) + 1;		/* PORT_LAG_NONE + 1: 0 */
+	return OM_OK;
+}
+
+/* do l2.flush: every port's dynamic entries */
+uint8_t om_do_l2_flush(uint8_t idx) __banked
+{
+	(void)idx;
+	port_l2_forget();
+	return OM_OK;
+}
+
+/* do l2.delete K: entry K, read as state.l2.K is, written back without
+ * its ports, age and auth; the switch's own entry keeps management */
+uint8_t om_do_l2_delete(uint8_t idx) __banked
+{
+	(void)idx;
+	want = om_key;
+	if (om_get_l2(0) || om_key != want) {
+		om_fail(OM_E_L2_NONE);
+		return OM_ERR;
+	}
+	if (!memcmp(L.mac, uip_ethaddr.addr, 6)) {
+		om_fail(OM_E_L2_OWN);
+		return OM_ERR;
+	}
+	reg_read_m(RTL837x_L2_DATA_OUT_B);
+	sfr_data[0] &= 0x3f;			/* SPA */
+	reg_write_m(RTL837x_TBL_DATA_IN_B);
+	reg_read_m(RTL837x_L2_DATA_OUT_A);
+	reg_write_m(RTL837x_TBL_DATA_IN_A);
+	reg_read_m(RTL837x_L2_DATA_OUT_C);
+	sfr_data[3] &= 0xc0;			/* age, auth, the ports' high bits */
+	sfr_data[1] &= 0xfe;			/* nosalearn */
+	reg_write_m(RTL837x_TBL_DATA_IN_C);
+	reg_read_m(RTL837x_TBL_DATA_0);
+	sfr_data[2] = TBL_L2_UNICAST;
+	reg_write_m(RTL837x_TBL_DATA_0);
+	REG_WRITE(RTL837X_TBL_CTRL, ix >> 8, ix, TBL_L2_UNICAST, TBL_WRITE | TBL_EXECUTE);
+	hw_poll(RTL837X_TBL_CTRL);
 	return OM_OK;
 }
 

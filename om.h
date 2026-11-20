@@ -90,7 +90,8 @@ typedef uint8_t (*om_fn)(uint8_t) __banked;
  * a second level's index is om_ix1. A streamed object's getter finds the
  * first instance at or after om_key, sets om_key to it and fills om_st, or
  * returns OM_ERR if there is none (the search wrapped). get <path>.K- is
- * a page: the first OM_PAGE instances at or after K.
+ * a page: the first OM_PAGE instances at or after K. An action's handler
+ * finds its argument (do <path> N) here, 0xffff if none.
  */
 extern __xdata uint8_t om_ix1;
 extern __xdata uint16_t om_key;
