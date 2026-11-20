@@ -446,7 +446,7 @@ uint8_t port_l2_forget(void) __banked
 
 /* l2: the header, then one table search per port_l2_line() (the cli's l2
  * job, E1: ~3.1 ms an entry), from entry 0 until the search wraps */
-static __xdata uint16_t l2_entry, l2_first;
+static __xdata uint16_t l2_entry, l2_first, l2_found;
 
 void port_l2_learned(void) __banked
 {
@@ -473,7 +473,10 @@ uint8_t port_l2_line(void) __banked
 	wait_table_ready();
 
 	reg_read_m(RTL837x_TBL_DATA_0);
-	l2_entry = (((uint16_t)sfr_data[2] & 0x0f) << 8) | sfr_data[3];
+	l2_found = (((uint16_t)sfr_data[2] & 0x0f) << 8) | sfr_data[3];
+	if (l2_found < l2_entry)	// wrapped: l2_first may have gone mid-walk (aged out)
+		return 0;
+	l2_entry = l2_found;
 	if (l2_first == 0xffff) {
 		l2_first = l2_entry;
 	} else {
