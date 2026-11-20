@@ -28,5 +28,5 @@ MIB = (["if_in_octets", "if_out_octets", "if_in_ucast", "if_in_mcast", "if_in_bc
 assert len(MIB) == 55
 
 state("mib", parent="port", count=55, from0=True, get="om_get_port_mib", names=MIB,
-      tip="The STAT counters by index: one 64-bit counter, or two 32-bit (high, low)")
+      tip="STAT counters by index: one 64-bit or two 32-bit (high, low)")
 st("", U64)

@@ -20,4 +20,4 @@ st("tx_free", U16())
 
 obj("sched", order=0, tip="The scheduler")
 action("clear", "om_do_sched_clear",
-       tip="Zero the step statistics, the console's overruns and the hardware timeouts")
+       tip="Zero the step statistics, overruns and hardware timeouts")

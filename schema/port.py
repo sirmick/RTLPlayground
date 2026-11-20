@@ -6,7 +6,7 @@ obj("port", count=PORTS, apply="om_apply_port", check="om_check_port", order=40,
 cfg("name", Str(31), "", tip="Shown in the UI and sent as the LLDP port description", label="c_name")
 cfg("enabled", Bool, True, when="copper", tip="Administrative state", label="c_enabled")
 cfg("speed", Enum("speed", "auto 10m 100m 1g 2g5 5g 10g"), "auto", when="copper",
-    tip="Autonegotiate, or force one speed; 5g and 10g only on 10G ports", label="pt_speed")
+    tip="Autonegotiate or force a speed; 5g and 10g on 10G ports only", label="pt_speed")
 cfg("duplex", Enum("duplex", "auto full half"), "auto", when="copper",
     tip="Duplex for a forced 10m or 100m")
 cfg("mtu", U16(64, 16383), 16383, tip="Largest frame accepted, in bytes", unit="B", label="pt_mtu")

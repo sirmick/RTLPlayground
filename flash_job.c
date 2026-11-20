@@ -53,9 +53,9 @@ uint8_t flash_job_start(void) __banked
 		fl_addr = LDR_BOOTCNT;
 	} else if (fl_kind != FL_UPLOAD) {
 		fl_addr = CONFIG_START;
-		if (fl_kind >= FL_FACTORY) {
+		if (fl_kind >= FL_FACTORY) {	/* the config, not the help blob after it */
 			fl_from = DEFAULT_CONFIG_START;
-			fl_len = CONFIG_LEN;
+			fl_len = DEFAULT_CONFIG_LEN;
 		}
 	}
 	return 1;

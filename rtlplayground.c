@@ -1025,7 +1025,8 @@ void flash_default_config(void)
 	flash_region.addr = CONFIG_START;
 	flash_sector_erase();
 
-	for (uint8_t i = 0; i < 8; i++) // 8 * 512 Byte = 4 kByte (1 sector)
+	// the config, not the help blob after it (layout.h)
+	for (uint8_t i = 0; i < DEFAULT_CONFIG_LEN / FLASH_BUF_SIZE; i++)
 	{
 		flash_region.addr = source;
 		flash_region.len = FLASH_BUF_SIZE;

@@ -12,14 +12,19 @@ next - the tools just overwrite - so this fails the build when:
     config;
   - the final image is not IMAGESIZE bytes;
   - the final image holds no valid default config at DEFAULT_CONFIG_LOCATION:
-    binary records (om.c, DESIGN.md 15.3), "\0RC1", a length that fits the
-    sector and the records' CRC. A boot whose saved config isn't valid loads
-    this sector; a bad one would leave the switch on the schema's built-ins.
-    A tool that overwrites it (fileadder zeroed it on the compact layout until
-    the web data went in first) leaves zeros or erased flash.
+    binary records (om.c, DESIGN.md 15.3), "\0RC1", a length that fits its room
+    before the help blob (--default-room) and the records' CRC. A boot whose
+    saved config isn't valid loads this sector; a bad one would leave the
+    switch on the schema's built-ins. A tool that overwrites it (fileadder
+    zeroed it on the compact layout until the web data went in first) leaves
+    zeros or erased flash;
+  - the default config (--default-cfg) is longer than its room, or the help
+    blob (--help-blob, om_gen.py) runs past --help-end; or the final image
+    doesn't hold that blob at --help-at.
 
 Usage: check_layout.py --html <addr> --default-config <addr> --size <bytes>
          [--code <imagebuilder output>] [--html-defs html_data.h] [--image <final.bin>]
+         [--default-cfg <file> --default-room <bytes>] [--help-blob <file> --help-at <addr> --help-end <addr>]
 """
 import sys, re, argparse
 
@@ -40,13 +45,13 @@ def crc16(data):			# CRC-16/0xA001 from 0: om.c's crc16_bank1()
     return c
 
 
-def config_bad(sec):
-    """Why the sector isn't a valid binary config, or None."""
+def config_bad(sec, room):
+    """Why the sector isn't a valid binary config in its first room bytes, or None."""
     if sec[:4] != b"\0RC1":
         return "no \\0RC1 header (it starts %s)" % sec[:4].hex()
     n, c = int.from_bytes(sec[4:6], "little"), int.from_bytes(sec[6:8], "little")
-    if n > CONFIG_LEN - OM_HDR:
-        return "a length of %d B, past the sector" % n
+    if n > room - OM_HDR:
+        return "a length of %d B, past its %d B" % (n, room)
     if crc16(sec[OM_HDR:OM_HDR + n]) != c:
         return "a bad CRC (0x%04x, the records' 0x%04x)" % (c, crc16(sec[OM_HDR:OM_HDR + n]))
     return None
@@ -60,8 +65,23 @@ def main(argv):
     ap.add_argument("--default-config", type=num, required=True)
     ap.add_argument("--size", type=num, required=True)
     ap.add_argument("--image")
+    ap.add_argument("--default-cfg")
+    ap.add_argument("--default-room", type=num)
+    ap.add_argument("--help-blob")
+    ap.add_argument("--help-at", type=num)
+    ap.add_argument("--help-end", type=num)
     a = ap.parse_args(argv[1:])
     bad = []
+
+    blob = None
+    if a.default_cfg:
+        n = len(open(a.default_cfg, "rb").read())
+        if n > a.default_room:
+            bad.append(f"the default config is {n} B, past its {a.default_room} B before the help blob")
+    if a.help_blob:
+        blob = open(a.help_blob, "rb").read()
+        if a.help_at + len(blob) > a.help_end:
+            bad.append(f"the help blob ends at 0x{a.help_at + len(blob):x}, past 0x{a.help_end:x}")
 
     code_end = web_end = None
     if a.code:
@@ -83,14 +103,19 @@ def main(argv):
         n = len(img)
         if n != a.size:
             bad.append(f"image is 0x{n:x} bytes, expected 0x{a.size:x}")
-        why = config_bad(img[a.default_config:a.default_config + CONFIG_LEN])
+        why = config_bad(img[a.default_config:a.default_config + CONFIG_LEN], a.default_room or CONFIG_LEN)
         if why:
             bad.append(f"no valid default config at 0x{a.default_config:x}: {why}")
+        if blob is not None and img[a.help_at:a.help_at + len(blob)] != blob:
+            bad.append(f"the image doesn't hold the help blob at 0x{a.help_at:x}")
 
     if code_end is not None:
         print(f"layout: code 0x0-0x{code_end:x} (web UI from 0x{a.html:x})")
     if web_end is not None:
         print(f"layout: web UI 0x{a.html:x}-0x{web_end:x} (default config at 0x{a.default_config:x})")
+    if blob is not None:
+        print(f"layout: help blob 0x{a.help_at:x}-0x{a.help_at + len(blob):x} ({len(blob)} B, "
+              f"{a.help_end - a.help_at - len(blob)} free before 0x{a.help_end:x})")
     for b in bad:
         print("Error:", b)
     return 1 if bad else 0

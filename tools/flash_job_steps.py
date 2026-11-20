@@ -50,6 +50,7 @@ import rtlpg_client  # noqa: E402  the codec's crc16
 
 CONFIG_START, CONFIG_LEN = 0x7f000, 0x1000	# layout.h, compact
 DEFAULT_CONFIG_START = 0x39000
+DEFAULT_CONFIG_LEN = 0x200			# the config; the help blob after it isn't copied
 UPLOAD_START = 0x40000
 LDR_BOOTCNT = 0x3a000				# layout.h
 LIMIT_US = 50000				# the step limit (decision 25)
@@ -367,8 +368,10 @@ def main(argv):
         cfg = r.b.flash(CONFIG_START, CONFIG_LEN)
         out = r.b.pending() + r.b.sim.uart_text()
         n, c = struct.unpack("<HH", cfg[4:8])		# P3B: the default is binary records too
-        ok = cfg == default and cfg[:4] == b"\0RC1" and rtlpg_client.crc16(cfg[8:8 + n]) == c
-        print(f"   S3 config sector {'= the default config sector' if cfg == default else 'DIFFERS from the default'}, "
+        same = cfg[:DEFAULT_CONFIG_LEN] == default[:DEFAULT_CONFIG_LEN] and \
+            cfg[DEFAULT_CONFIG_LEN:] == b"\xff" * (CONFIG_LEN - DEFAULT_CONFIG_LEN)
+        ok = same and cfg[:4] == b"\0RC1" and rtlpg_client.crc16(cfg[8:8 + n]) == c
+        print(f"   S3 config sector {'= the default config, the rest erased' if same else 'DIFFERS from the default'}, "
               f"{'a valid' if ok else 'NO valid'} \\0RC1 header ({n} B of records)")
         ok = judge("S3", steps) and ok
         print(f"S3 factory reset: {'PASS' if ok else 'FAIL'}")

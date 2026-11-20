@@ -18,6 +18,9 @@ IMAGESIZE := $(call layout_val,IMAGE_SIZE)
 HTML_LOCATION := $(call layout_val,HTML_START)
 DEFAULT_CONFIG_LOCATION := $(call layout_val,DEFAULT_CONFIG_START)
 CONFIG_LOCATION := $(call layout_val,CONFIG_START)
+DEFAULT_CONFIG_ROOM := $(call layout_val,DEFAULT_CONFIG_LEN)
+HELP_LOCATION := $(call layout_val,HELP_START)
+HELP_END := $(call layout_val,HELP_END)
 ifeq ($(filter-out 0,$(IMAGESIZE)),)
 $(error could not read the flash layout from layout.h with $(HOSTCC))
 endif
@@ -91,8 +94,12 @@ ifeq ($(MACHINE_INIT_SRC),)
 	MACHINE_INIT_SRC := $(MACHINE_INIT_DEFAULT)
 endif
 
+# OM_HELP=0: no help (DESIGN 13), its code and its text compiled out; schedtest
+# has none
+OM_HELP ?= $(if $(SCHEDTEST),0,1)
+CC_FLAGS += -DOM_HELP=$(OM_HELP)
 ifndef BUILDDIR
-	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH)))
+	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH)),$(if $(filter 0,$(OM_HELP)),-nohelp))
 endif
 
 CONFIG_STAMP := $(BUILDDIR)/.config
@@ -426,20 +433,24 @@ DEFAULT_CFG = $(BUILDDIR)/default.cfg
 $(DEFAULT_CFG): $(CONFIG) $(CONFIG_STAMP) tools/rtlpg_client.py tools/om_gen.py $(wildcard schema/*.py) schema/registry.txt
 	python3 tools/rtlpg_client.py --machine $(MACHINE) default "$(CONFIG)" $@
 
-$(OUTPUT): $(BUILDDIR)/rtlplayground.img $(DEFAULT_CFG) | tools
+# The help blob (om.mk) follows the default config in its sector.
+HELP_BLOB = $(if $(filter 1,$(OM_HELP)),$(OM_GEN)/help.bin)
+LAYOUT_ARGS = --html $(HTML_LOCATION) --default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE) \
+	--default-cfg "$(DEFAULT_CFG)" --default-room $(DEFAULT_CONFIG_ROOM) \
+	$(if $(HELP_BLOB),--help-blob "$(HELP_BLOB)") --help-at $(HELP_LOCATION) --help-end $(HELP_END)
+$(OUTPUT): $(BUILDDIR)/rtlplayground.img $(DEFAULT_CFG) $(if $(HELP_BLOB),$(OM_GEN)/gen.stamp) | tools
 	@mkdir -p "$(dir $@)"
 	if [ -e "$@" ]; then rm "$@"; fi
 	tools/$(BUILDDIR)/imagebuilder -i $(BUILDDIR)/rtlplayground.img "$@"
-	python3 tools/check_layout.py --code "$@" --html-defs html_data.h --html $(HTML_LOCATION) \
-		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
+	python3 tools/check_layout.py --code "$@" --html-defs html_data.h $(LAYOUT_ARGS)
 	# the web data first: fileadder reads it raw (past the default config's
 	# sector, on the compact layout) and zeroes that tail after compressing
 	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
 	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(DEFAULT_CFG)" "$@"
+	$(if $(HELP_BLOB),tools/$(BUILDDIR)/fileadder -a $(HELP_LOCATION) -s $(IMAGESIZE) -d "$(HELP_BLOB)" "$@")
 	$(if $(CONFIG_IN_IMAGE),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(DEFAULT_CFG)" "$@")
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
-	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
-		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
+	python3 tools/check_layout.py --image "$@" $(LAYOUT_ARGS)
 	if [ -z "$(SCHEDTEST)" ] && [ "$(OUTPUT)" = "$(BUILDDIR)/rtlplayground-$(FILENAME_EXTENSION).bin" ]; then \
 		ln -sf $(MACHINE)/rtlplayground-$(FILENAME_EXTENSION).bin "$(BUILDDIR)/../rtlplayground.bin"; \
 	fi

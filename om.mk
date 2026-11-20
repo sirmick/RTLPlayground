@@ -20,7 +20,8 @@ SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 
 $(OM_GEN)/gen.stamp: $(OM_SCHEMA) tools/om_gen.py
-	python3 tools/om_gen.py $(addprefix -s ,$(OM_DIRS)) $(addprefix -x ,$(OM_SKIP)) -o $(OM_GEN)
+	python3 tools/om_gen.py $(addprefix -s ,$(OM_DIRS)) $(addprefix -x ,$(OM_SKIP)) -o $(OM_GEN) \
+		$(if $(filter 1,$(OM_HELP)),--help-blob $(OM_GEN)/help.bin --help-room $$(($(HELP_END) - $(HELP_LOCATION))))
 	touch $@
 $(OM_GEN)/om_gen.h $(OM_GEN)/om_gen.c: $(OM_GEN)/gen.stamp ;
 $(BUILDDIR)/om_gen.rel: $(OM_GEN)/om_gen.c $(BUILDDIR)/.ccflags | create_build_dir
