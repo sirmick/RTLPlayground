@@ -1826,8 +1826,10 @@ void cmd_parser(void) __banked
 			write_char('\n');
 		} else if (cmd_compare(0, "gpio")) {
 			print_gpio_status();
+#ifdef DEBUG_OBJ
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
+#endif
 		} else if (cmd_compare(0, "led")) {
 			parse_led();
 		} else if (cmd_compare(0, "loop")) {

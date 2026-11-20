@@ -249,7 +249,6 @@ SRCS += \
 	rtl837x_init.c \
 	rtl837x_nic.c \
 	rtl837x_leds.c \
-	rtl837x_leds_dump.c \
 	rtl837x_phy.c \
 	rtl837x_pins.c\
 	rtl837x_port.c \
@@ -273,6 +272,14 @@ SRCS += \
 	uip/uip-neighbor.c \
 	uip/uip-split.c
 
+# DEBUG_OBJ=1: the debug namespace (DESIGN.md 9), for rtlsim, bench and test
+# images; release images leave it out. So far: the leds dump (the `leds`
+# command).
+DEBUG_OBJ ?=
+ifneq ($(DEBUG_OBJ),)
+CC_FLAGS += -DDEBUG_OBJ
+SRCS += rtl837x_leds_dump.c
+endif
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}
 DEPS := ${SRCS:%.c=$(BUILDDIR)/%.d}
 

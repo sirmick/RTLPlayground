@@ -6,13 +6,9 @@
 
 OM_GEN = $(BUILDDIR)/om
 # OM_SIM=1: rtlsim measurements, with test/om_sim's schema (a 64-entry keyed
-# object) and leds_dump stubbed out for the room; OM_SIM=room: the stub only.
-# Use its own BUILDDIR.
-OM_DIRS = schema $(if $(filter 1,$(OM_SIM)),test/om_sim)
+# object); use its own BUILDDIR
+OM_DIRS = schema $(if $(OM_SIM),test/om_sim)
 OM_SCHEMA = $(foreach d,$(OM_DIRS),$(wildcard $(d)/*.py) $(d)/registry.txt)
-ifneq ($(OM_SIM),)
-SRCS := $(filter-out rtl837x_leds_dump.c,$(SRCS)) test/om_sim/leds_stub.c
-endif
 CC_FLAGS += -I$(OM_GEN)
 OM_SRCS = om.c om_port.c om_gen.c
 SRCS += $(OM_SRCS)
