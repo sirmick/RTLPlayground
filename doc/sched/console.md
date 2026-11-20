@@ -57,6 +57,17 @@ The echo goes through `write_char`, which waits while the TX ring is full,
 as every print does; the RX ring buffers meanwhile. A pasted line longer
 than the editor's 127 characters is cut there, as before.
 
+**Type-ahead during a command.** While a command runs, the editor doesn't
+read (so the pending command can't be overwritten, U2): `con_line_ready` is
+cleared only in `CLI_PROMPT`. The 256 B RX ring holds what is typed
+meanwhile: up to 255 B survive and are read once the prompt is back; the
+rest, Enter included, is lost and counted as RX overruns. A 500-character
+paste 50 ms or 2 s into a 3.2 s `l2`: the first 127 characters echoed, the
+Enter lost, 246 overruns (501 - 255); the old firmware lost the whole
+paste. Accepted by Michael, 2026-11-20 (evidence/f1-acceptance.txt item 3,
+feat/sched 2354e31). Keeping more would need con to go on draining into the
+editor while cli runs: a design change.
+
 ## The `cli` task
 
 Fixed, frequency **once**. One command at a time, from the console or the
