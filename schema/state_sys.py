@@ -44,6 +44,13 @@ st("bank", U8())
 for n in "12345678":
     st("states.%s" % n, Enum("sstate"), tip="The last 8 states run, oldest first")
 
-# state.loader (DESIGN.md 7.12): the rest of it with P5-3
+# state.loader (DESIGN.md 7.12). Deferred for room (P5-3): nothing prints
+# them today, so there is nothing to delete for them:
+#   recovery_boot, unconfirmed_boots   loader_recovery() reads the boot
+#                   count from flash (a flash read in a getter)
+#   confirmed       rtlplayground.c's loader_confirmed, static
+#   layout, app_crc LDR_META in flash
+# And state.fw.upload.* (httpd's up_* and the verdict: POST's reply says
+# it), state.fw.mdata.*; state.cfg's save, load and format are P3B's.
 state("loader", get="om_get_loader")
 st("present", Bool, tip="Updates are installed by the loader")
