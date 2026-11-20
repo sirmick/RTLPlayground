@@ -33,38 +33,41 @@ The hash algorithm used to select links (exit ports) is defined for each LAG ind
 The code currently provides the following functions:
 ```
 /*
- * Configure LAGs
- * Sets the members via port bitmask of a given Link Aggregation Group
- * The groups have numbers 0-3
- * The bitmask represents up to 10 ports
- * If currently no LAG has algorithm used, a default is applied
+ * A Link Aggregation Group's members (groups 0-3): bit n logical port n.
+ * Its hash is lag.L.hash's (om_lag.c).
  */
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked;
-
-/*
- * Configures the hash algorithm used for a LAG
- * lag is the Group to configure and hash is a bitmask
- */
-void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked;
+uint16_t port_lag_members_get(uint8_t lag) __banked;
+uint8_t port_lag_of(uint8_t port) __banked;
 ```
+The LAGs' config is the object model's `lag.L` (schema/lag.py); om_lag.c applies it:
+the members to the trunk register (a port first out of any other trunk) or to LACP,
+the hash to its register. At boot every trunk is empty and every hash the default.
 
-## LAG configuration on the Serial Console
-For testing the following commands are provided on the serial console:
+## LAG configuration
+On the serial console or over POST /cli, as set lines and an apply:
 ```
-> lag <LAG-ID> <p1> [p2]...
-  Create or set a LAG. LAG-ID is 1 to 4. Ports are physical ports.
+> set lag.1.mode static
+> set lag.1.members 1-2
+> apply
+  Create or set a LAG. LAG-ID is 1 to 4. Ports are front-panel ports.
+  lag.L.mode is off, static or lacp (lacp.md).
 
-> lag <LAG-ID> d
-  Delete the LAG.
+> set lag.1.mode off
+> apply
+  Delete the LAG (its members are kept, unused); `del lag.1` resets it whole.
 
-> lag show
-  Shows information on all 4 lags
+> get lag
+> get state.lag
+  Shows the configuration of all 4 LAGs, and the members aggregated now.
 
-> laghash 0 [hash1] [hash2]...
+> set lag.1.hash smac,dmac,sip,dip
   Uses the given packet properties when hashing the packet to select the link
-  Names for the hashes are spa, smac, dmac, sip, dip, sport, dport
+  Names for the hashes are spa, smac, dmac, sip, dip, sport, dport (at least one)
 ```
-When a lag is creates, by default the hash is based on smac, dmac, sip, dip, sport, dport. When you
+apply refuses a port in two LAGs that aren't off, and a LAG whose members have
+different port.N.pvid ("they differ on 2,4"): set the members' PVIDs together.
+By default the hash is based on smac, dmac, sip, dip, sport, dport. When you
 use your own hash settings, make sure that the hash always uses both the source and destination
 property of the packet, as otherwise pakets will not be routed symmetrically.
 
@@ -97,7 +100,9 @@ The following shows the network configuration
 On _both_ switches create a LAG with ports 1 and 2 inside and the default hash algorithm which takes
 source and destination ports into account, e.g. just use the default:
 ```
-> lag 1 1 2
+> set lag.1.mode static
+> set lag.1.members 1-2
+> apply
 ```
 
 

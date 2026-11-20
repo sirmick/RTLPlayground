@@ -63,6 +63,13 @@ void reg_read_m(uint16_t reg)
 	(void)reg;
 	memset(sfr_data, 0, sizeof(sfr_data));
 }
+/* lacp_init's hash writes (TRK_HASH_CTRL, one register a LAG) */
+volatile uint8_t SFR_DATA_24, SFR_DATA_16, SFR_DATA_8, SFR_DATA_0;
+static uint8_t hw_hash[4];
+void reg_write(uint16_t reg)
+{
+	hw_hash[(reg - RTL837X_TRK_HASH_CTRL_BASE) >> 2 & 3] = SFR_DATA_0;
+}
 uint16_t port_link_mask(void)
 {
 	return hw_links;
@@ -235,7 +242,10 @@ int main(int argc, char **argv)
 
 	/* Boot init first: on host, zeroed globals would otherwise read as "every
 	 * port belongs to LAG 0" (the firmware calls this from main() the same way) */
+	hw_members_lag[2] = 0x0030;	/* what a reset left */
 	lacp_init();
+	CHECK(hw_members_lag[2] == 0 && hw_hash[0] == LAG_HASH_DEFAULT && hw_hash[3] == LAG_HASH_DEFAULT,
+	      "T0 boot: every trunk empty, every hash lag.L.hash's default");
 
 	/* T1: enable announces on every port with sane field contents */
 	hw_links = 0x03ff;
@@ -314,8 +324,8 @@ int main(int argc, char **argv)
 	CHECK(hw_members == 0x0008 && (lacp_actor_state[3] & P_COL),
 	      "T8 re-election: new partner system forms a fresh aggregate");
 
-	/* T9: lacp off clears the trunk */
-	lacp_off();
+	/* T9: set lag.1.mode off (om_lag.c) clears the trunk */
+	lacp_lag_set(0, 0);
 	CHECK(hw_members == 0 && lacpEnabled == 0, "T9 disable: trunk cleared");
 
 	/* ---- per-LAG scenarios: two independent aggregators ---- */

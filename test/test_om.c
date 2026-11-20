@@ -248,6 +248,28 @@ void vlan_create(void)
 		vlan_settings.tagged);
 }
 void vlan_delete(uint16_t vlan) { sprintf(vlan_ops + strlen(vlan_ops), "-%u ", vlan); }
+
+/* the trunk and LACP (rtl837x_port.c, rtl837x_lacp.c), under om_lag.c: the calls, as text */
+#include "rtl837x_regs.h"
+volatile uint8_t SFR_DATA_24, SFR_DATA_16, SFR_DATA_8, SFR_DATA_0;
+static char lag_ops[256];
+void lacp_lag_set(uint8_t lag, uint16_t ports) { sprintf(lag_ops + strlen(lag_ops), "L%u %03x ", lag, ports); }
+static uint16_t trunk[4];
+static int two_trunks;		/* a port was in two trunks after a write */
+void port_lag_members_set(uint8_t lag, uint16_t members)
+{
+	sprintf(lag_ops + strlen(lag_ops), "S%u %03x ", lag, members);
+	trunk[lag] = members;
+	for (int a = 0; a < 4; a++)
+		for (int b = a + 1; b < 4; b++)
+			if (trunk[a] & trunk[b])
+				two_trunks = 1;
+}
+uint16_t port_lag_members_get(uint8_t lag) { return trunk[lag]; }
+void reg_write(uint16_t reg)
+{
+	sprintf(lag_ops + strlen(lag_ops), "H%u %02x ", (reg - RTL837X_TRK_HASH_CTRL_BASE) >> 2, SFR_DATA_0);
+}
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 {
 	t_renew++;
@@ -630,10 +652,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lag.1", "err lag.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web port.* port.*.tstorm.*\n");
+	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntlag.*\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ndns\nntp\nsyslog\nweb\nport.*\nport.*.tstorm.*\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp.port.*\nvlan.*\nmgmt\ndns\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nntp\nsyslog\nweb\nlag.*\nport.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1097,7 +1119,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -2437,6 +2459,63 @@ static void help(void)
 }
 #endif
 
+/* lag.L (P4-3): om_lag.c's trunk and LACP calls, and its checks */
+static void lags(void)
+{
+	printf("lag\n");
+	om_init();
+	expect("get lag.1", "lag.1.mode off\nlag.1.members none\nlag.1.hash smac,dmac,sip,dip,sport,dport\nok\n");
+	lag_ops[0] = 0;
+	expect("set lag.1.mode static", "ok\n");
+	expect("set lag.1.members 2,3", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(lag_ops, "L0 000 S0 006 "), "static: out of LACP, the members to the trunk");
+	lag_ops[0] = 0;
+	expect("set lag.1.hash spa", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(lag_ops, "H0 01 "), "the hash to its register, alone");
+	expect("set lag.1.hash none", "ok\n");
+	expect("apply", "err lag.1: hash needs a field\n");
+	expect("discard", "ok\n");
+	expect("set lag.2.mode lacp", "ok\n");
+	expect("set lag.2.members 3-4", "ok\n");
+	expect("apply", "err lag.1: a port is in one lag at most\n");
+	expect("set lag.2.members 4-5", "ok\n");
+	lag_ops[0] = 0;
+	expect("apply", "ok\n");
+	CHECK(!strcmp(lag_ops, "L1 018 "), "lacp: the members to LACP");
+	lag_ops[0] = 0;
+	expect("set lag.2.mode off", "ok\n");
+	expect("set lag.3.members 2", "ok\n");	/* off: kept, unused, no overlap */
+	expect("apply", "ok\n");
+	CHECK(!strcmp(lag_ops, "L1 000 S1 000 "), "off: out of LACP and the trunk; an off LAG's members unused");
+	expect("get lag.2.members", "lag.2.members 4-5\nok\n");
+	expect("set lag.1.members 2-4", "ok\n");
+	expect("set port.4.pvid 0", "ok\n");
+	expect("apply", "err lag.1: a lag's members need one pvid; they differ on 2,4\n");	/* the first, and who differs */
+	expect("set port.2.pvid 0", "ok\n");
+	expect("apply", "err lag.1: a lag's members need one pvid; they differ on 2-3\n");
+	expect("set port.3.pvid 0", "ok\n");
+	expect("apply", "ok\n");
+	expect("get -d lag", "lag.1.mode static\nlag.1.members 2-4\nlag.1.hash spa\nlag.2.members 4-5\nlag.3.members 2\nok\n");
+	/* a static move (P4-3b): lag.1 takes port 3 from lag.2, which applies after it */
+	om_init();
+	memset(trunk, 0, sizeof(trunk));
+	expect("set lag.*.mode static", "ok\n");
+	expect("set lag.1.members 2", "ok\n");
+	expect("set lag.2.members 3-4", "ok\n");
+	expect("apply", "ok\n");
+	lag_ops[0] = 0;
+	two_trunks = 0;
+	expect("set lag.1.members 2-3", "ok\n");
+	expect("set lag.2.members 4", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!two_trunks && trunk[0] == 0x006 && trunk[1] == 0x008,
+	      "a port moving between static LAGs is never in two trunks");
+	CHECK(!strcmp(lag_ops, "S1 008 L0 000 S0 006 L1 000 S1 008 "), "out of lag.2's trunk first, then into lag.1's");
+	om_init();
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -2452,6 +2531,7 @@ int main(int argc, char **argv)
 	services();
 	completion();
 	vlans();
+	lags();
 	staging();
 	binary();
 	roundtrip();

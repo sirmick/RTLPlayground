@@ -62,7 +62,7 @@ registers 0x1238, 0x1338, ...
 ## VLAN API
 The code currently provides the following functions:
 ```
-void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked;
+void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked;  // one port: a LAG's members share one (apply checks)
 uint16_t port_pvid_get(uint8_t port) __banked;
 void vlan_create(void) __banked;   // reads from global vlan_settings
 int8_t vlan_get(register uint16_t vlan) __banked;  // returns data in sfr_data

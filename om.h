@@ -155,6 +155,7 @@ uint8_t om_save_end(void) __banked;	/* FL_SAVE: read it back, a step at a time: 
  * own string would be __code in its bank, which om.c can't read.
  */
 void om_fail(uint8_t msg) __banked;
+void om_fail_ports(uint8_t msg) __banked;	/* and the ports in om_val (a PortMask): "... 3-4" */
 
 /* om_vlan.c: vid is 0, or a VLAN of the candidate (port.N.pvid, mgmt.vlan) */
 uint8_t om_vlan_known(uint16_t vid) __banked;

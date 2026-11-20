@@ -271,10 +271,10 @@ def main():
     f.close()
 
     print("legacy lines: refused, then --drop-legacy")
-    f = Fake(CLEAN + "lag 1 7 8\nstp on\nfrobnicate\n")
+    f = Fake(CLEAN + "igmp on\nloop on\nfrobnicate\n")	# P4-5's: still old commands
     st, out, err = run(f, img)
     check(st == 5 and f.uploads == 0, "refused before the upload (5)", err)
-    check("legacy (P4-3): lag 1 7 8" in out and "legacy (P4-4): stp on" in out and "untranslated: frobnicate" in out
+    check("legacy (P4-5): igmp on" in out and "legacy (P4-5): loop on" in out and "untranslated: frobnicate" in out
           and "3 config lines would be lost" in err, "each listed, with its node", out + err)
     st, out, err = run(f, img, "--drop-legacy")
     check(st == 0 and f.uploads == 1 and "Dropping 3 config lines" in err, "--drop-legacy updates", err)
@@ -287,7 +287,7 @@ def main():
           and f.pw == "secret9", "apply 120, back at its address with its password, confirm, save", f.log)
     text = open(PLAN).read()
     check(os.stat(PLAN).st_mode & 0o777 == 0o600 and text.startswith("# fwupdate plan: 127.0.0.1:")
-          and "# dropped, legacy (P4-3): lag 1 7 8\n" in text and "# dropped, untranslated: frobnicate\n" in text
+          and "# dropped, legacy (P4-5): igmp on\n" in text and "# dropped, untranslated: frobnicate\n" in text
           and "\nmgmt.ip 127.0.0.1\n" in text and "\nweb.password *\n" in text and "secret9" not in text
           and text.split("\n")[0].endswith(", mac " + MAC)
           and err.find("Plan written to") < err.find("Uploading"),

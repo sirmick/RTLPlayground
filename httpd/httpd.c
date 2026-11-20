@@ -1337,8 +1337,6 @@ void httpd_appcall(void)
 				send_storm();
 			} else if (is_word(q, "/mirror.json")) {
 				send_mirror();
-			} else if (is_word(q, "/lag.json")) {
-				send_lag();
 			} else if (is_word(q, "/stp.json")) {
 				send_stp();
 			} else if (is_word(q, "/lldp.json")) {

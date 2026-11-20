@@ -410,31 +410,6 @@ void send_l2(int s, int idx)
 }
 
 
-void send_lag(int s)
-{
-	char lag_buf[20];
-	struct json_object *lags = json_object_new_array_ext(4);
-	struct json_object *v;
-	const char *jstring;
-        char *header = "HTTP/1.1 200 OK\r\n"
-                         "Content-Type: application/json; charset=UTF-8\r\n\r\n";
-
-	for (int i = 0; i < 4; i++) {
-		v = json_object_new_object();
-		json_object_object_add(v, "lagNum", json_object_new_int(i));
-		sprintf(lag_buf, "%016b", 0x30 << (i * 2) & 0x1f8);
-		json_object_object_add(v, "members", json_object_new_string(lag_buf));
-		json_object_object_add(v, "hash", json_object_new_string("0x7e"));
-		json_object_array_add(lags, v);
-	}
-        write(s, header, strlen(header));
-	
-	jstring = json_object_to_json_string_ext(lags, JSON_C_TO_STRING_PLAIN);
-        write(s, jstring, strlen(jstring));
-	json_object_put(lags);
-}
-
-
 void send_lldp(int s)
 {
 	struct json_object *c, *portStatuses, *p;
@@ -677,13 +652,6 @@ void launch(struct Server *server)
 						send_unauthorized(new_socket);
 					else
 						send_mirror(new_socket);
-					goto done;
-				} else if (!strncmp(&buffer[4], "/lag.json", 9)) {
-					printf("LAG request\n");
-					if (!authenticated)
-						send_unauthorized(new_socket);
-					else
-						send_lag(new_socket);
 					goto done;
 				} else if (!strncmp(&buffer[4], "/l2.json?idx=", 13)) {
 					int idx = atoi(&buffer[17]);
