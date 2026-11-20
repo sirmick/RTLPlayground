@@ -167,10 +167,14 @@ class Fake:
         return H
 
 
+PLAN = os.path.join(tempfile.mkdtemp(), "sw.plan")
+
+
 def run(fake, image, *extra):
     out, err = io.StringIO(), io.StringIO()
-    argv = ["-p", "secret9", "--timeout", "5", "--wait-timeout", "30",
-            "--boot-host", "127.0.0.1:%d" % fake.port("boot"), *extra, image, "127.0.0.1:%d" % fake.port("old")]
+    argv = ["-p", "secret9", "--timeout", "5", "--wait-timeout", "30", "--plan", PLAN,
+            "--boot-host", "127.0.0.1:%d" % fake.port("boot"), *extra]
+    argv += [image, "127.0.0.1:%d" % fake.port("old")] if image else ["127.0.0.1:%d" % fake.port("old")]
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         st = fwupdate.main(argv)
     return st, out.getvalue(), err.getvalue()
@@ -236,6 +240,11 @@ def main():
           "the path lines set, applied and saved; get -s compared", (f.saved, err))
     check(f.log.index("apply") < f.log.index("save") and f.at == "old" and f.pw == "secret9",
           "back at its address with its password after the apply", f.log)
+    text = open(PLAN).read()
+    check(os.stat(PLAN).st_mode & 0o777 == 0o600 and text.startswith("# fwupdate plan: 127.0.0.1:")
+          and "# dropped, legacy (P4-3): lag 1 7 8\n" in text and "# dropped, untranslated: frobnicate\n" in text
+          and "\nmgmt.ip 127.0.0.1\n" in text and err.find("Plan written to") < err.find("Uploading"),
+          "the plan is written before the upload, owner-only, with what it drops", text)
     steps = [err.find("Step %d/4" % n) for n in range(1, 5)]
     check(-1 not in steps and steps == sorted(steps) and err.find("Uploading") > steps[1],
           "read and convert, upload, wait, set: in that order", err)
@@ -264,6 +273,26 @@ def main():
         check(st == 0 and f.uploads == 1 and not [ln for ln in f.log if ln.split()[0] in ("set", "apply", "save")],
               "%s: --boot-defaults updates, sets nothing" % why, (f.log, err))
         f.close()
+
+    print("--resume: step 4 again from the written plan")
+    f = Fake("")
+    f.om, f.at, f.pw = True, "boot", "1234"		# updated, the config never set
+    st, out, err = run(f, None, "--resume", PLAN)
+    check(st == 0 and f.uploads == 0 and f.at == "old" and f.pw == "secret9" and "save" in f.log
+          and "Saved: get -s is the plan (5 lines)" in err and "Config carried over" in out,
+          "set, applied, saved and compared, no upload", (f.log, err))
+    st, out, err = run(f, None, "--resume", PLAN)
+    check(st == 0 and f.log.count("save") == 2, "and again: it is idempotent", err)
+    f.close()
+    f = Fake(CLEAN)
+    st, out, err = run(f, None, "--resume", PLAN)
+    check(st == 5 and "doesn't run the object model" in err and not f.om, "refused on the old firmware (5)", err)
+    f.close()
+    open(PLAN + "x", "w").write("mgmt.ip 1.2.3.4\n")
+    f = Fake("")
+    st, out, err = run(f, None, "--resume", PLAN + "x")
+    check(st == 1 and "not a plan fwupdate wrote" in err, "refused: a file fwupdate didn't write", err)
+    f.close()
 
     print("a switch on the object model already: its config stays")
     f = Fake("")

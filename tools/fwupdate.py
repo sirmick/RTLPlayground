@@ -30,8 +30,9 @@ order:
      mgmt.ip (config.txt), then the schema's (or --boot-host);
   4. set the converted lines, apply them (the switch moves back to its
      address), save, and compare get -s with the plan.
-If the update stops after 2, the old config is gone from the new
-firmware's view: the plan printed in 1 is what to set by hand.
+Step 1 writes the plan to HOST.plan (--plan): if the update stops after
+2, `fwupdate.py --resume HOST.plan HOST` redoes step 4 from it.  The file
+holds the web password: it is written readable by its owner only.
 
 Usage:
     fwupdate.py [options] IMAGE [HOST]
@@ -40,6 +41,7 @@ Usage:
     fwupdate.py -p secret --health output/rtlplayground_....bin 192.168.10.247
     fwupdate.py -p secret --check 192.168.10.247
     fwupdate.py -p secret --dry-run output/.../rtlplayground-install-....bin 192.168.10.247
+    fwupdate.py -p secret --resume 192.168.10.247.plan 192.168.10.247
     RTLP_PASSWORD=secret fwupdate.py output/rtlplayground_....bin --no-wait
 
 Exit status:
@@ -517,15 +519,19 @@ class Plan:
     """An old config, converted: lines (path lines), legacy ((line, node)),
     bad, warn; the new firmware's built-in address and password."""
 
-    def __init__(self, args, text):
+    def __init__(self, args, text, machine=None, lines=None):
         sys.path.insert(0, HERE)
         import legacy_map
         import rtlpg_client
         self.rc = rtlpg_client
-        self.sch = rtlpg_client.Schema(args.schema, rtlpg_client.Board(machine_of(args)))
+        self.machine = machine or machine_of(args)
+        self.sch = rtlpg_client.Schema(args.schema, rtlpg_client.Board(self.machine))
         self.warn = []
-        self.lines, self.legacy, self.bad = legacy_map.convert(
-            text, self.sch.board, self.warn, self.sch)
+        if lines is None:
+            self.lines, self.legacy, self.bad = legacy_map.convert(
+                text, self.sch.board, self.warn, self.sch)
+        else:			# a written plan (--resume)
+            self.lines, self.legacy, self.bad = lines, [], []
         self.empty = not (self.lines or self.legacy or self.bad)
         # where the new firmware comes back: its factory default
         # (config.txt, DESIGN.md 15.1), else the schema's built-ins
@@ -538,6 +544,34 @@ class Plan:
         self.boot_ips = list(dict.fromkeys([self.value(cfg, "mgmt.ip"),
                                             self.value(self.rc.Config(self.sch), "mgmt.ip")]))
         self.boot_password = self.value(cfg, "web.password")
+
+    def write(self, path, host, port):
+        """The path lines, for --resume; the old lines it drops as
+        comments. It holds web.password: readable by the owner only."""
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(f"# fwupdate plan: {host}:{port}, machine {self.machine}\n")
+            for line, node in self.legacy:
+                f.write(f"# dropped, legacy ({node}): {line}\n")
+            for line in self.bad:
+                f.write(f"# dropped, untranslated: {line}\n")
+            for line in self.lines:
+                f.write(line + "\n")
+
+    @classmethod
+    def read(cls, args, path):
+        try:
+            text = open(path).read()
+        except OSError as error:
+            raise Failure(f"cannot read {path}: {error}", 1)
+        m = re.match(r"# fwupdate plan: \S+, machine (\S+)\n", text)
+        if not m:
+            raise Failure(f"{path}: not a plan fwupdate wrote", 1)
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+        try:
+            return cls(args, None, args.machine or m.group(1), lines)
+        except OSError as error:
+            raise Failure(f"the schema or the board: {error}", 1)
 
     def value(self, cfg, path):
         o, ix, f = self.sch.resolve(path)
@@ -653,6 +687,36 @@ def carry_over(args, plan, host, port, password, at, cookie):
     print(f"Saved: get -s is the plan ({len(got)} lines)", file=sys.stderr)
 
 
+def resume(args):
+    """Step 4 again, from a written plan, on a switch that runs the new
+    firmware: at HOST, else where it boots (--boot-host or the plan's)."""
+    if args.host is not None:
+        raise Failure("--resume takes only the host; do not pass an image", 1)
+    host, port = parse_target(args.image or DEFAULT_HOST, args.port)
+    password = resolve_password(args, host)
+    plan = Plan.read(args, args.resume)
+    print(f"{args.resume}: {len(plan.lines)} path lines", file=sys.stderr)
+    targets = [(host, port)] + ([parse_target(args.boot_host, args.port)] if args.boot_host
+                                else [(ip, 80) for ip in plan.boot_ips])
+    for at in dict.fromkeys(targets):
+        for pw in dict.fromkeys([password, plan.boot_password]):
+            try:
+                cookie = login(at[0], at[1], args.timeout, pw)
+            except Failure:
+                continue
+            info = fetch_info(at[0], at[1], args.timeout, cookie)
+            if not (info or {}).get("om"):
+                raise Failure(f"{at[0]}:{at[1]} doesn't run the object model; "
+                              "update it first", 5)
+            print(f"Logged in to {at[0]}:{at[1]}; step 4/4: setting, "
+                  "applying and saving the config", file=sys.stderr)
+            carry_over(args, plan, host, port, password, at, cookie)
+            print("Config carried over.")
+            return 0
+    raise Failure("can't log in to the switch at "
+                  + ", ".join(f"{h}:{p}" for h, p in dict.fromkeys(targets)), 2)
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(
         description="Update RTLPlayground switch firmware via its web API.",
@@ -703,6 +767,13 @@ def parse_args(argv):
                              "reboot, on its factory default (default: "
                              "HOST, then config.txt's mgmt.ip, then the "
                              "schema's)")
+    parser.add_argument("--plan",
+                        help="where to write the converted plan before the "
+                             "upload (default: HOST.plan)")
+    parser.add_argument("--resume", metavar="PLAN",
+                        help="redo step 4 (set, apply, save, compare) from "
+                             "a written plan; give the host as the only "
+                             "positional")
     parser.add_argument("--machine",
                         help="the board, machine/<M>.c (default: from the "
                              "image's name)")
@@ -756,6 +827,8 @@ def run(args):
             raise Failure("--check takes a host, not a firmware image", 1)
         return check_switch(args, target)
 
+    if args.resume:
+        return resume(args)
     if args.image is None:
         raise Failure("IMAGE is required unless --check is used", 1)
     if args.health and args.no_wait:
@@ -821,6 +894,11 @@ def run(args):
         if args.no_wait:
             raise Failure("the config is set after the reboot; remove "
                           "--no-wait", 1)
+        plan_file = args.plan or f"{host}.plan"
+        plan.write(plan_file, host, port)
+        print(f"Plan written to {plan_file}: if step 4 fails, "
+              f"`fwupdate.py --resume {plan_file} {host}` redoes it",
+              file=sys.stderr)
 
     if plan:
         print("Step 2/4: uploading", file=sys.stderr)
