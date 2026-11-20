@@ -5,6 +5,7 @@
  */
 #include <8051.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "rtl837x_common.h"
 #include "sched.h"
 #include "con_ring.h"
@@ -194,21 +195,26 @@ void sched_health_clear(void) __banked
  * ignores it; a record another image left (a web update keeps xdata) is
  * dropped unread: its slots and states aren't this image's. An update's is
  * the exception: kept, without them (slot none, states "-"). */
+/* the record's step fields, tick to ring_idx: none (slot -, states -) */
+static void crash_blank(void)
+{
+	memset((__xdata uint8_t *)&crash_rec.tick, 0,
+	       offsetof(struct crash_rec, spare) - offsetof(struct crash_rec, tick));
+	crash_rec.slot = 0xff;
+}
+
 void crash_boot(void) __banked
 {
 	crash_last.magic = 0;
 	crash_prior = 0;
 	if (crash_rec.magic != CRASH_MAGIC || crash_rec.sum != crash_sum())
-		return;
+		goto out;
 	if (crash_rec.image_lo != CRASH_IMAGE_LO || crash_rec.image_hi != CRASH_IMAGE_HI) {
 		if (crash_rec.cause != CRASH_UPDATE) {
 			crash_rec.magic = 0;
-			return;
+			goto out;
 		}
-		crash_rec.slot = 0xff;		/* consumed below: the sum no longer matters */
-		crash_rec.state = 0;
-		crash_rec.pc = 0;
-		memset((__xdata uint8_t *)crash_rec.ring, 0, 8);
+		crash_blank();			/* consumed below: the sum no longer matters */
 	}
 	for (i = 0; i < sizeof(struct crash_rec); i++)
 		((__xdata uint8_t *)&crash_last)[i] = ((__xdata uint8_t *)&crash_rec)[i];
@@ -218,6 +224,10 @@ void crash_boot(void) __banked
 	print_string("Last reset: ");
 	crash_print();
 #endif
+out:
+	/* the last run's notes: a reset before the scheduler runs (^R ^R in the
+	 * boot) records no step of its own */
+	crash_blank();
 }
 
 /* state.sys.reset (schema/state_sys.py): the record crash_boot kept; none,

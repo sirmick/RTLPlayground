@@ -1621,7 +1621,7 @@ void main(void)
 	/* Booted: ^R ^R may now reset at once; one sent during the boot runs now */
 	serial_reset_ok = 1;
 	if (serial_reset_pending)
-		CHIP_RESET_NOW();
+		reset_chip(CRASH_CTRL_R);
 	/* The tasks (tasks.c) replace the old main loop; the watchdog runs
 	 * from here on */
 	sched_init();

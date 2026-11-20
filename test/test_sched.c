@@ -530,7 +530,10 @@ static void test_crash(void)
 	      "an update's record from another image: kept, without its slot and states");
 	om_get_sys_reset(0);
 	CHECK(R.cause == E_RCAUSE_UPDATE && !strcmp(R.slot, "-") && !strcmp(R.state, "-") && R.pc == 0 &&
-	      !strcmp(R.states, "- - - - - - - -"), "state.sys.reset: cause update, slot and states none");
+	      !strcmp(R.states, "- - - - - - - -") && R.step_ms == 0 && R.bank == 0,
+	      "state.sys.reset: cause update; no slot, states, step time, PC or bank");
+	CHECK(crash_rec.slot == 0xff && crash_rec.state == 0 && crash_rec.ring_idx == 0 && crash_rec.step_tick == 0,
+	      "after the boot the live notes are blank: a reset before the scheduler records no step");
 }
 
 static void test_health(void)
