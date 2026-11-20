@@ -1,0 +1,243 @@
+F1: full acceptance in the sim                          2026-11-20, sim2
+=============================================================================
+
+What was tested:
+- NEW: feat/sched 72cee59, built clean in my own worktree
+  /tmp/sim2-f1-72cee59 (detached):
+    tools/docker-make.sh MACHINE=<board> LAYOUT=compact
+    and for the 8x, ... schedtest
+- OLD: fork main b635486 (~/src/rtlpg-ref).
+- Boards: the 8x (KEEPLINK_KP_9000_9XHPML_V1_2) and the SWGT024
+  (SWGT024_V2_0_UNMANAGED), compact layout, loader.
+- Harness: ovs-rtlpg feat/sched-sim 5bfa980. rtlsim is 999584e; 5bfa980
+  changed only tests/oldnew.
+- Run outputs: /tmp/f1r (oldnew-*, save-*, cov-*, paste.txt, soak.txt).
+
+Summary:
+
+  check                                 8x                     SWGT024
+  1 old vs new, 17 scenarios            17/17, deterministic   17/17, deterministic
+  2 new-only checks (lacp gap, stp      all PASS on NEW        all PASS on NEW
+    hello, long steps)
+  3 a 500-character paste at a prompt   intact                 intact
+    (during a 3.2 s `l2`, by design:    246 B lost             246 B lost
+     see 3)
+  4 gate (stack, IRAM)                  PASS                   PASS
+  5 coverage vs old, by function        no gap: 11 replaced    the same 11
+  6 schedtest soak, 600 s               PASS, deterministic    (8x image)
+
+-----------------------------------------------------------------------------
+1. Old vs new, all 17 scenarios
+-----------------------------------------------------------------------------
+
+Command, from ~/src/ovs-rtlpg:
+
+  python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <72cee59 -boot> --board boards/<board>.json \
+      --new-payload <72cee59 application> --expect doc/sched/evidence/e4-oldnew.expect \
+      --checks --known tests/oldnew/known-failures [--save DIR --cov DIR]
+
+Results:
+- 8x: 17 of 17 match.
+- SWGT024: 17 of 17 match.
+- Two runs per board: identical, timings aside.
+- No difference outside the expect file. Every saved result pair was checked
+  with oldnew.compare().
+- The expect file is e4-oldnew.expect, the latest; it covers E1-E4.
+
+Each expect line: how many differences it took on each board, and the
+evidence that explains it.
+
+  line  8x swgt  what                              explained by
+   2    1   1    stp 002 cli stp status            D1: d1-uart-rings.txt, d1-oldnew.expect
+   3    1   1    stp 005 /stp.json (tcs)           D1: the same
+   4    1   1    stp 006 /stpcnt.json              D1: the same
+   5    0   0    upload reg 06f4 (SEC_COUNTER)     D1 per build: d1-uart-rings.txt, d3-oldnew.expect
+   6    0   1    stp_upload reg 06f4               the same as upload's (ovs-rtlpg EH report)
+   7    1   1    * reg 06f4: 8x config,            E1: e1-chunked-cli.txt
+                 SWGT stp_upload
+   8    1   1    vlan frames tcp/80                U4: d3-console-net.txt
+   9    1   1    config frames tcp/80              U4 + E3: d3-console-net.txt, e3-flash-job.txt
+                                                   (the SWGT024 note: e1-chunked-cli.txt)
+  10    0   0    web /information.json uptime      E1 per build: e1-chunked-cli.txt
+  11    1   0    config frames rldp (88->89)       E1 (8x): e1-chunked-cli.txt, e1e3-merge.txt
+  12    1   0    config frames stp (21->22)        E1 (8x): the same
+  13    0   0    loop frames rldp                  E1 + E3: e1e3-merge.txt
+  14    1   1    lacp_l2 004 console               E1: e1-chunked-cli.txt (the LAG no longer flaps)
+  15    1   1    lacp_l2 040 lacp show             E1: the same
+  16    1   1    lacp_l2 041 lacp partner          E1: the same
+  17    2   2    lacp_l2 frames lacp               E1: the same (steady 1.02 s gaps)
+  18    1   1    upload frames tcp/80              E3: e3-flash-job.txt (the windowed stage)
+  19    1   1    stp_upload frames tcp/80          E3: the same
+  20    1   1    upload 003 console                E3: the same (the upload ~1 s longer)
+  21    1   1    upload 003 boot                   E3: the same
+  22    1   1    stp_upload 004 console            E3: the same
+  23    1   1    stp_upload 004 boot               E3: the same
+  24    4   4    stp_upload frames stp (+1 each)   E3: the same (one hello more)
+  25-27 1   1    sfp reg 0418/0420/0424            E2: e2-sfp.txt (the DDM refresh, the cached pages)
+  28-29 1   1    web reg 0418/0420                 E2: the same (no I2C for an empty cage)
+  30-31 1   1    web reg 5cac/5ccc                 E4: e4-polls-vlan-eee.txt (the VLAN bitmap)
+  32-33 1   1    lldp reg 5cac/5ccc                E4: the same
+
+Lines that matched nothing on a board at 72cee59:
+- 5, 10 and 13 on both boards; 6 on the 8x; 11 and 12 on the SWGT024.
+- Each is one of the expect file's "per build" timing lines:
+  - a SEC_COUNTER or uptime second crossed, or not;
+  - one RLDP probe or BPDU more in a window, or not.
+- At 72cee59 the boot lands on the other side of those edges. The
+  differences didn't appear, and none appeared outside the file.
+- They are harmless where they stay (a stale line is flagged, not failed).
+  An F1 expect file could drop 5, 10 and 13. 6, 11 and 12 each still hit one
+  board.
+
+-----------------------------------------------------------------------------
+2. The new-only checks
+-----------------------------------------------------------------------------
+
+On NEW, in the same runs (oldnew's `check new` lines), every check passes on
+both boards:
+
+- lacp gap (< 1.2 s): every LACPDU gap is 1.020 s, on both LAG ports.
+  - lacp: two windows, 18 and 5 gaps.
+  - lacp_l2, during the 1000-entry `l2` and the 35 /l2.json pages: 103 gaps.
+  - On OLD: 3.858 s in lacp_l2.
+- stp hello (2 s +-50 ms): 2.000 s on every port.
+  - stp, and stp_upload through the whole upload.
+  - On OLD: none for 2.84 s before the upload's answer.
+- long steps (`health tasks` at every scenario's end): none over 20 ms but
+  FL_ERASE, in any of the 17 scenarios, on either board.
+  - Longest step: RX_STEP 12.2 ms (8x 12.189, SWGT024 12.189).
+  - CLI_RUN at most 3.6 ms. The `l2` dump now runs in CLI_MORE steps; the
+    longest was 0.38 ms.
+  - The longest pass is ~41 ms in most scenarios, and 72 ms (8x) / 71 ms
+    (SWGT024) in web. That's FL_ERASE's ~40 ms erase plus other steps in the
+    same pass. Passes aren't a criterion; every step is under 20 ms.
+
+tests/oldnew/known-failures, shrunk (ovs-rtlpg 5bfa980):
+- Out, as stale: the CLI_RUN (two lines), HOUSE_SEC and RX_STEP long-step
+  lines. Nothing in NEW matches them.
+- Left: the two fork-main failures, each with what fixed it:
+  - `lacp_l2: lacp gap <= 4 s`, fixed by E1 (the chunked CLI);
+  - `stp_upload: stp hello <= 3 s`, fixed by E3 (the flash job).
+- So on NEW nothing is KNOWN; checks.py on 72cee59 reports 0 failed and
+  flags both lines as matched by nothing. On OLD both are KNOWN.
+- No owner is left with an open failure.
+
+-----------------------------------------------------------------------------
+3. A pasted 500-character line
+-----------------------------------------------------------------------------
+
+Script: /tmp/f1r/paste.py. 500 printable characters and Enter, in one UART
+write.
+
+At an idle prompt, on NEW (both boards):
+- The echo is exactly the first 127 characters (the editor's CMD_BUF_SIZE
+  - 1).
+- The line runs ("Error: Unknown command").
+- con rx overruns 0, and the console answers after it.
+- That is intact as testing.md and D1 define it (d1-uart-rings.txt). OLD
+  behaves the same, minus the overrun count.
+
+During a running command, typed 50 ms or 2 s into a 3.2 s `l2` of 1000
+entries:
+- NEW echoes the first 127 characters but loses the line's Enter.
+- con rx overruns 246 = 501 - 255. The 256 B RX ring holds what arrives while
+  the command runs, and the rest is lost.
+- This is the design: con reads no more until cli has taken the line, and
+  con_line_ready is cleared only in CLI_PROMPT (console.md, "As built (D3)").
+  So type-ahead during a command is bounded by the RX ring.
+- OLD loses the whole paste (no echo at all).
+- Not a step-length issue: no step exceeds 3.6 ms there.
+- If type-ahead longer than 255 B during a long command should survive, con
+  would have to keep draining into the editor while cli runs. That is a
+  design change (U2), not an F1 fix.
+
+-----------------------------------------------------------------------------
+4. Stack and IRAM: the gate
+-----------------------------------------------------------------------------
+
+`make gate MACHINE=<board> LAYOUT=compact`, on the F1 builds: PASS on both.
+
+  8x, against doc/sched/baseline/gate-8x.json:
+    internal RAM data 90 B (baseline 90), overlay 8 (8), bits 3 (3);
+    DSEG symbols 50, none new; stack 146 B (at least 120);
+    common area ends 0x3edd (gate 0x3f80, 163 B left);
+    banks free 516 / 148 / 566 B (3 WARN: each bank over 47 KiB).
+  SWGT024 (no baseline):
+    data 90, overlay 8, bits 3; stack 146 B; common 163 B left;
+    banks free 130 / 549 / 507 B (the same 3 WARN).
+
+-----------------------------------------------------------------------------
+5. Coverage: the new build against the old, by function
+-----------------------------------------------------------------------------
+
+Method:
+- oldnew --cov dumps each run's coverage at its end (ovs-rtlpg 5bfa980), for
+  all 17 scenarios.
+- tests/oldnew/cov_diff.py maps each side's dumps through its own map, region
+  "loaded" (the application), and compares the union by function name.
+- tools/cov_report.py --diff needs one image for both dumps, so it can't
+  compare two builds.
+
+Totals:
+- 8x: old ran 368 of 528 functions, new 451 of 627.
+- SWGT024: old 362, new 445.
+
+Ran in old, not in new: the same 11 on both boards, each a deliberate
+replacement.
+
+  old function                       module         replaced by (evidence)
+  handle_sfp                         sfp            E2's slot tasks: sfp_poll, sfp_read, sfp_config,
+  sfp_module_read                    sfp              sfp_ddm (tasks), with sfp_read_next, sfp_field,
+  sfp_get_info                       sfp              sfp_configure, sfp_ddm_next, sfp_pins
+  sfp_read_field                     sfp              (e2-sfp.txt; modules.md)
+  sfp_print_info                     sfp            sfp_print (cli `sfp` reads the cache: E2)
+  sfp_print_measurements             cmd_parser     sfp_print (E2)
+  handle_tick                        rtlplayground  the scheduler's tasks: house_sec/house_second,
+  idle                               rtlplayground    link_read/link_service, rx_step/rx_service,
+                                                      hw_poll, sched_run/sched_pass (D2: d2-tasks.txt;
+                                                      modules.md)
+  run_cmd_body                       httpd          the web command through cli: webcmd_queue,
+                                                      httpd_webcmd_begin/end, cli_web_live
+                                                      (D3: d3-console-net.txt)
+  stream_upload                      httpd          E3's flash job: upload_take/fill/prog/verify/
+                                                      done/go, fl_erase/prog/verify/done
+                                                      (e3-flash-job.txt; flash.md FL_UPLOAD)
+  flash_crc16_range                  update_apply   still in the build, not run: it is a wrapper
+                                                      of flash_crc16_more. The old upload check
+                                                      called it; E3's upload_verify calls
+                                                      flash_crc16_more directly, a step at a time.
+                                                      flash_crc16_more ran fully on both sides
+                                                      (190 of 190 instructions).
+
+Functions only the new build ran: 94, the scheduler and the replacements
+above. The list is in /tmp/f1r/cov-8x.txt and cov-swgt.txt.
+
+No gap: nothing the old build exercised is left unexercised except through
+its replacement.
+
+-----------------------------------------------------------------------------
+6. The schedtest soak
+-----------------------------------------------------------------------------
+
+  python3 schedtest/sim_tests.py output/KEEPLINK_KP_9000_9XHPML_V1_2-compact-schedtest \
+      --ovs ~/src/ovs-rtlpg --only soak --twice
+
+- PASS, deterministic: every number is the same in both runs. 72.5 s wall.
+- 600 s of firmware time (both tick wraps), stimuli every 10 s:
+  - the slots valid at every sampled pass end;
+  - every flash run verified (10 of 10), every claimed job ended;
+  - no step over 20 ms but the sanctioned ones;
+  - no early sleep, no watchdog reset, no RX overruns;
+  - stack headroom 110 B;
+  - the simulator's checks clean.
+
+-----------------------------------------------------------------------------
+Open
+-----------------------------------------------------------------------------
+
+- The paste during a running command (section 3): type-ahead beyond 255 B is
+  lost, by design (U2). This is for a decision, not a defect of F1.
+- e4-oldnew.expect lines 5, 10 and 13 matched nothing at 72cee59 on either
+  board (per-build timing). They can come out of an F1 expect file.
+- F1b (sched7): when it reports, I'll rerun the quick part (old vs new with
+  --checks --known, both boards) on its HEAD.
