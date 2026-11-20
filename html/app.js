@@ -3250,8 +3250,8 @@ function stSysLoad() {
     });
 }
 
-/* /information.json: the system tab's addresses, hostname, syslog and LEDs
- * until their objects land (P4-1) */
+/* /information.json: the system tab's hostname, syslog, session timeout
+ * and LEDs until their objects land (P4-1); the addresses are state.mgmt */
 function pollInfo() {
     return getJSON("/information.json").then(function(j) {
         S.info = j;
