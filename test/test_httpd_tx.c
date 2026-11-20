@@ -2278,6 +2278,35 @@ static void scenario_cli_reset_after_ack(void)
 	crash_pending = 0;
 }
 
+/* A connection while a flash job runs: reset only if the job writes from
+ * config_buf (an upload, a config save); the boot count's erase doesn't */
+static int connect_during_job(uint8_t kind)
+{
+	uip_init();
+	httpd_init();
+	authenticated = 1;
+	cli_seq = 1000;
+	cli_rcv_nxt = 0;
+	cli_window = MSS_FULL;
+	stream_len = 0;
+	fl_kind = kind;
+	client_send(TCP_SYN, NULL, 0);
+	srv_flags = 0;
+	client_ack(MSS_FULL);
+	fl_kind = 0;
+	return !(srv_flags & TCP_RST) && uip_conns[0].appstate.tstate != 3 /* TSTATE_CLOSED */;
+}
+
+static void scenario_connect_during_job(void)
+{
+	CHECK(connect_during_job(FL_BOOTCNT), "a connection during the boot count's erase is taken");
+	request_file(MSS_FULL);
+	drain(MSS_FULL);
+	CHECK(first_body_mismatch() == -1, "and its GET is served whole");
+	CHECK(!connect_during_job(FL_UPLOAD), "a connection during an upload's job is reset");
+	CHECK(!connect_during_job(FL_CONFIG), "a connection during a config save is reset");
+}
+
 static void scenario_side_effect_gets(void)
 {
 	static const char *gets[] = { "/reset", "/cmd_log_clear", "/l2_del.json?idx=7" };
@@ -2342,6 +2371,7 @@ int main(int argc, char **argv)
 	scenario_fragmented_missing_content_length();
 	scenario_reset_after_ack();
 	scenario_side_effect_gets();
+	scenario_connect_during_job();
 	scenario_cli_long_reply();
 	scenario_cli_overflow();
 	scenario_cli_dropped();
