@@ -85,10 +85,12 @@ typedef uint8_t (*om_fn)(uint8_t) __banked;
  * A state getter fills om_st for its instance: idx is level 0's element;
  * a second level's index is om_ix1. A streamed object's getter finds the
  * first instance at or after om_key, sets om_key to it and fills om_st, or
- * returns OM_ERR if there is none (the search wrapped).
+ * returns OM_ERR if there is none (the search wrapped). get <path>.K- is
+ * a page: the first OM_PAGE instances at or after K.
  */
 extern __xdata uint8_t om_ix1;
 extern __xdata uint16_t om_key;
+#define OM_PAGE	25	/* get <stream>.K-: at most this many instances from K on */
 
 /*
  * A derive handler fills om_val with the value of field om_fid (stored

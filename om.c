@@ -77,6 +77,10 @@ static __xdata uint8_t ce;		/* level 0's element: logical port, number, slot */
 __xdata uint8_t om_ix1;		/* level 1: number from 0, word */
 static __xdata uint8_t r_v1;		/* as given */
 __xdata uint16_t om_key;		/* a streamed object's instance (om.h) */
+#if OM_USE_STREAM
+static __xdata uint8_t r_open;		/* K: instances left, + 1 (K 1, K- OM_PAGE); 0 every one */
+static __xdata uint8_t r_land;		/* K: the instance found must be K */
+#endif
 #endif
 static __xdata uint8_t lv, lk, ln, la;	/* a level, its kind, count, arg */
 static __xdata uint8_t cur_e, cur_l, cur_f, cur_ok;	/* element, logical port, field, valid */
@@ -1050,20 +1054,26 @@ static uint8_t step0(void)
 	if (lk == IX_KEY)
 		return key_step();
 #endif
-	if (r_fix & 1) {
-		if (cv > r_v)
-			return 0;
-		cv = r_v;
-	}
 #if OM_USE_STREAM
+	/* a streamed level: the getter finds the instance at or after cv; K
+	 * must land on K, K- is a page of OM_PAGE from K on */
 	if (lk == IX_STREAM) {
+		if ((r_fix & 1) && cv < r_v)
+			cv = r_v;
+		if (r_open && !--r_open)
+			return 0;
 		om_key = cv;
-		if (call(obx.get) || ((r_fix & 1) && om_key != r_v))
+		if (call(obx.get) || (r_land && om_key != r_v))
 			return 0;
 		cv = om_key;
 		return 1;
 	}
 #endif
+	if (r_fix & 1) {
+		if (cv > r_v)
+			return 0;
+		cv = r_v;
+	}
 	for (; cv < obx.n[0] + (lk == IX_PORT); cv++) {
 		ce = cv;
 		if (lk != IX_PORT || (ce = log_of(cv)) != 0xff)
@@ -1159,7 +1169,20 @@ static uint8_t ix_parse(void)
 		goto bad;
 	}
 #endif
-	if (!parse_dec() || num[2] || num[3] || !(ch() == '.' || at_end()))
+	if (!parse_dec() || num[2] || num[3])
+		goto bad;
+#if OM_USE_STREAM
+	if (lk == IX_STREAM) {
+		r_open = 2;
+		r_land = 1;
+		if (ch() == '-') {
+			take();
+			r_open = OM_PAGE + 1;
+			r_land = 0;
+		}
+	}
+#endif
+	if (!(ch() == '.' || at_end()))
 		goto bad;
 	v16 = num[0] | (uint16_t)num[1] << 8;
 	if (lk == IX_PORT) {
@@ -1235,6 +1258,9 @@ static uint8_t match(void)
 	np = obx.name;
 	lv = 0;
 	r_fix = 0;
+#if OM_USE_STREAM
+	r_open = r_land = 0;
+#endif
 	while (nc()) {
 		if (at_end()) {
 			if (nc() == '.' || np == obx.name)
@@ -1425,7 +1451,11 @@ static uint8_t next_obj(void)
 				job_inst();
 				return 1;
 			}
-			if (r_fix & 1) {
+			if ((r_fix & 1)
+#if OM_USE_STREAM
+			    && (r_land || !r_open)	/* an empty page: nothing to print */
+#endif
+			    ) {
 				fail("no such entry");
 				goto fail;
 			}

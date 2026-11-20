@@ -330,7 +330,7 @@ uint8_t om_get_sfp(uint8_t idx)
 	return OM_OK;
 }
 /* state.l2 (om_port.c): a table of three, found from om_key as the chip's search */
-static uint16_t l2_ix[4] = { 0x010, 0x020, 0x8f0 };
+static uint16_t l2_ix[40] = { 0x010, 0x020, 0x8f0 };
 static int l2_n = 3, l2_calls, l2_change_at;
 uint8_t om_get_l2(uint8_t idx)
 {
@@ -719,7 +719,42 @@ static void cases(void)
 	expect("get state.l2.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:02\nok\n");
 	CHECK(l2_calls == 3, "and searched once an entry, then the wrap");
 	l2_change_at = 0;
-	memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0, 0 }, sizeof(l2_ix));
+	memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0 }, 3 * sizeof(l2_ix[0]));
+
+	printf("streamed: a page, get state.l2.K-\n");
+	expect("get state.l2.0-.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:01\n"
+	       "state.l2.2288.mac 02:00:00:00:00:02\nok\n");
+	expect("get state.l2.17-.vlan", "state.l2.32.vlan 1\nstate.l2.2288.vlan 1\nok\n");
+	expect("get state.l2.16-.vlan", "state.l2.16.vlan 1\nstate.l2.32.vlan 1\nstate.l2.2288.vlan 1\nok\n");
+	expect("get state.l2.2289-", "ok\n");
+	expect("get state.l2.4096-", "err state.l2.4096-: 0-4095\n");
+	expect("get port.3-.mtu", "err port.3-.mtu: no such port\n");
+	{
+		static char all[4096], pages[4096];
+		int n = 0, from = 0, k;
+		for (k = 0; k < 40; k++)
+			l2_ix[k] = 0x100 + 3 * k;
+		l2_n = 40;
+		snprintf(all, sizeof all, "%s", run("get state.l2.vlan"));
+		pages[0] = 0;
+		for (k = 0; k < 4; k++) {
+			char q[32];
+			const char *o, *l;
+			snprintf(q, sizeof q, "get state.l2.%d-.vlan", from);
+			o = run(q);
+			n = 0;
+			for (l = o; (l = strstr(l, "state.l2.")); l++, n++)
+				from = atoi(l + 9) + 1;
+			strncat(pages, o, t_strlen(o) - 3);	/* its "ok\n" aside */
+			if (n < OM_PAGE)
+				break;
+		}
+		strcat(pages, "ok\n");
+		CHECK(k == 1 && n == 15, "40 entries: a page of 25, then a short one of 15");
+		CHECK(!strcmp(pages, all), "the pages, one after the other, are the whole stream");
+		l2_n = 3;
+		memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0 }, 3 * sizeof(l2_ix[0]));
+	}
 
 	printf("two levels from 0: state.port.N.mib.K\n");
 	mib_calls = 0;
