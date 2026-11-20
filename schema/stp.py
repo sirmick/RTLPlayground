@@ -5,12 +5,6 @@
 # One entity's fields for a port and for a LAG. A LAG member's stp.port.N is
 # kept and has no effect while it is in the LAG: its stp.lag.L applies.
 # The runtime bits (operational edge, guard tripped) are state.
-#
-# /stp.json keeps, until P7: tcs, rMaxage, rFwd (state.stp.tc_age_s,
-# root_maxage_s, root_fwd_s, deferred by P5-4), per entity f's runtime bits
-# (guard_tripped, operational edge), lk, lg, db, dp, dc (link, legacy,
-# dbridge, dport, dcost), and what state.stp has too (rootPrio, rootMac,
-# myMac, cost, weRoot, tc; p, st, role, mbr).
 
 obj("stp", apply="om_apply_stp", check="om_check_stp", order=45, tip="The spanning tree")
 cfg("enabled", Bool, False, tip="Run the spanning tree")

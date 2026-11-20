@@ -965,8 +965,10 @@ void cmd_parser(void) __banked
 #if OM_DBG
 		} else if (cmd_compare(0, "flash")) {
 			parse_flash();
+#if OM_DBG_LEDS
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
+#endif
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {

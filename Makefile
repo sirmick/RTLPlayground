@@ -275,8 +275,11 @@ SRCS += \
 	uip/uip-neighbor.c \
 	uip/uip-split.c
 
-# OM_DBG (above): the leds dump (the `leds` command) with the other pokes
-ifneq ($(OM_DBG),0)
+# OM_DBG_LEDS=1: the leds dump (the `leds` command; 2.5 KB, one 14 ms step),
+# with OM_DBG; off by default, as DEBUG_OBJ had it
+OM_DBG_LEDS ?= 0
+ifeq ($(OM_DBG)$(OM_DBG_LEDS),11)
+CC_FLAGS += -DOM_DBG_LEDS=1
 SRCS += rtl837x_leds_dump.c
 endif
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}

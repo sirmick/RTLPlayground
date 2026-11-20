@@ -4557,7 +4557,8 @@ $("l2refresh").addEventListener("click", function() {
 });
 $("l2flush").addEventListener("click", function() {
     confirmModal(t("l2_flush_q"), "", function() {
-        postCmd("l2 forget").then(function() {
+        cli(["do l2.flush"]).then(function(r) {
+            if (r.errs.length) return toast(r.errs[0], "err");
             setTimeout(l2Fetch, 500)
         }).catch(function() {});
     });
