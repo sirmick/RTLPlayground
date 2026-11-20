@@ -48,7 +48,8 @@ var LANG = {
         stg_unapplied: "Not applied: the change is still staged",
         stg_keep_q: "Keep the last change?",
         stg_keep_d: "The switch rolls it back in {s} s unless it is confirmed. It may be another client's change: keep it only if it is yours.",
-        sy_move_d: "The management IP changes to {ip}. A new tab opens there: log in and keep the change within 2 min, or the switch goes back to {old}. This tab waits for that.",
+        sy_move_d: "The management IP changes to {ip}. Open it, log in and keep the change within 2 min, or the switch goes back to {old}.",
+        sy_back: "Unconfirmed, the switch is back at {u} after 2 min",
         sy_dhcp_w: "The switch requests an address via DHCP. There is no rollback: you must find its new IP to reconnect.",
         sy_pw_w: "Log in again with the new password and keep the change within 2 min, or the switch goes back to the old one.",
         stg_discarded: "{e}: the staged changes are discarded",
@@ -2593,7 +2594,8 @@ function stgDiscard() {
 
 /* Apply with a window: the change is kept only once the UI gets through
  * to the switch again and confirms, else the switch rolls it back */
-var STG_WINDOW = 30;
+var STG_WINDOW = 30,
+    STG_LONG = 150;	/* confirmed from a new page: 2 min to log in there, and stgAsk asks above 30 s */
 
 /* Apply, then follow the switch's state.cfg until it has
  * an outcome: confirm while it is open (the switch's countdown is the
@@ -2613,7 +2615,7 @@ function stgApply(win, go, tab) {
         return go ? stgGo(go, tab) : stgWatch(60, 0);
     }).then(function(a) {
         if (a === "moved") toast(t("sy_ip_changed", {
-            ip: go.split("/")[2].replace(/:.*/, "")
+            ip: go.split("/")[2]
         }), "ok");
         else if (a === "done") toast(t("stg_applied"), "ok");
         else toast(t(a === "rolled_back" ? "stg_rolled" : a === "failed" ? "stg_failed" :
@@ -2648,11 +2650,18 @@ function stgLock(on) {
  * else how it ended (a rollback) */
 function stgGo(go, tab) {
     if (!tab) {
-        location.href = go;
+        /* another address and no tab (blocked): say where to come back */
+        var u = location.protocol + "//" + location.host + "/";
+        if (go.indexOf(u) && /^http/.test(go)) toast(t("sy_back", {
+            u: u
+        }), "ok");
+        setTimeout(function() {
+            location.href = go;
+        }, /^http/.test(go) ? 4000 : 0);
         return new Promise(function() {});
     }
     tab.location = go;
-    return stgWatch(26, 0).then(function(a) {
+    return stgWatch(STG_LONG / 5 + 2, 0).then(function(a) {	/* about 5 s a try */
         return a || "moved";
     });
 }
@@ -4980,7 +4989,10 @@ function syApply(ids, win, go, tab) {
             throw new Error(r.errs[0]);
         });
         return stgApply(win, go, tab);
-    }).catch(function(e) {
+    }).then(function(a) {
+        if (a === "refused" && tab) tab.close();
+    }, function(e) {
+        if (tab) tab.close();
         toast(e.message, "err");
     }).then(sysLoad);
 }
@@ -5020,7 +5032,7 @@ $("sy-apply").addEventListener("click", function() {
         old: SY["sy-ip"]
     }) : "", function() {
         var tab = moving && window.open("", "_blank");	/* from the click, or it is blocked */
-        if (!toDhcp) return syApply(ids, moving ? 120 : 0, moving ?
+        if (!toDhcp) return syApply(ids, moving ? STG_LONG : 0, moving ?
             location.protocol + "//" + ip + (location.port ? ":" + location.port : "") + "/index.html" : "", tab);
         /* a plain apply: refused, the fields go back */
         cli(sySets(ids)).then(function(r) {
@@ -5047,7 +5059,7 @@ $("sy-syslog").addEventListener("change", function() {
 $("sy-sesstmo").addEventListener("change", function() {
     syApply(["sy-sesstmo"]);
 });
-/* a new password logs every session out at apply: a 120 s window, then
+/* a new password logs every session out at apply: a long window, then
  * the login, where logging in with it and keeping it (stgAsk) confirms */
 $("sy-pwapply").addEventListener("click", function() {
     var a = $("sy-pw1").value,
@@ -5067,7 +5079,7 @@ $("sy-pwapply").addEventListener("click", function() {
     confirmModal(t("sy_pw_q"), t("sy_pw_w"), function() {
         cli(["set web.password " + a]).then(function(r) {
             if (r.errs.length) throw new Error(r.errs[0]);
-            return stgApply(120, "/login.html");
+            return stgApply(STG_LONG, "/login.html");
         }).then(function(a) {
             if (a === "refused") throw new Error(t("stg_unapplied"));
         }).catch(function(e) {
