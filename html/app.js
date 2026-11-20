@@ -3139,11 +3139,7 @@ function updateStrip() {
         lb.textContent = !p.enabled ? t("c_off") : (p.link != "DOWN" ? p.link : t("c_down"));
     });
     if (S.tip != null) portTip(S.tip);
-    if (S.detail != null) {
-        var b = $("mbody");
-        b.innerHTML = "";
-        b.appendChild(detailTable(S.ports[S.detail]));
-    }
+    if (S.detail != null) detailShow(S.detail);
 }
 
 function pU16(v) {
@@ -3191,21 +3187,32 @@ function portRows(p) {
     rows.push([t("st_rxg"), BigInt(p.rxG) + " " + t("p_pkts")]);
     rows.push([t("st_rxb"), BigInt(p.rxB) + " " + t("p_pkts")]);
     if (p.isSFP) {
-        if (p.sfp_vendor) rows.push([t("p_module"), [p.sfp_vendor, p.sfp_model, p.sfp_serial].filter(Boolean).join(" / ")]);
-        var ext = p.sfp_options & 0x40;
+        /* state.sfp.S (detailShow): the raw SFF-8472 words, calibrated here
+         * with ddm.cal (bytes 184-223) when the module is externally calibrated */
+        var o = p.sfp || {},
+            d = o.ddm || {},
+            cal = d.cal || "",
+            st = (d.status || "").split(","),
+            ext = o.ddm_ok === "on";
+
+        function c(i) {	/* tx_bias, tx_power, temp, vcc's slope and offset */
+            return cal.length === 80 ? cal.slice(40 + 8 * i, 48 + 8 * i) : null
+        }
+        if (o.present === "on") rows.push([t("p_module"), [o.vendor, o.part, o.serial].filter(Boolean).join(" / ")]);
         if (ext) {
-            var tx = calSO(pU16(p.sfp_txpower), p.sfp_txpower_cal) / 10000;
-            var rx = calRx(pU16(p.sfp_rxpower), p.sfp_rxpower_cal) / 10000;
-            rows.push([t("p_temp"), (calSO(pI16(p.sfp_temp), p.sfp_temp_cal) / 256).toFixed(1) + " \u00b0C"]);
-            rows.push([t("p_vcc"), (calSO(pU16(p.sfp_vcc), p.sfp_vcc_cal) / 10000).toFixed(2) + " V"]);
-            rows.push([t("p_txbias"), (calSO(pU16(p.sfp_txbias), p.sfp_txbias_cal) / 500).toFixed(1) + " mA"]);
+            var tx = calSO(Math.round(d.tx_power_mw * 10000), c(1)) / 10000,
+                rx = calRx(Math.round(d.rx_power_mw * 10000), cal.slice(0, 40)) / 10000,
+                tc = +d.temp;
+            rows.push([t("p_temp"), (calSO(tc > 32767 ? tc - 65536 : tc, c(2)) / 256).toFixed(1) + " \u00b0C"]);
+            rows.push([t("p_vcc"), (calSO(Math.round(d.vcc_v * 10000), c(3)) / 10000).toFixed(2) + " V"]);
+            rows.push([t("p_txbias"), (calSO(+d.tx_bias, c(0)) / 500).toFixed(1) + " mA"]);
             rows.push([t("p_txpower"), tx.toFixed(3) + " mW / " + dBm(tx).toFixed(2) + " dBm"]);
             rows.push([t("p_rxpower"), rx.toFixed(3) + " mW / " + dBm(rx).toFixed(2) + " dBm"]);
-            rows.push([t("p_txfault"), t((Number(p.sfp_state) & 0x4) ? "c_yes" : "c_no")]);
-            rows.push([t("p_txdis"), t((Number(p.sfp_state) & 0x80) ? "c_yes" : "c_no")]);
+            rows.push([t("p_txfault"), t(st.indexOf("tx_fault") >= 0 ? "c_yes" : "c_no")]);
+            rows.push([t("p_txdis"), t(st.indexOf("tx_disable") >= 0 ? "c_yes" : "c_no")]);
         }
-        var losPin = (p.sfp_los != null) ? !!Number(p.sfp_los) : null;
-        var losMod = ext ? !!(Number(p.sfp_state) & 0x2) : null;
+        var losPin = o.los === "ok" ? false : o.los === "los" ? true : null;
+        var losMod = ext ? st.indexOf("rx_los") >= 0 : null;
         if (losPin != null || losMod != null) {
             var v = (losMod != null && losPin != null && losMod !== losPin) ?
                 ("pin=" + losPin + " mod=" + losMod + " !") : t((losMod != null ? losMod : losPin) ? "c_yes" : "c_no");
@@ -3225,9 +3232,21 @@ function detailTable(p) {
     return tb;
 }
 
+/* the port detail's table; an SFP port's from its cage's state.sfp.S */
+function detailShow(i, first) {
+    var p = S.ports[i];
+    (p.isSFP ? stObj("state.sfp." + S.sfpSlot[i]) : Promise.resolve()).then(function(o) {
+        p.sfp = o;
+        if (first) return modal(t("c_port") + " " + (i + 1), detailTable(p));
+        var b = $("mbody");
+        b.innerHTML = "";
+        b.appendChild(detailTable(p));
+    }).catch(function() {});
+}
+
 function portDetail(i) {
     if (!S.ports[i]) return;
-    modal(t("c_port") + " " + (i + 1), detailTable(S.ports[i]));
+    detailShow(i, 1);
     S.detail = i;
 }
 
@@ -3589,19 +3608,25 @@ function stpPortVals(pt) {
     };
 }
 
-function stpCnt(c) {
-    c.ports.forEach(function(pt) {
-        stpEnt(pt);
-        var p = stpKey(pt);
-        if (!$("scrx" + p)) return;
-        var v = [0, 1, 2, 3].map(function(k) {
-                return parseInt(pt.c.slice(8 * k, 8 * k + 8), 16)
-            }),
-            age = parseInt(pt.c.slice(32, 36), 16);
-        ["rx", "tx", "trx", "ttx"].forEach(function(k, i) {
-            $("sc" + k + p).textContent = v[i]
+/* the counters panel: state.stp.port.N and state.stp.lag.L (P5-4) */
+function stpCnt() {
+    return cli(["get state.stp.port state.stp.lag"]).then(function(r) {
+        var o = (parseLines(r.out[0] || []).state || {}).stp || {};
+        [
+            ["", o.port],
+            ["L", o.lag]
+        ].forEach(function(g) {
+            for (var n in g[1] || {}) {
+                var v = g[1][n],
+                    p = g[0] + n;
+                if (!$("scrx" + p)) continue;
+                $("scrx" + p).textContent = v.rx_bpdu;
+                $("sctx" + p).textContent = v.tx_bpdu;
+                $("sctrx" + p).textContent = v.rx_tc;
+                $("scttx" + p).textContent = v.tx_tc;
+                $("scage" + p).textContent = +v.rx_bpdu ? Math.floor(v.bpdu_age_ms / 1000) : "-";
+            }
         });
-        $("scage" + p).textContent = !v[0] ? "-" : (age === 0xffff ? ">" : "") + Math.floor(age / c.hz);
     });
 }
 
@@ -3671,7 +3696,7 @@ function stpLoad() {
             $("stfi" + p).value = v.filter;
             $("stpp" + p).value = v.p2p;
         });
-        if ($("stpcntd").open) return getJSON("/stpcnt.json").then(stpCnt);
+        if ($("stpcntd").open) return stpCnt();
     }).catch(function() {});
 }
 
