@@ -8,8 +8,8 @@
  * An upload segment starts in FL_PROG: httpd.c's upload_prog() parses the
  * staged segment into pages and programs them, asking for FL_ERASE at each
  * sector, and for FL_VERIFY (upload_verify(), the read-back CRC) when the
- * part has ended. A config save and a factory reset start in FL_ERASE
- * (CONFIG_START), then FL_PROG copies FL_CHUNK bytes a step; the loader's
+ * part has ended. A factory reset starts in FL_ERASE (CONFIG_START), then
+ * FL_PROG copies FL_CHUNK bytes of the default config a step; the loader's
  * boot count (loader_confirm()) is one FL_ERASE.
  */
 #include <stdint.h>
@@ -26,7 +26,6 @@ extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 
 __xdata uint8_t fl_req, fl_kind, fl_finished, fl_poll;
-__xdata uint8_t * __xdata fl_src;
 __xdata uint16_t fl_len;
 __xdata uint32_t fl_addr;
 static __xdata uint32_t fl_from;	/* factory: the next default config byte */
@@ -51,10 +50,8 @@ uint8_t flash_job_start(void) __banked
 		fl_addr = LDR_BOOTCNT;
 	} else if (fl_kind != FL_UPLOAD) {
 		fl_addr = CONFIG_START;
-		if (fl_kind != FL_CONFIG) {
-			fl_from = DEFAULT_CONFIG_START;
-			fl_len = CONFIG_LEN;
-		}
+		fl_from = DEFAULT_CONFIG_START;
+		fl_len = CONFIG_LEN;
 	}
 	return 1;
 }
@@ -83,18 +80,14 @@ STEP(fl, prog)
 		return STEP_STAY;
 	}
 	fl_n = fl_len > FL_CHUNK ? FL_CHUNK : fl_len;
-	if (fl_kind != FL_CONFIG) {
-		flash_region.addr = fl_from;
-		flash_region.len = fl_n;
-		flash_read_bulk(flash_buf);
-		FL_ADVANCE(fl_from);
-		fl_src = flash_buf;
-	}
+	flash_region.addr = fl_from;
+	flash_region.len = fl_n;
+	flash_read_bulk(flash_buf);
+	FL_ADVANCE(fl_from);
 	flash_region.addr = fl_addr;
 	flash_region.len = fl_n;
-	flash_write_bytes(fl_src);
+	flash_write_bytes(flash_buf);
 	FL_ADVANCE(fl_addr);
-	fl_src += fl_n;
 	fl_len -= fl_n;
 	if (!fl_len)
 		return S_FL_DONE;

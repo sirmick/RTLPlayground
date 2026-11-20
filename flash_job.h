@@ -5,15 +5,14 @@
 
 /*
  * The flash job (doc/sched/flash.md, flash_job.c): upload segments, the config
- * save and the factory reset, written in steps. A requester sets fl_req (and
- * fl_src, fl_len for a config save), then flash_job_start(): 0 if the job is
+ * save and the factory reset, written in steps. A requester sets fl_req,
+ * then flash_job_start(): 0 if the job is
  * busy or no slot is free. At its end the job sets fl_finished and fl_poll
  * and wakes net, which polls the connection at once; a factory reset resets
  * the chip instead.
  * No sched.h here: httpd includes it, and the host tests have no sched_gen.h.
  */
 #define FL_UPLOAD	1	/* httpd's staged upload segment (httpd.c upload_prog) */
-#define FL_CONFIG	2	/* config save: fl_len bytes at fl_src to CONFIG_START */
 #define FL_BOOTCNT	3	/* the loader's boot count erased (boot.c loader_confirm) */
 #define FL_FACTORY	4	/* factory reset: the default config sector, then a reset */
 #define FL_FACTORY_BTN	5	/* the same, from the reset button */
@@ -22,7 +21,6 @@ extern __xdata uint8_t fl_req;		/* the request flash_job_start() takes */
 extern __xdata uint8_t fl_kind;		/* the job's; 0: free */
 extern __xdata uint8_t fl_finished;	/* set when the job has ended */
 extern __xdata uint8_t fl_poll;		/* the same, for net: poll the connection now */
-extern __xdata uint8_t * __xdata fl_src;
 extern __xdata uint16_t fl_len;
 extern __xdata uint32_t fl_addr;	/* FL_ERASE's sector; config, factory: the next byte */
 
