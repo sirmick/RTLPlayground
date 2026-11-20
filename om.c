@@ -611,7 +611,7 @@ static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, in
 	return 1;
 }
 
-#if OM_USE_MAC || OM_USE_BRID
+#if OM_SET_MAC || OM_SET_BRID
 static uint8_t hexd(void)		/* a hex digit at p, or 0xff */
 {
 	uint8_t c = take();
@@ -694,7 +694,7 @@ static uint8_t parse_value(void)
 		om_val[0] = pm;
 		om_val[1] = pm >> 8;
 		break;
-#if OM_USE_IPV4
+#if OM_SET_IPV4
 	case T_IPV4: case T_MASK4:
 		for (w = 0; w < 4; w++) {
 			if (w && take() != '.')
@@ -721,7 +721,7 @@ bad_ip:
 		fail(ft == T_MASK4 ? "a.b.c.d, contiguous" : "a.b.c.d");
 		return 0;
 #endif
-#if OM_USE_MAC
+#if OM_SET_MAC
 	case T_MAC:
 		if (fdx.arg && seg_is("auto")) {
 			memset(om_val, 0, 6);
@@ -732,7 +732,7 @@ bad_ip:
 			goto bad_mac;
 		break;
 #endif
-#if OM_USE_BRID
+#if OM_SET_BRID
 	case T_BRID:
 		if (!byte_dec() || num[0] > 15 || take() != '.')
 			goto bad_mac;
@@ -746,13 +746,13 @@ bad_ip:
 			goto bad_mac;
 		break;
 #endif
-#if OM_USE_MAC || OM_USE_BRID
+#if OM_SET_MAC || OM_SET_BRID
 bad_mac:
 		fail(ft == T_BRID ? "0-15.0-4095.aa:bb:cc:dd:ee:ff" :
 			fdx.arg ? "aa:bb:cc:dd:ee:ff or auto" : "aa:bb:cc:dd:ee:ff");
 		return 0;
 #endif
-#if OM_USE_FLAGS
+#if OM_SET_FLAGS
 	case T_FLAGS: case T_FLAGS16:
 		v16 = 0;
 		if (!seg_is("none")) {
@@ -775,7 +775,7 @@ bad_mac:
 		om_val[1] = v16 >> 8;
 		break;
 #endif
-#if OM_USE_PORT
+#if OM_SET_PORT
 	case T_PORT:
 		if (fdx.arg && seg_is("none")) {
 			om_val[0] = 0xff;
@@ -787,7 +787,7 @@ bad_mac:
 		}
 		break;
 #endif
-#if OM_USE_I16 || OM_USE_TZ
+#if OM_SET_I16 || OM_SET_TZ
 	case T_I16: case T_TZ:
 		sg = ch() == '-';
 		if (ch() == '-' || ch() == '+')
@@ -795,7 +795,7 @@ bad_mac:
 		if (!parse_dec() || num[2] | num[3])
 			goto bad_signed;
 		v16 = num[0] | (uint16_t)num[1] << 8;
-#if OM_USE_TZ
+#if OM_SET_TZ
 		if (ft == T_TZ) {	/* hh:mm, mm 00, 30 or 45 */
 			k = num[0];
 			if (num[1] || take() != ':' || !byte_dec() ||

@@ -176,6 +176,17 @@ print("output")
 rc, out, _ = gen(BASE, registry=reg, out=True)
 check(rc == 0, "generates", out)
 
+print("a type only state has: printed, not parsed (OM_SET_)")
+d = tempfile.mkdtemp()
+with open(os.path.join(d, "a.py"), "w") as f:
+    f.write('obj("s")\ncfg("ip", IPv4, "10.0.0.1")\nstate("s")\nst("gw", IPv4)\nst("off", I16())\n')
+subprocess.run([sys.executable, GEN, "-s", d, "--register"], capture_output=True)
+p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o")], capture_output=True, text=True)
+hh = open(os.path.join(d, "o", "om_gen.h")).read() if p.returncode == 0 else ""
+check("#define OM_USE_IPV4 1" in hh and "#define OM_SET_IPV4 1" in hh and
+      "#define OM_USE_I16 1" in hh and "#define OM_SET_I16 0" in hh,
+      "OM_USE_ for every type, OM_SET_ for a config field's", p.stdout + p.stderr)
+
 print("the web UI's schema (--js)")
 d = tempfile.mkdtemp()
 with open(os.path.join(d, "a.py"), "w") as f:

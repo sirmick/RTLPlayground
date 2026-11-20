@@ -11,9 +11,14 @@ ntp timezone <+hh:mm>    # offset from UTC, -12:00 to +14:00
 ntp dst off|eu|us        # daylight saving rule
 ntp on
 ntp off
-ntp                      # settings and time
-time                     # local date and time
+ntp                      # the settings
+get state.ntp            # synchronised, the time, the offset, the last sync
 ```
+
+`state.ntp.time` is seconds since 1970, UTC; `state.ntp.local_offset_min`
+is the time zone with daylight saving included, so the local time is
+`time + local_offset_min * 60`. `last_sync_s` counts from the last
+synchronisation, `server_ip` is the address it used.
 
 The client speaks SNTP version 4 and synchronises at once when turned on,
 then after every interval. A server given by name is resolved through the DNS
