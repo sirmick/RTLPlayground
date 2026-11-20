@@ -192,6 +192,7 @@ var LANG = {
         stp_nolink: "no link",
         stp_lasttc: "last",
         stp_mcheck: "Check",
+        stp_unguard: "Clear",
         stp_mcheck_t: "Send RST BPDUs again to find out whether the neighbour still needs 802.1D",
         stp_cnt: "Counters",
         stp_crx: "BPDUs received",
@@ -2767,17 +2768,6 @@ var CONF_CMDS = [
     /^eee\s+(on|off)(\s+\d+)?(\s+(100m|1g|2g5))?$/,
     /^mirror(\s+\d+)(\s+\d+[tr]?)+$/, /^mirror\s+off$/,
     /^isolate\s+\d+(\s+(off|\d+))+$/,
-    /^stp\s+(on|off)$/, /^stp\s+(prio|hello|maxage|fwd|txhold)\s+\d+$/,
-    /^stp\s+version\s+(rstp|stp)$/,
-    /^stp\s+pathcost\s+(long|short)$/,
-    /^stp\s+bpdu\s+(filter|flood)$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+(on|off)$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+edge\s+(on|off|auto)$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+cost\s+\d+$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+prio\s+\d+$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+guard\s+(none|bpdu|root)$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+filter\s+(on|off)$/,
-    /^stp\s+(port\s+\d+|lag\s+[1-4])\s+p2p\s+(auto|on|off)$/,
     /^igmp\s+(on|off)$/,
     /^mtu\s+\d+\s+\d+$/,
     /^lldp\s+(on|off)$/,
@@ -3565,18 +3555,33 @@ tabHooks.ports = {
     },
 };
 
+/* /stp.json's runtime flags (its config is stp.*, P4-4) */
 var STP_PF = {
-    EN: 1,
-    ADMEDGE: 2,
-    AUTOEDGE: 4,
-    BPDUG: 8,
-    ROOTG: 16,
-    FILTER: 32,
     OPEREDGE: 64,
     TRIP: 128
 };
 var stpSig = "",
-    stpCur = null;
+    stpCur = null,
+    STPC = {},	/* get -c stp: the candidate's stp, stp.port.N, stp.lag.L */
+    STPB = {	/* the bridge card's elements: their stp field */
+        stpver: "version",
+        stppcs: "pathcost",
+        stpbh: "bpdu",
+        stpprio: "priority",
+        stphello: "hello_s",
+        stpmaxage: "maxage_s",
+        stpfwd: "fwd_delay_s",
+        stptxhold: "txhold"
+    },
+    STPF = {	/* a port row's (id + key) */
+        sten: "enabled",
+        sted: "edge",
+        stco: "cost",
+        stpr: "priority",
+        stgu: "guard",
+        stfi: "filter",
+        stpp: "p2p"
+    };
 
 function stpSel(id, opts) {
     var s = h("select", {
@@ -3618,8 +3623,47 @@ function stpDhms(x) {
     return Math.floor(x / 86400) + "d " + Math.floor(x / 3600) % 24 + "h " + Math.floor(x / 60) % 60 + "m " + x % 60 + "s"
 }
 
-function stpPre(k) {
-    return k.charAt(0) === "L" ? "stp lag " + k.slice(1) + " " : "stp port " + k + " "
+function stpPath(k) {
+    return k.charAt(0) === "L" ? "stp.lag." + k.slice(1) : "stp.port." + k
+}
+
+/* entity k's fields in o (get stp's parsed) */
+function stpObj(k, o) {
+    return (k.charAt(0) === "L" ? (o.lag || {})[k.slice(1)] : (o.port || {})[k]) || {}
+}
+
+/* elements f (id + sfx: field) into the candidate's c, or c's values into them */
+function stpVal(e) {
+    return e.type === "checkbox" ? (e.checked ? "on" : "off") : e.value.trim()
+}
+
+function stpPut(f, sfx, c) {
+    for (var id in f) {
+        var e = $(id + sfx);
+        if (e.type === "checkbox") e.checked = c[f[id]] === "on";
+        else e.value = c[f[id]];
+    }
+}
+
+/* the fields that differ from c as set lines into path, then the bar's
+ * Apply; a refused set puts c back */
+function stpStage(f, sfx, path, c) {
+    var l = [],
+        u = [];
+    for (var id in f) {
+        var v = stpVal($(id + sfx));
+        if (v === c[f[id]]) continue;
+        l.push("set " + path + "." + f[id] + " " + v);
+        u.push("set " + path + "." + f[id] + " " + c[f[id]]);
+    }
+    if (l.length) omSet(l, u).then(stpLoad);
+}
+
+/* do path.act, at once (no apply) */
+function stpDo(k, act) {
+    cli(["do " + stpPath(k) + "." + act]).then(function(r) {
+        if (r.errs.length) toast(r.errs[0], "err");
+    }).catch(function() {}).then(stpLoad);
 }
 
 function stpBuild(ports) {
@@ -3690,7 +3734,7 @@ function stpBuild(ports) {
             text: t("stp_mcheck"),
             title: t("stp_mcheck_t"),
             onclick: function() {
-                postCmd(stpPre(p) + "mcheck").then(stpLoad).catch(function() {})
+                stpDo(p, "mcheck")
             }
         }));
         var cr = ct.insertRow();
@@ -3699,19 +3743,6 @@ function stpBuild(ports) {
             cr.insertCell().id = "sc" + k + p
         });
     });
-}
-
-function stpPortVals(pt) {
-    var f = pt.f;
-    return {
-        en: !!(f & STP_PF.EN),
-        edge: (f & STP_PF.ADMEDGE) ? "on" : ((f & STP_PF.AUTOEDGE) ? "auto" : "off"),
-        cost: parseInt(pt.pc),
-        prio: String(pt.prio),
-        guard: (f & STP_PF.BPDUG) ? "bpdu" : ((f & STP_PF.ROOTG) ? "root" : "none"),
-        filter: (f & STP_PF.FILTER) ? "on" : "off",
-        p2p: ["auto", "on", "off"][pt.p2] || "auto",
-    };
 }
 
 /* the counters panel: state.stp.port.N and state.stp.lag.L (P5-4) */
@@ -3736,8 +3767,16 @@ function stpCnt() {
     });
 }
 
+/* /stp.json the tree as it runs; get -c stp the fields, running's
+ * enabled, version, priority and p2p for the status */
 function stpLoad() {
-    return getJSON("/stp.json").then(function(s) {
+    return Promise.all([getJSON("/stp.json"), cli(["get -c stp", "get stp.enabled stp.version stp.priority stp.port.*.p2p stp.lag.*.p2p"])]).then(function(x) {
+        var s = x[0],
+            u = parseLines(x[1].out[1] || []).stp || {};
+        STPC = parseLines(x[1].out[0] || []).stp || {};
+        s.on = u.enabled === "on";
+        s.type = u.version;
+        s.prio = +u.priority;
         s.ports.forEach(stpEnt);
         s.ports.sort(function(a, b) {
             return (a.lag - b.lag) || (a.p - b.p)
@@ -3751,7 +3790,7 @@ function stpLoad() {
         }
         stpCur = s;
         var en = $("stpen");
-        if (document.activeElement !== en) en.checked = s.on;
+        if (document.activeElement !== en) en.checked = STPC.enabled === "on";
         var msg;
         if (!s.on) msg = t("stp_off_msg");
         else {
@@ -3769,99 +3808,59 @@ function stpLoad() {
         }
         $("stpids").textContent = msg;
         var bc = $("stpbridge");
-        if (!bc.dataset.dirty) {
-            $("stpver").value = s.type;
-            $("stppcs").value = s.pcs;
-            $("stpbh").value = s.bh;
-            $("stpprio").value = String(s.prio);
-            $("stphello").value = s.hello;
-            $("stpmaxage").value = s.maxage;
-            $("stpfwd").value = s.fwd;
-            $("stptxhold").value = s.txhold;
-        }
+        if (!bc.dataset.dirty) stpPut(STPB, "", STPC);
         s.ports.forEach(function(pt) {
             var p = stpKey(pt);
-            var trip = (pt.f & STP_PF.TRIP) ? " " + badge(t("stp_trip"), "bad") : "";
+            var trip = pt.f & STP_PF.TRIP;
             $("stro" + p).textContent = s.on && pt.role ? t("stp_r" + pt.role) : "-";
-            $("stst" + p).innerHTML = s.on ? (pt.lk ? badge(t("stp_s" + pt.st), pt.st === 3 ? "ok" : "") : badge(t("stp_nolink"))) + trip : "-";
+            $("stst" + p).innerHTML = s.on ? (pt.lk ? badge(t("stp_s" + pt.st), pt.st === 3 ? "ok" : "") : badge(t("stp_nolink"))) + (trip ? " " + badge(t("stp_trip"), "bad") : "") : "-";
+            if (s.on && trip) $("stst" + p).appendChild(h("button", {
+                class: "ctl",
+                text: t("stp_unguard"),
+                onclick: function() {
+                    stpDo(p, "clear_guard")
+                }
+            }));
             $("stdb" + p).textContent = s.on ? fmtBridge(pt.db) : "-";
             $("stdp" + p).textContent = s.on ? parseInt(pt.dp.slice(0, 2), 16) + "." + parseInt(pt.dp.slice(2), 16) : "-";
             $("stdc" + p).textContent = s.on ? parseInt(pt.dc) : "-";
             $("stoe" + p).textContent = s.on ? t((pt.f & STP_PF.OPEREDGE) ? "c_yes" : "c_no") : "-";
-            $("stop" + p).textContent = s.on ? t(pt.p2 === 2 ? "c_no" : "c_yes") : "-";
+            $("stop" + p).textContent = s.on ? t(stpObj(p, u).p2p === "off" ? "c_no" : "c_yes") : "-";
             $("stpv" + p).textContent = s.on && pt.role ? (s.type == "rstp" && !pt.lg ? "RSTP" : "STP") : "-";
             $("stmc" + p).disabled = !(s.on && pt.role && s.type == "rstp");
             var row = $("sten" + p).closest("tr");
             if (row.dataset.dirty) return;
-            var v = stpPortVals(pt);
-            $("sten" + p).checked = v.en;
-            $("sted" + p).value = v.edge;
-            $("stco" + p).value = v.cost;
-            $("stpr" + p).value = v.prio;
-            $("stgu" + p).value = v.guard;
-            $("stfi" + p).value = v.filter;
-            $("stpp" + p).value = v.p2p;
+            stpPut(STPF, p, stpObj(p, STPC));
         });
         if ($("stpcntd").open) return stpCnt();
     }).catch(function() {});
 }
 
 function stpApplyPort(p) {
-    var cur = null;
-    (stpCur ? stpCur.ports : []).forEach(function(pt) {
-        if (stpKey(pt) === p) cur = stpPortVals(pt)
-    });
-    var cost = parseInt($("stco" + p).value, 10);
-    if (isNaN(cost) || cost < 0 || cost > 200000000) {
+    var cost = $("stco" + p).value;
+    if (!/^\d+$/.test(cost) || +cost > 200000000) {
         toast(t("stp_cost_err"), "err");
         return;
     }
-    var w = {
-        en: $("sten" + p).checked,
-        edge: $("sted" + p).value,
-        cost: cost,
-        prio: $("stpr" + p).value,
-        guard: $("stgu" + p).value,
-        filter: $("stfi" + p).value,
-        p2p: $("stpp" + p).value
-    };
-    var cmds = [],
-        pre = stpPre(p);
-    if (!cur || w.edge !== cur.edge) cmds.push(pre + "edge " + w.edge);
-    if (!cur || w.cost !== cur.cost) cmds.push(pre + "cost " + w.cost);
-    if (!cur || w.prio !== cur.prio) cmds.push(pre + "prio " + w.prio);
-    if (!cur || w.guard !== cur.guard) cmds.push(pre + "guard " + w.guard);
-    if (!cur || w.filter !== cur.filter) cmds.push(pre + "filter " + w.filter);
-    if (!cur || w.p2p !== cur.p2p) cmds.push(pre + "p2p " + w.p2p);
-    if (!cur || w.en !== cur.en) cmds.push(pre + (w.en ? "on" : "off"));
     delete $("sten" + p).closest("tr").dataset.dirty;
-    if (!cmds.length) return;
-    postCmds(cmds).then(stpLoad).catch(function() {});
+    stpStage(STPF, p, stpPath(p), stpObj(p, STPC));
 }
+/* set lines into the candidate, then the bar's Apply; a refused set
+ * stages undo, this batch's old values */
+function omSet(l, undo) {
+    return cli(l).then(function(r) {
+        if (!r.errs.length) return stgApply();
+        toast(r.errs[0], "err");
+        return cli(undo);
+    }).catch(function() {});
+}
+
 $("stpbridge").addEventListener("change", function() {
     this.dataset.dirty = "1"
 });
 $("stpbapply").addEventListener("click", function() {
-    var s = stpCur || {},
-        cmds = [];
-    var ver = $("stpver").value,
-        prio = $("stpprio").value;
-    if (ver !== (s.rstp ? "rstp" : "stp")) cmds.push("stp version " + ver);
-    if (prio !== String(s.prio)) cmds.push("stp prio " + prio);
-    if ($("stppcs").value !== s.pcs) cmds.push("stp pathcost " + $("stppcs").value);
-    if ($("stpbh").value !== s.bh) cmds.push("stp bpdu " + $("stpbh").value);
-    [
-        ["stphello", "hello"],
-        ["stpmaxage", "maxage"],
-        ["stpfwd", "fwd"],
-        ["stptxhold", "txhold"]
-    ].forEach(function(f) {
-        var v = $(f[0]).value;
-        if (String(v) !== String(s[f[1]])) cmds.push("stp " + f[1] + " " + v);
-    });
     delete $("stpbridge").dataset.dirty;
-    if (!cmds.length) return;
-    postCmds(cmds).then(stpLoad).catch(function() {});
+    stpStage(STPB, "", "stp", STPC);
 });
 $("stpen").addEventListener("change", function() {
     var el = this,
@@ -3869,7 +3868,7 @@ $("stpen").addEventListener("change", function() {
     el.checked = !want;
     confirmModal(t(want ? "stp_en_q" : "stp_dis_q"), t(want ? "stp_en_d" : "stp_dis_d"),
         function() {
-            postCmd("stp " + (want ? "on" : "off")).then(stpLoad).catch(function() {})
+            omSet(["set stp.enabled " + (want ? "on" : "off")], ["set stp.enabled " + (want ? "off" : "on")]).then(stpLoad)
         });
 });
 (function() {
