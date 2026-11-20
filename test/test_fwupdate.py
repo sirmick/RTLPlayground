@@ -427,6 +427,17 @@ def main():
           and "Saved: get -s is the plan" in err, "--fit-vlans: parked, dropped, warned, saved", (out[-600:], err))
     f.close()
 
+    print("an old `mac` line: refused, unless --expect-mac gives the hardware MAC")
+    f = Fake(CLEAN + "mac 02:11:22:33:44:55\n")
+    f.info = {"mac_address": "02:11:22:33:44:55"}	# the configured MAC; state.sys.mac will be MAC
+    st, out, err = run(f, img, "--save-plan", plan2, "--drop-legacy")
+    check(st == 5 and f.uploads == 0 and "`mac 02:11:22:33:44:55`" in err and "--expect-mac" in err,
+          "the line named, refused before the upload (5)", err)
+    st, out, err = run(f, img, "--save-plan", plan2, "--drop-legacy", "--expect-mac", MAC.upper().replace(":", "-"))
+    check(st == 0 and f.uploads == 1 and "Saved: get -s is the plan" in err
+          and open(plan2).readline().rstrip().endswith("mac " + MAC), "--expect-mac: found by the hardware MAC", err)
+    f.close()
+
     print("--no-wait can't carry a config")
     f = Fake(CLEAN)
     st, out, err = run(f, img, "--no-wait")

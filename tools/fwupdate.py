@@ -37,7 +37,9 @@ Step 4 applies with a confirm window (apply 120): if the switch can't be
 reached at its address after it, it rolls back to its factory default.
 Every address is checked to be the same switch (state.sys.mac against the
 old switch's MAC, kept in the plan) before set and before confirm: another
-switch answering there is skipped.  With DHCP the new lease is looked for
+switch answering there is skipped.  An old `mac` line makes the old
+switch report that MAC while the new firmware boots on the hardware one:
+it refuses unless --expect-mac gives the hardware MAC.  With DHCP the new lease is looked for
 by the MAC in this host's neighbour table only; if it isn't found, the
 window rolls back, and `--plan HOST.plan <the lease's address>` redoes
 step 4 once you know it.
@@ -572,12 +574,16 @@ class Plan:
                                             self.value(self.rc.Config(self.sch), "mgmt.ip")]))
         self.boot_password = self.value(cfg, "web.password")
         if lines is not None:		# a written plan (--plan)
-            self.lines, self.legacy, self.bad, self.vlans = lines, [], [], []
+            self.lines, self.legacy, self.bad, self.vlans, self.mac_line = lines, [], [], [], None
             self.empty = not lines
             return
         self.vlans = []		# VLAN problems the new firmware would refuse
         self.lines, self.legacy, self.bad = legacy_map.convert(
             text, self.sch.board, self.warn, self.sch, self.vlans, getattr(args, "fit_vlans", False))
+        # a `mac` line: the old switch reports that MAC, the new firmware
+        # boots on the hardware one (sys.mac isn't on the model)
+        m = re.search(r"(?m)^[ \t]*(mac[ \t]+\S+)", legacy_map.text_of(legacy_map.undump(text or b"")))
+        self.mac_line = m.group(1) if m else None
         self.empty = not (self.lines or self.legacy or self.bad)
         # a field the factory default sets and the old config didn't (no ip
         # line: the old switch ran its built-in address) is pinned to what
@@ -944,6 +950,10 @@ def parse_args(argv):
     parser.add_argument("--drop-legacy", action="store_true",
                         help="update even if config lines would be lost "
                              "(legacy or untranslated: listed)")
+    parser.add_argument("--expect-mac", metavar="MAC",
+                        help="the MAC the new firmware will report (the "
+                             "hardware MAC), when the old config's `mac` line "
+                             "makes the old switch report another")
     parser.add_argument("--fit-vlans", action="store_true",
                         help="drop the VLANs over the new firmware's table "
                              "(the highest VIDs) and park a pvid on a VLAN "
@@ -1083,6 +1093,17 @@ def run(args):
                 f"{len(plan.vlans)} VLAN problems the new firmware would refuse "
                 "(listed above); --fit-vlans drops the extra VLANs and parks "
                 "those pvids on 0", 5)
+        if args.expect_mac:
+            plan.mac = args.expect_mac.lower().replace("-", ":")
+            if not re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", plan.mac):
+                raise Failure(f"--expect-mac {args.expect_mac}: not aa:bb:cc:dd:ee:ff", 1)
+        elif plan.mac_line:
+            raise Failure(
+                f"the old config sets the MAC (`{plan.mac_line}`): the switch "
+                f"reports {plan.mac}, but the new firmware boots on its "
+                "hardware MAC, so it couldn't be told from another switch "
+                "after the update; give --expect-mac <the hardware MAC> (the "
+                "label, or the console's boot lines)", 5)
         if not re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", plan.mac or ""):
             raise Failure("the old switch didn't say its MAC (/information.json "
                           "mac_address): no way to tell it from another switch "
