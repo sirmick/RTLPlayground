@@ -47,7 +47,11 @@ var LANG = {
         stg_lost: "No answer from the switch",
         stg_unapplied: "Not applied: the change is still staged",
         stg_keep_q: "Keep the last change?",
-        stg_keep_d: "The switch rolls it back in {s} s unless it is confirmed from here.",
+        stg_keep_d: "The switch rolls it back in {s} s unless it is confirmed. It may be another client's change: keep it only if it is yours.",
+        sy_move_d: "The management IP changes to {ip}. A new tab opens there: log in and keep the change within 2 min, or the switch goes back to {old}. This tab waits for that.",
+        sy_dhcp_w: "The switch requests an address via DHCP. There is no rollback: you must find its new IP to reconnect.",
+        sy_pw_w: "Log in again with the new password and keep the change within 2 min, or the switch goes back to the old one.",
+        stg_discarded: "{e}: the staged changes are discarded",
         stg_failed: "Apply failed: the switch runs the old config",
         stg_confirm: "confirming, {s} s",
         c_name: "Name",
@@ -315,10 +319,8 @@ var LANG = {
         sy_ip_err: "Invalid IP / netmask / gateway",
         sy_host_err: "Hostname: 1-23 printable characters, no spaces or quotes",
         sy_net_q: "Apply network settings?",
-        sy_net_d: "The management IP changes to {ip}: this page will need to be reopened there.",
         sy_ip_changed: "IP changed, reconnect at http://{ip}/",
         sy_dhcp_q: "Switch to DHCP?",
-        sy_dhcp_d: "The switch requests an address via DHCP. You must find its new IP to reconnect.",
         sy_sysip_err: "Invalid syslog server IP",
         sy_dns1: "DNS server",
         sy_dns2: "Second DNS",
@@ -347,7 +349,6 @@ var LANG = {
         sy_pw_space: "Password cannot contain spaces",
         sy_pw_match: "Passwords do not match",
         sy_pw_q: "Change admin password?",
-        sy_pw_d: "Takes effect immediately for new logins. Save to flash to persist.",
         sy_reboot_q: "Reboot the switch?",
         sy_reboot_d: "There are UNSAVED changes and they will be lost. Save to flash first if you want to keep them.",
         sy_rebooting: "Rebooting, reconnect in about 20 s",
@@ -649,17 +650,14 @@ var LANG = {
         sy_ip_err: "IP / ネットマスク / ゲートウェイが無効です",
         sy_host_err: "ホスト名: 1〜23 文字の印字可能文字、空白と引用符は不可",
         sy_net_q: "ネットワーク設定を適用しますか?",
-        sy_net_d: "管理 IP が {ip} に変わります。このページは新しいアドレスで開き直す必要があります。",
         sy_ip_changed: "IP を変更しました。http://{ip}/ に再接続してください",
         sy_dhcp_q: "DHCP に切り替えますか?",
-        sy_dhcp_d: "スイッチは DHCP でアドレスを要求します。再接続するには新しい IP を確認する必要があります。",
         sy_sysip_err: "syslog サーバー IP が無効です",
         sy_sysport_err: "syslog ポートは 1〜65535 の範囲で指定してください",
         sy_pw_len: "パスワード: 1〜20 文字",
         sy_pw_space: "パスワードに空白は使えません",
         sy_pw_match: "パスワードが一致しません",
         sy_pw_q: "管理者パスワードを変更しますか?",
-        sy_pw_d: "新しいログインから即時に有効になります。保持するにはフラッシュに保存してください。",
         sy_reboot_q: "スイッチを再起動しますか?",
         sy_reboot_d: "未保存の変更があり、失われます。保持したい場合は先にフラッシュに保存してください。",
         sy_rebooting: "再起動中です。約 20 秒後に再接続してください",
@@ -982,10 +980,8 @@ var LANG = {
         sy_ip_err: "IP / 子网掩码 / 网关无效",
         sy_host_err: "主机名: 1-23 个可打印字符，不能包含空格或引号",
         sy_net_q: "应用网络设置?",
-        sy_net_d: "管理 IP 将变为 {ip}，需要使用新地址重新打开本页面。",
         sy_ip_changed: "IP 已更改，请访问 http://{ip}/ 重新连接",
         sy_dhcp_q: "切换到 DHCP?",
-        sy_dhcp_d: "交换机将通过 DHCP 请求地址。您需要查到新的 IP 才能重新连接。",
         sy_sysip_err: "syslog 服务器 IP 无效",
         sy_dns1: "DNS 服务器",
         sy_dns2: "备用 DNS 服务器",
@@ -1014,7 +1010,6 @@ var LANG = {
         sy_pw_space: "密码不能包含空格",
         sy_pw_match: "两次输入的密码不一致",
         sy_pw_q: "修改管理员密码?",
-        sy_pw_d: "对新的登录立即生效。如需保留请保存到 Flash。",
         sy_reboot_q: "重启交换机?",
         sy_reboot_d: "存在未保存的更改，重启后将丢失。如需保留请先保存到 Flash。",
         sy_rebooting: "正在重启，约 20 秒后重新连接",
@@ -1291,17 +1286,14 @@ var LANG = {
         sy_ip_err: "IP / máscara / puerta de enlace no válidos",
         sy_host_err: "Nombre de host: 1-23 caracteres imprimibles, sin espacios ni comillas",
         sy_net_q: "¿Aplicar ajustes de red?",
-        sy_net_d: "La IP de gestión cambia a {ip}: esta página deberá reabrirse allí.",
         sy_ip_changed: "IP cambiada, reconecta en http://{ip}/",
         sy_dhcp_q: "¿Cambiar a DHCP?",
-        sy_dhcp_d: "El switch solicita una dirección mediante DHCP. Deberás encontrar su nueva IP para reconectar.",
         sy_sysip_err: "IP del servidor syslog no válida",
         sy_sysport_err: "El puerto de syslog debe estar entre 1 y 65535",
         sy_pw_len: "Contraseña: 1-20 caracteres",
         sy_pw_space: "La contraseña no puede contener espacios",
         sy_pw_match: "Las contraseñas no coinciden",
         sy_pw_q: "¿Cambiar la contraseña de administrador?",
-        sy_pw_d: "Toma efecto inmediatamente para los nuevos inicios de sesión. Guarda en flash para persistir.",
         sy_reboot_q: "¿Reiniciar el switch?",
         sy_reboot_d: "Hay cambios SIN GUARDAR y se perderán. Guarda en flash primero si quieres conservarlos.",
         sy_rebooting: "Reiniciando, reconecta en unos 20 s",
@@ -1663,10 +1655,8 @@ var LANG = {
         sy_ip_err: "Erreur d'IP / masque réseau / passerelle",
         sy_host_err: "Nom d'hôte : 1 à 23 caractères, sans espace ni apostrophes",
         sy_net_q: "Appliquer les paramètres réseau?",
-        sy_net_d: "L'adresse IP de  management va devenir {ip}: merci de réouvrir le page depuis cette adresse.",
         sy_ip_changed: "L'adresse IP a changée, reconnectez-vous à http://{ip}/",
         sy_dhcp_q: "Passer en DHCP?",
-        sy_dhcp_d: "Le commutateur va demander une addresse via le DHCP. Vous devrez rechercher sa prochaine adresse IP pour vous reconnecter.",
         sy_sysip_err: "Adresse IP du serveur Syslog invalide",
         sy_dns1: "DNS principal",
         sy_dns2: "DNS secondaire",
@@ -1695,7 +1685,6 @@ var LANG = {
         sy_pw_space: "Le mot de passe ne doit pas contenir d'espaces",
         sy_pw_match: "Les mots de passe ne correspondent pas",
         sy_pw_q: "Changer le mot de passe d'administration?",
-        sy_pw_d: "Cela prend effet immédiatement dès la prochaine connection. Enregistrez en Flash pour rendre la modification persistante.",
         sy_reboot_q: "Redémarrer le commutateur ?",
         sy_reboot_d: "Il y a des paramètres NON SAUVEGARDES qui vont être perdus. Sauvegardez-les au préalable en mémoire flash si vous souhaitez les conserver.",
         sy_rebooting: "Redémarrage, reconnectez-vous d'ici 20s",
@@ -2021,10 +2010,8 @@ var LANG = {
         sy_ip_err: "Ungültige IP / Netzmaske / Gateway",
         sy_host_err: "Hostname: 1-23 druckbare Zeichen, keine Leerzeichen oder Anführungszeichen",
         sy_net_q: "Netzwerkeinstellungen übernehmen?",
-        sy_net_d: "Die Management-IP ändert sich auf {ip}: Diese Seite muss dort neu geöffnet werden.",
         sy_ip_changed: "IP geändert, neu verbinden unter http://{ip}/",
         sy_dhcp_q: "Auf DHCP umstellen?",
-        sy_dhcp_d: "Der Switch bezieht seine Adresse per DHCP. Du musst seine neue IP herausfinden, um dich wieder zu verbinden.",
         sy_sysip_err: "Ungültige IP des Syslog-Servers",
         sy_dns1: "DNS-Server",
         sy_dns2: "Zweiter DNS-Server",
@@ -2053,7 +2040,6 @@ var LANG = {
         sy_pw_space: "Das Passwort darf keine Leerzeichen enthalten",
         sy_pw_match: "Die Passwörter stimmen nicht überein",
         sy_pw_q: "Admin-Passwort ändern?",
-        sy_pw_d: "Gilt sofort für neue Anmeldungen. Im Flash speichern, damit es erhalten bleibt.",
         sy_reboot_q: "Switch neu starten?",
         sy_reboot_d: "Es gibt UNGESPEICHERTE Änderungen, sie gehen verloren. Zuerst im Flash speichern, wenn du sie behalten willst.",
         sy_rebooting: "Neustart läuft, in etwa 20 s neu verbinden",
@@ -2612,30 +2598,36 @@ var STG_WINDOW = 30;
 /* Apply, then follow the switch's state.cfg until it has
  * an outcome: confirm while it is open (the switch's countdown is the
  * deadline, not this browser's clock), wait while it walks */
-function stgApply(win, go) {
+function stgApply(win, go, tab) {
     $("stgApply").disabled = true;
     stgHold = 2;		/* apply's reply may take long: 10 s */
     stgLock(1);
     return cli(["apply " + (win || STG_WINDOW)]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
         stgHold = 1;
-        return go ? stgGo(go) : stgWatch(60, 1);
+        return go ? stgGo(go, tab) : stgWatch(60, 1);
     }, function() {
         /* its reply lost (the change may cut this browser off, or the
          * walk outlasts the reply): ask the switch */
         stgHold = 1;
-        return go ? stgGo(go) : stgWatch(60, 0);
+        return go ? stgGo(go, tab) : stgWatch(60, 0);
     }).then(function(a) {
-        if (a === "done") toast(t("stg_applied"), "ok");
+        if (a === "moved") toast(t("sy_ip_changed", {
+            ip: go.split("/")[2].replace(/:.*/, "")
+        }), "ok");
+        else if (a === "done") toast(t("stg_applied"), "ok");
         else toast(t(a === "rolled_back" ? "stg_rolled" : a === "failed" ? "stg_failed" :
             a === "unapplied" ? "stg_unapplied" : "stg_lost"), "err");
+        return a;
     }, function(e) {
         toast(e.message, "err");
-    }).then(function() {
+        return "refused";
+    }).then(function(a) {
         stgHold = 0;
         stgLock(0);
         $("stgApply").disabled = false;
         omReload();
+        return a;
     });
 }
 
@@ -2650,25 +2642,35 @@ function stgLock(on) {
     }
 }
 
-/* the management address moved: confirm from the new one (the page there
- * asks, stgAsk); this page never settles */
-function stgGo(go) {
-    location.href = go;
-    return new Promise(function() {});
+/* confirmed from elsewhere (the page there asks, stgAsk): go there; or,
+ * the address moving, send the tab opened for it and wait here for the
+ * window's end, about 130 s: no answer means the switch moved (moved),
+ * else how it ended (a rollback) */
+function stgGo(go, tab) {
+    if (!tab) {
+        location.href = go;
+        return new Promise(function() {});
+    }
+    tab.location = go;
+    return stgWatch(26, 0).then(function(a) {
+        return a || "moved";
+    });
 }
 
-/* a window open when the UI starts (an address change, or another
- * client's apply): reaching the switch here is what confirm means, so ask */
+/* a long window open when the UI starts (an address change or a new
+ * password, which confirm from a new page; or another client's): reaching
+ * the switch here is what confirm means, so ask */
 function stgAsk() {
     return cli(["get state.cfg"]).then(function(r) {
         var c = (parseLines(r.out[0] || []).state || {}).cfg || {};
-        if (c.apply === "confirm") confirmModal(t("stg_keep_q"), t("stg_keep_d", {
+        if (c.apply === "confirm" && +c.confirm_s > STG_WINDOW) confirmModal(t("stg_keep_q"), t("stg_keep_d", {
             s: c.confirm_s
         }), function() {
             cli(["confirm"]).then(function(r) {
                 toast(r.errs.length ? t("stg_rolled") : t("stg_applied"), r.errs.length ? "err" : "ok");
-                omReload();
-            });
+            }, function() {
+                toast(t("stg_lost"), "err");
+            }).then(omReload);
         });
     });
 }
@@ -4238,7 +4240,9 @@ function vlanApply() {
             if (r.errs.length) throw new Error(r.errs[0]);
             return stgApply();
         });
-    }).then(vlanRefresh).catch(function() {}).then(function() {
+    }).then(vlanRefresh).catch(function(e) {
+        if (e && e.message) toast(e.message, "err");
+    }).then(function() {
         vlanLoad(vid)
     });
 }
@@ -4957,14 +4961,25 @@ function sySets(ids) {
     return l;
 }
 
-/* stage a card's fields, then the bar's Apply (its window; go: the new
- * address to confirm from) */
-function syApply(ids, win, go) {
+/* the candidate's values back for ids (after a refused set) */
+function syUndo(ids) {
+    return cli(ids.filter(function(id) {
+        return syGet(id) !== SY[id]
+    }).map(function(id) {
+        return SY[id] ? "set " + SY_F[id] + " " + SY[id] : "del " + SY_F[id]
+    }));
+}
+
+/* stage a card's fields, then the bar's Apply (its window; go, tab: the
+ * new address to confirm from, stgGo) */
+function syApply(ids, win, go, tab) {
     var l = sySets(ids);
     if (!l || !l.length) return;
     cli(l).then(function(r) {
-        if (r.errs.length) throw new Error(r.errs[0]);
-        return stgApply(win, go);
+        if (r.errs.length) return syUndo(ids).then(function() {
+            throw new Error(r.errs[0]);
+        });
+        return stgApply(win, go, tab);
     }).catch(function(e) {
         toast(e.message, "err");
     }).then(sysLoad);
@@ -5000,17 +5015,24 @@ $("sy-apply").addEventListener("click", function() {
         moving = !dhcp && (ip !== SY["sy-ip"] || SY["sy-mode"] === "dhcp"),
         ids = dhcp ? ["sy-host", "sy-mode"] : ["sy-host", "sy-mode", "sy-ip", "sy-mask", "sy-gw", "sy-dns1", "sy-dns2"];
     if (!sySets(ids)) return;
-    confirmModal(toDhcp ? t("sy_dhcp_q") : t("sy_net_q"), toDhcp ? t("sy_dhcp_d") : moving ? t("sy_net_d", {
-        ip: ip
+    confirmModal(toDhcp ? t("sy_dhcp_q") : t("sy_net_q"), toDhcp ? t("sy_dhcp_w") : moving ? t("sy_move_d", {
+        ip: ip,
+        old: SY["sy-ip"]
     }) : "", function() {
+        var tab = moving && window.open("", "_blank");	/* from the click, or it is blocked */
         if (!toDhcp) return syApply(ids, moving ? 120 : 0, moving ?
-            location.protocol + "//" + ip + (location.port ? ":" + location.port : "") + "/index.html" : "");
+            location.protocol + "//" + ip + (location.port ? ":" + location.port : "") + "/index.html" : "", tab);
+        /* a plain apply: refused, the fields go back */
         cli(sySets(ids)).then(function(r) {
             if (r.errs.length) throw new Error(r.errs[0]);
             return cli(["apply"]);
+        }).then(function(r) {
+            if (r.errs.length) return syUndo(ids).then(function() {
+                throw new Error(r.errs[0]);
+            });
         }).catch(function(e) {
             if (e.message) toast(e.message, "err");
-        });
+        }).then(sysLoad);
     });
 });
 $("sy-igmp").addEventListener("change", function() {
@@ -5025,8 +5047,8 @@ $("sy-syslog").addEventListener("change", function() {
 $("sy-sesstmo").addEventListener("change", function() {
     syApply(["sy-sesstmo"]);
 });
-/* a new password logs every session out at apply, so no window could be
- * confirmed: a plain apply, then the login */
+/* a new password logs every session out at apply: a 120 s window, then
+ * the login, where logging in with it and keeping it (stgAsk) confirms */
 $("sy-pwapply").addEventListener("click", function() {
     var a = $("sy-pw1").value,
         b = $("sy-pw2").value;
@@ -5042,14 +5064,18 @@ $("sy-pwapply").addEventListener("click", function() {
         toast(t("sy_pw_match"), "err");
         return;
     }
-    confirmModal(t("sy_pw_q"), t("sy_pw_d"), function() {
+    confirmModal(t("sy_pw_q"), t("sy_pw_w"), function() {
         cli(["set web.password " + a]).then(function(r) {
             if (r.errs.length) throw new Error(r.errs[0]);
-            return cli(["apply"]);
-        }).then(function() {
-            location.href = "/login.html";
+            return stgApply(120, "/login.html");
+        }).then(function(a) {
+            if (a === "refused") throw new Error(t("stg_unapplied"));
         }).catch(function(e) {
-            toast(e.message, "err");
+            /* a password must not stay staged: the old one back */
+            cli(["discard"]).then(omReload);
+            toast(t("stg_discarded", {
+                e: e.message
+            }), "err");
         });
     });
 });
