@@ -4890,10 +4890,10 @@ function bwLoad() {
         var u = parseLines(r.out[1].concat(r.out[3])).port || {};
         for (var n = 1; n <= S.n; n++) {
             var p = BW[n] || {},
-                st = p.storm || {},
-                d = JSON.stringify(p) !== JSON.stringify(u[n]);
-            $("bwr" + n).classList.toggle("stg", d);
-            $("scr" + n).classList.toggle("stg", d);
+                w = u[n] || {},	/* each table marked on its own fields */
+                st = p.storm || {};
+            $("bwr" + n).classList.toggle("stg", p.bw_in_kbps + p.bw_in_mode + p.bw_out_kbps !== w.bw_in_kbps + w.bw_in_mode + w.bw_out_kbps);
+            $("scr" + n).classList.toggle("stg", JSON.stringify(st) !== JSON.stringify(w.storm));
             if (!$("bwr" + n).dataset.dirty) {
                 $("bwi" + n).checked = +p.bw_in_kbps > 0;
                 $("bwiv" + n).value = +p.bw_in_kbps ? p.bw_in_kbps / 1000 : "";
@@ -4920,9 +4920,10 @@ function bwKbps(on, v) {
 /* the fields of port n that differ from BW, as set lines (the old
  * values the undo), then omSet; r the row, unmarked */
 function bwStage(n, f, r) {
-    var p = BW[n] || {},
+    var p = BW[n],
         l = [],
         u = [];
+    if (!p) return bwLoad();	/* never loaded: no undo to give */
     for (var k in f) {
         var o = k.split(".").reduce(function(x, y) {
             return (x || {})[y]
@@ -4957,17 +4958,6 @@ function scApply(n) {
         f["storm." + ty + ".unit"] = u;
     }
     bwStage(n, f, $("scr" + n));
-}
-
-/* set lines into the candidate, then the bar's Apply; a refused set
- * stages undo, this batch's old values */
-function omSet(l, undo) {
-    if (stgBusy()) return Promise.resolve();
-    return cli(l).then(function(r) {
-        if (!r.errs.length) return stgApply();
-        toast(r.errs[0], "err");
-        return cli(undo);
-    }).catch(function() {});
 }
 tabHooks.bw = {
     enter: function() {
