@@ -76,6 +76,7 @@ extern __xdata uint16_t sched_st_max[S_COUNT];	/* longest step per state */
 extern __xdata uint16_t sched_st_runs[S_COUNT];	/* runs per state, this second */
 extern __xdata uint16_t sched_st_rate[S_COUNT];	/* runs per state, the last second */
 extern __xdata uint8_t  sched_load;		/* % of the last second not asleep */
+extern __xdata uint16_t sched_roll_tick;	/* the next second's tick: moves at each roll (the sim's tools see it) */
 extern __xdata uint16_t sched_passes_lo, sched_passes_hi;
 extern __xdata uint16_t sched_idle_lo, sched_idle_hi;
 extern __xdata uint16_t sched_overruns;
