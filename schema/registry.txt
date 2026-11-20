@@ -16,3 +16,7 @@ field 1.10 port.eee BOOL
 field 1.11 port.isolate PMASK
 obj 2 sys
 obj 3 sched
+obj 4 syslog
+field 4.1 syslog.enabled BOOL
+field 4.2 syslog.server IPV4
+field 4.3 syslog.port U16
