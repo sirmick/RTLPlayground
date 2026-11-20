@@ -2479,6 +2479,7 @@ full:
 
 /* the reader: the flash at rd_at, 16 B at a time, from the sector at rd_base */
 static __xdata uint32_t rd_at, rd_base;
+static __xdata uint16_t rd_room;	/* its records' room: the default sector's ends at the help blob */
 static __xdata uint8_t rb[16], rb_i;
 static __xdata uint16_t rd_left;	/* record bytes left */
 
@@ -2530,7 +2531,7 @@ static void rd_head(void)
 			return;
 	b_len = rd16();
 	b_crc = rd16();
-	if (b_len > CONFIG_LEN - OM_HDR)
+	if (b_len > rd_room)
 		return;
 	rd_left = b_len;
 	l_crc = 0;
@@ -2984,9 +2985,19 @@ static uint8_t load_step(void)
 	}
 }
 
+static void rd_pick(uint8_t dflt)	/* rd_base, rd_room: the saved or the default sector */
+{
+	rd_base = CONFIG_START;
+	rd_room = CONFIG_LEN - OM_HDR;
+	if (dflt) {
+		rd_base = DEFAULT_CONFIG_START;
+		rd_room = DEFAULT_CONFIG_LEN - OM_HDR;
+	}
+}
+
 static void rd_sector(uint8_t dflt)	/* the saved or the default sector: rd_open() it */
 {
-	rd_base = dflt ? DEFAULT_CONFIG_START : CONFIG_START;
+	rd_pick(dflt);
 	rd_open();
 }
 
@@ -2996,7 +3007,7 @@ static uint8_t sector_ok(uint8_t dflt)
 {
 	c_pw = 0;
 	d_nf = 0;
-	rd_base = dflt ? DEFAULT_CONFIG_START : CONFIG_START;
+	rd_pick(dflt);
 	rd_head();
 	l_phase = 1;			/* the job checks the CRC first */
 	if (b_fmt == E_CFGFORMAT_OK)
@@ -3074,7 +3085,7 @@ uint8_t om_save_end(void) __banked
 {
 	if (bs.save == E_CFGSAVE_WRITING) {
 		bs.save = E_CFGSAVE_FAILED;	/* until the CRC says otherwise */
-		rd_base = CONFIG_START;
+		rd_pick(0);
 		rd_head();
 		if (b_fmt == E_CFGFORMAT_OK && b_len == w_len && b_crc == w_crc)
 			return 1;

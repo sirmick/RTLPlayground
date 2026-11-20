@@ -1696,6 +1696,16 @@ static void binary(void)
 		boot();
 		expect("save", "ok\n");	/* over old text: no word for it */
 		expect("get state.cfg.format", "state.cfg.format ok\nok\n");
+		/* a default sector whose length runs into the help blob (its CRC right): bad */
+		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
+		{
+			uint8_t h[8] = { 0, 'R', 'C', '1', (DEFAULT_CONFIG_LEN - 7) & 0xff, (DEFAULT_CONFIG_LEN - 7) >> 8 };
+			uint16_t c = crc16_host_buf(fl.mem + DEFAULT_CONFIG_START + 8, DEFAULT_CONFIG_LEN - 7);
+			h[6] = c;
+			h[7] = c >> 8;
+			fd_load(&fl, DEFAULT_CONFIG_START, h, 8);
+		}
+		expect("load default", "err load: bad\n");
 		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
 	}
 
