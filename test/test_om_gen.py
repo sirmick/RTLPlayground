@@ -78,8 +78,10 @@ for name, schema, want in [
     ("message twice", 'obj("s")\nmessage("m", "a")\nmessage("m", "b")\n', "declared twice with different text"),
     ("saved config past its sector", 'obj("v", keyed=U16(1, 4094), max=64)\n' +
      "".join('cfg("n%d", Str(31), "")\n' % i for i in range(2)), "more than its sector's 4096"),
-    ("a record past a save step", 'obj("s")\n' + "".join('cfg("n%d", Str(31), "")\n' % i for i in range(8)),
+    ("a record past a save step", 'obj("s")\n' + "".join('cfg("n%d", Str(35), "")\n' % i for i in range(7)),
      "more than a save step's 256"),
+    ("an object past 255 B", 'state("s")\n' + "".join('st("n%d", Str(31))\n' % i for i in range(8)),
+     "over 255 for an object"),
     ("a Str past om_txt", 'obj("s")\ncfg("a", Str(48), "")\n', "more than a load's om_txt holds (47)"),
     ("flags past om_txt", 'obj("s")\ncfg("a", Flags("f", " ".join("word%d" % i for i in range(9))), "none")\n',
      "a's text can reach 53 chars"),
