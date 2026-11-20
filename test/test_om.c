@@ -1598,6 +1598,7 @@ static void binary(void)
 		om_boot_load(1);
 		om_boot_apply();
 		expect("get port.3.mtu", "port.3.mtu 1500\nok\n");
+		expect("get state.cfg.format", "state.cfg.format ok\nok\n");	/* what the saved sector holds */
 		expect("load default", "ok\n");
 		expect("load saved", "ok\n");
 		expect("get -c port.3.mtu", "port.3.mtu 9000\nok\n");

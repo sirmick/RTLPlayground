@@ -2841,14 +2841,15 @@ uint8_t om_save_end(void) __banked
 }
 
 /* boot: the saved config (or the default) into the candidate, all at once;
- * then om_boot_apply(). bs.boot says what the saved sector held. */
+ * then om_boot_apply(). bs.boot says what the saved sector held, on a
+ * recovery boot (the default straight away) too. */
 uint8_t om_boot_load(uint8_t dflt) __banked
 {
-	rd_sector(dflt);
-	if (!dflt) {
-		bs.boot = b_fmt;
-		bs.saved = 0;
-	}
+	rd_sector(0);
+	bs.boot = b_fmt;
+	bs.saved = 0;
+	if (dflt)
+		rd_sector(1);
 	if (b_fmt != E_CFGFORMAT_OK)
 		return b_fmt;
 	load_begin();
