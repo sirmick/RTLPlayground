@@ -97,6 +97,17 @@ uint8_t om_apply_ntp(uint8_t idx) __banked
 	return OM_OK;
 }
 
+uint8_t om_do_ntp_sync(uint8_t idx) __banked
+{
+	(void)idx;
+	if (!cfg_run.ntp.enabled) {
+		om_fail(OM_E_NTP_OFF);
+		return OM_ERR;
+	}
+	ntp_start();
+	return OM_OK;
+}
+
 typedef char web_fits[sizeof(cfg_run.web.password) == sizeof(passwd) ? 1 : -1];
 
 uint8_t om_apply_web(uint8_t idx) __banked

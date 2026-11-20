@@ -8,3 +8,5 @@ cfg("server", Str(47), "pool.ntp.org", tip="Host name or address of the NTP serv
 cfg("interval_min", U16(1, 1440), 60, tip="Minutes between two synchronisations", unit="min")
 cfg("timezone", TZ(), "+00:00", tip="The local time's offset from UTC")
 cfg("dst", Enum("dst", "off eu us"), "off", tip="Daylight saving time rules")
+action("sync", "om_do_ntp_sync", tip="Synchronise now")
+message("ntp_off", "ntp.enabled is off")

@@ -178,6 +178,7 @@ uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 }
 uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
 uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
+uint8_t om_do_ntp_sync(uint8_t idx) { if (!cfg_run.ntp.enabled) { om_fail(OM_E_NTP_OFF); return OM_ERR; } return OM_OK; }
 uint8_t om_apply_dns(uint8_t idx) { t_dns++; return OM_OK; }
 
 /* state.health, state.con, do sched.clear (om_health.c, sched_health.c) */
@@ -1341,6 +1342,7 @@ static void services(void)
 	expect("set ntp.dst eu", "ok\n");
 	t_ntp = 0;
 	expect("apply", "ok\n");
+	expect("do ntp.sync", "err ntp.sync: ntp.enabled is off\n");
 	CHECK(t_ntp == 1 && cfg_run.ntp.timezone == 330 && cfg_run.ntp.dst == E_DST_EU, "ntp: one apply, +05:30 is 330 minutes");
 	expect("get web", "web.password *\nweb.session_timeout_s 3600\nok\n");
 	expect("set web.password two words", "err web.password: printable text without \" \\ or a space, at most its length\n");
