@@ -2404,16 +2404,20 @@ function cli(lines) {
     });
 }
 
-/* paths into as few "get" lines as fit the cli's line (CMD_BUF_SIZE, 128) */
+/* paths into as few "get" lines as fit the cli's line: 128 B (CMD_BUF_SIZE)
+ * and 15 words (N_WORDS), "get" and up to 14 paths */
 function getLines(paths) {
     var out = [],
-        l = "get";
+        l = "get",
+        n = 0;
     paths.forEach(function(p) {
-        if (l.length + p.length > 120) {
+        if (l.length + p.length > 120 || n === 14) {
             out.push(l);
             l = "get";
+            n = 0;
         }
         l += " " + p;
+        n++;
     });
     out.push(l);
     return out;
