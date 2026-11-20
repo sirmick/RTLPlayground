@@ -25,6 +25,9 @@ loop was silent for 2.84 s; no step over 20 ms in any reference scenario
 but the flash erase. On the 8x, `l2` with 1000 MACs ran as 1966 steps, the
 longest 429 µs, with loop detection polling throughout (silicon.md).
 
+To add a task, start at [howto.md](howto.md): five small examples on the
+real API, the rules, and the common mistakes.
+
 Where it is in the code:
 
 | What | Files |
@@ -45,6 +48,7 @@ Where it is in the code:
 | 2 | [hardware.md](hardware.md) | the measured facts the design rests on |
 | 3 | [architecture.md](architecture.md) | tasks, steps, slots, events, the run sequence |
 | 4 | [core.md](core.md) | the scheduler core: data, loop, API, measurement |
+| 4a | [howto.md](howto.md) | how to add a task: five examples, rules, common mistakes |
 | 5 | [generator.md](generator.md) | `TASK`/`STEP`, the sweep, the generated tables, the checks |
 | 6 | [events.md](events.md) | the hardware events and `task_wake` |
 | 7 | [console.md](console.md) | UART rings, the `con` and `cli` tasks, cli jobs, web commands |
