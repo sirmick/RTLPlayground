@@ -15,9 +15,15 @@ Files must share a bank when one
   - reads another C file's __code data directly (mov dptr,#_table): the read
     goes through the bank window, so it sees the running bank, or
   - takes the address of another's function that isn't __banked, or
-  - passes one of its string literals to another's __banked function
-    (om_fail("...") from a handler): the callee reads it through the bank
-    window, in its own bank.
+  - passes a __code address (a string literal, or a named __code const of
+    its own or another file's) to another's __banked function, as in
+    om_fail("...") from a handler: the callee reads it through the bank
+    window, in its own bank. Seen as `mov dptr,#<data>` and then, before any
+    other call, `mov r0,#_f` (the banked call's target). Any function so named
+    counts, a plain call's argument too: grouping too much only costs room.
+    Not seen: an address kept across a call or stored to xdata and passed
+    later, or passed through a function pointer; tools/check_cross_bank.py
+    checks the linked image for the case seen here.
 Such files form a group, and the groups are packed largest first into the least
 full bank, so the free space is shared out. If that leaves a group without a
 bank, they are packed best fit instead (each into the fullest bank it fits), and
@@ -45,7 +51,7 @@ CALL = re.compile(r"^\s+(?:lcall|ljmp)\s+(_\w+)\s*$")
 IMM = re.compile(r"^\s+mov\s+\S+,\s*#\(?\s*(_\w+)")
 BANKED_RET = re.compile(r"^\s+ljmp\s+__sdcc_banked_ret\b")
 TRAMPOLINE = {"__sdcc_banked_call", "__sdcc_banked_ret"}
-STR_IMM = re.compile(r"^\s+mov\s+dptr,\s*#___str_\d+")
+DPTR_IMM = re.compile(r"^\s+mov\s+dptr,\s*#(_\w+)\s*$")
 BANKED_TARGET = re.compile(r"^\s+mov\s+r0,\s*#(_\w+)\s*$")
 
 
@@ -69,23 +75,24 @@ def read_rel(path):
 
 def read_asm(path):
     """Direct calls, immediate symbol operands, {function: is __banked}, and
-    the __banked functions given a string literal (its address loaded, then
-    the call's target, before any other call)."""
-    calls, imms, funcs, strcalls = set(), set(), {}, set()
+    (address, function) for an address loaded into dptr and then a banked
+    call's target, before any other call: what may be data handed over."""
+    calls, imms, funcs, handed = set(), set(), {}, set()
     func = None
-    lit = False
+    data = None
     if not os.path.exists(path):
-        return calls, imms, funcs, strcalls
+        return calls, imms, funcs, handed
     for line in open(path, errors="replace"):
-        if STR_IMM.match(line):
-            lit = True
-        elif lit:
+        m = DPTR_IMM.match(line)
+        if m:
+            data = m.group(1)
+        elif data:
             m = BANKED_TARGET.match(line)
             if m:
-                strcalls.add(m.group(1))
-                lit = False
+                handed.add((data, m.group(1)))
+                data = None
             elif re.match(r"^\s+(lcall|ljmp|ret)\b", line):
-                lit = False
+                data = None
         m = FUNC.search(line)
         if m:
             func = "_" + m.group(1)
@@ -100,7 +107,7 @@ def read_asm(path):
         m = IMM.match(line)
         if m:
             imms.add(m.group(1))
-    return calls, imms, funcs, strcalls
+    return calls, imms, funcs, handed
 
 
 def main(argv):
@@ -125,11 +132,11 @@ def main(argv):
     banked_funcs, c_mods = {}, set()
     refs = {}
     for n, m in mods.items():
-        calls, imms, funcs, strcalls = read_asm(m["asm"])
+        calls, imms, funcs, handed = read_asm(m["asm"])
         if os.path.exists(m["asm"]):
             c_mods.add(n)       # compiled from C (assembly sources have no .asm here)
         banked_funcs.update(funcs)
-        refs[n] = (calls, imms, strcalls)
+        refs[n] = (calls, imms, handed)
 
     parent = {n: n for n, m in mods.items() if m["banked"]}
     def find(x):
@@ -139,7 +146,7 @@ def main(argv):
         return x
     def union(a, b):
         parent[find(a)] = find(b)
-    for n, (calls, imms, strcalls) in refs.items():
+    for n, (calls, imms, handed) in refs.items():
         if n not in parent:
             continue            # home code may reach any bank through __banked calls
         for s in calls:
@@ -155,10 +162,12 @@ def main(argv):
                     union(n, t)     # a pointer to a function that isn't __banked
             elif t in c_mods:
                 union(n, t)         # a direct read of another file's __code data
-        for s in strcalls:
-            t = owner.get(s)
-            if t and t != n:
-                union(n, t)         # it reads our string in its bank
+        for d, f in handed:
+            t = owner.get(f)
+            if not t or t == n:
+                continue
+            if d.startswith("___str_") or (d in owner and d not in banked_funcs):
+                union(n, t)         # it reads our __code data in its bank
 
     groups = defaultdict(list)
     for n in parent:
