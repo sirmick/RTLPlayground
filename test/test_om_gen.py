@@ -80,6 +80,9 @@ for name, schema, want in [
      "".join('cfg("n%d", Str(31), "")\n' % i for i in range(2)), "more than its sector's 4096"),
     ("a record past a save step", 'obj("s")\n' + "".join('cfg("n%d", Str(31), "")\n' % i for i in range(8)),
      "more than a save step's 256"),
+    ("a Str past om_txt", 'obj("s")\ncfg("a", Str(48), "")\n', "more than a load's om_txt holds (47)"),
+    ("flags past om_txt", 'obj("s")\ncfg("a", Flags("f", " ".join("word%d" % i for i in range(9))), "none")\n',
+     "a's text can reach 53 chars"),
     ("message quote", 'obj("s")\nmessage("m", "say \\"hi\\"")\n', "printable text without"),
     ("keyed parent", 'obj("v", keyed=U16(1, 10), max=4)\ncfg("a", Bool, True)\nobj("t", parent="v", count=2)\n'
      'cfg("b", Bool, True)\n', "must be an object numbered by port or 1-n"),

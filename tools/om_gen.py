@@ -856,6 +856,30 @@ CONFIG_LEN = 0x1000      # layout.h: the saved config's sector
 E_ROOM = 256             # om.c: a save step's records at most
 
 
+# om.h's OM_TXT: om_txt, the text a load's val_ok() prints a value into
+OM_TXT = int(re.search(r"#define OM_TXT\s+(\d+)",
+                       open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "om.h")).read())[1])
+
+
+def text_max(t):
+    """The longest text emit_value() prints for a value of type t."""
+    c = t.code
+    if c in ("STR", "SECRET"):
+        return t.arg
+    if c == "ENUM":
+        return max(len(w) for w in t.words)
+    if c in ("FLAGS", "FLAGS16"):
+        return max(4, sum(len(w) + 1 for w in t.words) - 1)
+    if c == "PMASK":
+        return len("1,3,5,7,9,cpu")
+    if c == "BRID":
+        return len("15.4095.aa:bb:cc:dd:ee:ff")
+    if c == "SCALED":
+        return len("65535") + 1
+    return {"BOOL": 3, "U8": 3, "U16": 5, "U32": 10, "U64": 20, "I16": 6, "TZ": 6, "IPV4": 15,
+            "MASK4": 15, "MAC": 17, "PORT": 4}[c]
+
+
 def saved_worst(objs):
     """The binary saved config at its largest (DESIGN.md 15.3: every field off
     its default), and its largest instance; the build fails if the sector or
@@ -871,6 +895,10 @@ def saved_worst(objs):
             n *= lv[1]
         total += n * inst + (4 if o.levels and o.levels[0][0] == "KEY" else 0)
         big = max(big, (inst, o.regname))
+        for f in o.fields:
+            if f.access == "cfg" and text_max(f.typ) >= OM_TXT:
+                raise SystemExit("schema: %s.%s's text can reach %d chars, more than a load's om_txt holds (%d)"
+                                 % (o.regname, f.name, text_max(f.typ), OM_TXT - 1))
     if total > CONFIG_LEN:
         raise SystemExit("schema: the saved config can reach %d B, more than its sector's %d" % (total, CONFIG_LEN))
     if big[0] > E_ROOM:
