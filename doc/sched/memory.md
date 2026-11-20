@@ -22,8 +22,9 @@ SWGT024 now: the same internal RAM and xdata, common area 164 B left, banks
   space that was already there: `sched_bank.c`'s `fine_read()` keeps two
   locals in the shared overlay (a leaf; the overlay stays 8 B), and
   `tasks.c`'s `cli_web_live()` has one bit, SDCC's for its `&&`, in BSEG
-  (the bit space stays 3 B). The gate counts bytes, so it doesn't see a
-  new bit that fits an existing byte. Data went down, not up: 105 -> 98 B
+  (the bit space stays 3 B). That bit is known: compiler-generated, gate
+  unchanged, sched7 to look at it. The gate counts bytes, so it doesn't see
+  a new bit that fits an existing byte. Data went down, not up: 105 -> 98 B
   when E3 split `stream_upload()` (its 32-bit spills went), 98 -> 90 B with
   ES's loop flags.
 - **Common area:** `sched.c` 618 B, `crash.c` 286, `con_ring.c` 456, the
