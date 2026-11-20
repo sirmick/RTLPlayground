@@ -224,6 +224,7 @@ SRCS = \
 	rtlplayground.c \
 	boot0.c \
 	update_apply.c \
+	config_migrate.c \
 	boot.c \
 	sfp.c \
 	dns.c \

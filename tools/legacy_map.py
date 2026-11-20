@@ -8,11 +8,12 @@ mac, sfp, port N duplex), after ovs-rtlpg's tests/oldnew/translate.py,
 which checks each against the old firmware. The paths are DESIGN.md
 section 6's: an object not yet on the object model is converted all the
 same, and its lines are refused by a firmware that lacks it. A line no row
-takes is reported, never dropped.
+takes is reported, never dropped; one a row changes to fit says why (WARN).
 """
 import re
 
 DEL = object()
+WARN = object()
 IP = r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 INGRESS = {"u": "untagged", "t": "tagged", "a": "all"}
 STP_G = {"prio": ("stp.priority", 0, 15), "hello": ("stp.hello_s", 1, 10), "maxage": ("stp.maxage_s", 6, 40),
@@ -120,8 +121,22 @@ row(r"mac (\S+)", lambda m, b, p: {"sys.mac": _mac(m[1])} if _mac(m[1]) else Non
 row(r"led on", lambda m, b, p: {"sys.led": "on"})
 row(r"led off", lambda m, b, p: {"sys.led": "off"})
 row(r"led off ports", lambda m, b, p: {"sys.led": "ports_off"})
-row(r"passwd (.+)", lambda m, b, p: {"web.password": m[1][:20]})
-row(r"session (\d+)", lambda m, b, p: {"web.session_timeout_s": _n(m[1], 1, 65535)} if _n(m[1], 1, 65535) else None)
+# web.password is a Secret: no space, quote or backslash (om.c str_ch)
+row(r"passwd (.+)", lambda m, b, p: {"web.password": m[1][:20]}
+    if all(" " < c <= "~" and c not in '"\\' for c in m[1][:20]) else None)
+
+
+def _session(m, b, p):
+    """session N: the old 1-65535; web.session_timeout_s starts at 60."""
+    v = int(m[1])
+    if not 1 <= v <= 65535:
+        return None
+    if v < 60:
+        return {"web.session_timeout_s": "60", WARN: "web.session_timeout_s %d raised to 60" % v}
+    return {"web.session_timeout_s": str(v)}
+
+
+row(r"session (\d+)", _session)
 
 # --- mgmt, dns, ntp, syslog
 
@@ -270,10 +285,10 @@ def undump(data):
     return bytes(int(x, 16) for r in rows for x in r.split())
 
 
-def convert(data, board):
+def convert(data, board, warn=None):
     """Old command text (bytes, or a flash dump of it) -> ("path value" /
     "del path" lines, the lines no row took). A later line overrides an
-    earlier one, as at boot."""
+    earlier one, as at boot. Lines changed to fit go to warn, a list."""
     data = undump(data)
     vals, bad = {}, []
     for ln in re.split(r"\r?\n|\r", text_of(data)):
@@ -289,6 +304,10 @@ def convert(data, board):
         if out is None:
             bad.append(ln)
             continue
+        if WARN in out:
+            if warn is not None:
+                warn.append("%s: %s" % (ln, out[WARN]))
+            del out[WARN]
         for path, v in out.items():
             if v is DEL:
                 for q in [q for q in vals if q.startswith(path + ".")]:

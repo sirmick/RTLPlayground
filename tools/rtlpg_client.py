@@ -623,9 +623,12 @@ def main():
             return 0
         if a.cmd == "convert":
             import legacy_map
-            lines, bad = legacy_map.convert(open(a.args[0], "rb").read(), Board(a.machine))
+            warn = []
+            lines, bad = legacy_map.convert(open(a.args[0], "rb").read(), Board(a.machine), warn)
             for ln in lines:
                 print(ln)
+            for w in warn:
+                print("convert: warning: %s" % w, file=sys.stderr)
             for b in bad:
                 print("convert: not translated: %s" % b, file=sys.stderr)
             return 1 if bad else 0

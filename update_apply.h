@@ -48,7 +48,7 @@ uint16_t flash_crc16_more(void);
 #define CONFIG_STAYED      0
 #define CONFIG_MOVED       1
 #define CONFIG_MOVE_FAILED 2
-uint8_t config_migrate(void);
+uint8_t config_migrate(void) __banked;	/* config_migrate.c */
 
 /* Machine data (layout.h, MDATA_*). mdata_len(a): the total length (header,
  * payload, CRC) of a valid region at a, else 0. mdata_migrate(): at boot,
