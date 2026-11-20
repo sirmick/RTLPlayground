@@ -120,3 +120,31 @@ Not bounded (modules.md): SFR_EXEC_STATUS under every register and SMI
 access, the flash's BUSY, and the NIC DMA (already 65536 spins). A hang
 there is the software watchdog's. HW_FLUSH_TICKS (15-20 ms) is a guess:
 the flush's time on silicon has not been measured.
+
+Follow-ups (orchestrator) and reviewer2's E4 round, 2026-11-20
+  6b3bbf1, 404e540  sim_neg: one make at a time, under output/.sim_neg.lock.
+    The fall_through flake was a host-side build race. --twice runs both
+    suites at once, and their makes share a build directory (html_min:
+    rm -rf, then write; html_min.list's .tmp) and the source tree
+    (html_data.c/.h, .layout, version.h). Two concurrent makes of
+    fall_through.rel went wrong 11 times in 40 from fresh, 4 in 40 warm.
+    sim_neg --twice --only fall_through bad_spec, 20 fresh runs: 7
+    failed unlocked, 0 with the lock (6b3bbf1), 0 with it widened
+    (404e540). Not a timeout, pacing, or a firmware or sim race.
+  f336874  hw_poll banked (only banked code calls it): the common area
+    88 -> 169 B left, +204 B in the banks. hw_start, hw_expired and
+    hw_timeout stay resident for the flash's WEL wait, which runs with
+    the controller in SIO mode.
+  3e204d6  hw_stuck only from sched_run() on (swdt_on). Before that it
+    lasted the rest of the boot after one timeout (reviewer2's item 1).
+  3b7886c  vlan_delete waits for its table write (a gap from before E4,
+    found by the test); tools/boot_stuck.py.
+    boot_stuck (dotx_dx_1009n, reg busy 5cac 1 2, a VLAN config saved;
+    plain boot vs the 8224 SDS wait timing out early):
+      without 3e204d6 (only the swdt_on check removed): early 2737
+        timeouts (last 5cac), 2733 table commands dropped, the VLAN
+        table and /vlanlist.json wrong
+      without the vlan_delete wait: 1 dropped in both boots (VLAN 4000,
+        written while `vlan 20 d` was busy)
+      3b7886c: 0 dropped in both, the same table, page and `vlan show`
+  sfp_raw kept (orchestrator); the flush time goes on the bench list (EB).
