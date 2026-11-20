@@ -37,6 +37,7 @@ OUTDIR/sched_gen_tasks.h and .c (banked: state_task, a task per state,
 1-based, 0 for none; task_name with SCHED_TASK_NAMES) and OMDIR/state_sched.py,
 the state.sched rows for tools/om_gen.py: the slots, states and tasks by
 name, their getters om_get_sched, om_get_sched_slot/_state/_task.
+--om-words (schedtest): state_sched.py with the words alone, no state.sched.
 """
 import argparse, os, re, sys
 
@@ -376,8 +377,9 @@ def generate(defs, slots, fill, sequence):
             "sched_gen_names.c": "\n".join(nm) + "\n"}, report, warnings
 
 
-def om_rows(defs, slots, fill, sequence):
-    """{name: text}: sched_gen_tasks.h/.c and state_sched.py (--om)."""
+def om_rows(defs, slots, fill, sequence, words_only=False):
+    """{name: text}: sched_gen_tasks.h/.c and state_sched.py (--om); with
+    words_only, state_sched.py has the words alone (state.sys.reset's)."""
     mods, tasks, states, fixed, jobs, warnings = load(defs, slots)
     table = slot_table(fixed, jobs, slots)
     src = " ".join(defs)
@@ -409,8 +411,9 @@ def om_rows(defs, slots, fill, sequence):
           f'STATE = Enum("sstate", "none {w(sn)}")',
           f'STATES = Enum("sstates", "{w(sn)}")\t# the same words, past none',
           f'TASK = Enum("stask", "none {w(tn)}")',
-          f'TASKS = Enum("stasks", "{w(tn)}")',
-          "",
+          f'TASKS = Enum("stasks", "{w(tn)}")']
+    if not words_only:
+        py += ["",
           'state("sched", get="om_get_sched")',
           'st("passes", U32())',
           'st("idle", U32(), tip="Passes that found nothing due")',
@@ -455,13 +458,14 @@ def main(argv=None):
     ap.add_argument("--sequence", help="sequence.def: an explicit run sequence")
     ap.add_argument("--om", metavar="OMDIR", help="also the object model's state.sched rows (state_sched.py) "
                     "into OMDIR, and sched_gen_tasks.h/.c")
+    ap.add_argument("--om-words", action="store_true", help="with --om: the words only, no state.sched")
     ap.add_argument("defs", nargs="+")
     a = ap.parse_args(argv)
     if not 1 <= a.slots <= 64 or a.fill < 1:
         ap.error("--slots is 1..64 and --fill at least 1")
     try:
         out, report, warnings = generate(a.defs, a.slots, a.fill, a.sequence)
-        om = om_rows(a.defs, a.slots, a.fill, a.sequence) if a.om else {}
+        om = om_rows(a.defs, a.slots, a.fill, a.sequence, a.om_words) if a.om else {}
     except SpecError as e:
         print(f"sched_gen: error: {e}", file=sys.stderr)
         return 1

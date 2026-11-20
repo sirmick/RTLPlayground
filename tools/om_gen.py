@@ -281,11 +281,11 @@ DSL = {k: v for k, v in globals().items() if k in (
     "obj state cfg st action default_entry message const".split())}
 
 
-def load_schema(dirs):
+def load_schema(dirs, skip=()):
     for d in dirs:
         SCHEMA["dir"] = d
         for fn in sorted(os.listdir(d)):
-            if fn.endswith(".py"):
+            if fn.endswith(".py") and fn not in skip:
                 p = os.path.join(d, fn)
                 exec(compile(open(p).read(), p, "exec"), dict(DSL, PORTS="ports"))
     objs = SCHEMA["objs"]
@@ -848,11 +848,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-s", "--schema", action="append")
     ap.add_argument("-o", "--out")
+    ap.add_argument("-x", "--skip", action="append", default=[], help="a schema file (name) left out")
     ap.add_argument("--register", action="store_true")
     ap.add_argument("--js", help="write the web UI's schema.js here")
     a = ap.parse_args()
     dirs = a.schema or ["schema"]
-    objs = load_schema(dirs)
+    objs = load_schema(dirs, a.skip)
     regs = {d: read_registry(os.path.join(d, "registry.txt")) for d in dirs}
     apply_registry(objs, regs, a.register)
     if a.out:

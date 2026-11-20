@@ -410,6 +410,12 @@ def test_om_rows():
         check(om_gen.SCHEMA["enums"]["stask"] == ["none"] + [t.name for t in tasks], "a slot's task: none, then the tasks")
         om_gen.gen(list(objs.values()), os.path.join(d, "omout"))
         check(os.path.exists(os.path.join(d, "omout", "om_gen.h")), "om_gen writes their tables")
+        # --om-words (schedtest): the same words, no objects
+        om_gen.SCHEMA.update({"objs": [], "enums": {}, "msgs": {}, "cur": None})
+        words = sched_gen.om_rows(defs, 24, 2, None, words_only=True)["state_sched.py"]
+        open(os.path.join(sd, "state_sched.py"), "w").write(words)
+        check(not om_gen.load_schema([sd]), "--om-words: no state.sched objects")
+        check(om_gen.SCHEMA["enums"]["sstate"] == ["none"] + [s.name for s in states], "--om-words: the words stay")
 
 
 def main():

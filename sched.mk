@@ -17,9 +17,10 @@ CC_FLAGS += -I$(SCHED_GEN) -DISR_T2_PUSHES=$(ISR_T2_PUSHES) -DISR_SERIAL_PUSHES=
 # Resident: the core, the crash record, the dispatch tables. Banked, placed
 # by place_banks.py: the rest of the scheduler, health, the tasks' steps;
 # the state and slot names in schedtest only (the firmware's are the object
-# model's: get prints them).
-SCHED_SRCS = sched.c sched_bank.c sched_health.c crash.c sched_gen.c sched_gen_tasks.c \
-	$(if $(SCHEDTEST),sched_gen_names.c) \
+# model's: get prints them), and state.sched's state_task[] in the firmware
+# only (schedtest has its own health: --om-words, the words alone).
+SCHED_SRCS = sched.c sched_bank.c sched_health.c crash.c sched_gen.c \
+	$(if $(SCHEDTEST),sched_gen_names.c,sched_gen_tasks.c) \
 	$(if $(SCHEDTEST),,tasks.c flash_job.c om_job.c)
 SRCS += $(SCHED_SRCS)
 RESIDENT_SRCS += sched.c crash.c sched_gen.c
@@ -37,7 +38,7 @@ $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py F
 	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' \
 		--all $(filter %.c,$(SRCS)) -- $(SCHED_STEP_SRCS) > /dev/null
 $(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
-	python3 tools/sched_gen.py --om $(SCHED_GEN)/om -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
+	python3 tools/sched_gen.py --om $(SCHED_GEN)/om $(if $(SCHEDTEST),--om-words) -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
 	cat $(SCHED_GEN)/sequence.txt
 	touch $@
 $(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c: $(SCHED_GEN)/gen.stamp ;

@@ -1,9 +1,9 @@
 /*
  * sched_health.c - the scheduler's state for the object model (state.sched,
  * do sched.clear), the crash record at boot and as state.sys.reset; and
- * schedtest's `health tasks` printer. Banked: it reads state_task (and, in
+ * schedtest's `health tasks` printer. Banked: it reads state_task (in
  * schedtest, state_name and slot_name) directly, so place_banks.py puts it
- * in the bank with sched_gen_tasks.c (and sched_gen_names.c).
+ * in the bank with sched_gen_tasks.c (sched_gen_names.c).
  */
 #include <8051.h>
 #include <stdint.h>
@@ -198,12 +198,14 @@ void sched_health_clear(void) __banked
 	hw_timeouts = hw_timeout_reg = 0;
 }
 
+#ifndef SCHEDTEST	/* schedtest's health is the printer's, not the object model's */
 uint8_t om_do_sched_clear(uint8_t idx) __banked
 {
 	(void)idx;
 	sched_health_clear();
 	return OM_OK;
 }
+#endif
 
 /* At boot: a record whose magic and sum hold, written by this image, is
  * kept for state.sys.reset, and consumed. A power-on finds garbage and
@@ -249,7 +251,7 @@ out:
  * cause power. Numbers: get prints the slot and state names. */
 #define R	om_st.sys_reset
 
-
+#ifndef SCHEDTEST
 /* state.sched (the rows tools/sched_gen.py --om writes): numbers only, get
  * prints the slot, state and task names from the object model's tables */
 #define SS	om_st.sched
@@ -320,6 +322,7 @@ uint8_t om_get_sched_task(uint8_t idx) __banked
 	fine_us();
 	return OM_OK;
 }
+#endif
 
 uint8_t om_get_sys_reset(uint8_t idx) __banked
 {
