@@ -3881,64 +3881,18 @@ tabHooks.stp = {
     }
 };
 
-var MIB = [
-    "Interface in Octets", 8, "", 0, "Interface out Octets", 8, "", 0,
-    "Interface in Unicast Pkts", 8, "", 0, "Interface in Multicast Pkts", 8, "", 0,
-    "Interface in Broadcast Pkts", 8, "", 0, "Interface out Unicast Pkts", 8, "", 0,
-    "Interface out Multicast Pkts", 8, "", 0, "Interface out Broadcast Pkts", 8, "", 0,
-    "Interface out discards", 4, "802.1d Tp Port in discards", 4,
-    "802.3 Single collision frames", 4, "802.3 Multi collision frames", 4,
-    "802.3 Deferred transmissions", 4, "802.3 Late collisions", 4,
-    "802.3 Excessive collisions", 4, "802.3 Symbol errors", 4,
-    "802.3 Control in unknown opcodes", 4, "802.3 In Pause frames", 4,
-    "802.3 Out Pause frames", 4, "Ether drop events", 4,
-    "TX Ether Broadcast Pkts", 4, "TX Ether Multicast Pkts", 4,
-    "TX Ether CRC Align errors", 4, "RX Ether CRC Align errors", 4,
-    "TX Ether Undersized Pkts", 4, "RX Ether Undersized Pkts", 4,
-    "TX Ether Oversized Pkts", 4, "RX Ether Oversized Pkts", 4,
-    "TX Ether Fragments", 4, "RX Ether fragments", 4,
-    "TX Ether Jabbers", 4, "RX Ether Jabbers", 4,
-    "TX Ether Collisions", 4, "TX Ether Pkts 64 Octets", 4, "RX Ether Pkts 64 Octets", 4,
-    "TX Ether 65-127 Octets", 4, "RX Ether 65-127 Octets", 4,
-    "TX Ether Pkts 128-255 Octets", 4, "RX Ether Pkts 128-255 Octets", 4,
-    "TX Ether Pkts 256-511 Octets", 4, "RX Ether Pkts 256-511 Octets", 4,
-    "TX Ether Pkts 512-1023 Octets", 4, "RX Ether Pkts 512-1023 Octets", 4,
-    "TX Ether Pkts 1024-1518 Octets", 4, "RX Ether Pkts 1024-1518 Octets", 4,
-    "", 4, "RX Ether Undersized Drop Pkts", 4,
-    "TX Ether Pkts >1518 Octets", 4, "RX Ether Pkts >1518 Octets", 4,
-    "TX Ether Pkts too large", 4, "RX Ether Pkts too large", 4,
-    "TX Ether Flexible Octets Set 1", 4, "RX Ether Flexible Octets Set 1", 4,
-    "TX Ether Flexible Octets CRC Set 1", 4, "RX Ether Flexible Octets CRC Set 1", 4,
-    "TX Ether Flexible Octets Set 0", 4, "RX Ether Flexible Octets Set 0", 4,
-    "TX Ether Flexible Octets CRC Set 0", 4, "RX Ether Flexible Octets CRC Set 0", 4,
-    "Length Field Errors", 4, "False Carriers", 4, "Undersized Octets", 4, "Framing Errors", 4,
-    "", 4, "RX MAC Discards", 4, "RX MAC IPG Short Drop", 4, "", 4,
-    "802.1d TP Learned Entry Discards", 4,
-    "Egress Queue 7 Dropped Pkts", 4, "Egress Queue 6 Dropped Pkts", 4,
-    "Egress Queue 5 Dropped Pkts", 4, "Egress Queue 4 Dropped Pkts", 4,
-    "Egress Queue 3 Dropped Pkts", 4, "Egress Queue 2 Dropped Pkts", 4,
-    "Egress Queue 1 Dropped Pkts", 4, "Egress Queue 0 Dropped Pkts", 4,
-    "Egress Queue 7 Out Pkts", 4, "Egress Queue 6 Out Pkts", 4,
-    "Egress Queue 5 Out Pkts", 4, "Egress Queue 4 Out Pkts", 4,
-    "Egress Queue 3 Out Pkts", 4, "Egress Queue 2 Out Pkts", 4,
-    "Egress Queue 1 Out Pkts", 4, "Egress Queue 0 Out Pkts", 4,
-    "TX Good Counter", 8, "", 0, "RX Good Counter", 8, "", 0,
-    "RX Error Counter", 4, "TX Error Counter", 4,
-    "TX Good Counter PHY", 8, "", 0, "RX Good Counter PHY", 8, "", 0,
-    "RX Error Counter PHY", 4, "TX Error Counter PHY", 4,
-];
-/* counters.json returns 64-bit hex words; two 32-bit counters share one word */
-function decodeCounters(s) {
+/* state.port.N.mib.K (P5-5) into [name, value] rows: schema.js names each
+ * index one 64-bit counter, or [high, low] two 32-bit ones sharing it */
+function mibRows(v) {
     var out = [];
-    for (var i = 0; i < MIB.length; i += 4) {
-        if (MIB[i] === "" && MIB[i + 1] === 8) continue;
-        var w = BigInt(s[i / 4] || "0x0");
-        if (MIB[i + 1] === 8) out.push([MIB[i], w]);
+    SCHEMA["state.port.mib"].n.forEach(function(nm, k) {
+        var w = BigInt(v[k] || 0);
+        if (typeof nm === "string") out.push([nm, w]);
         else {
-            if (MIB[i] !== "") out.push([MIB[i], w >> 32n]);
-            if (MIB[i + 2] !== "") out.push([MIB[i + 2], w & 4294967295n]);
+            if (nm[0]) out.push([nm[0], w >> 32n]);
+            if (nm[1]) out.push([nm[1], w & 4294967295n]);
         }
-    }
+    });
     return out;
 }
 var ctrPoll = null;
@@ -3964,8 +3918,8 @@ function showCounters(i) {
     body.appendChild(wrap);
 
     function load() {
-        return getJSON("/counters.json?port=" + (i + 1)).then(function(s) {
-            var rows = decodeCounters(s);
+        return cli(["get state.port." + (i + 1) + ".mib"]).then(function(r) {
+            var rows = mibRows(((((parseLines(r.out[0] || []).state || {}).port || {})[i + 1] || {}).mib) || {});
             var tb = h("table", {
                 class: "t"
             });
@@ -4432,37 +4386,26 @@ var l2Rows = [],
     l2SortDir = 1,
     l2Gen = 0;
 
+/* the MAC table: one get state.l2, streamed (P5-5); K the table index */
 function l2Load() {
-    var seen = {},
-        all = [],
-        idx = 0,
-        guard = 0,
-        gen = ++l2Gen;
-
-    function step() {
-        return getJSON("/l2.json?idx=" + idx).then(function(s) {
-            if (gen !== l2Gen) throw new Error("stale");
-            if (!s.length) return all;
-            var wrapped = false;
-            s.forEach(function(e) {
-                e.idx = parseInt(e.idx, 16);
-                if (seen[e.idx]) {
-                    wrapped = true;
-                    return;
-                }
-                seen[e.idx] = 1;
-                e.vlan = parseInt(e.vlan, 16);
-                e.stat = e.type === "s";
-                e.pport = e.port === 0 ? "CPU" : e.port;
-                e.where = e.lag ? "LAG" + e.lag : String(e.pport);
-                all.push(e);
-            });
-            if (wrapped || ++guard > 140) return all;
-            idx = s[s.length - 1].idx + 1;
-            return step();
-        });
-    }
-    return step();
+    var gen = ++l2Gen;
+    return cli(["get state.l2"]).then(function(r) {
+        if (gen !== l2Gen) throw new Error("stale");
+        if (r.errs.length) throw new Error(r.errs[0]);
+        var o = (parseLines(r.out[0] || []).state || {}).l2 || {},
+            all = [];
+        for (var k in o) {
+            var e = o[k];
+            e.idx = +k;
+            e.vlan = +e.vlan;
+            e.lag = +e.lag;
+            e.stat = e.static === "on";
+            e.pport = e.port === "cpu" ? "CPU" : e.port;
+            e.where = e.lag ? "LAG" + e.lag : String(e.pport);
+            all.push(e);
+        }
+        return all;
+    });
 }
 
 function l2Key(e) {

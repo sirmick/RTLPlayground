@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """test_sfp_cal.py - the web UI's SFP diagnostics math (html/app.js: sfpDdm,
 calSO, calRx, mwText) against SFF-8472 external calibration with known
-constants. The functions are cut out of app.js and run in node; the expected
-values are computed here from the spec's formulas. No node: skipped."""
+constants, and mibRows' split of a STAT index into two 32-bit counters. The
+functions are cut out of app.js and run in node; the expected values are
+computed here from the spec's formulas. No node: skipped."""
 import json, math, os, re, shutil, struct, subprocess, sys
 
 APP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "html", "app.js")
-FUNCS = ("pU16", "pI16", "calSO", "calRx", "mwText", "sfpDdm")
+FUNCS = ("pU16", "pI16", "calSO", "calRx", "mwText", "sfpDdm", "mibRows")
 fails = 0
 
 
@@ -58,6 +59,8 @@ def main():
 var cases = %s, out = {};
 for (var k in cases) out[k] = sfpDdm(cases[k]);
 out.mw = [mwText(0.7967), mwText(0), mwText(0.00005), mwText(0.0001)];
+var SCHEMA = {"state.port.mib": {n: ["octets", ["hi", "lo"], ["", "only_lo"]]}};
+out.mib = mibRows({0: "1099511627781", 1: "12884901897", 2: "7"}).map(function(r) { return [r[0], String(r[1])] });
 console.log(JSON.stringify(out));
 """ % json.dumps({"cal": {"ddm": dict(DDM, cal=CAL)}, "raw": {"ddm": dict(DDM, cal="")},
                   "neg": {"ddm": dict(DDM, temp="65280", cal="")}})
@@ -71,6 +74,9 @@ console.log(JSON.stringify(out));
     print("mwText")
     check(r["mw"] == ["0.797 mW / %.2f dBm" % (10 * math.log10(0.7967)), "0.000 mW / - dBm", "0.000 mW / - dBm",
                       "0.000 mW / -40.00 dBm"], "dBm, and '-' for a dark port under 1e-4 mW", r["mw"])
+    print("mibRows")
+    check(r["mib"] == [["octets", str(2**40 + 5)], ["hi", "3"], ["lo", "9"], ["only_lo", "7"]],
+          "a 64-bit counter whole; a pair split high >> 32, low & 0xffffffff; an unnamed half skipped", r["mib"])
     print("\n%s" % ("TEST_SFP_CAL PASSED" if not fails else "%d FAILED" % fails))
     return 1 if fails else 0
 
