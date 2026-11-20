@@ -1028,17 +1028,33 @@ static uint16_t key_at(__xdata uint8_t *base)	/* slot ks's key in a copy */
 	return vp[0] | (uint16_t)vp[1] << 8;
 }
 
-/* kv: slot ks's key in the copies looked at, if the path allows it; else 0 (a
- * slot's key is the same in running and the candidate, or 0 in one: key_new()) */
+/* kv: slot ks's key in the copies looked at, if the path allows it; else 0. A
+ * slot's key is the same in running and the candidate, or 0 in one (key_new()),
+ * but after a boot that didn't apply: its load may have given the candidate a
+ * slot running holds (k_boot). Then the candidate's, or the one the path names;
+ * a walk in key order looks at running's too (key_step()). */
+static __xdata uint16_t kv2;
+
 static void slot_key(void)
 {
 	kv = 0;
 	if (j_copies & 1)
 		kv = key_at(RUN);
-	if (!kv && (j_copies & 2))
-		kv = key_at(CAND);
+	if (j_copies & 2) {
+		kv2 = key_at(CAND);
+		if (kv2 && (!(r_fix & 1) || kv2 == r_v))
+			kv = kv2;
+	}
 	if ((r_fix & 1) && kv != r_v)
 		kv = 0;
+}
+
+static void key_best(void)		/* kv, the smallest key at or after cv so far? */
+{
+	if (kv && kv >= cv && kv < kbest) {
+		kbest = kv;
+		kb = ks;
+	}
 }
 
 /*
@@ -1065,9 +1081,11 @@ static uint8_t key_step(void)
 	kb = 0xff;
 	for (ks = 0; ks < obx.n[0]; ks++) {
 		slot_key();
-		if (kv && kv >= cv && kv < kbest) {
-			kbest = kv;
-			kb = ks;
+		key_best();
+		if ((j_copies & 3) == 3 && kv == kv2) {	/* running's, if the candidate's differs */
+			kv = key_at(RUN);
+			if (!(r_fix & 1) || kv == r_v)
+				key_best();
 		}
 	}
 	if (kb == 0xff)
@@ -1146,7 +1164,8 @@ static void first_inst(void)		/* cur_ok: there is one */
 	cur_ok = step0();
 #if OM_USE_IX2
 	om_ix1 = 0;
-	step1();
+	if (!step1())		/* a loaded record's level 1 past this build's */
+		cur_ok = 0;
 #endif
 	elem();
 }
@@ -1975,6 +1994,11 @@ found:
  * The boot's load (k_boot) may also take a slot running holds for an entry
  * the candidate deleted: running is the defaults, applied over whole, and
  * a saved config that deletes vlan.1 and has 64 others needs every slot.
+ * It relies on the records in key order (om.c's save and rtlpg_client sort
+ * them): a default entry's record comes before a slot is short, so the
+ * entry has its running slot already; in another order a later record for
+ * it could find its slot taken (table full). Until the boot applies, a slot
+ * may hold different keys in the two copies: slot_key().
  * 0 if no slot is free.
  */
 static __xdata uint8_t * __xdata kp;
@@ -2268,15 +2292,19 @@ static __xdata uint16_t e_cv;
 static __xdata uint8_t e_cv1;
 #endif
 static __xdata uint8_t b_fmt;		/* rd_open()'s: E_CFGFORMAT_* */
-/* state.cfg.format, save, saved_bytes, load.skipped: om_get_cfg() copies them */
+/* state.cfg.format, save, saved_bytes, load.skipped, skip_ix, skip_id, boot_defaults: om_get_cfg() copies them */
 static __xdata struct {
 	uint8_t boot, save;		/* what boot found, E_CFGFORMAT_*; E_CFGSAVE_* */
 	uint16_t saved, skipped;
+	uint16_t skip_ix;		/* the first record skipped: its index, object ID */
+	uint8_t skip_id;
 	char reset[sizeof(om_st.cfg.boot_defaults)];	/* the objects boot put back to their defaults */
 } bs;
 _Static_assert(offsetof(struct st_cfg, load_skipped) == offsetof(struct st_cfg, format) + 4 &&
-	       offsetof(struct st_cfg, boot_defaults) == offsetof(struct st_cfg, format) + 6,
-	       "state.cfg's format, save, saved_bytes, load.skipped, boot_defaults: bs's order");
+	       offsetof(struct st_cfg, load_skip_id) == offsetof(struct st_cfg, format) + 8 &&
+	       offsetof(struct st_cfg, boot_defaults) == offsetof(struct st_cfg, format) + 9,
+	       "state.cfg's format, save, saved_bytes, load.skipped, skip_ix, skip_id, boot_defaults: bs's order");
+#define BS_SKIP	5			/* skipped, skip_ix, skip_id */
 
 static __code const uint8_t om_magic[4] = { 0, 'R', 'C', '1' };
 static __xdata uint8_t e_put;
@@ -2918,7 +2946,8 @@ static uint8_t val_ok(void)
 /* load: rd() at the records; the candidate from the defaults (def_step()
  * first), the records (load_step()), then om_pend (pend_step()) */
 static __xdata uint8_t l_def, l_rec;
-static __xdata uint16_t sv_pend, sv_skip;	/* get -s: what its load mustn't change */
+static __xdata uint16_t sv_pend;		/* get -s: what its load mustn't change */
+static __xdata uint8_t sv_skip[BS_SKIP];
 
 static void load_begin(void)
 {
@@ -2928,6 +2957,7 @@ static void load_begin(void)
 	l_rec = 1;
 	pend_off = 1;
 	bs.skipped = 0;
+	bs.skip_id = 0;
 	d_nf = 0;
 	d_lo = 0xff;
 #if OM_USE_KEY
@@ -2968,6 +2998,14 @@ static uint8_t d_inst(void)
 #define LOAD_KU	7
 static __xdata uint8_t l_u;
 
+static void skip(void)			/* a record or field skipped: counted, the first named */
+{
+	if (!bs.skipped++) {
+		bs.skip_id = d_oid;
+		bs.skip_ix = d_ix;
+	}
+}
+
 static uint8_t load_step(void)
 {
 	l_u = 0;
@@ -2991,7 +3029,7 @@ static uint8_t load_step(void)
 #endif
 			d_ok = d_inst();
 			if (!d_ok)
-				bs.skipped++;
+				skip();
 #if OM_USE_KEY
 			if (obx.k[0] == IX_KEY)
 				l_u += LOAD_KU - 1;
@@ -3001,7 +3039,7 @@ static uint8_t load_step(void)
 		if (!d_ok)
 			continue;
 		if (!d_field() || !om_when() || !val_ok()) {
-			bs.skipped++;		/* it keeps its default */
+			skip();			/* it keeps its default */
 			continue;
 		}
 		memcpy(inst(CAND) + fdx.off, om_val, fsize());
@@ -3175,7 +3213,7 @@ static uint8_t bin_line(void)
 			x_add(X_ROLL_CAND);
 		if (j_mode != J_SAVE) {
 			sv_pend = om_pend;
-			sv_skip = bs.skipped;
+			memcpy(sv_skip, &bs.skipped, BS_SKIP);
 			load_begin();
 		}
 		return 1;
@@ -3197,7 +3235,7 @@ static uint8_t bin_line(void)
 			return pend_step();
 		pend_off = 0;			/* get -s: get -c -d of it */
 		om_pend = sv_pend;
-		bs.skipped = sv_skip;
+		memcpy(&bs.skipped, sv_skip, BS_SKIP);
 		c_def = 1;
 		c_cand = 1;
 		j_sv = 1;

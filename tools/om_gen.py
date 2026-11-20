@@ -1097,10 +1097,11 @@ def text_max(t):
             "MASK4": 15, "MAC": 17, "PORT": 4}[c]
 
 
-def saved_worst(objs):
+def saved_worst(objs, sector=True):
     """The binary saved config at its largest (DESIGN.md 15.3: every field off
-    its default), and its largest instance; the build fails if the sector or
-    a save step can't hold them."""
+    its default), and its largest instance; the build fails if the sector
+    (unless not sector: a test schema's objects on top) or a save step can't
+    hold them."""
     total, big = 8, (0, None)
     for o in objs:
         sz = sum(f.typ.size for f in o.fields if f.typ.code != "ACT") + (2 if o.levels and o.levels[0][0] == "KEY" else 0)
@@ -1119,7 +1120,7 @@ def saved_worst(objs):
             if f.access == "cfg" and text_max(f.typ) >= OM_TXT:
                 raise SystemExit("schema: %s.%s's text can reach %d chars, more than a load's om_txt holds (%d)"
                                  % (o.regname, f.name, text_max(f.typ), OM_TXT - 1))
-    if total > CONFIG_LEN:
+    if sector and total > CONFIG_LEN:
         raise SystemExit("schema: the saved config can reach %d B, more than its sector's %d" % (total, CONFIG_LEN))
     if big[0] > E_ROOM:
         raise SystemExit("schema: %s's record can reach %d B, more than a save step's %d" % (big[1], big[0], E_ROOM))
@@ -1132,6 +1133,8 @@ def main():
     ap.add_argument("-o", "--out")
     ap.add_argument("-x", "--skip", action="append", default=[], help="a schema file (name) left out")
     ap.add_argument("--register", action="store_true")
+    ap.add_argument("--no-sector", action="store_true",
+                    help="no sector bound: test objects on the firmware's (whose own build checks it)")
     ap.add_argument("--js", help="write the web UI's schema.js here")
     ap.add_argument("--help-blob", help="write the help blob (the tips) here")
     ap.add_argument("--help-room", type=int, default=0, help="its room in flash: the build fails past it")
@@ -1156,7 +1159,7 @@ def main():
     n_cfg = sum(len(o.fields) for o in objs if not o.state)
     n_st = sum(len(o.fields) for o in objs if o.state)
     print("om_gen: %d objects, %d config/action fields, %d state fields; saved config %d B at most"
-          % (len(objs), n_cfg, n_st, saved_worst(objs)))
+          % (len(objs), n_cfg, n_st, saved_worst(objs, not a.no_sector)))
 
 
 if __name__ == "__main__":

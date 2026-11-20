@@ -85,3 +85,10 @@ field 17.1 mirror.enabled BOOL
 field 17.2 mirror.port PORT
 field 17.3 mirror.rx PMASK
 field 17.4 mirror.tx PMASK
+field 1.12 port.eee_speeds Flags(eee)
+field 1.13 port.bw_in_kbps U32
+field 1.14 port.bw_in_mode Enum(bwmode)
+field 1.15 port.bw_out_kbps U32
+obj 18 port.storm
+field 18.1 port.storm.rate U32
+field 18.2 port.storm.unit Enum(sunit)

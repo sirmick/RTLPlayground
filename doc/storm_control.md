@@ -1,18 +1,15 @@
 # Storm Control
 
-> On feat/om storm control keeps the old `storm` command until P4-6, which moves it to
-> `port.N.storm.<type>.rate` and `.unit` (doc/cli.md).
 Storm control limits the rate at which a port admits broadcast, multicast,
 unknown unicast and unknown multicast frames. Frames of a type above its limit
 are dropped at ingress, so a loop or a misbehaving host cannot flood the rest
 of the network through that port. Known unicast traffic is not affected.
 
-## Commands
+## Settings
 ```
-storm <port> bcast|mcast|ucast|umcast <rate> pps
-storm <port> bcast|mcast|ucast|umcast <rate> kbps
-storm <port> bcast|mcast|ucast|umcast off
-storm
+set port.N.storm.T.rate <rate>		T: bcast, mcast, ucast, umcast; 0 is off
+set port.N.storm.T.unit pps|kbps
+apply
 ```
 `ucast` is unicast to a MAC address the switch has not learned yet, and
 `umcast` is multicast without an entry in the address table. Multicast groups
@@ -20,9 +17,7 @@ get their entries from IGMP snooping, so without `igmp on` all multicast is
 unknown and only the `umcast` limit applies to it; `mcast` covers the groups
 IGMP has learned. A limit in
 packets per second goes from 1 to 1048575, a limit in kbit/s from 1 to
-10000000. `storm` without arguments prints the limits of every port. The
-limits are kept in the configuration like any other setting, and the Bandwidth
-page of the web interface has a Storm control card to set them.
+10000000. `get port.*.storm` shows every port's.
 
 ## Registers
 Each port and type has an enable bit and a meter index, and each limit uses

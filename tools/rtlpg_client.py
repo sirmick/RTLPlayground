@@ -222,7 +222,7 @@ class Schema:
             kk, nn, a, _ = o.levels[lv]
             if kk == "PORT" and self.board.log_of(x) is None:
                 return None
-            if kk in ("NUM", "WORD") and not 0 <= x < nn:
+            if kk in ("NUM", "WORD", "IDX") and not 0 <= x < nn:
                 return None
             if kk == "KEY" and not a.lo <= x <= a.hi:
                 return None
@@ -579,7 +579,11 @@ def bin2txt(sch, data, secrets=True, skipped=None):
         elif ix is None:
             skipped.append("object %d index %d" % (oid, rix))
         elif keyed and (o.regname, ix) not in cfg.v:
-            cfg._entry(o, ix)
+            if len(cfg.keys[o.regname]) < o.levels[0][1]:
+                cfg._entry(o, ix)
+            else:                       # past the table's slots, as om.c's load
+                skipped.append("object %d index %d" % (oid, rix))
+                ix = None
         for _ in range(nf):
             fid, ln = r[i], r[i + 1]
             v = bytes(r[i + 2:i + 2 + ln])

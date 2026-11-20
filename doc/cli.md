@@ -104,8 +104,9 @@ port.N.speed enum auto|10m|100m|1g|2g5|5g|10g default auto "Autonegotiate, or fo
 
 On the model (get/set/apply/save): `sys` (hostname, LEDs), `mgmt` (address,
 mode, VLAN), `dns`, `ntp`, `syslog`, `web` (password, session timeout),
-`port.N` (name, enabled, speed, duplex, mtu, pvid, ingress, ingress filter,
-LLDP, EEE, isolation), and every `state.*` path.
+`port.N` (name, enabled, speed (an SFP cage's too), duplex, mtu, pvid, ingress,
+ingress filter, LLDP, EEE and its speeds, isolation, bandwidth limits),
+`port.N.storm.T` (storm control), and every `state.*` path.
 
 Not yet. Their old commands still work, and their settings survive `save` only
 once they move:
@@ -116,7 +117,6 @@ once they move:
 | LAGs, LACP | `lag`, `laghash`, `lacp`, until P4-3 | `lag.L.mode`, `.members`, `.hash` |
 | STP | `stp ...`, until P4-4 | `stp.*`, `stp.port.N.*`, `stp.lag.L.*` |
 | IGMP snooping, LLDP, loop detection, mirroring | `igmp`, `lldp`, `loop`, `mirror`, until P4-5 | `igmp.*`, `lldp.*`, `loop.*`, `mirror.*` |
-| bandwidth, storm control, an SFP cage's speed | `bw`, `storm`, `sfp S <speed>`, until P4-6 | `port.N.bw_*`, `port.N.storm.*`, `port.N.speed` |
 | the switch's MAC | `mac` | `sys.mac` (deferred) |
 
 `dns lookup <name>` stays a command, and so does `l2 forget` (it flushes the

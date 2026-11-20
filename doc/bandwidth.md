@@ -58,66 +58,23 @@ and egress at a port.
 `RTL837X_IGBW_PORT_FC_CTRL` configures whether packets are bandwidth-controlled using
 Flow Control (port-bit set), or simply dropped (port-bit clear).
 
-## Ingress/Egress bandwidth API
-The code currently provides the following functions:
+## Settings
+`bandwidth_setup()` runs at boot: the special packets that may be for the CPU,
+and the CPU's own, are left out of bandwidth control; the IFG is not counted.
+Per port, on the object model (`om_port.c`):
 ```
-void bandwidth_setup(void) __banked;
-void bandwidth_ingress_set(uint8_t port, __xdata uint32_t bw) __banked;
-void bandwidth_ingress_disable(uint8_t port) __banked;
-void bandwidth_ingress_drop(uint8_t port) __banked;
-void bandwidth_egress_set(uint8_t port, __xdata uint32_t bw) __banked;
-void bandwidth_egress_disable(uint8_t port) __banked;
-void bandwidth_status(uint8_t port) __banked;
-```c
-
-`bandwidth_setup()` is called at boot-time and configures excluding all special packets
-that may be for the CPU and packets outgoing from the CPU to be excluded from bandwidth
-control. IFG is not part of the bandwidth calculation.
-
-`bandwidth_ingress_set()` enables ingress bandwidth control for a particular port given
-the specified bandwidth. This also enabled Flow Control at a port.
-
-`bandwidth_ingress_set()` enables egress bandwidth control for a particular port given
-the specified bandwidth
-
-`bandwidth_ingress_disable() / bandwidth_egress_disable()` disable ingress and egress
-bandwidth control at a given port
-
-`bandwidth_ingress_drop(port)` configures packets exceeding bandwidth limitations to
-simply be dropped
-
-`bandwidth_status(port)` shows the current bandwidth control status for a given port
-
-## Bandwidth control configuration on the Serial Console
-The following commands are provided on the serial console:
+set port.N.bw_in_kbps <rate>	0 is off; else 16..10000000, a multiple of 16
+set port.N.bw_in_mode fc|drop	over the limit: flow control (PAUSE) or drop
+set port.N.bw_out_kbps <rate>
+apply
 ```
-> bw [in|out|status] <port> [<hexvalue>|off|drop]
-  Configures or shows the status of bandwidth control
-```
-The bandwidth is given as the `<hexvalue>` in Kbit/s. Note that the control is only
-possible at a granularity of 16 Kbit/s and the minimum value is also 16 Kbit/s. The
-hexadecimal numbers must be given in full bytes, i.e. have an even number of digits.
-
-To enable bandwidth control of ingress for physical port 2 to be set to 256 Kbit/s
-do:
-```
-> bw in 2 0100 
-```
-
-To drop packets when the bandwidth is exceeded at port 2 do:
-```
-> bw in 2 drop 
-```
-
-To disable bandwidth control for incoming packets on port 2 do:
-```
-> bw in 2 off
-```
-
-## Bandwidth configuration via the Web Interface
-Not implemented, yet!
+The registers hold the rate in 16 kbit/s steps. `bw_in_mode` defaults to
+`drop`, the chip's own after power-on.
 
 ## A Test using iperf3
+Measured with the old `bw` command (`bw in 1 1000` is `set port.1.bw_in_kbps 4096` and
+`bw_in_mode fc`; `bw in 1 0100` 256 kbit/s, `bw in 1 drop` `bw_in_mode drop`).
+
 The following is and example how to test bandwidth control with a single Linux device using
 network namespaces to route packets between a client and a server on the same Linux device
 through an external switch.

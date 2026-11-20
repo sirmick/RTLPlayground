@@ -44,7 +44,7 @@ def main():
             skipped = []
             got = rc.bin2txt(sch, b, secrets=False, skipped=skipped)
             check(got == t, "skip: bin2txt prints what get -s printed", "\n".join(got))
-            check(len(skipped) == 9, "skip: and skips what the load skipped (9)", "\n".join(skipped))
+            check(len(skipped) == 12, "skip: and skips what get -s's load skipped (12: the 0x0904 storm, port 10, the 5th tvlan)", "\n".join(skipped))
             continue
         got = rc.bin2txt(sch, b)
         check(got == t, "%s: bin2txt is get -d (keyed: its dels and empty entries too)" % n, "\n".join(got))
@@ -52,6 +52,8 @@ def main():
         check(mine == b, "%s: txt2bin of get -d is the firmware's save (%d B)" % (n, len(b)),
               "python %s\nC      %s" % (mine.hex(), b.hex()))
 
+    print("the saved config at its largest: om_gen's bound is the codec's bytes")
+    worst_case()
     print("the real schema, other boards")
     sw = rc.Schema(board=rc.Board("SWGT024_V2_0_UNMANAGED"))
     b = rc.txt2bin(sw, ["set port.1.isolate 1,6", "port.6.mtu 9000"])
@@ -170,6 +172,36 @@ web.password hunter2
 sys.mac 02:11:22:33:44:55""".split("\n")
 
 
+def worst_case():
+    """Every config field of every instance off its default, a Str at its
+    full length, every keyed slot taken (the 8x: all 9 ports): the records
+    the codec (held to test_om's bytes above) makes are om_gen's saved_worst(), the
+    bound the build fails past, less the fields `when` leaves off a port and
+    the objects with no config field (om_gen counts their header)."""
+    sch = rc.Schema()
+    cfg, off = rc.Config(sch), 0
+    for o in sch.objs:
+        if o.levels and o.levels[0][0] == "KEY":
+            n, t = o.levels[0][1], o.levels[0][2]
+            for k in range(t.hi, t.lo - 1, -1):        # the slots the table has, the default entries' too
+                if len(cfg.keys[o.regname]) == n:
+                    break
+                cfg._entry(o, (k,))
+        for ix in [ix for (name, ix) in cfg.v if name == o.regname]:
+            for f in o.cfields:
+                d = sch.default(o, f)
+                cfg.v[(o.regname, ix)][f.name] = (b"a" * f.typ.arg + b"\0" if f.typ.code in ("STR", "SECRET")
+                                                  else bytes([d[0] ^ 1]) + d[1:])
+                if not sch.board.when(f.when, sch.lport(o, ix)):
+                    off += 2 + (f.typ.arg if f.typ.code in ("STR", "SECRET") else f.typ.size)
+    got = rc.HDR + len(cfg.records())     # the bytes as saved (some flipped values aren't valid text)
+    off += 4 * sum(1 for o in sch.objs if not o.cfields)    # an object of actions only: no record
+    worst = rc.om_gen.saved_worst(sch.objs)
+    check(got + off == worst and worst <= rc.CONFIG_LEN,
+          "%d B, and the %d B `when` and the action-only objects leave off: om_gen's %d, of the sector's %d"
+          % (got, off, worst, rc.CONFIG_LEN), " ".join(o.regname for o in sch.objs))
+
+
 def p41_schema(board=None):
     """The objects P4-1 left on the model, whatever has moved since: a
     schema of their files alone, so the legacy split below stays put."""
@@ -282,28 +314,36 @@ def convert():
     warn = []
     lines, legacy, bad = legacy_map.convert(OLD.encode(), sch.board, warn, sch)
     mine = [ln for ln in WANT if not ln.split()[1 if ln.startswith("del ") else 0].startswith(
-        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac", "port.2.storm", "port.3.bw_", "port.9."))]
+        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac"))]
     check(lines == mine, "the schema's paths are path lines (%d)" % len(lines), "\n".join(lines))
     check(rc.txt2bin(sch, lines)[:4] == b"\0RC1", "and txt2bin takes them all")
     want = [("vlan 100 lab 1 2t 9t", "P4-2"), ("vlan 200 3 4", "P4-2"), ("vlan 200 d", "P4-2"),
             ("lag 1 lacp 7 8", "P4-3"), ("lag 2 lacp 8", "P4-3"), ("laghash 1 sip dip", "P4-3"),
             ("stp on", "P4-4"), ("stp prio 8", "P4-4"), ("stp port 3 cost 20000", "P4-4"),
-            ("stp lag 1 edge on", "P4-4"), ("storm 2 bcast 1000 pps", "P4-6"), ("bw in 3 1f4", "P4-6"),
-            ("sfp 1 10g", "P4-6"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
+            ("stp lag 1 edge on", "P4-4"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
     check(legacy == want, "the rest is legacy, in order, each with the node that migrates it", legacy)
-    check(bad == ["a typo here"] and not warn, "the typo is still reported", (bad, warn))
+    check(bad == ["a typo here"] and warn == ["bw in 3 1f4: 500 kbit/s rounded down to 496, a multiple of 16"],
+          "the typo is still reported; bw 1f4 rounded down, warned", (bad, warn))
     warn = []
     lines, legacy, bad = legacy_map.convert(b"mtu 2 10\nport 12 off\npvid 3 5000\nport 9 on\nport 9 name up\n"
                                             b"port 9 auto\nsfp 1 10g\nhostname ok\n", sch.board, warn, sch)
-    check(lines == ["port.9.name up", "sys.hostname ok"], "values the schema refuses aren't taken", lines)
+    check(lines == ["port.9.name up", "port.9.speed 10g", "sys.hostname ok"], "values the schema refuses aren't taken", lines)
     check(bad == ["mtu 2 10", "port 12 off", "pvid 3 5000"] and
           warn == ["mtu 2 10: port.2.mtu: 64-16383", "port 12 off: port.12.enabled: no such port",
                    "pvid 3 5000: port.3.pvid: 0-4094"], "they are reported, with set's reason", (bad, warn))
-    check(legacy == [("port 9 on", "P4-6"), ("port 9 auto", "P4-6"), ("sfp 1 10g", "P4-6")],
-          "an SFP port's copper fields are P4-6's legacy", legacy)
+    check(legacy == [("port 9 on", "P4-6"), ("port 9 auto", "P4-6")],
+          "an SFP port's copper fields are legacy; its speed isn't", legacy)
     lines, legacy, _ = legacy_map.convert(b"port 9 auto\nsfp 1 10g\nport 4 off\n", sch.board, None, sch)
-    check(lines == ["port.4.enabled off"] and len(legacy) == 2, "a legacy line's paths never reach the output",
+    check(lines == ["port.9.speed 10g", "port.4.enabled off"] and len(legacy) == 1,
+          "a legacy line's paths never reach the output",
           lines)
+    warn = []
+    lines, legacy, bad = legacy_map.convert(b"eee on 1g\neee on 3 100m\neee on 4\neee off 5 2g5\n", sch.board, warn, sch)
+    check(lines[:2] == ["port.1.eee on", "port.2.eee on"] and "port.1.eee_speeds 100m,1g" in lines and
+          "port.3.eee_speeds 100m" in lines and "port.4.eee_speeds 100m,1g,2g5,5g,10g" in lines and
+          "port.5.eee off" in lines and "port.5.eee_speeds 100m,1g" in lines and
+          not any(ln.startswith("port.9.eee") for ln in lines) and not legacy and not bad and not warn,
+          "eee on [N] [speed]: eee_speeds every speed up to it, none every speed; off leaves them", lines)
     b = rc.Board("SWGT024_V2_0_UNMANAGED")
     lines, legacy, bad = legacy_map.convert(b"port 1 on\neee on\nstp on\n", b, None, p41_schema(b))
     check(lines[:3] == ["port.1.enabled on", "port.1.speed auto", "port.1.duplex auto"] and

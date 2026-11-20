@@ -38,7 +38,7 @@ void cmd_editor_init(void);
 void cmd_edit(void);
 
 /* ------------------------------- output sink ------------------------------- */
-char   out_buf[32768];
+char   out_buf[65536];
 size_t out_len;
 
 void out_reset(void) { out_len = 0; out_buf[0] = 0; }

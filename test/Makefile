@@ -88,10 +88,12 @@ $(filter-out $(BUILDDIR)/test_om_gen $(BUILDDIR)/test_sfp_cal,$(TESTS)): | $(BUI
 # STP calls are).
 OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
 # help's blob too (om.c reads it from the flash model): a room of its own, as
-# the test schema's objects are extra. The compact layout's addresses: there a
+# the test schema's objects are extra; for the same reason no sector bound
+# (--no-sector: the firmware's schema has its own, in build/om and
+# test_om_codec's worst case). The compact layout's addresses: there a
 # blob past HELP_END doesn't carry out of the low 16 bits (om.c h_addr()).
 $(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h $(BUILDDIR)/om_t/help.bin &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t \
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema --no-sector -o $(BUILDDIR)/om_t \
 		--help-blob $(BUILDDIR)/om_t/help.bin --help-room 8192 > /dev/null
 $(BUILDDIR)/test_om $(BUILDDIR)/nohelp/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS)) -DLAYOUT_COMPACT
 OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_vlan.c $(SRCROOT)/om_lag.c $(SRCROOT)/om_stp.c $(BUILDDIR)/om_t/om_gen.c

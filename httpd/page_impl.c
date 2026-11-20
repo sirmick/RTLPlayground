@@ -4,7 +4,6 @@
 #include "rtl837x_common.h"
 #include "om_gen.h"
 #include "rtl837x_regs.h"
-#include "rtl837x_storm.h"
 #include "rtl837x_port.h"
 #include "rtl837x_flash.h"
 #include "rtl837x_pins.h"
@@ -42,7 +41,6 @@ extern __xdata struct flash_region_t flash_region;
 
 
 
-__code const char * __code const http_storm_names[STORM_TYPES] = { "bcast", "mcast", "ucast", "umcast" };
 
 // Convert uint8_t to ascii HEX char push on html-buffer.
 void charhex_to_html(char c)
@@ -163,87 +161,5 @@ void l2_delete(uint16_t idx)
 }
 
 
-void send_bandwidth(void)
-{
-	dbg_string("send_bandwidth called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	char_to_html('[');
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-		str_code_to_html("," JSONQUOTE("iLimited") ":");
-		reg_read_m(RTL837X_IGBW_PORT_CTRL + i * 4);
-		bool_to_json(sfr_data[1] & 0x10);
-		str_code_to_html("," JSONQUOTE("iBW") ":\"0x");
-		byte_to_html(sfr_data[1] & 0x0f);
-		byte_to_html(sfr_data[2]);
-		byte_to_html(sfr_data[3]);
-		str_code_to_html("\"," JSONQUOTE("iAction") ":");
-		if(reg_bit_test(RTL837X_IGBW_PORT_FC_CTRL, i)){
-			str_code_to_html(JSONQUOTE("fc"));
-		} else {
-			str_code_to_html(JSONQUOTE("drop"));
-		}
-		reg_read_m(RTL837X_EGBW_PORT_CTRL + i * 1024);
-		str_code_to_html("," JSONQUOTE("eLimited") ":");
-		bool_to_json(sfr_data[1] & 0x10);
-		str_code_to_html("," JSONQUOTE("eBW") ":\"0x");
-		byte_to_html(sfr_data[1] & 0x0f);
-		byte_to_html(sfr_data[2]);
-		byte_to_html(sfr_data[3]);
-		char_to_html('"');
-		char_to_html('}');
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
-}
 
-
-
-void send_storm(void)
-{
-	__xdata uint8_t i, t, idx;
-
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	char_to_html('[');
-	for (i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-		char_to_html(',');
-
-		for (t = 0; t < STORM_TYPES; t++) {
-			char_to_html('"');
-			str_code_to_html(http_storm_names[t]);
-			str_code_to_html("\":{" JSONQUOTE("enabled") ":");
-			bool_to_json(reg_bit_test(RTL837X_STORM_CTRL + (t << 2), i));
-
-			str_code_to_html("," JSONQUOTE("unit") ":");
-			idx = STORM_METER(i, t);
-
-			if (reg_bit_test(RTL837X_METER_MODE + ((idx >> 5) << 2), idx & 0x1f)) {
-				str_code_to_html(JSONQUOTE("pps"));
-			} else {
-				str_code_to_html(JSONQUOTE("kbit/s"));
-			}
-
-			str_code_to_html("," JSONQUOTE("rate") ":\"0x");
-
-			reg_read_m(RTL837X_METER_RATE + (STORM_METER(i, t) << 2));
-			byte_to_html(sfr_data[1]);
-			byte_to_html(sfr_data[2]);
-			byte_to_html(sfr_data[3]);
-
-			char_to_html('"');
-
-			char_to_html('}');
-			if(t < STORM_TYPES-1)
-				char_to_html(',');
-		}
-		char_to_html('}');
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
-}
 

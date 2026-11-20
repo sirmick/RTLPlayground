@@ -1,8 +1,9 @@
 /*
  * om_port.c - port.N for the object model (schema/port.py): apply a port's
  * config to the hardware, check it, read its state, start its cable test.
- * The hardware calls are the ones the old port, mtu, pvid, ingress, isolate
- * and eee commands made. And mirror (schema/mirror.py), the old mirror's.
+ * The hardware calls are the ones the old port, mtu, pvid, ingress, isolate,
+ * eee, bw, storm and sfp commands made. And mirror (schema/mirror.py), the
+ * old mirror's.
  *
  * The instance is copied into fixed xdata structs first: SDCC's code for a
  * fixed address is a fraction of its code through a pointer.
@@ -16,7 +17,9 @@
 #include "rtl837x_port.h"
 #include "rtl837x_lldp.h"
 #include "rtl837x_cabletest.h"
+#include "rtl837x_storm.h"
 #include "phy.h"
+#include "sfp.h"
 #include "machine.h"
 #include "om_gen.h"
 
@@ -27,6 +30,17 @@ extern __xdata bool lldp_was_enabled;
 static __xdata struct cfg_port r;	/* running: what to program */
 static __xdata struct cfg_port o;	/* what the hardware had */
 static __xdata uint8_t b, l, chg;
+static __xdata uint32_t bw;
+static __xdata uint8_t * __xdata bp;
+static __xdata uint8_t on, bit;
+
+static void bit_put(uint16_t reg)	/* bit `bit` of reg: on or off */
+{
+	if (on)
+		reg_bit_set(reg, bit);
+	else
+		reg_bit_clear(reg, bit);
+}
 
 static __code const uint8_t speed_phy[] = {
 	PHY_SPEED_AUTO, PHY_SPEED_10M, PHY_SPEED_100M, PHY_SPEED_1G,
@@ -34,6 +48,25 @@ static __code const uint8_t speed_phy[] = {
 };
 static __code const uint8_t duplex_phy[] = { PHY_DUPLEX_BOTH, PHY_DUPLEX_FULL, PHY_DUPLEX_HALF };
 static __code const uint8_t ingress_hw[] = { VLAN_ALL, VLAN_TAGGED, VLAN_UNTAGGED };
+
+/* a bandwidth limit, bw kbit/s, into its register: bit 20 on and the rate
+ * in 16 kbit/s steps; 0 is off, the value the old `bw ... off` wrote.
+ * Off is the chip's power-on value, so the boot's write leaves a fresh chip
+ * as it was and a soft reset clears a limit (unconfirmed: P8 silicon read) */
+#define BW_OFF	0x000fffff
+static void bw_write(uint16_t reg)
+{
+	bp = (__xdata uint8_t *)&bw;
+	if (bp[0] | bp[1] | bp[2]) {
+		sfr_data[0] = 0;
+		sfr_data[1] = 0x10 | (bp[2] >> 4);
+		sfr_data[2] = (bp[2] << 4) | (bp[1] >> 4);
+		sfr_data[3] = (bp[1] << 4) | (bp[0] >> 4);
+		reg_write_m(reg);
+	} else {
+		REG_SET(reg, BW_OFF);
+	}
+}
 
 uint8_t om_apply_port(uint8_t idx) __banked
 {
@@ -46,12 +79,15 @@ uint8_t om_apply_port(uint8_t idx) __banked
 		memset(&o, 0xff, sizeof(o));
 
 	if (!machine.is_sfp[l]) {
-		chg = r.eee != o.eee;
-		if (chg) {
-			if (r.eee)
-				port_eee_enable(l, OM_TEN_G(l) ? EEE_10G : EEE_2G5);
-			else
-				port_eee_disable(l);
+		chg = r.eee != o.eee || r.eee_speeds != o.eee_speeds;
+		if (chg) {	/* the speeds advertised, capped by the port's */
+			b = r.eee ? r.eee_speeds : 0;
+			if (!OM_TEN_G(l))
+				b &= 7;
+			REG_SET(RTL837X_EEE_CTRL_BASE + ((uint16_t)l << 8), r.eee ? EEE_RX_ENABLE | EEE_TX_ENABLE : 0);
+			/* 100m, 1g, 10g: PHY_EEE_BIT_100M, _1G, _10G; 2g5, 5g: _2G5, _5G */
+			phy_write(l, PHY_MMD_AN, PHY_EEE_ADV, ((b & 3) << 1) | ((b & 0x10) >> 1));
+			phy_write(l, PHY_MMD_AN, PHY_EEE_ADV2, (b >> 2) & 3);
 		}
 		if (r.enabled != o.enabled)
 			chg = 1;
@@ -65,6 +101,13 @@ uint8_t om_apply_port(uint8_t idx) __banked
 			phy_settings.duplex = duplex_phy[r.duplex];
 			phy_settings.speed = r.enabled ? speed_phy[r.speed] : PHY_OFF;
 			phy_set_speed();
+		}
+	} else if (r.speed != o.speed) {	/* the cage's: sfp_speed[] takes auto, 100m.. (no 10m) */
+		b = machine.is_sfp[l] - 1;
+		sfp_speed[b] = r.speed ? r.speed - 1 : SFP_SPEED_AUTO;
+		if (!om_full) {		/* the module found again at once, then read (the boot's sfp task does) */
+			sfp_pins_last |= 0x1 << (b << 2);
+			sfp_pins(b);
 		}
 	}
 	if (r.mtu != o.mtu)
@@ -87,6 +130,19 @@ uint8_t om_apply_port(uint8_t idx) __banked
 			lldp_logical_port_status |= (uint16_t)1 << l;
 		}
 	}
+	if (memcmp(&r.bw_in_kbps, &o.bw_in_kbps, 4)) {	/* the rate before the mode */
+		bw = r.bw_in_kbps;
+		bw_write(RTL837X_IGBW_PORT_CTRL + (l << 2));
+	}
+	if (r.bw_in_mode != o.bw_in_mode) {
+		on = r.bw_in_mode == E_BWMODE_FC;
+		bit = l;
+		bit_put(RTL837X_IGBW_PORT_FC_CTRL);
+	}
+	if (memcmp(&r.bw_out_kbps, &o.bw_out_kbps, 4)) {
+		bw = r.bw_out_kbps;
+		bw_write(RTL837X_EGBW_PORT_CTRL + ((uint16_t)l << 10));
+	}
 	return OM_OK;
 }
 
@@ -106,14 +162,83 @@ uint8_t om_check_port(uint8_t idx) __banked
 		om_fail(OM_E_PVID);
 		return OM_ERR;
 	}
-	if (machine.is_sfp[l])
+	if (((uint8_t)r.bw_in_kbps | (uint8_t)r.bw_out_kbps) & 15) {
+		om_fail(OM_E_BW_16);
+		return OM_ERR;
+	}
+	if (machine.is_sfp[l]) {
+		if (r.speed == E_SPEED_10M || r.speed == E_SPEED_5G) {
+			om_fail(OM_E_SFP_SPEED);
+			return OM_ERR;
+		}
 		return OM_OK;
+	}
 	if (r.duplex != E_DUPLEX_AUTO && r.speed != E_SPEED_10M && r.speed != E_SPEED_100M) {
 		om_fail(OM_E_DUPLEX);
 		return OM_ERR;
 	}
 	if ((r.speed == E_SPEED_5G || r.speed == E_SPEED_10G) && !OM_TEN_G(l)) {
 		om_fail(OM_E_SPEED_10G);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
+
+/* port.N.storm.T: meter 24 + idx (idx = port * 4 + type, STORM_METER()).
+ * Off is rate 0, the burst at its 0x2000 and kbit/s mode, as the chip
+ * powers on (the burst: doc/storm_control.md; unconfirmed: P8 silicon read) */
+#define METER_BURST_OFF	0x20	/* sfr_data[2]: 0x00002000 */
+static __xdata struct cfg_port_storm sr;
+
+/* STORM_MIDX words, row type * 2 + half: half 0 holds ports 0-4, half 1 ports 5-9,
+ * 6 bits per port, each set to STORM_METER(port, type) */
+static __code const uint8_t storm_midx[8][4] = {
+	{ 0x28, 0x92, 0x07, 0x18 }, { 0x3c, 0xe3, 0x4c, 0x2c },
+	{ 0x29, 0x96, 0x17, 0x59 }, { 0x3d, 0xe7, 0x5c, 0x6d },
+	{ 0x2a, 0x9a, 0x27, 0x9a }, { 0x3e, 0xeb, 0x6c, 0xae },
+	{ 0x2b, 0x9e, 0x37, 0xdb }, { 0x3f, 0xef, 0x7c, 0xef },
+};
+
+uint8_t om_apply_port_storm(uint8_t idx) __banked
+{
+	l = idx >> 2;
+	if (!MACHINE_PORT_VALID(l))
+		return OM_OK;
+	memcpy(&sr, &cfg_run.port_storm[0][0] + idx, sizeof(sr));
+	bp = (__xdata uint8_t *)&sr.rate;
+	chg = bp[0] | bp[1] | bp[2];		/* a limit */
+	on = chg && sr.unit == E_SUNIT_PPS;
+	b = STORM_METER_BASE + idx;
+	sfr_data[0] = 0;
+	sfr_data[1] = bp[2];
+	sfr_data[2] = bp[1];
+	sfr_data[3] = bp[0];
+	reg_write_m(RTL837X_METER_RATE + (b << 2));
+	if (!on) {			/* a pps limit's burst is one second of it */
+		sfr_data[1] = 0;
+		sfr_data[2] = METER_BURST_OFF;
+		sfr_data[3] = 0;
+	}
+	reg_write_m(RTL837X_METER_BURST + (b << 2));
+	bit = b & 0x1f;
+	bit_put(RTL837X_METER_MODE + ((b >> 5) << 2));
+	b = idx & 3;			/* the type */
+	if (chg || om_full) {		/* the MIDX row (the boot's: a soft reset can't leave it unlike a power-on) */
+		bit = (b << 1) | (l >= 5 ? 1 : 0);
+		memcpyc(sfr_data, storm_midx[bit], 4);
+		reg_write_m(RTL837X_STORM_MIDX + (bit << 2));
+	}
+	on = chg;
+	bit = l;
+	bit_put(RTL837X_STORM_CTRL + (b << 2));
+	return OM_OK;
+}
+
+uint8_t om_check_port_storm(uint8_t idx) __banked
+{
+	memcpy(&sr, &cfg_cand.port_storm[0][0] + idx, sizeof(sr));
+	if (sr.unit == E_SUNIT_PPS && ((__xdata uint8_t *)&sr.rate)[2] > 0x0f) {
+		om_fail(OM_E_STORM_PPS);
 		return OM_ERR;
 	}
 	return OM_OK;
@@ -159,6 +284,9 @@ uint8_t om_get_port(uint8_t idx) __banked
 	S.speed = E_LSPEED_UNKNOWN;
 	S.duplex = E_LDUPLEX_FULL;
 	S.ms_role = E_ROLE_SLAVE;
+	S.lp_adv = 0;
+	S.eee_lp = 0;
+	S.lag = port_lag_of(l) + 1;		/* PORT_LAG_NONE + 1: 0 */
 	if (S.link) {
 		reg_read_m(l < 8 ? RTL837X_REG_LINKS : RTL837X_REG_LINKS_89);
 		b = sfr_data[3 - ((l & 7) >> 1)];
@@ -172,6 +300,17 @@ uint8_t om_get_port(uint8_t idx) __banked
 			S.duplex = (SFR_DATA_U16 >> 3) & 1;
 			reg_read_m(RTL837X_MAC_MSTR_SLV_STS);
 			S.ms_role = bit_of();
+			phy_read(l, PHY_MMD_AN, PHY_ANEG_LP_ABILITY);	/* 10h..100f: bits 5-8 */
+			S.lp_adv = (SFR_DATA_U16 >> 5) & 0x0f;
+			phy_read(l, PHY_MMD31, PHY_MMD31_GANLPAR);	/* 1000h, f: 10, 11 */
+			S.lp_adv |= (SFR_DATA_U16 >> 6) & 0x30;
+			phy_read(l, PHY_MMD_AN, PHY_ANEG_MGBASE_ADV);	/* 2g5, 5g: 5, 6; 10g: 11 */
+			S.lp_adv |= ((SFR_DATA_U16 << 1) & 0xc0) | ((SFR_DATA_U16 >> 3) & 0x100);
+			phy_read(l, PHY_MMD_AN, PHY_EEE_LP_ABILITY);	/* 100m, 1g, 10g */
+			b = SFR_DATA_U16;
+			S.eee_lp = ((b >> 1) & 3) | ((b << 1) & 0x10);
+			phy_read(l, PHY_MMD_AN, PHY_EEE_LP_ABILITY2);	/* 2g5, 5g */
+			S.eee_lp |= (SFR_DATA_U16 << 2) & 0x0c;
 		}
 	}
 	reg_read_m(RTL837X_MAC_TX_PAUSE_STS);
@@ -209,14 +348,14 @@ uint8_t om_get_port(uint8_t idx) __banked
 			memcpy(ct_l, ct_len, 8);
 		}
 	}
-	S.cabletest_a_result = ct_r[0];
-	S.cabletest_b_result = ct_r[1];
-	S.cabletest_c_result = ct_r[2];
-	S.cabletest_d_result = ct_r[3];
-	S.cabletest_a_length_m = ct_l[0];
-	S.cabletest_b_length_m = ct_l[1];
-	S.cabletest_c_length_m = ct_l[2];
-	S.cabletest_d_length_m = ct_l[3];
+	S.cabletest_pair_a_result = ct_r[0];
+	S.cabletest_pair_b_result = ct_r[1];
+	S.cabletest_pair_c_result = ct_r[2];
+	S.cabletest_pair_d_result = ct_r[3];
+	S.cabletest_pair_a_length_m = ct_l[0];
+	S.cabletest_pair_b_length_m = ct_l[1];
+	S.cabletest_pair_c_length_m = ct_l[2];
+	S.cabletest_pair_d_length_m = ct_l[3];
 	return OM_OK;
 }
 
