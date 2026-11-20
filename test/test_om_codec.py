@@ -173,6 +173,11 @@ def convert():
     lines, bad = legacy_map.convert(("flash r 7f000 20\n" + dump).encode(), rc.Board())
     check(lines == ["mgmt.mode static", "mgmt.ip 10.0.0.9", "sys.hostname x"] and not bad,
           "a console flash dump of the old sector", lines)
+    warn = []
+    lines, bad = legacy_map.convert(b"session 30\npasswd a b\npasswd a\"b\npasswd a\\b\n", rc.Board(), warn)
+    check(lines == ["web.session_timeout_s 60"] and len(warn) == 1 and "raised to 60" in warn[0],
+          "a session under 60 is raised to 60, with a warning", (lines, warn))
+    check(bad == ["passwd a b", 'passwd a"b', "passwd a\\b"], "a passwd with a space or quote isn't translated", bad)
     # the corpus: every saved config the bench kept (outside the tree)
     corpus = sorted(glob.glob(os.path.expanduser("~/rtlpg-bench/cfg-*.txt")) +
                     glob.glob(os.path.expanduser("~/rtlpg-bench/spare2-config*.txt")))
