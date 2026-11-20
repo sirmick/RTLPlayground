@@ -451,6 +451,8 @@ static void idle_rounds(int n, uint16_t busy)
 static void test_load(void)
 {
 	printf("load: the time asleep, summed per second\n");
+	/* sched_init leaves the asleep sum to XSEG's clear: here it is 0 as no
+	 * earlier test's sleep took time (host_sleep off) */
 	reset_all(100);
 	host_sleep = 1;
 	idle_rounds(100, 0);			/* to tick 200, asleep throughout */
