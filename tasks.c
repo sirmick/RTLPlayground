@@ -327,7 +327,8 @@ STEP(net, tick)
 	return STEP_STAY;
 }
 
-/* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick */
+/* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick; off,
+ * stp off's VLAN walk */
 TASK(stp, fixed, medium)
 STEP(stp, tick)
 {
@@ -337,6 +338,8 @@ STEP(stp, tick)
 			timer_reset(&stp_step);
 			stp_timers();
 		}
+	} else if (stp_fdb_vid) {
+		stp_fdb_line();
 	}
 	task_until(sched_now + 1);
 	return STEP_STAY;

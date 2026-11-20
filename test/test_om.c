@@ -270,6 +270,25 @@ void reg_write(uint16_t reg)
 {
 	sprintf(lag_ops + strlen(lag_ops), "H%u %02x ", (reg - RTL837X_TRK_HASH_CTRL_BASE) >> 2, SFR_DATA_0);
 }
+/* the spanning tree (rtl837x_stp.c), under om_stp.c: its config, the calls as text */
+#include "rtl837x_stp.h"
+bool stp_enabled;
+uint8_t stp_prio, stp_hello_s, stp_maxage_s, stp_fwddelay_s, stp_rstp, stp_txhold;
+uint8_t stp_pcost_short, stp_bpdu_filter;
+uint8_t stp_pflags[STP_ENTITIES], stp_pprio[STP_ENTITIES], stp_pp2p[STP_ENTITIES];
+uint32_t stp_pcost[STP_ENTITIES];
+static char stp_ops[256];
+static uint16_t stp_gone;	/* entities that aren't (a LAG member, no such LAG) */
+#define STP_OP(...)	sprintf(stp_ops + strlen(stp_ops), __VA_ARGS__)
+void stp_setup(void) { STP_OP("on "); }
+void stp_off(void) { STP_OP("off "); }
+void stp_prio_apply(void) { STP_OP("prio "); }
+void stp_lag_map(void) { }
+void stp_counters_clear(void) { STP_OP("clear "); }
+void stp_port_admin(uint8_t port, uint8_t on) { STP_OP("A%u %u ", port, on); }
+void stp_port_mcheck(uint8_t port) { STP_OP("M%u ", port); }
+void stp_ent_restart(uint8_t e) { STP_OP("R%u ", e); stp_pflags[e] &= ~STP_PF_TRIPPED; }
+uint8_t stp_ent_id(uint8_t e) { return (stp_gone >> e & 1) ? 0 : e + 1; }
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 {
 	t_renew++;
@@ -2516,6 +2535,127 @@ static void lags(void)
 	om_init();
 }
 
+static void stps(void)
+{
+	printf("stp\n");
+	om_init();
+	{
+		const char *o = run("get stp"), *w = "stp.enabled off\nstp.version rstp\nstp.priority 8\nstp.hello_s 2\n"
+			"stp.maxage_s 20\nstp.fwd_delay_s 15\nstp.txhold 6\nstp.pathcost long\nstp.bpdu flood\n"
+			"stp.lag.1.enabled on\n";
+		CHECK(!strncmp(o, w, t_strlen(w)) && strstr(o, "stp.port.9.p2p auto\nok\n"),
+		      "get stp: the defaults, then the LAGs and the ports");
+	}
+	expect("get stp.port.3", "stp.port.3.enabled on\nstp.port.3.edge auto\nstp.port.3.cost 0\nstp.port.3.priority 128\n"
+	       "stp.port.3.guard none\nstp.port.3.filter off\nstp.port.3.p2p auto\nok\n");
+	stp_ops[0] = 0;
+	expect("set stp.priority 2", "ok\n");
+	expect("set stp.version stp", "ok\n");
+	expect("set stp.pathcost short", "ok\n");
+	expect("set stp.hello_s 1", "ok\n");
+	expect("set stp.txhold 3", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "prio ") && stp_prio == 0x20 && !stp_rstp && stp_pcost_short && stp_hello_s == 1
+	      && stp_txhold == 3 && stp_maxage_s == 20 && stp_fwddelay_s == 15 && !stp_enabled,
+	      "stp: the globals, the priority as the BPDU's byte");
+	stp_ops[0] = 0;
+	expect("set stp.bpdu filter", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "off ") && stp_bpdu_filter, "bpdu while off: stp_off floods or filters them now");
+	stp_ops[0] = 0;
+	expect("set stp.enabled on", "ok\n");
+	expect("set stp.priority 15", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "on prio ") && stp_enabled && stp_prio == 0xf0, "on: stp_setup");
+	expect("set stp.maxage_s 40", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.fwd_delay_s 21", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.maxage_s 6", "ok\n");
+	expect("set stp.hello_s 3", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("discard", "ok\n");
+	expect("set stp.port.2.priority 100", "ok\n");
+	expect("apply", "err stp.port.2: priority is a multiple of 16\n");
+	expect("discard", "ok\n");
+	expect("set stp.lag.4.priority 241", "err stp.lag.4.priority: 0-240\n");
+	expect("set stp.lag.4.priority 8", "ok\n");
+	expect("apply", "err stp.lag.4: priority is a multiple of 16\n");
+	expect("discard", "ok\n");
+	expect("set stp.port.9.cost 200000001", "err stp.port.9.cost: 0-200000000\n");
+	/* port.3 is logical 2 (the test's machine: front = logical + 1) */
+	stp_ops[0] = 0;
+	expect("set stp.port.3.edge on", "ok\n");
+	expect("set stp.port.3.guard root", "ok\n");
+	expect("set stp.port.3.filter on", "ok\n");
+	expect("set stp.port.3.cost 200000000", "ok\n");
+	expect("set stp.port.3.priority 240", "ok\n");
+	expect("set stp.port.3.p2p off", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_ADMEDGE | STP_PF_OPEREDGE | STP_PF_ROOTGUARD | STP_PF_FILTER)
+	      && stp_pcost[2] == 200000000 && stp_pprio[2] == 240 && stp_pp2p[2] == 2 && !strcmp(stp_ops, "A2 0 "),
+	      "stp.port.N: the entity's flags, cost, priority, p2p; an admin edge forwards at once");
+	stp_ops[0] = 0;
+	expect("set stp.port.3.edge off", "ok\n");
+	expect("set stp.port.3.guard bpdu", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_BPDUGUARD | STP_PF_FILTER) && !strcmp(stp_ops, "A2 1 "),
+	      "edge off drops the operational edge, listens first");
+	stp_pflags[2] |= STP_PF_TRIPPED | STP_PF_OPEREDGE;	/* runtime, as the tree sets them */
+	expect("set stp.port.3.p2p on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_BPDUGUARD | STP_PF_FILTER | STP_PF_TRIPPED | STP_PF_OPEREDGE)
+	      && stp_pp2p[2] == 1, "the runtime bits stay");
+	stp_ops[0] = 0;
+	expect("set stp.port.3.enabled off", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.port.3.enabled on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "A2 0 A2 1 ") && !(stp_pflags[2] & STP_PF_TRIPPED),
+	      "enabled off: forwarding; on: listening, the guard untripped");
+	stp_ops[0] = 0;
+	expect("do stp.port.3.clear_guard", "ok\n");
+	CHECK(!stp_ops[0], "clear_guard, not tripped: nothing");
+	stp_pflags[2] |= STP_PF_TRIPPED;
+	expect("do stp.port.3.clear_guard", "ok\n");
+	CHECK(!strcmp(stp_ops, "R2 ") && !(stp_pflags[2] & STP_PF_TRIPPED), "clear_guard: the entity starts over");
+	stp_pflags[STP_LAG_BASE + 3] |= STP_PF_TRIPPED;
+	stp_ops[0] = 0;
+	expect("do stp.lag.4.clear_guard", "ok\n");
+	CHECK(!strcmp(stp_ops, "R13 "), "stp.lag.L's: entity STP_LAG_BASE + L - 1");
+	stp_pflags[STP_LAG_BASE + 3] = 0;
+	stp_ops[0] = 0;
+	stp_gone = 1 << 4;		/* port.5 in a LAG */
+	expect("set stp.port.5.enabled off", "ok\n");
+	expect("set stp.lag.2.enabled off", "ok\n");
+	expect("set stp.lag.2.edge on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "A11 0 ") && stp_pflags[4] == STP_PF_AUTOEDGE
+	      && stp_pflags[STP_LAG_BASE + 1] == (STP_PF_ADMEDGE | STP_PF_OPEREDGE),
+	      "stp.lag.L is entity STP_LAG_BASE + L - 1; a LAG member's stp.port.N stored, no call");
+	stp_ops[0] = 0;
+	expect("do stp.port.5.mcheck", "ok\n");
+	expect("do stp.port.1.mcheck", "ok\n");
+	expect("do stp.lag.2.mcheck", "ok\n");
+	expect("do stp.counters_clear", "ok\n");
+	CHECK(!strcmp(stp_ops, "M0 M11 clear "), "mcheck: an entity's, none for a LAG member");
+	stp_gone = 0;
+	stp_ops[0] = 0;
+	expect("set stp.enabled off", "ok\n");
+	expect("set stp.port.1.enabled off", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "off ") && !stp_enabled, "off: stp_off; an entity off while the tree is off: stored");
+	stp_ops[0] = 0;
+	expect("do stp.port.1.mcheck", "ok\n");
+	CHECK(!stp_ops[0], "mcheck while off: nothing");
+	expect("get -d stp", "stp.version stp\nstp.priority 15\nstp.hello_s 1\nstp.maxage_s 40\nstp.fwd_delay_s 21\nstp.txhold 3\n"
+	       "stp.pathcost short\nstp.bpdu filter\n"
+	       "stp.lag.2.enabled off\nstp.lag.2.edge on\n"
+	       "stp.port.1.enabled off\nstp.port.3.edge off\nstp.port.3.cost 200000000\nstp.port.3.priority 240\n"
+	       "stp.port.3.guard bpdu\nstp.port.3.filter on\nstp.port.3.p2p on\nstp.port.5.enabled off\nok\n");
+	om_init();
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -2532,6 +2672,7 @@ int main(int argc, char **argv)
 	completion();
 	vlans();
 	lags();
+	stps();
 	staging();
 	binary();
 	roundtrip();

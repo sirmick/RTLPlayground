@@ -7,16 +7,18 @@ void stp_in(void) __banked;
 void stp_setup(void) __banked;
 void stp_timers(void) __banked;
 void stp_off(void) __banked;
-void stp_parse(void) __banked __reentrant;
 void stp_defaults(void) __banked;
 void stp_port_admin(uint8_t port, uint8_t on) __banked;
 void stp_prio_apply(void) __banked;
 void stp_port_mcheck(uint8_t port) __banked;
+void stp_ent_restart(uint8_t e) __banked;	/* stp_ent_reset(): from listening, or forwarding as its flags say */
 uint8_t stp_port_role(uint8_t port) __banked;
 uint8_t stp_port_state(uint8_t port) __banked;
 uint8_t stp_ent_id(uint8_t e) __banked;
 void stp_lag_map(void) __banked;
 void stp_counters_clear(void) __banked __reentrant;
+uint8_t stp_fdb_line(void) __banked;	/* stp off's BPDU entries, a VLAN walk: 1 while more */
+extern __xdata uint16_t stp_fdb_vid;	/* its next VID, 0: none */
 
 /* Tick rate of stp_timers(), also used by the web UI. */
 #define STP_HZ 50

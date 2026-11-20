@@ -141,26 +141,20 @@ Array of port properties (until P4-6)
 ## stp (until P4-4)
 ```json
 {
-    "on":true,"type":"rstp","prio":8,"hello":2,"maxage":20,"fwd":15,"txhold":6,"pcs":"long","bh":"flood","tcs":"0x000002a8","rMaxage":20,"rFwd":15,"rootPrio":"8000","rootMac":"010203040506","myMac":"010203040506","cost":"0x00000000","weRoot":true,"tc":"0x0000",
+    "tcs":"0x000002a8","rMaxage":20,"rFwd":15,"rootPrio":"8000","rootMac":"010203040506","myMac":"010203040506","cost":"0x00000000","weRoot":true,"tc":"0x0000",
     "ports":[
-        {"p":1,"st":3,"role":2,"f":69,"pc":"0x00000000","prio":128,"p2":0,"lk":1,"lg":0,"db":"8000010203040506","dp":"8001","dc":"0x00000000"},
-        {"p":2,"st":3,"role":0,"f":69,"pc":"0x00000000","prio":128,"p2":0,"lk":0,"lg":0,"db":"8000010203040506","dp":"8002","dc":"0x00000000"},
+        {"p":1,"st":3,"role":2,"f":69,"lk":1,"lg":0,"db":"8000010203040506","dp":"8001","dc":"0x00000000"},
+        {"p":2,"st":3,"role":0,"f":69,"lk":0,"lg":0,"db":"8000010203040506","dp":"8002","dc":"0x00000000"},
         ...
-        {"p":102,"st":3,"role":2,"f":69,"pc":"0x00000000","mbr":[6],"prio":128,"p2":0,"lk":1,"lg":0,"db":"8000010203040506","dp":"8066","dc":"0x00000000"}
+        {"p":102,"st":3,"role":2,"f":69,"mbr":[6],"lk":1,"lg":0,"db":"8000010203040506","dp":"8066","dc":"0x00000000"}
     ]
 }
 ```
+The tree as it runs; its config is `get stp` (`stp`, `stp.port.N`, `stp.lag.L`,
+doc/stp.md) over POST /cli, which also has most of this as `get state.stp`.
+
 | Property | Description
 |----------|------------
-| `on` | Enabled/Disabled globally
-| `type` | "rstp" (rapid) or "stp" (legacy)
-| `prio` | Bridge Priority
-| `hello` | Hello time (s)
-| `maxage` | Max Age (s)
-| `fwd` | This device's configured foward delay (s)
-| `txhold` | Transmit Hold
-| `pcs` | Path cost ("short" or "long")
-| `bh` | BPDU behaviour while disabled, "flood" or "filter"
 | `tcs` | Seconds since last topology change
 | `rMaxage` | Root bridge max age (s)
 | `rFwd` |  Root bridge forward delay (s)
@@ -178,11 +172,8 @@ Array of port properties (until P4-6)
 | `p` | Physical port number, if > 100 it is LAG number + 100
 | `st` | Port state 
 | `role` | STP port role
-| `f` | Port flags (such as edge, root, BPDUGuard etc)
-| `pc` | Path cost
+| `f` | Port flags (rtl837x_stp.h STP_PF_*: the config's, and operational edge 0x40, guard tripped 0x80)
 | `mbr` | List of port members (for LAGs)
-| `prio` | Port Priority
-| `p2` | Point-to-point 
 | `lk` | Previous link state that STP saw
 | `lg` | Link partner is using legacy STP (not RSTP/MSTP etc)
 | `db` | Designated bridge

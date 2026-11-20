@@ -39,6 +39,7 @@ static void bridge_to_html(void)
 }
 
 
+/* /stp.json: the tree as it runs, for the web UI; the config is get stp */
 void send_stp(void) __banked
 {
 	static __xdata uint8_t i, j, st, dsg;
@@ -46,37 +47,7 @@ void send_stp(void) __banked
 	dbg_string("send_stp called\n");
 	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
 
-	str_code_to_html("{" JSONQUOTE("on") ":");
-	bool_to_json(stp_enabled);
-	str_code_to_html(","  JSONQUOTE("type") ":");
-	if(stp_rstp) {
-		str_code_to_html(JSONQUOTE("rstp"));
-	} else {
-		str_code_to_html(JSONQUOTE("stp"));
-	}
-	str_code_to_html("," JSONQUOTE("prio") ":");
-	itoa_html(stp_prio >> 4);
-	str_code_to_html("," JSONQUOTE("hello") ":");
-	itoa_html(stp_hello_s);
-	str_code_to_html("," JSONQUOTE("maxage") ":");
-	itoa_html(stp_maxage_s);
-	str_code_to_html("," JSONQUOTE("fwd")":");
-	itoa_html(stp_fwddelay_s);
-	str_code_to_html("," JSONQUOTE("txhold") ":");
-	itoa_html(stp_txhold);
-	str_code_to_html("," JSONQUOTE("pcs") ":");
-	if(stp_pcost_short) {
-		str_code_to_html(JSONQUOTE("short"));
-	} else {
-		str_code_to_html(JSONQUOTE("long"));
-	}
-	str_code_to_html("," JSONQUOTE("bh") ":");
-	if(stp_bpdu_filter) {
-		str_code_to_html(JSONQUOTE("filter"));
-	} else {
-		str_code_to_html(JSONQUOTE("flood"));
-	}
-	str_code_to_html("," JSONQUOTE("tcs") ":\"0x");
+	str_code_to_html("{" JSONQUOTE("tcs") ":\"0x");
 	pi_u32 = stp_tc_secs; u32hex_html();
 	str_code_to_html("\"," JSONQUOTE("rMaxage") ":");
 	itoa_html(stp_root_port == 0xff ? stp_maxage_s : stp_root_maxage);
@@ -115,9 +86,6 @@ void send_stp(void) __banked
 		itoa_html(stp_port_role(i));
 		str_code_to_html("," JSONQUOTE("f") ":");
 		itoa_html(stp_pflags[i]);
-		str_code_to_html("," JSONQUOTE("pc") ":\"0x");
-		pi_u32 = stp_pcost[i]; u32hex_html();
-		str_code_to_html("\"");
 		if (i >= STP_LAG_BASE) {
 			str_code_to_html("," JSONQUOTE("mbr") ":[");
 			for (uint8_t j = MACHINE_MIN_PORT; j <= MACHINE_MAX_PORT; j++) {
@@ -131,10 +99,6 @@ void send_stp(void) __banked
 			str_code_to_html("]");
 		}
 		
-		str_code_to_html("," JSONQUOTE("prio") ":");
-		itoa_html(stp_pprio[i]);
-		str_code_to_html("," JSONQUOTE("p2") ":");
-		itoa_html(stp_pp2p[i]);
 		str_code_to_html("," JSONQUOTE("lk") ":");
 		itoa_html((stp_link_prev >> i) & 1);
 		str_code_to_html("," JSONQUOTE("lg") ":");
