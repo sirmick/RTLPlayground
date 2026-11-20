@@ -1967,7 +1967,7 @@ static uint8_t check_all(void)
 static __xdata uint16_t b_len, b_crc;	/* the records' length and CRC */
 static __xdata uint16_t w_len, w_crc;	/* the save's, to check the read-back against */
 static __xdata uint16_t e_n, l_crc, l_stop;
-static __xdata uint8_t e_b, e_nf, e_legacy, l_phase;
+static __xdata uint8_t e_b, e_nf, l_phase;
 /* the save's cursor: the next object, and (e_st) the instance to go on at */
 static __xdata uint8_t e_o, e_st, e_ce;
 static __xdata uint16_t e_cv;
@@ -2225,10 +2225,7 @@ static void rd_head(void)
 	v8 = rd();
 	if (v8 == 0xff)
 		return;
-	b_fmt = E_CFGFORMAT_LEGACY;		/* old command text: a letter */
-	if (v8 >= 'A')
-		return;
-	b_fmt = E_CFGFORMAT_BAD;
+	b_fmt = E_CFGFORMAT_BAD;		/* old command text too */
 	if (v8)
 		return;
 	for (i = 1; i < 4; i++)
@@ -2514,7 +2511,7 @@ static uint8_t sector_ok(uint8_t dflt)
 	l_phase = 1;			/* the job checks the CRC first */
 	if (b_fmt == E_CFGFORMAT_OK)
 		return 1;
-	fail(b_fmt == E_CFGFORMAT_BLANK ? "blank" : "bad, or old command text");
+	fail(b_fmt == E_CFGFORMAT_BLANK ? "blank" : "bad");
 	return 0;
 }
 
@@ -2541,9 +2538,6 @@ static void save_cmd(void)
 		fail("apply or discard first");
 		return;
 	}
-	rd_base = CONFIG_START;		/* old command text there: say what goes */
-	rd_start();
-	e_legacy = rd();
 	fl_req = FL_SAVE;
 	if (!flash_job_start()) {
 		fail("busy");
@@ -2597,7 +2591,7 @@ uint8_t om_save_end(void) __banked
 	} else if (b_fmt == E_CFGFORMAT_OK) {
 		bs.save = E_CFGSAVE_DONE;
 		bs.saved = b_len + OM_HDR;
-		bs.boot = E_CFGFORMAT_OK;	/* legacy no more */
+		bs.boot = E_CFGFORMAT_OK;
 		om_dirty = 0;
 	}
 	return 0;
@@ -2663,8 +2657,6 @@ static uint8_t bin_line(void)
 		c_pw = 0;
 		fail("failed");
 		j_hit = 3;
-	} else if (e_legacy >= 'A' && e_legacy != 0xff) {	/* rd_open()'s test */
-		print_string("saved over old text: unmigrated commands dropped\n");
 	}
 	return 0;
 }

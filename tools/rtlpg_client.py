@@ -514,7 +514,7 @@ def bin2txt(sch, data, secrets=True, skipped=None):
     """The lines a load takes (as get -s prints them, with the Secrets unless
     secrets is False); what it would skip goes to skipped."""
     if len(data) < HDR or data[:4] != MAGIC:
-        raise Bad("blank" if not data or data[0] == 0xff else "bad, or old command text")
+        raise Bad("blank" if not data or data[0] == 0xff else "bad")
     n, c = struct.unpack("<HH", data[4:8])
     r = data[HDR:HDR + n]
     if n > CONFIG_LEN - HDR or len(r) != n or crc16(r) != c:
@@ -633,15 +633,14 @@ def main():
                 print("convert: not translated: %s" % b, file=sys.stderr)
             return 1 if bad else 0
         if a.cmd == "default":
-            # the board's default config (DESIGN.md 15.1): records once every
-            # line is a path; old command text stays text (replayed at boot)
-            # until its objects are on the object model
+            # the board's default config (DESIGN.md 15.1): path lines, as records
             text = open(a.args[0]).read()
             lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-            if any("." not in ln.split()[1 if ln.startswith("set ") else 0] for ln in lines):
-                open(a.args[1], "w").write(text)
-                print("default: %s is old command text: kept as text" % a.args[0], file=sys.stderr)
-                return 0
+            old = [ln for ln in lines if "." not in ln.split()[1 if ln.startswith("set ") else 0]]
+            if old:
+                print("default: %s: not a path line: %s (old commands: tools/rtlpg_client.py convert)"
+                      % (a.args[0], old[0]), file=sys.stderr)
+                return 1
             data = txt2bin(Schema(a.schema, Board(a.machine)), lines)
             open(a.args[1], "wb").write(data)
             print("default: %s: %d B of records" % (a.args[0], len(data)), file=sys.stderr)

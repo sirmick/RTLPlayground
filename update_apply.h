@@ -36,25 +36,17 @@ uint16_t flash_crc16_range(void);
 uint16_t flash_crc16_more(void);
 #define flash_crc16_on(a, end) (flash_crc16_from = (a), flash_crc16_to = (end), flash_crc16_more())
 
-/*
- * Move a saved config from the standard layout's sector (LEGACY_CONFIG_START)
- * to CONFIG_START, once, at boot, before the config is read. Acts only while
- * the old sector holds config text, and erases it last - so a factory reset
- * later can't bring it back, and an unfinished move (power cut) is simply
- * redone at the next boot. Returns CONFIG_MOVED, CONFIG_STAYED (nothing to
- * do) or CONFIG_MOVE_FAILED (the copy didn't read back: the old config is
- * kept, the new sector left blank; boot on the default for now).
- */
-#define CONFIG_STAYED      0
-#define CONFIG_MOVED       1
-#define CONFIG_MOVE_FAILED 2
-uint8_t config_migrate(void) __banked;	/* config_migrate.c */
-
 /* Machine data (layout.h, MDATA_*). mdata_len(a): the total length (header,
  * payload, CRC) of a valid region at a, else 0. mdata_migrate(): at boot,
  * before the machine init reads it, move a transfer copy left by a bridge
- * image to MDATA_START, once (same rules as config_migrate). Both do nothing
- * on a chip too small to have the region. Returns as config_migrate. */
+ * image to MDATA_START, once: it erases the copy's header last, so an
+ * unfinished move (power cut) is redone at the next boot. Both do nothing
+ * on a chip too small to have the region. Returns CONFIG_MOVED,
+ * CONFIG_STAYED (nothing to do) or CONFIG_MOVE_FAILED (the copy didn't
+ * read back: kept, retried next boot). */
+#define CONFIG_STAYED      0
+#define CONFIG_MOVED       1
+#define CONFIG_MOVE_FAILED 2
 extern __xdata uint32_t mdata_at;
 uint32_t mdata_len_at(void);
 #define mdata_len(a) (mdata_at = (a), mdata_len_at())
