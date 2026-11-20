@@ -52,6 +52,8 @@ def main():
         check(mine == b, "%s: txt2bin of get -d is the firmware's save (%d B)" % (n, len(b)),
               "python %s\nC      %s" % (mine.hex(), b.hex()))
 
+    print("the saved config at its largest: om_gen's bound is the codec's bytes")
+    worst_case()
     print("the real schema, other boards")
     sw = rc.Schema(board=rc.Board("SWGT024_V2_0_UNMANAGED"))
     b = rc.txt2bin(sw, ["set port.1.isolate 1,6", "port.6.mtu 9000"])
@@ -168,6 +170,36 @@ mirror.tx 3,4
 ntp.timezone -03:30
 web.password hunter2
 sys.mac 02:11:22:33:44:55""".split("\n")
+
+
+def worst_case():
+    """Every config field of every instance off its default, a Str at its
+    full length, every keyed slot taken (the 8x: all 9 ports): the records
+    the codec (held to test_om's bytes above) makes are om_gen's saved_worst(), the
+    bound the build fails past, less the fields `when` leaves off a port and
+    the objects with no config field (om_gen counts their header)."""
+    sch = rc.Schema()
+    cfg, off = rc.Config(sch), 0
+    for o in sch.objs:
+        if o.levels and o.levels[0][0] == "KEY":
+            n, t = o.levels[0][1], o.levels[0][2]
+            for k in range(t.hi, t.lo - 1, -1):        # the slots the table has, the default entries' too
+                if len(cfg.keys[o.regname]) == n:
+                    break
+                cfg._entry(o, (k,))
+        for ix in [ix for (name, ix) in cfg.v if name == o.regname]:
+            for f in o.cfields:
+                d = sch.default(o, f)
+                cfg.v[(o.regname, ix)][f.name] = (b"a" * f.typ.arg + b"\0" if f.typ.code in ("STR", "SECRET")
+                                                  else bytes([d[0] ^ 1]) + d[1:])
+                if not sch.board.when(f.when, sch.lport(o, ix)):
+                    off += 2 + (f.typ.arg if f.typ.code in ("STR", "SECRET") else f.typ.size)
+    got = rc.HDR + len(cfg.records())     # the bytes as saved (some flipped values aren't valid text)
+    off += 4 * sum(1 for o in sch.objs if not o.cfields)    # an object of actions only: no record
+    worst = rc.om_gen.saved_worst(sch.objs)
+    check(got + off == worst and worst <= rc.CONFIG_LEN,
+          "%d B, and the %d B `when` and the action-only objects leave off: om_gen's %d, of the sector's %d"
+          % (got, off, worst, rc.CONFIG_LEN), " ".join(o.regname for o in sch.objs))
 
 
 def p41_schema(board=None):
