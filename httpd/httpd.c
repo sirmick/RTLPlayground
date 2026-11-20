@@ -1429,8 +1429,6 @@ void httpd_appcall(void)
 				uint8_t cport = q[20] - '0';
 				if (send_counters(cport))
 					send_bad_request();
-			} else if (is_word(q, "/eee.json")) {
-				send_eee();
 			} else if (is_word(q, "/bandwidth.json")) {
 				send_bandwidth();
 			} else if (is_word(q, "/storm.json")) {
@@ -1443,8 +1441,6 @@ void httpd_appcall(void)
 				l2_delete(short_parsed);
 			} else if (is_word(q, "/mirror.json")) {
 				send_mirror();
-			} else if (is_word(q, "/isolation.json")) {
-				send_isolation();
 			} else if (is_word(q, "/lag.json")) {
 				send_lag();
 			} else if (is_word(q, "/stp.json")) {

@@ -23,6 +23,7 @@
 #include "rtl837x_cabletest.h"
 #include "dhcp.h"
 #include "cmd_parser.h"
+#include "om.h"
 #include "cmd_editor.h"
 #include "uip/uipopt.h"
 #include "uip/uip.h"
@@ -1584,15 +1585,13 @@ static void firmware_init(void)
 	print_string("\nRegister 0x7b20/RTL837X_REG_SDS_MODES: ");
 	print_reg(0x7b20);
 
-	print_string("\nVerifying PHY settings:\n");
-//	p031f.a610:2058 p041f.a610:2058  p051f.a610:2058  r4f3c:00000000 p061f.a610:2058 p071f.a610:2058 
-	port_stats_print();
-	cmd_finish();		/* the stat job, all at once: no cli task yet */
+	write_char('\n');
 
 	early_boot_handle_button();
 
 	// Before the config, so a "led off" in it keeps the system LED dark
 	set_sys_led_state(SYS_LED_ON);
+	om_init();
 	execute_config();
 	// After the config so the entry lands in the final management VLAN
 	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);

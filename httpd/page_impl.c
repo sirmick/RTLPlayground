@@ -2,6 +2,7 @@
 
 #include "rtl837x_sfr.h"
 #include "rtl837x_common.h"
+#include "om_gen.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_storm.h"
 #include "rtl837x_port.h"
@@ -683,8 +684,8 @@ void send_lldp(void)
 		itoa_html(machine.log_to_phys_port[i]);
 
 		str_code_to_html("," JSONQUOTE("name") ":\"");
-		for (uint8_t j = 0; j < PORT_NAME_SIZE && port_names[i][j]; j++) {
-			json_char_to_html(port_names[i][j]);
+		for (uint8_t j = 0; j < PORT_NAME_SIZE && cfg_run.port[i].name[j]; j++) {
+			json_char_to_html(cfg_run.port[i].name[j]);
 		}
 
 		str_code_to_html("\"," JSONQUOTE("permitted") ":");
@@ -727,61 +728,6 @@ void send_loop(void)
 	str_code_to_html("," JSONQUOTE("blocked") ":");
 	port_list_to_json(rldp_enabled ? rldp_blocked : 0);
 	char_to_html('}');
-}
-
-
-void send_eee(void)
-{
-	dbg_string("send_eee called\nsending EEE status\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-
-	reg_read_m(RTL8373_PHY_EEE_ABLTY);
-	uint8_t eee_ablty = sfr_data[3];
-
-	char_to_html('[');
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-
-		if (machine.is_sfp[i]) {
-			str_code_to_html("," JSONQUOTE("isSFP") ":true");
-		} else {
-			str_code_to_html("," JSONQUOTE("isSFP") ":false," JSONQUOTE("advertised") ":[");
-			uint16_t v;
-			phy_read(i, PHY_MMD_AN, PHY_EEE_ADV2);
-			v = SFR_DATA_U16;
-
-			if(v & PHY_EEE_BIT_2G5)
-				json_add_array_string_item(JSONQUOTE("2.5G"));
-
-			phy_read(i, PHY_MMD_AN, PHY_EEE_ADV);
-			v = SFR_DATA_U16;
-			if(v & PHY_EEE_BIT_1G)
-				json_add_array_string_item(JSONQUOTE("1G"));
-			if(v & PHY_EEE_BIT_100M)
-				json_add_array_string_item(JSONQUOTE("100M"));
-
-			phy_read(i, PHY_MMD_AN, PHY_EEE_LP_ABILITY2);
-			v = SFR_DATA_U16;
-			str_code_to_html("]," JSONQUOTE("linkPartner") ":[");
-			if (v & PHY_EEE_BIT_2G5)
-				json_add_array_string_item(JSONQUOTE("2.5G"));
-
-			phy_read(i, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-			v = SFR_DATA_U16;
-			if(v & PHY_EEE_BIT_1G)
-				json_add_array_string_item(JSONQUOTE("1G"));
-			if(v & PHY_EEE_BIT_100M)
-				json_add_array_string_item(JSONQUOTE("100M"));
-
-			str_code_to_html("]," JSONQUOTE("active") ":");
-			bool_to_json(eee_ablty & (1 << i));
-		}
-		char_to_html('}');
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
 }
 
 
@@ -870,33 +816,6 @@ void send_storm(void)
 }
 
 
-void send_isolation(void)
-{
-	__xdata uint16_t allow;
-
-	dbg_string("send_isolation called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	char_to_html('[');
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		str_code_to_html("{" JSONQUOTE("port") ":");
-		itoa_html(machine.log_to_phys_port[i]);
-		str_code_to_html("," JSONQUOTE("allow") ":[");
-		allow = port_isolation_get(i);
-		for (uint8_t j = MACHINE_MIN_PORT; j <= MACHINE_MAX_PORT; j++) {
-			if ((allow >> j) & 1) {
-				json_add_array_uint_item(machine.log_to_phys_port[j]);
-			}
-		}
-		if((allow >> CPU_LOGICAL_PORT) & 1)
-			json_add_array_uint_item(CPU_PHYSICAL_PORT);
-		
-		str_code_to_html("]}");
-		if (i < MACHINE_MAX_PORT)
-			char_to_html(',');
-	}
-	char_to_html(']');
-}
-
 void linkspeed_to_json(uint8_t i)
 {
 	uint8_t b = 0;
@@ -951,8 +870,8 @@ void send_ports(void)
 		str_code_to_html("{" JSONQUOTE("port") ":");
 		itoa_html(machine.log_to_phys_port[i]);
 		str_code_to_html("," JSONQUOTE("name") ":\"");
-		for (uint8_t j = 0; j < PORT_NAME_SIZE && port_names[i][j]; j++) {
-			json_char_to_html(port_names[i][j]);
+		for (uint8_t j = 0; j < PORT_NAME_SIZE && cfg_run.port[i].name[j]; j++) {
+			json_char_to_html(cfg_run.port[i].name[j]);
 		}
 		char_to_html('"');
 

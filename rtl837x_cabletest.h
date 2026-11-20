@@ -14,8 +14,7 @@
 void rtl_phy_cable_test_start(uint8_t port) __banked;
 bool rtl_phy_cable_test_get_status(uint8_t port) __banked;
 
-void cabletest_run(void) __banked;
-void cabletest_show(void) __banked;
+uint8_t cabletest_run(void) __banked;	/* phy_settings.port; OM_OK or OM_ERR (om_fail) */
 void cabletest_tick(void) __banked;
 
 #endif

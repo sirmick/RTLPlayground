@@ -24,8 +24,6 @@ void phy_config(uint8_t phy) __banked;
 void phy_config_8224(void) __banked;
 void rtl8224_wait_ready(void) __banked;
 void phy_set_speed(void) __banked;
-void phy_set_duplex(void) __banked;
-void phy_show(uint8_t port) __banked;
 uint8_t phy_off(uint8_t port) __banked;	/* 1: it was on, now off */
 void phy_on(uint8_t port) __banked;
 void rtl8224_read_reg_u16(uint16_t reg) __banked;

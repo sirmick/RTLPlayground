@@ -39,6 +39,7 @@
 #include "con_ring.h"
 #include "sched.h"
 #include "flash_job.h"
+#include "om.h"
 
 
 extern __code const struct machine machine;
@@ -64,7 +65,6 @@ extern __xdata struct dhcp_state dhcp_state;
 __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 __xdata uint16_t vlan_ptr;
 
-__xdata char port_names[9][PORT_NAME_SIZE];
 
 extern __xdata uint16_t management_vlan;
 extern __xdata struct uip_eth_addr uip_ethaddr;
@@ -789,57 +789,6 @@ err:
 }
 
 
-void parse_isolate(void)
-{
-	uint16_t members = 0;
-
-	if (cmd_words_len < 3)
-		goto err;
-
-	print_string("\nISOLATE ");
-
-	if (cmd_parse_port_separator(cmd_words_b[1]) == 0)
-		goto err;
-	uint8_t port_configured = atoi_results_u8;
-
-	print_byte(port_configured); write_char('\n');
-
-	if (cmd_compare(2, "show")) {
-		members = port_isolation_get(port_configured);
-		for (uint8_t i = 0; i < 10; i++) {
-			if (members & 1) {
-				print_phys_port(i);
-				write_char(' ');
-			}
-			members >>= 1;
-		}
-		return;
-    }
-
-	if (cmd_compare(2, "off")) {
-		for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++)
-			members |= ((uint16_t)1) << i;
-		members |= PMASK_CPU; // CPU-port
-		port_isolate(port_configured, members);
-		return;
-	}
-
-	uint8_t w = 2;
-	while (w < cmd_words_len) {
-		if (cmd_parse_port_cpu_separator(cmd_words_b[w++]) == 0)
-			goto err;
-		uint8_t port = atoi_results_u8;
-		members |= ((uint16_t)1) << port;
-	}
-
-	port_isolate(port_configured, members);
-	return;
-
-err:
-	cmd_error("isolate <port> [show|off] [port]...\n");
-}
-
-
 bool vlan_ingress_mode_parse(char c, __xdata vlan_ingress_mode_t *mode)
 {
 	switch (c) {
@@ -856,56 +805,6 @@ bool vlan_ingress_mode_parse(char c, __xdata vlan_ingress_mode_t *mode)
 		*mode = VLAN_INVALID;
 		return false;
 	}
-}
-
-void parse_ingress(void)
-{
-	if (cmd_words_len < 2) {
-		goto err;
-	}
-	uint8_t log_port = 0;
-	__xdata vlan_ingress_mode_t mode = VLAN_INVALID;
-	uint8_t idx = cmd_words_b[1];
-
-	if (vlan_ingress_mode_parse(cmd_buffer[idx++], &mode)) {
-		if (!cmd_is_space_or_nul(idx))
-			goto err;
-		// Setting mode for all ports at once
-		for (log_port = MACHINE_MIN_PORT; log_port <= MACHINE_MAX_PORT; log_port++) {
-			if (!port_ingress_filter(log_port, mode)) {
-				cmd_error("cannot set the ingress filter for port "); print_phys_port(log_port); write_char('\n');
-				return;
-			}
-			print_string("All ports ingress filter set to: ");
-			print_port_ingress_filter_mode(mode); write_char('\n');
-		}
-	} else {
-		for(uint8_t w = 1; w < cmd_words_len; w++) {
-			idx = cmd_words_b[w];
-			uint8_t ret = cmd_parse_port(idx);
-			if (ret != 1) {
-				cmd_error("Invalid physical port number\n");
-				continue;
-			}
-			log_port = atoi_results_u8;
-			idx += ret;
-
-			if (!vlan_ingress_mode_parse(cmd_buffer[idx++], &mode) || !cmd_is_space_or_nul(idx)) {
-				cmd_error("Invalid ingress mode for port "); print_phys_port(log_port); print_string(" in ingress command\n");
-				goto err;
-			}
-			if (!port_ingress_filter(log_port, mode)) {
-				cmd_error("cannot set the ingress filter for port "); print_phys_port(log_port); write_char('\n');
-				return;
-			}
-			print_string("Port "); print_phys_port(log_port);
-			print_string(" ingress filter set to: ");
-			print_port_ingress_filter_mode(mode); write_char('\n');
-		}
-	}
-	return;
-err:
-	cmd_error("ingress [p]<u/t/a>...\n");
 }
 
 void parse_mirror(void)
@@ -975,156 +874,6 @@ err:
 	return;
 }
 
-
-void parse_port(void)
-{
-	if (cmd_words_len < 3) {
-		cmd_error("\nUsage:" \
-					 "\nport <port> [show|on|off]" \
-					 "\nport <port> [10m|100m|1g|2g5|duplex] [half|full]" \
-					 "\nport <port> lldp [block|permit]" \
-					 "\nport <port> cabletest [show]" \
-					 "\nport <port> name [custom port name]\n");
-		return;
-	}
-
-	if (cmd_parse_port_separator(cmd_words_b[1]) == 0) {
-		cmd_error("Invalid port number\n");
-		return;
-	}
-	phy_settings.port = atoi_results_u8;
-
-	print_string("Logical Port: "); print_byte(phy_settings.port); write_char('\n');
-	phy_settings.duplex = PHY_DUPLEX_BOTH;
-
-	if (cmd_compare(2, "show")) {
-		print_string("Name: ");
-		print_string_x(port_names[phy_settings.port]);
-		if (!machine.is_sfp[phy_settings.port]) {
-			phy_show(phy_settings.port);
-		} else {
-			write_char('\n');
-		}
-		port_media_show(phy_settings.port);
-	} else if (cmd_compare(2, "name")) {
-		uint8_t i = 0;
-		while ( cmd_words_len > 3 && (i < PORT_NAME_SIZE-1) && (cmd_buffer[cmd_words_b[3] + i] != NUL) ) {
-			port_names[phy_settings.port][i] = name_char(cmd_buffer[cmd_words_b[3] + i]);
-			i++;
-		}
-		port_names[phy_settings.port][i] = NUL;
-		print_string("\nName set to: \"");
-		print_string_x(port_names[phy_settings.port]);
-		print_string("\"\n");
-	} else if (cmd_compare(2, "lldp")) {
-		if (cmd_compare(3, "block")){
-			if (lldp_enabled)
-				lldp_shutdown((uint16_t)1 << phy_settings.port);
-			lldp_logical_port_status &= ~((uint16_t)1 << phy_settings.port);
-		} else if (cmd_compare(3, "permit")) {
-			lldp_logical_port_status |= (uint16_t)1 << phy_settings.port;
-		} else {
-			print_string ("Unknown port <port> lldp [block|permit] command\n");
-		}
-	} else if (machine.is_sfp[phy_settings.port]) {
-		print_string(" is SFP no PHY information available.\n");
-	} else if (cmd_compare(2, "cabletest")) {
-		if (cmd_words_len > 3 && cmd_compare(3, "show"))
-			cabletest_show();
-		else
-			cabletest_run();
-	} else if (cmd_compare(2, "10m")) {
-		print_string(" 10M\n");
-		phy_settings.speed = PHY_SPEED_10M;
-		if (cmd_compare(3, "half"))
-			phy_settings.duplex = PHY_DUPLEX_HALF;
-		else if (cmd_compare(3, "full"))
-			phy_settings.duplex = PHY_DUPLEX_FULL;
-		phy_set_speed();
-	} else if (cmd_compare(2, "100m")) {
-		print_string(" 100M\n");
-		phy_settings.speed = PHY_SPEED_100M;
-		if (cmd_compare(3, "half"))
-			phy_settings.duplex = PHY_DUPLEX_HALF;
-		else if (cmd_compare(3, "full"))
-			phy_settings.duplex = PHY_DUPLEX_FULL;
-		phy_set_speed();
-	} else if (cmd_compare(2, "10g")) {
-		print_string(" 10G\n");
-		phy_settings.speed = PHY_SPEED_10G;
-		phy_set_speed();
-	} else if (cmd_compare(2, "5g")) {
-		print_string(" 5G\n");
-		phy_settings.speed = PHY_SPEED_5G;
-		phy_set_speed();
-	} else if (cmd_compare(2, "2g5")) {
-		print_string(" 2.5G\n");
-		phy_settings.speed = PHY_SPEED_2G5;
-		phy_set_speed();
-	} else if (cmd_compare(2, "1g")) {
-		print_string(" 1G\n");
-		phy_settings.speed = PHY_SPEED_1G;
-		phy_set_speed();
-	} else if (cmd_compare(2, "auto")) {
-		print_string(" AUTO\n");
-		phy_settings.speed = PHY_SPEED_AUTO;
-		phy_set_speed();
-	} else if (cmd_compare(2, "off")) {
-		print_string(" OFF\n");
-		phy_settings.speed = PHY_OFF;
-		phy_set_speed();
-	} else if (cmd_compare(2, "on")) {
-		print_string(" ON\n");
-		phy_settings.speed = PHY_SPEED_AUTO;
-		phy_set_speed();
-	} else if (cmd_compare(2, "duplex")) {
-		print_string(" DUPLEX\n");
-		if (cmd_compare(3, "full"))
-			phy_settings.duplex = PHY_DUPLEX_FULL;
-		else
-			phy_settings.duplex = PHY_DUPLEX_HALF;
-		phy_set_duplex();
-	} else {
-		cmd_error("Unknown port command\n");
-	}
-}
-
-
-void parse_mtu(void)
-{
-	uint8_t p;
-
-	if (cmd_compare(1, "show")) {
-		for (p = MACHINE_MIN_PORT; p <= MACHINE_MAX_PORT; p++) {
-			reg_read_m(RTL8373_REG_MAC_L2_PORT_MAX_LEN + ((uint16_t) p << 8));
-			uint16_t mtu = SFR_DATA_U16 & 0x3fff;
-			print_string("Port "); print_phys_port(p);
-			write_char(' '); print_short(mtu); write_char('\n');
-		}
-		return;
-	}
-	if (cmd_words_len != 3)
-		goto err;
-
-	if (cmd_parse_port_separator(cmd_words_b[1]) == 0)
-		goto err;
-
-	p = atoi_results_u8;
-	print_byte(p);
-
-	if (atoi_short(cmd_words_b[2]) == 0 || atoi_results_short < 64 || atoi_results_short > 0x3fff) {
-		cmd_error("MTU must be 64..16383\n");
-		return;
-	}
-	REG_WRITE(RTL8373_REG_MAC_L2_PORT_MAX_LEN + ((uint16_t) p << 8), (atoi_results_short >> 10) & 0xf, (atoi_results_short >> 2) & 0xff,
-		  ((atoi_results_short & 0x3) << 6) | ((atoi_results_short >> 8) & 0x3f), atoi_results_short & 0xff);
-	write_char('\n');
-	return;
-
-err:
-	cmd_error("mtu [port] [size]\n");
-	return;
-}
 
 void parse_sfp(void)
 {
@@ -1534,71 +1283,6 @@ void parse_passwd(void)
 }
 
 
-void parse_eee(void)
-{
-	__xdata int8_t port = -1;
-	__xdata uint8_t speed = EEE_2G5;
-	__xdata uint8_t speed_word = 0;
-
-	if (machine.n_10g)
-		speed = EEE_10G;
-	// Check if word 2 is a speed (contains 'g' or 'm') or a port number
-	if (cmd_words_len >= 3) {
-		uint8_t idx = cmd_words_b[2];
-		// Skip digits to check if there's a letter after
-		while (isnumber(cmd_buffer[idx]))
-			idx++;
-		if (cmd_buffer[idx] == 'g' || cmd_buffer[idx] == 'm') {
-			// Word 2 is a speed (e.g., "2g5", "100m", "1g")
-			speed_word = 2;
-		} else if (cmd_is_space_or_nul(idx)) {
-			// Word 2 is a port number
-			if (cmd_parse_port_separator(cmd_words_b[2]) == 0) {
-				cmd_error("Speed word invalid, use: [100m|1g|2g5]\n");
-				return;
-			}
-			port = atoi_results_u8;
-			// Check if word 3 is a speed
-			if (cmd_words_len >= 4)
-				speed_word = 3;
-		}
-	}
-	// Parse speed if found
-	if (speed_word > 0) {
-		if (cmd_compare(speed_word, "100m"))
-			speed = EEE_100;
-		else if (cmd_compare(speed_word, "1g"))
-			speed = EEE_1000;
-		else if (cmd_compare(speed_word, "2g5"))
-			speed = EEE_2G5;
-		else 
-		{
-			cmd_error("Speed word invalid, use: [100m|1g|2g5]\n");
-			return;
-		}
-	}
-	eee_all = port < 0;
-	eee_port = MACHINE_MIN_PORT;
-	eee_last = MACHINE_MAX_PORT;
-	if (!eee_all)
-		eee_port = eee_last = port;
-	if (cmd_compare(1, "on")) {
-		eee_speed = speed;
-		cli_job = CLI_JOB_EEE;
-	} else if (cmd_compare(1, "off")) {
-		eee_speed = 0;
-		cli_job = CLI_JOB_EEE;
-	} else if (cmd_compare(1, "status")) {
-		if (port >= 0)
-			port_eee_status(port);
-		else
-			port_eee_status_all();
-	} else {
-		cmd_error("eee [on|off|status] [port] [100m|1g|2g5]\n");
-	}
-}
-
-
 void parse_bw(void)
 {
 	if (cmd_words_len < 3) // Check for at least 3 arguments
@@ -1993,7 +1677,11 @@ void cmd_parser(void) __banked
 	print_byte(cmd_words_b[6]); write_char('\n');
 #endif
 	if (cmd_words_len >= 1) {
-		if (cmd_compare(0, "reset")) {
+		if (cmd_compare(0, "get") || cmd_compare(0, "set") || cmd_compare(0, "del")
+		    || cmd_compare(0, "diff") || cmd_compare(0, "apply") || cmd_compare(0, "discard")
+		    || cmd_compare(0, "do")) {
+			om_cmd();
+		} else if (cmd_compare(0, "reset")) {
 			print_string("\nRESET\n\n");
 			reset_chip();
 		} else if (cmd_compare(0, "factory-reset")) {
@@ -2003,14 +1691,8 @@ void cmd_parser(void) __banked
 				print_string("Flash busy, not reset\n");
 		} else if (cmd_compare(0, "sfp")) {
 			parse_sfp();
-		} else if (cmd_compare(0, "stat")) {
-			port_stats_print();
 		} else if (cmd_compare(0, "flash")) {
 			parse_flash();
-		} else if (cmd_compare(0, "port")) {
-			parse_port();
-		} else if (cmd_compare(0, "mtu")) {
-			parse_mtu();
 		} else if (cmd_compare(0, "syslog")) {
 			parse_syslog();
 		} else if (cmd_compare(0, "dns")) {
@@ -2131,17 +1813,8 @@ void cmd_parser(void) __banked
 				lacp_off();
 			else
 				cmd_error("lacp (show | off); a group starts LACP with: lag <1-4> lacp <port>...\n");
-		} else if (cmd_compare(0, "pvid")) {
-			if (cmd_words_len == 3 && cmd_parse_port_separator(cmd_words_b[1]) != 0
-			    && atoi_short(cmd_words_b[2]) && atoi_results_short <= 4094)
-				port_pvid_set(atoi_results_u8, atoi_results_short);
-			else {
-				cmd_error("pvid <port> <0-4094>\n");
-			}
 		} else if (cmd_compare(0, "vlan")) {
 			parse_vlan();
-		} else if (cmd_compare(0, "isolate")) {
-			parse_isolate();
 		} else if (cmd_compare(0, "mirror")) {
 			parse_mirror();
 		} else if (cmd_compare(0, "lag")) {
@@ -2182,8 +1855,6 @@ void cmd_parser(void) __banked
 			parse_rnd();
 		} else if (cmd_compare(0, "passwd")) {
 			parse_passwd();
-		} else if (cmd_compare(0, "eee")) {
-			parse_eee();
 		} else if (cmd_compare(0, "bw")) {
 			parse_bw();
 		} else if (cmd_compare(0, "temp")) {
@@ -2196,8 +1867,6 @@ void cmd_parser(void) __banked
 			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			hist_begun = 0;
 			cli_job = CLI_JOB_HISTORY;
-		} else if (cmd_compare(0, "ingress")) {
-			parse_ingress();
 		} else if (cmd_compare(0, "session")) {
 			parse_session();
 		} else if (cmd_compare(0, "lldp")) {
@@ -2340,6 +2009,7 @@ void execute_config(void) __banked
 	} while(pages_left);
 
 config_done:
+	om_boot_apply();	/* the config's set lines */
 	// Start saving commands to cmd_history
 	clear_command_history();
 	save_cmd = 1;
@@ -2385,17 +2055,15 @@ void cli_job_more(void) __banked
 	case CLI_JOB_L2:
 		job_more = port_l2_line();
 		break;
-	case CLI_JOB_STAT:
-		job_more = port_stats_line();
+	case CLI_JOB_OM:
+	case CLI_JOB_OMAPPLY:
+		job_more = om_line();
 		break;
 	case CLI_JOB_LACP:
 		job_more = lacp_show_line();
 		break;
 	case CLI_JOB_STPFDB:
 		job_more = stp_fdb_line();
-		break;
-	case CLI_JOB_EEE:
-		job_more = port_eee_line();
 		break;
 #ifndef SCHEDTEST
 	case CLI_JOB_HEALTH:

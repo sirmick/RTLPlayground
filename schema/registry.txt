@@ -1,0 +1,16 @@
+# The object model's stable IDs (DESIGN.md 10.5): appended by
+# tools/om_gen.py --register, never edited or reused.
+#   obj <id> <object>          field <obj>.<id> <path> <type>
+#   retired <obj>.<id> <path>  (its ID is never handed out again)
+obj 1 port
+field 1.1 port.name Str(31)
+field 1.2 port.enabled BOOL
+field 1.3 port.speed Enum(speed)
+field 1.4 port.duplex Enum(duplex)
+field 1.5 port.mtu U16
+field 1.6 port.pvid U16
+field 1.7 port.ingress Enum(ingress)
+field 1.8 port.ingress_filter BOOL
+field 1.9 port.lldp Enum(lldp)
+field 1.10 port.eee BOOL
+field 1.11 port.isolate PMASK

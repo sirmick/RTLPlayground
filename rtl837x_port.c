@@ -563,139 +563,11 @@ void port_l2_setup(void) __banked
 }
 
 
-void port_media_show(uint8_t port) __banked
-{
-	uint8_t pause;
-
-	if (!machine.is_sfp[port]) {
-		reg_read_m(RTL837X_REG_LINKS_STS);
-		if (sfr_data[(port / 8) + 1] >> (port % 8) & 1) {
-			print_string("Link role: ");
-			reg_read_m(RTL837X_MAC_MSTR_SLV_STS);
-			if (sfr_data[3 - (port >> 3)] & (1 << (port & 7)))
-				print_string("master\n");
-			else
-				print_string("slave\n");
-		}
-	}
-
-	print_string("Pause negotiated:");
-	reg_read_m(RTL837X_MAC_TX_PAUSE_STS);
-	pause = sfr_data[3 - (port >> 3)] & (1 << (port & 7));
-	if (pause)
-		print_string(" TX");
-	reg_read_m(RTL837X_MAC_RX_PAUSE_STS);
-	if (sfr_data[3 - (port >> 3)] & (1 << (port & 7))) {
-		print_string(" RX");
-		pause = 1;
-	}
-	if (!pause)
-		print_string(" none");
-	write_char('\n');
-}
-
-
 uint16_t port_link_mask(void) __banked
 {
 	reg_read_m(RTL837X_REG_LINKS_STS);
 	return ((uint16_t)sfr_data[2] << 8) | sfr_data[1];
 }
-
-/* stat: the header, then a port per port_stats_line() (the cli's stat
- * job, E1: ~0.6 ms a port of reads, as much again printed) */
-static __xdata uint8_t stat_port;
-
-void port_stats_print(void) __banked
-{
-	print_string("\nPort\tState\tLink\tTxGood\t\tTxBad\t\tRxGood\t\tRxBad\t\tMACs\n");
-	stat_port = MACHINE_MIN_PORT;
-	cli_job = CLI_JOB_STAT;
-}
-
-uint8_t port_stats_line(void) __banked
-{
-	uint8_t i = stat_port;
-	{
-		print_phys_port(i); write_char('\t');
-
-		if (!machine.is_sfp[i]) {
-			phy_read(i, PHY_MMD31, 0xa610);
-			if (SFR_DATA_8 == 0x20)
-				print_string("On\t");
-			else
-				print_string("Off\t");
-		} else {  // An SFP Module
-			if (!gpio_pin_test(machine.sfp_port[machine.is_sfp[i]-1].pin_detect)) {
-				print_string("SFP IN\t");
-			} else {
-				print_string("NO SFP\t");
-			}
-		}
-
-		uint8_t b = 0;
-
-		// Determine link state
-		reg_read_m(RTL837X_REG_LINKS_STS);
-		if(!((sfr_data[(i / 8) + 1] >> ( i % 8  ) & 1)))
-		{
-			b = 99;
-		}
-		else
-		{
-			if (i < 8)
-				reg_read_m(RTL837X_REG_LINKS);
-			else
-				reg_read_m(RTL837X_REG_LINKS_89);
-
-			b = sfr_data[3 - ((i & 7) >> 1)];	
-			b = (i & 1) ? b >> 4 : b & 0xf;
-		}
-
-		switch (b) {
-		case 0:
-			print_string("10M\t");
-			break;
-		case 1:
-			print_string("100M\t");
-			break;
-		case 2:
-			print_string("1000M\t");
-			break;
-		case 4:
-			print_string("10G\t");
-			break;
-		case 5:
-			print_string("2.5G\t");
-			break;
-		case 6:
-			print_string("5G\t");
-			break;
-		case 99:
-			print_string("Down\t");
-			break;
-		default:
-			print_string("Up\t");
-			break;
-		}
-		STAT_GET(STAT_COUNTER_TX_PKTS, i);
-		print_reg(RTL837X_STAT_V_LOW); write_char('\t');
-
-		STAT_GET(STAT_COUNTER_ERR_PKTS, i);
-		print_reg(RTL837X_STAT_V_LOW); write_char('\t');
-
-		STAT_GET(STAT_COUNTER_RX_PKTS, i);
-		print_reg(RTL837X_STAT_V_LOW); write_char('\t');
-
-		STAT_GET(STAT_COUNTER_ERR_PKTS, i);
-		print_reg(RTL837X_STAT_V_HIGH); write_char('\t');
-
-		reg_read(RTL837X_L2_LRN_PORT_CONSTRT_CNT + (i << 2));
-		itoa_short(SFR_DATA_U16 & L2_LRN_PORT_CNT_MASK);
-		print_string("\n");
-	}
-	return ++stat_port <= MACHINE_MAX_PORT;
-}
-
 
 void port_isolate(uint8_t port, __xdata uint16_t pmask) __banked
 {
@@ -718,22 +590,16 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 {
 
 	if (machine.is_sfp[port])
-	{
-		print_string("EEE can't be enabled for SFP port "); print_phys_port(port); print_string("\n");
 		return;
-	}
 
 	REG_SET(RTL837X_EEE_CTRL_BASE + (port << 8), EEE_RX_ENABLE | EEE_TX_ENABLE);
-	print_string("EEE on for "); print_phys_port(port); print_string(" speed "); 
 	// Enable all speeds up to the specified speed
 	if (speed & EEE_100) {
-			print_string("100m\n");
 			// Enable EEE advertisement for 100BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_100M);
 			return;
 	}
 	if (speed & EEE_1000) {
-			print_string("1g\n");
 			// Disable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, 0);
 			// Enable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
@@ -741,7 +607,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			return;
 	}
 	if (speed & EEE_2G5) {
-			print_string("2g5\n");
 			// Enable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
@@ -749,7 +614,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			return;
 	}
 	if (speed & EEE_5G) {
-			print_string("5g\n");
 			// Enable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
@@ -757,7 +621,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 			return;
 	}
 	if (speed & EEE_10G) {
-			print_string("10g\n");
 			// Enable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
 			phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, PHY_EEE_BIT_10G | PHY_EEE_BIT_1G | PHY_EEE_BIT_100M);
 			// Enable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
@@ -773,7 +636,6 @@ void port_eee_disable(uint8_t port) __banked
 	if (machine.is_sfp[port])
 		return;
 
-	print_string("EEE off for "); print_phys_port(port); write_char('\n');
 	REG_SET(RTL837X_EEE_CTRL_BASE + (port << 8), 0);
 	// Disable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
 	phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, 0);
@@ -782,98 +644,7 @@ void port_eee_disable(uint8_t port) __banked
 }
 
 
-void port_eee_status(uint8_t port) __banked
-{
-	print_string("Port: "); print_phys_port(port);
-	print_string(": ");
-	if (machine.is_sfp[port]) {
-		print_string("SFP\n");
-		return;
-	}
-
-	uint16_t v;
-	print_string("Advertising: ");
-
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_ADV);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	print_string("   Link Partner: ");
-	if (machine.n_10g) {
-		phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-		v = SFR_DATA_U16;
-		if (v & PHY_EEE_BIT_10G)
-			print_string(" 10G");
-		else
-			print_string("    ");
-	}
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY2);
-	v = SFR_DATA_U16;
-	if (machine.n_10g) {
-		if (v & PHY_EEE_BIT_5G)
-			print_string(" 5G");
-		else
-			print_string("   ");
-	}
-	if (v & PHY_EEE_BIT_2G5)
-		print_string(" 2.5G");
-	else
-		print_string("     ");
-	phy_read(port, PHY_MMD_AN, PHY_EEE_LP_ABILITY);
-	v = SFR_DATA_U16;
-	if (v & PHY_EEE_BIT_1G)
-		print_string("  1G ");
-	else
-		print_string("     ");
-	if (v & PHY_EEE_BIT_100M)
-		print_string(" 100M");
-	else
-		print_string("     ");
-
-	reg_read_m(RTL8373_PHY_EEE_ABLTY);
-	if (sfr_data[3] & (1 << port))
-		print_string(" ACTIVE   ");
-	else
-		print_string(" INACTIVE ");
-	write_char('\n');
-}
-
-
-/*
- * eee on|off [port] as the cli's job (E4): a port a step, its PHY reset in
- * two, the cli asleep for CLI_JOB_SLEEP_MS between (was delay(2) a port,
- * up to 80 ms in one step). eee_port..eee_last; eee_speed 0: off.
- */
-__xdata uint8_t eee_port, eee_last, eee_all, eee_speed;
-static __xdata uint8_t eee_phy;
+static __xdata uint8_t eee_speed;	/* port_eee_enable_all()'s */
 
 /* all ports' speed: the 10G ports' own; 2.5G for the others' 10G */
 static uint8_t eee_port_speed(uint8_t i)
@@ -891,33 +662,6 @@ void port_eee_enable_all(__xdata uint8_t speed) __banked
 		port_eee_enable(i, eee_port_speed(i));
 }
 
-
-/* the eee job's next step: a port's settings, its PHY off; or its PHY on */
-uint8_t port_eee_line(void) __banked
-{
-	if (eee_phy) {			/* its 10 ms are over */
-		eee_phy = 0;
-		phy_on(eee_port);
-	} else {
-		if (!eee_speed)
-			port_eee_disable(eee_port);
-		else
-			port_eee_enable(eee_port, eee_all ? eee_port_speed(eee_port) : eee_speed);
-		if (!machine.is_sfp[eee_port] && phy_off(eee_port)) {
-			eee_phy = 1;
-			cli_job_sleep = 1;
-			return 1;
-		}
-	}
-	return eee_port++ != eee_last;
-}
-
-void port_eee_status_all(void) __banked
-{
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		port_eee_status(i);
-	}
-}
 
 /*
  * Enable RLDP, Realtek's version of LLDP

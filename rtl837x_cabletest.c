@@ -3,6 +3,7 @@
 #include "rtl837x_common.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_cabletest.h"
+#include "om.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
 #include "machine.h"
@@ -99,63 +100,30 @@ bool rtl_phy_cable_test_get_status(uint8_t port) __banked
 	return true;
 }
 
-static void cabletest_print(void)
+/* the test's end, as the state lines the object model shows */
+static void cabletest_event(void)
 {
-	print_string("Cable test port ");
-	print_phys_port(ct_port);
-	if (!ct_valid) {
-		print_string(": timed out\n");
-		return;
-	}
-	write_char('\n');
-	for (ct_pair = 0; ct_pair < 4; ct_pair++) {
-		print_string("Pair ");
-		write_char('A' + ct_pair);
-		switch (ct_result[ct_pair]) {
-		case CABLE_RESULT_OK:
-			print_string(": ok\n");
-			continue;
-		case CABLE_RESULT_OPEN:
-			print_string(": open at ");
-			break;
-		case CABLE_RESULT_SAME_SHORT:
-			print_string(": short at ");
-			break;
-		case CABLE_RESULT_CROSS_SHORT:
-			print_string(": short to another pair at ");
-			break;
-		case CABLE_RESULT_MISMATCH:
-			print_string(": impedance mismatch at ");
-			break;
-		default:
-			print_string(": unknown\n");
-			continue;
-		}
-		itoa_short(ct_len[ct_pair] / 10);
-		write_char('.');
-		write_char('0' + ct_len[ct_pair] % 10);
-		print_string(" m\n");
-	}
+	print_string("event state.port.");
+	itoa_short(machine.log_to_phys_port[ct_port]);
+	print_string(ct_valid ? ".cabletest.state done\n" : ".cabletest.state timeout\n");
 }
 
-void cabletest_run(void) __banked
+uint8_t cabletest_run(void) __banked
 {
 	if (ct_state) {
-		print_string("Cable test running on port ");
-		print_phys_port(ct_port);
-		write_char('\n');
-		return;
+		om_fail("a cable test is running");
+		return OM_ERR;
 	}
 	if (!machine_detected.isRTL8373 && (phy_settings.port < 4 || phy_settings.port > 7)) {
-		print_string("No cable test on this PHY\n");
-		return;
+		om_fail("no cable test on this PHY");
+		return OM_ERR;
 	}
 
 	// A test started on a port that is off never ends and blocks the PHY until reset.
 	phy_read(phy_settings.port, PHY_MMD31, PHY_POWER);
 	if (SFR_DATA_U16 & PHY_POWER_OFF) {
-		print_string("Port is off\n");
-		return;
+		om_fail("the port is off");
+		return OM_ERR;
 	}
 
 	ct_port = phy_settings.port;
@@ -167,17 +135,7 @@ void cabletest_run(void) __banked
 	timer_set(&ct_timer, SYS_TICK_HZ);
 	ct_have = 0;
 	ct_state = CT_SILENCE;
-	print_string("Cable test started\n");
-}
-
-void cabletest_show(void) __banked
-{
-	if (ct_state)
-		print_string("Cable test running\n");
-	else if (ct_port != phy_settings.port || !ct_have)
-		print_string("No cable test result\n");
-	else
-		cabletest_print();
+	return OM_OK;
 }
 
 void cabletest_tick(void) __banked
@@ -189,7 +147,9 @@ void cabletest_tick(void) __banked
 		if (SFR_DATA_U16 & PHY_POWER_OFF) {
 			phy_write(ct_port, PHY_MMD31, PHY_MMD31_FEDCR, ct_bmcr);
 			ct_state = CT_IDLE;
-			print_string("Cable test aborted, port is off\n");
+			ct_have = 1;
+			ct_valid = 0;
+			cabletest_event();
 			return;
 		}
 		rtl_phy_cable_test_start(ct_port);
@@ -210,5 +170,5 @@ void cabletest_tick(void) __banked
 	phy_write(ct_port, PHY_MMD31, PHY_MMD31_FEDCR, ct_bmcr | BMCR_ANRESTART);
 	ct_have = 1;
 	ct_state = CT_IDLE;
-	cabletest_print();
+	cabletest_event();
 }

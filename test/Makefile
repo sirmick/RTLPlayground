@@ -15,7 +15,7 @@ CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-un
            -Wno-pointer-sign \
            -DRTLP_HOST_TEST \
            -fsanitize=address,undefined -fno-omit-frame-pointer \
-           -include sdcc_shim.h -Istub -I$(SRCROOT) -I$(SRCROOT)/httpd -I$(SRCROOT)/uip
+           -include sdcc_shim.h -Istub -I$(SRCROOT) -I$(SRCROOT)/httpd -I$(SRCROOT)/uip -I$(BUILDDIR)/om
 ifeq ($(findstring clang,$(shell $(CC) --version 2>/dev/null)),)
 CFLAGS  += -Wno-builtin-declaration-mismatch
 endif
@@ -33,6 +33,8 @@ BUILDDIR = build
 
 # One binary per subsystem under test.
 TESTS = $(BUILDDIR)/test_cmd_editor \
+        $(BUILDDIR)/test_om \
+        $(BUILDDIR)/test_om_gen \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_page_json \
         $(BUILDDIR)/test_httpd_tx \
@@ -64,6 +66,21 @@ all: run
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
+
+# The object model's tables, from the firmware's schema (tools/om_gen.py).
+OM_SCHEMA := $(wildcard $(SRCROOT)/schema/*.py) $(SRCROOT)/schema/registry.txt
+$(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -o $(BUILDDIR)/om > /dev/null
+$(filter-out $(BUILDDIR)/test_om_gen,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
+
+# om.c, the engine, UNMODIFIED; the port handlers are stubs in the test.
+$(BUILDDIR)/test_om: test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om/om_gen.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
+
+# The generator: broken schemas fail with their message, the registry holds.
+$(BUILDDIR)/test_om_gen: test_om_gen.py $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_om_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # cmd_editor.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_cmd_editor: test_cmd_editor.c support.c $(SRCROOT)/cmd_editor.c | $(BUILDDIR)

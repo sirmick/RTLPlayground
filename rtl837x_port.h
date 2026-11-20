@@ -47,8 +47,6 @@ extern __xdata struct vlan_settings vlan_settings;
 uint8_t port_l2_forget(void) __banked;
 void port_l2_learned(void) __banked;
 uint16_t port_link_mask(void) __banked;
-void port_stats_print(void) __banked;
-void port_media_show(uint8_t port) __banked;
 int8_t vlan_get(uint16_t vlan) __banked;
 #define VLAN_BITS_SIZE	512	/* a bit per VLAN ID */
 extern __xdata uint8_t vlan_bits[VLAN_BITS_SIZE];
@@ -73,12 +71,8 @@ uint8_t port_lag_of(uint8_t port) __banked;
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked;
 void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash) __banked;
 void port_eee_enable_all(__xdata uint8_t speed) __banked;
-extern __xdata uint8_t eee_port, eee_last, eee_all, eee_speed;	/* the eee job's */
-uint8_t port_eee_line(void) __banked;
-void port_eee_status_all(void) __banked;
 void port_eee_enable(__xdata uint8_t port, __xdata uint8_t speed) __banked;
 void port_eee_disable(uint8_t port) __banked;
-void port_eee_status(uint8_t port) __banked;
 void print_port_ingress_filter_mode(vlan_ingress_mode_t mode) __banked;
 bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked;
 bool port_ingress_vlan_filter_get(uint8_t port) __banked;

@@ -289,6 +289,7 @@ ifneq ($(SCHEDTEST),)
 include schedtest/schedtest.mk
 endif
 include sched.mk
+include om.mk
 include loopflags.mk
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)

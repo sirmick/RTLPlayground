@@ -1,5 +1,6 @@
 
 #include "rtl837x_common.h"
+#include "om_gen.h"
 #include "rtl837x_lldp.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
@@ -275,7 +276,7 @@ uint8_t lldp_sysdesc(__xdata uint8_t *p) __banked
 
 uint8_t lldp_portdesc(__xdata uint8_t *p, uint8_t port) __banked
 {
-    uint8_t name_length = strlen_x(port_names[port]);
+    uint8_t name_length = strlen_x(cfg_run.port[port].name);
 
     if (name_length > LLDP_PORT_NAME_MAX)
         name_length = LLDP_PORT_NAME_MAX;
@@ -283,7 +284,7 @@ uint8_t lldp_portdesc(__xdata uint8_t *p, uint8_t port) __banked
         return 0;
     *p++ = LLDP_TYPE(LLDP_PORT_DESC_TLV_TYPE);
     *p++ = name_length;
-    memcpy(p, port_names[port], name_length);
+    memcpy(p, cfg_run.port[port].name, name_length);
     return name_length + 2;
 }
 

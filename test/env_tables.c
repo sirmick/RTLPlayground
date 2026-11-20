@@ -11,6 +11,7 @@
 #include "rtl837x_common.h"
 #include "rtl837x_port.h"
 #include "machine.h"
+#include "om_gen.h"
 #include "uip.h"
 #include "rtl837x_flash.h"
 #include "syslog.h"
@@ -85,7 +86,7 @@ char     sfp_module_serial[2][17];
 uint8_t  sfp_id[2][40], sfp_diag[2][56];	/* sfp.c's caches (E2): empty */
 uint8_t  sfp_id_ok[2], sfp_diag_ok[2];
 char     hostname[24] = "hosttest";
-char     port_names[9][PORT_NAME_SIZE];
+struct cfg cfg_run;	/* the object model's running config (port names) */
 struct flash_region_t flash_region;
 struct syslog_state syslog_state;
 struct dhcp_state dhcp_state;
