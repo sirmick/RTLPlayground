@@ -3252,6 +3252,8 @@ void om_init(void) __banked
 }
 
 /* after the boot config's set lines: check and apply them, at once */
+static __xdata uint8_t b_fail, b_fo, b_fe;
+
 void om_boot_apply(void) __banked
 {
 	if (!check_all()) {
@@ -3262,16 +3264,30 @@ void om_boot_apply(void) __banked
 	 * but keyed entries (vlan_setup clears those) is applied whole, at its
 	 * default too, so the defaults are what the chip has after a boot */
 	om_full = 1;
+	b_fail = 0;
 	apply_begin();
 	while ((v8 = om_apply_next()) != OM_A_DONE) {
-		if (v8 == OM_A_FAIL) {
-			om_full = 0;
-			if (om_apply_st == E_CFGAPPLY_UNDO)
-				break;
-			om_undo();
+		if (v8 != OM_A_FAIL)
+			continue;
+		if (om_apply_st == E_CFGAPPLY_UNDO)
+			break;			/* the undo failed too */
+		if (!b_fail) {			/* the first is the one to name */
+			b_fail = 1;
+			b_fo = a_fo;
+			b_fe = a_fe;
 		}
 	}
 	om_full = 0;
+	if (b_fail && om_apply_st != E_CFGAPPLY_UNDO) {
+		/* a handler failed: the rest went in whole all the same (the
+		 * hardware is known everywhere); now back to the defaults */
+		a_fo = b_fo;
+		a_fe = b_fe;
+		om_undo();
+		while ((v8 = om_apply_next()) != OM_A_DONE)
+			if (v8 == OM_A_FAIL)
+				break;
+	}
 	om_settle(v8);
 	while (x_step());
 	if (om_apply_st == E_CFGAPPLY_DONE) {

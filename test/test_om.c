@@ -127,6 +127,7 @@ static int applied[OM_PORTS], checks, fail_check_on = -1, ct_calls, gets;
 static struct cfg_port applied_old[OM_PORTS];
 
 static int fail_apply_on = -1;
+static struct cfg jset_before;	/* running before a window ends mid-J_SET */
 static int vlan_checks;		/* the pvid and mgmt.vlan checks: the vlan tests' own */
 static struct cfg_port applied_new[OM_PORTS];
 
@@ -1275,15 +1276,61 @@ static void staging(void)
 	cli_job = 0;
 	expect("get port.3.mtu", "port.3.mtu 9000\nok\n");
 
+	printf("a stepped set (J_SET) at the window's end\n");
+	for (int v = 2; v <= 21; v++) {		/* more than SET_N entries: the set takes steps */
+		char l[40];
+		snprintf(l, sizeof l, "set vlan.%d.members 1", v);
+		expect(l, "ok\n");
+	}
+	expect("apply", "ok\n");
+	memcpy(&jset_before, &cfg_run, sizeof jset_before);
+	for (int stall = 0; stall < 2; stall++) {
+		expect("set port.3.mtu 3000", "ok\n");
+		expect("apply 1", "ok\n");
+		snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "set vlan.*.tagged 1");
+		tokenize();
+		out_reset();
+		om_cmd();
+		CHECK(cli_job == CLI_JOB_OM, "the set is a cli job, a get's kind");
+		if (!stall) {
+			job_due = 1;		/* the window ends while the set has steps to go */
+			job_step();
+			job_step();
+			CHECK(om_apply_st == E_CFGAPPLY_CONFIRM, "the rollback waits for the set");
+			while (cli_job && om_line())
+				;
+			cli_job = 0;
+			out_buf[out_len] = 0;
+			CHECK(!t_strcmp(out_buf, "ok\n"), "the set ends: ok");
+			job_run();
+		} else {
+			seconds(1);		/* the set stalls: the rollback waits 5 s, then cuts it */
+			out_reset();
+			CHECK(!om_line(), "the set's next step ends it");
+			out_buf[out_len] = 0;
+			CHECK(!t_strcmp(out_buf, "err: cut by a rollback\n"), "and says why");
+			cli_job = 0;
+		}
+		CHECK(om_apply_st == E_CFGAPPLY_ROLLED_BACK && !memcmp(&cfg_run, &jset_before, sizeof jset_before) &&
+		      !memcmp(&cfg_cand, &cfg_run, sizeof cfg_run),
+		      stall ? "cut: rolled back, the set's part gone with the candidate"
+			    : "then the rollback: running as before, the set gone with the candidate");
+	}
+	expect("del vlan", "ok\n");
+	expect("apply", "ok\n");
+
 	printf("boot\n");
 	expect("set port.5.mtu 5000", "ok\n");
 	memcpy(&mid, &cfg_cand, sizeof mid);
 	fail_apply_on = 4;
+	memset(applied, 0, sizeof applied);
 	out_reset();
 	om_boot_apply();
 	out_buf[out_len] = 0;
 	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
 	      !memcmp(&cfg_cand, &mid, sizeof mid), "a boot handler fails: rolled back, said once");
+	CHECK(applied[5] && applied[6] && applied[7] && applied[8] && applied[0],
+	      "and the ports after it were applied too (the boot's whole apply)");
 	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
 	fail_check_on = 4;		/* the check refuses it: nothing applied */
 	memset(applied, 0, sizeof applied);
