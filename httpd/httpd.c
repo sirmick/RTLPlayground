@@ -1339,8 +1339,6 @@ void httpd_appcall(void)
 				send_mirror();
 			} else if (is_word(q, "/stp.json")) {
 				send_stp();
-			} else if (is_word(q, "/loop.json")) {
-				send_loop();
 			} else if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */
 				strtox(config_buf, "get -s");

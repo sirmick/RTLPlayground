@@ -24,7 +24,6 @@ void send_storm(void);
 void l2_delete(uint16_t idx);
 void send_mirror(void);
 void send_stp(void) __banked;
-void send_loop(void);
 
 /*  Convert only the lower nibble to ascii HEX char.
     For convenience the upper nibble is masked out.

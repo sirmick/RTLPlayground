@@ -1,6 +1,5 @@
 # state.ntp, state.dns, state.loop (DESIGN.md 7.11): what the services found.
-# Their config (ntp.*, dns.*, loop.enabled) is P4-1's and P4-5's; until then
-# `ntp`, `dns` and `loop` print it.
+# Their config: ntp.*, dns.*, loop.enabled.
 #
 # Deviations: state.ntp.time is seconds since 1970 (UTC), not a Time type.
 # Deferred for room (P5-3): state.ntp.next_sync_s (83 B of 32-bit code;

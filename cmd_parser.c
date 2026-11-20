@@ -27,7 +27,6 @@
 
 #include "machine.h"
 #include "rtl837x_leds.h"
-#include "rtl837x_rldp.h"
 #include "phy.h"
 #include "con_ring.h"
 #include "sched.h"
@@ -1237,15 +1236,6 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
-		} else if (cmd_compare(0, "loop")) {
-			if (cmd_words_len == 2 && cmd_compare(1, "on"))
-				rldp_set(1);
-			else if (cmd_words_len == 2 && cmd_compare(1, "off"))
-				rldp_set(0);
-			else if (cmd_words_len == 1 || (cmd_words_len == 2 && cmd_compare(1, "show")))
-				rldp_show();
-			else
-				cmd_error("loop [on|off|show]\n");
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {

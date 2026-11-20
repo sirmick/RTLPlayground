@@ -78,3 +78,5 @@ obj 14 igmp
 field 14.1 igmp.enabled BOOL
 obj 15 lldp
 field 15.1 lldp.enabled BOOL
+obj 16 loop
+field 16.1 loop.enabled BOOL

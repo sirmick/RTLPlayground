@@ -294,7 +294,6 @@ static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
 void send_stp(void) { }
-void send_loop(void) { }
 
 extern uint8_t authenticated;
 extern char session_id[];
