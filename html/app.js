@@ -12,6 +12,7 @@ var LANG = {
         nav_bw: "Bandwidth",
         nav_system: "System",
         nav_fw: "Firmware",
+        nav_schema: "Schema",
         nav_lldp: "LLDP",
         hdr_dirty: "unsaved changes",
         hdr_dirty_t: "Running config differs from startup config",
@@ -2923,6 +2924,10 @@ var TABS = [{
         id: "fw",
         icon: "M12 3v12M8 11l4 4 4-4M4 19h16"
     },
+    {
+        id: "schema",
+        icon: "M4 4h16v16H4zM4 10h16M10 10v10"
+    },
 ];
 var curTab = "dash";
 var tabHooks = {};
@@ -5569,6 +5574,38 @@ tabHooks.fw = {
         stSysLoad().then(fwStatus).catch(function() {});
         fwStatus();
     }
+};
+
+/* The Schema page (DESIGN 13): help -a's lines (format 1: "help 1",
+ * then path, type and form, default, unit, "tip", the tip the last
+ * quoted, a default may be quoted too), a row each, objects bold,
+ * filtered as typed. Another format gets a row saying so first; an
+ * OM_HELP=0 build's err line, or "no reply", alone */
+function schLoad() {
+    var tb = $("scht").tBodies[0];
+    if (tb.rows.length) return;
+    cli(["help -a"]).then(function(r) {
+        var o = r.out[0] || [],
+            v = (/^help (\S+)$/.exec(o[0]) || [])[1];
+        if (v) o = o.slice(1);
+        if (v !== "1" && o.length) o.unshift("help format " + (v || "-") + ": this page reads help 1");
+        (r.errs.length ? r.errs : o.length ? o : ["no reply"]).forEach(function(l) {
+            var m = /^(\S+) (.*?) ?"([^"]*)"$/.exec(l) || [l, l, "", ""],
+                tr = tb.insertRow();
+            if (/^object/.test(m[2])) tr.style.fontWeight = "bold";
+            for (var i = 1; i < 4; i++) tr.insertCell().textContent = m[i];
+            tr.cells[1].style.cssText = "overflow-wrap:anywhere;width:40%";	/* a form of 78 words */
+        });
+    }).catch(function() {});
+}
+$("schf").addEventListener("input", function() {
+    var f = this.value.toLowerCase();
+    [].forEach.call($("scht").tBodies[0].rows, function(r) {
+        r.hidden = r.textContent.toLowerCase().indexOf(f) < 0
+    });
+});
+tabHooks.schema = {
+    enter: schLoad
 };
 
 window.addEventListener("hashchange", function() {
