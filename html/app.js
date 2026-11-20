@@ -5576,15 +5576,20 @@ tabHooks.fw = {
     }
 };
 
-/* The Schema page (DESIGN 13): help -a's lines ("help 1", then path,
- * type and form, default, unit, "tip": the last quoted, a default may
- * be quoted too), a row each, objects bold,
- * filtered as typed; an OM_HELP=0 build's err line alone */
+/* The Schema page (DESIGN 13): help -a's lines (format 1: "help 1",
+ * then path, type and form, default, unit, "tip", the tip the last
+ * quoted, a default may be quoted too), a row each, objects bold,
+ * filtered as typed. Another format gets a row saying so first; an
+ * OM_HELP=0 build's err line, or "no reply", alone */
 function schLoad() {
     var tb = $("scht").tBodies[0];
     if (tb.rows.length) return;
     cli(["help -a"]).then(function(r) {
-        (r.errs.length ? r.errs : r.out[0].slice(1)).forEach(function(l) {
+        var o = r.out[0] || [],
+            v = (/^help (\S+)$/.exec(o[0]) || [])[1];
+        if (v) o = o.slice(1);
+        if (v !== "1" && o.length) o.unshift("help format " + (v || "-") + ": this page reads help 1");
+        (r.errs.length ? r.errs : o.length ? o : ["no reply"]).forEach(function(l) {
             var m = /^(\S+) (.*?) ?"([^"]*)"$/.exec(l) || [l, l, "", ""],
                 tr = tb.insertRow();
             if (/^object/.test(m[2])) tr.style.fontWeight = "bold";
