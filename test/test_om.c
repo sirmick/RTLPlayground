@@ -2279,11 +2279,14 @@ static void lags(void)
 	expect("apply", "ok\n");
 	CHECK(!strcmp(lag_ops, "L1 000 S1 000 "), "off: out of LACP and the trunk; an off LAG's members unused");
 	expect("get lag.2.members", "lag.2.members 4-5\nok\n");
-	expect("set port.3.pvid 0", "ok\n");
-	expect("apply", "err lag.1: a lag's members need one pvid\n");
+	expect("set lag.1.members 2-4", "ok\n");
+	expect("set port.4.pvid 0", "ok\n");
+	expect("apply", "err lag.1: a lag's members need one pvid; they differ on 2,4\n");	/* the first, and who differs */
 	expect("set port.2.pvid 0", "ok\n");
+	expect("apply", "err lag.1: a lag's members need one pvid; they differ on 2-3\n");
+	expect("set port.3.pvid 0", "ok\n");
 	expect("apply", "ok\n");
-	expect("get -d lag", "lag.1.mode static\nlag.1.members 2-3\nlag.1.hash spa\nlag.2.members 4-5\nlag.3.members 2\nok\n");
+	expect("get -d lag", "lag.1.mode static\nlag.1.members 2-4\nlag.1.hash spa\nlag.2.members 4-5\nlag.3.members 2\nok\n");
 	om_init();
 }
 

@@ -372,6 +372,7 @@ static void err_end(void)
 	err_status = ERR_INVALID_ARGUMENT;
 }
 
+static void emit_pmask(void);
 static void fail(__code const char *why)	/* "err <path>: why"; why in this bank */
 {
 	err_head();
@@ -382,6 +383,16 @@ static void fail(__code const char *why)	/* "err <path>: why"; why in this bank 
 void om_fail(uint8_t msg) __banked
 {
 	fail(om_msg[msg]);
+}
+
+void om_fail_ports(uint8_t msg) __banked
+{
+	err_head();
+	print_string(om_msg[msg]);
+	write_char(' ');
+	vp = om_val;
+	emit_pmask();
+	err_end();
 }
 
 static void err_line(__code const char *s)	/* a whole err line */

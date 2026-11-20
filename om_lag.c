@@ -16,7 +16,7 @@
 typedef char laghash_is_hw[1 << E_LAGHASH_SPA == LAG_HASH_SOURCE_PORT_NUMBER && 1 << E_LAGHASH_DPORT == LAG_HASH_L4_DPORT ? 1 : -1];
 
 static __xdata struct cfg_lag r, o;
-static __xdata uint16_t m, pv;
+static __xdata uint16_t m, pv, f, d;
 static __xdata uint8_t l, j;
 
 /* the members in use: none while off */
@@ -58,16 +58,23 @@ uint8_t om_check_lag(uint8_t idx) __banked
 			return OM_ERR;
 		}
 	}
-	pv = 0xffff;
+	pv = 0xffff;			/* the first member's; d: it and the members that differ */
+	d = 0;
 	for (j = 0; m; j++, m >>= 1) {
 		if (!(m & 1))
 			continue;
-		if (pv == 0xffff)
+		if (pv == 0xffff) {
 			pv = cfg_cand.port[j].pvid;
-		else if (pv != cfg_cand.port[j].pvid) {
-			om_fail(OM_E_LAG_PVID);
-			return OM_ERR;
+			f = (uint16_t)1 << j;
+		} else if (pv != cfg_cand.port[j].pvid) {
+			d |= f | (uint16_t)1 << j;
 		}
+	}
+	if (d) {
+		om_val[0] = d;
+		om_val[1] = d >> 8;
+		om_fail_ports(OM_E_LAG_PVID);
+		return OM_ERR;
 	}
 	return OM_OK;
 }
