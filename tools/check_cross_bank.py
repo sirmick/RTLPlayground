@@ -27,6 +27,15 @@ with the *current* PSBANK, so such a read returns whatever the running bank
 holds at that offset - garbled strings, no crash. tools/place_banks.py keeps
 such files together, so this would be a bug there.
 
+And __code data handed over: an address loaded into dptr (`mov dptr,#___str_0`,
+or a named __code const) and then, before any other call, a function named as
+a banked call's target (`mov r0,#_f`) that sits in a nonzero bank other than
+the data's. The callee reads it with its own bank mapped (om_fail("...") from
+a handler in another bank was one, before om_fail took a message ID).
+tools/place_banks.py doesn't group such files: pass an ID, or keep the data
+in the callee's file. Not seen: an address kept across a call or
+stored to xdata and passed later, or a call through a function pointer.
+
 Usage: check_cross_bank.py <build-output-dir> [--placement placement.json]
 Exit status is nonzero if any violation is found.
 """
@@ -41,6 +50,9 @@ IMM = re.compile(r"^\s+([0-9A-Fa-f]{4,6})\s.*\bmov\s+\S+,#\(?\s*(_\w+)")
 # a linked label in a listing: address, line number, name
 LABEL = re.compile(r"^\s+([0-9A-Fa-f]{6})\s+\d+\s+(\w+):")
 FUNC = re.compile(r";\s+function\s+(\w+)\s*$")
+DPTR = re.compile(r"\bmov\s+dptr,#")
+TARGET = re.compile(r"^\s+[0-9A-Fa-f]{4,6}\s.*\bmov\s+r0,#(_\w+)\s*$")
+ENDS = re.compile(r"\b(lcall|ljmp|acall|ajmp|ret)\b")
 
 
 def bank_of(addr):
@@ -96,6 +108,8 @@ def main(argv):
     unresolved = set()
     data_refs = 0
     data_violations = []
+    handed = 0
+    handed_violations = []
     funcs_named = set()             # function symbols, so code pointers aren't data
     for rst in rsts:
         with open(rst) as f:
@@ -105,7 +119,18 @@ def main(argv):
         with open(rst) as f:
             lines = f.readlines()
         labels = {m.group(2): int(m.group(1), 16) for m in map(LABEL.match, lines) if m}
+        held = None                 # (bank, name, addr) of __code data in dptr
         for line in lines:
+            if placement is None and held:
+                m = TARGET.match(line)
+                if m and m.group(1) in funcs_named and m.group(1) in syms:
+                    handed += 1
+                    fb = bank_of(syms[m.group(1)][0])
+                    if fb != 0 and fb != held[0]:
+                        handed_violations.append((held[0], fb, caller_mod, held[1], m.group(1), held[2]))
+                    held = None
+                elif ENDS.search(line):
+                    held = None
             m = IMM.match(line)
             if m and placement is None:
                 name = m.group(2)
@@ -121,6 +146,8 @@ def main(argv):
                     cb, tb = bank_of(addr), bank_of(taddr)
                     if tb != 0 and tb != cb:
                         data_violations.append((cb, tb, caller_mod, name, addr))
+                    if tb != 0 and DPTR.search(line):
+                        held = (tb, name, addr)
             m = INSN.match(line)
             if not m:
                 continue
@@ -162,7 +189,15 @@ def main(argv):
                 print(f"  bank {cb} reads bank {tb}:  {mod} (@0x{addr:06x}) {target}")
             if len(data_violations) > 40:
                 print(f"  ... {len(data_violations) - 40} more; files: {' '.join(mods)}")
-    return 1 if violations or data_violations else 0
+        print(f"checked {handed} __code addresses handed to a function")
+        if not handed_violations:
+            print("OK: none handed to a function in another bank")
+        else:
+            print(f"\n{len(handed_violations)} __code ADDRESS(ES) HANDED TO A FUNCTION IN ANOTHER BANK"
+                  " - it reads them in its own bank: pass an ID, or keep the data in its file\n")
+            for db, fb, mod, name, f, addr in sorted(handed_violations):
+                print(f"  {mod} (@0x{addr:06x}) hands {name} (bank {db}) to {f} (bank {fb})")
+    return 1 if violations or data_violations or handed_violations else 0
 
 
 if __name__ == "__main__":

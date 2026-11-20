@@ -28,9 +28,14 @@ void httpd_init(void) __banked;
 
 /* A web /cmd queued for cli (net.md item 2) */
 extern __xdata uint8_t webcmd_pending, webcmd_done;
-extern __xdata uint8_t webcmd_busy;	/* queued until its reply is sent or its connection ends */
+extern __xdata uint8_t webcmd_busy;	/* queued until its connection ends */
 extern __xdata uint8_t webcmd_gen;	/* +1 a /cmd queued: which one the waiting connection is */
 extern __xdata uint8_t webcmd_cap;	/* the capture between cli's steps: 1, 2 = full */
+extern __xdata uint8_t webcmd_wait;	/* cli waits for room in outbuf: httpd sends, rx wakes cli */
+extern __xdata uint8_t webcmd_cli;	/* a /cli: 200 always, its status lines in the body */
+extern __xdata uint16_t slen;		/* the end of what is in outbuf */
+/* outbuf's room cli needs for its next step (n bytes), CMD_TRUNCATED kept */
+#define WEBCMD_ROOM(n)	(slen <= TCP_OUTBUF_SIZE - sizeof(CMD_TRUNCATED) - (n))
 extern __xdata uint8_t cmd_capture;	/* rtlplayground.c: write_char's capture */
 void httpd_webcmd_begin(void) __banked;	/* cli: the reply's header; its commands from config_buf */
 void httpd_webcmd_end(void) __banked;	/* cli: complete the reply, webcmd_done */

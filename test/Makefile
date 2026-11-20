@@ -54,6 +54,8 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_sched_gen \
         $(BUILDDIR)/test_sched \
         $(BUILDDIR)/test_resource_gate \
+        $(BUILDDIR)/test_place_banks \
+        $(BUILDDIR)/test_check_cross_bank \
         $(BUILDDIR)/test_loader
 
 # The table tests link the register mock and one environment file; stub/
@@ -85,6 +87,13 @@ $(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
 
 # The generator: broken schemas fail with their message, the registry holds.
+# The bank placement (tools/place_banks.py) and its check on the linked
+# image (tools/check_cross_bank.py), on made-up .rel files and listings
+$(BUILDDIR)/test_place_banks: test_place_banks.py $(SRCROOT)/tools/place_banks.py | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_place_banks.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+$(BUILDDIR)/test_check_cross_bank: test_check_cross_bank.py $(SRCROOT)/tools/check_cross_bank.py | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_check_cross_bank.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+
 $(BUILDDIR)/test_om_gen: test_om_gen.py $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_om_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
