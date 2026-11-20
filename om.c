@@ -100,6 +100,7 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices (and help's for
 #define J_SET	9	/* set and del, SET_N instances a step (a get's cli job: a window waits) */
 #define J_HELP	10	/* help <path>: a line a step (a get's cli job), in bin_line() */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
+#define O_START	0xfe		/* j_o: the path's first object next (obj_first()) */
 static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
 static __xdata uint8_t kd;		/* a default entry */
 static __xdata uint8_t j_sv;		/* get -s: printing the loaded sector (bin_line()) */
@@ -1210,6 +1211,29 @@ static void path_at(void)		/* the path at p */
 	r_path = p;
 }
 
+/* the objects a path may name, in table order: its tree's with its first
+ * character (om_gen's om_fc, om_nx), so a walk doesn't grow with the
+ * objects; all of them for an empty path (or o_all set: help -a, the jobs
+ * that walk every object). After path_start(). */
+static __xdata uint8_t o_all;
+
+static uint8_t obj_first(void)
+{
+	v8 = *r_path - 'a';
+	if (o_all || v8 >= 26) {	/* the end of the word (or a character no name starts with) */
+		o_all = 1;
+		return 0;
+	}
+	if (r_st)
+		v8 += 26;
+	return om_fc[v8];
+}
+
+static uint8_t obj_after(uint8_t o)	/* 0xff past the last */
+{
+	return o_all ? o + 1 : om_nx[o];
+}
+
 static void ix_form(void);
 
 /* level lv's index at p into r_v (r_v1); prints err and returns 0 if bad */
@@ -1505,10 +1529,13 @@ static uint8_t next_field(void)
 static uint8_t next_obj(void)
 {
 	while (1) {
-		for (; j_o < OM_N_OBJ; j_o++) {
+		if (j_mode == J_GET)
+			path_start();		/* r_st, r_path: match() changes neither */
+		if (j_o == O_START)		/* a path's first */
+			j_o = obj_first();	/* 0 but for get: o_all */
+		for (; j_o < OM_N_OBJ; j_o = obj_after(j_o)) {
 			sel_obj(j_o);
 			if (j_mode == J_GET) {
-				path_start();
 				v8 = match();
 				if (v8 == 2)
 					goto fail;
@@ -1557,7 +1584,8 @@ static uint8_t next_obj(void)
 		}
 		if (++c_pw >= cmd_words_len)
 			return 0;
-		j_o = 0;
+		j_o = O_START;
+		o_all = 0;
 		j_hit = 0;
 		r_first = 0xff;
 	}
@@ -1831,13 +1859,14 @@ uint8_t om_line(void) __banked
 	}
 	if (j_new) {
 		j_new = 0;
-		j_o = 0;
+		j_o = O_START;
+		o_all = j_mode != J_GET;	/* diff, apply: every config object */
 		if (!next_obj())
 			goto done;
 	}
 	while (1) {
 		if (!cur_ok) {			/* the object is done */
-			j_o++;
+			j_o = obj_after(j_o);
 			if (!next_obj())
 				goto done;
 			continue;
@@ -1955,7 +1984,8 @@ static uint8_t target(uint8_t del)
 	}
 	path_start();
 	r_first = 0xff;
-	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
+	o_all = 0;
+	for (r_o = obj_first(); r_o < OM_N_OBJ; r_o = obj_after(r_o)) {
 		sel_obj(r_o);
 		v8 = match();
 		if (v8 == 2)
@@ -2757,13 +2787,14 @@ static uint8_t h_line(void)		/* help's next line: 0 at the end */
 	}
 	while (1) {
 		if (cur_f == obx.nf) {		/* the next object the path names */
-			if (++j_o == OM_N_OBJ)
+			path_start();
+			j_o = j_o == O_START ? obj_first() : obj_after(j_o);
+			if (j_o >= OM_N_OBJ)
 				goto end;
 			sel_obj(j_o);
 			cur_f = obx.nf;
 			r_rest = &zero;
 			if (!h_all) {
-				path_start();
 				v8 = match();
 				if (v8 == 2)
 					goto bad;	/* ix_parse()'s err */
@@ -3341,7 +3372,8 @@ uint8_t om_cmd(void) __banked
 			c_def = 1;		/* a Secret's default as text */
 			job_start(J_HELP);
 			cli_job = CLI_JOB_OM;	/* as get's: a window waits for it, a drop ends it */
-			j_o = 0xff;
+			j_o = O_START;
+			o_all = h_all;
 			cur_f = obx.nf;		/* the next object first */
 			break;
 		}

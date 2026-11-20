@@ -676,6 +676,7 @@ def gen(objs, outdir):
     H("extern __xdata struct cfg cfg_run, cfg_cand, cfg_roll;")
     H("extern __xdata union om_st om_st;")
     H("extern __code const struct om_obj om_obj[OM_N_OBJ];")
+    H("extern __code const uint8_t om_fc[52], om_nx[OM_N_OBJ];")
     H("extern __code const om_fn om_fns[];")
     H("")
     fns = []
@@ -799,6 +800,28 @@ def gen(objs, outdir):
            l0[0], l1[0], l0[1], l1[1], l0[2], l1[2], len(o.entries),
            fi(o.apply), fi(o.check), fi(o.get), fi(o.derive)))
     C("};")
+    C("")
+    # The objects a path may name (om.c obj_first()): per tree and first letter
+    # the first in table order, then each one's next with both the same
+    # (0xff: none), so a path's walk takes only its letter's
+    nx, fc, run = [0xff] * len(objs), [[0xff] * 26 for _ in range(2)], {}
+    for i, o in enumerate(objs):
+        k = (int(o.state), ord(o.regname[0]) - ord("a"))
+        if k in run:
+            nx[run[k][-1]] = i
+        else:
+            fc[k[0]][k[1]] = i
+            run[k] = []
+        run[k].append(i)
+    worst = max(run.items(), key=lambda kv: len(kv[1]))
+    if len(worst[1]) > CHAIN_MAX:
+        raise SystemExit("schema: %d %s objects start with '%s', over the %d a path's walk may take (om.c obj_first())"
+                         % (len(worst[1]), "state" if worst[0][0] else "config", chr(worst[0][1] + 97), CHAIN_MAX))
+    C("__code const uint8_t om_fc[52] = {\t/* config a-z, then state a-z */")
+    for t in fc:
+        C("\t%s," % ", ".join(str(x) for x in t))
+    C("};")
+    C("__code const uint8_t om_nx[OM_N_OBJ] = { %s };" % ", ".join(str(x) for x in nx))
     C("")
     C("__code const om_fn om_fns[] = { %s };" % ", ".join(fns) if fns else "")
     C("")
@@ -1067,6 +1090,7 @@ def help_blob(objs, room):
 
 
 CONFIG_LEN = 0x1000      # layout.h: the saved config's sector
+CHAIN_MAX = 12           # the objects of one tree and first letter (a path's walk, om.c obj_first())
 E_ROOM = 256             # om.c: a save step's records at most
 
 
