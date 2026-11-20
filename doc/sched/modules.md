@@ -85,7 +85,9 @@ timeout reports it (`health`) and moves on; it doesn't retry in a loop.
 As built (E4), in the common area (`rtlplayground.c`), so the flash's
 `WEL` wait can use them too: `hw_start(n)` and `hw_expired()` bound a
 poll at n to n + 1 whole ticks, and `hw_timeout(reg)` counts a poll that
-gave up, with its register. `hw_poll(reg)` waits for bit 0 of the
+gave up, with its register. `hw_poll(reg)` (banked, in
+`rtl837x_port.c`: only banked code calls it, and the common area is the
+scarcer space: -81 B there for +204 in the banks) waits for bit 0 of the
 register's low byte, which covers the table execute (`TBL_CTRL`, every
 `wait_table_ready()` and the page and IGMP table walks), `STAT_GET` and
 the I2C controller. It gives up after `HW_POLL_TICKS` (5-10 ms) and

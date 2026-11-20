@@ -578,7 +578,7 @@ void reg_read(uint16_t reg_addr)
  */
 __xdata uint16_t hw_timeouts, hw_timeout_reg;
 __xdata uint8_t hw_stuck;
-static __xdata uint8_t hw_end;
+__xdata uint8_t hw_end;	/* hw_start's; hw_poll (banked) reads it too */
 
 void hw_start(uint8_t n)
 {
@@ -599,23 +599,6 @@ void hw_timeout(uint16_t reg)
 	hw_stuck = 1;
 }
 
-/* reg until bit 0 of its low byte is clear (a table's execute, STAT_GET,
- * I2C): 0; still set after HW_POLL_TICKS: counted, 1. reg_read() inline:
- * a leaf, reg stays in registers. */
-uint8_t hw_poll(uint16_t reg)
-{
-	hw_start(HW_POLL_TICKS);
-	do {
-		SFR_REG_ADDR_U16 = reg;
-		SFR_EXEC_GO = SFR_EXEC_READ_REG;
-		do {
-		} while (SFR_EXEC_STATUS != 0);
-		if (!(SFR_DATA_0 & 0x01))
-			return 0;
-	} while (!hw_stuck && (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) <= 0);
-	hw_timeout(reg);
-	return 1;
-}
 
 
 void reg_read_m(uint16_t reg_addr)
