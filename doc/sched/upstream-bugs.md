@@ -10,7 +10,7 @@ proven on the sim, one bug each. None is filed yet; Michael decides when.
 | U2 | `cmd_edit` copies a character into `cmd_buffer` before checking `cmd_available`, so a multi-line paste overwrites the command still waiting to run (`stat` runs as `v...`) | `cmd_editor.c` | sim, A2 | fixed in D3 (689e548: the editor's own `con_line`, read stops while a line waits; tools/console_bugs.py) |
 | U3 | The 16 B console RX ring laps silently: no overrun count | `rtlplayground.c` `isr_serial` | sim, A2 | fixed in D1 (256 B ring, overrun count in `health`, decision 19) |
 | U4 | A web `/cmd` overwrites a half-typed console line (one shared buffer) | `cmd_parser` / httpd | audit (os-audit) | fixed in D3 (689e548: the web command runs from its own buffer in the cli task; f142690 cancels one whose connection ends; tools/console_bugs.py) |
-| U5 | The CRC routine leaves `PSBANK` at 1 | `crc16_bank1` | audit | flash.md: fix on the way |
+| U5 | The CRC routine leaves `PSBANK` at 1 | `crc16_bank1` | audit | already fixed before this work: 67d09dd, in fork main 612116e |
 | U6 | The health phase IDs clash | `health` | audit | phases.md, independent |
 | U8 | An unknown escape sequence (e.g. ESC O P) makes `cmd_edit` spin forever: two `continue`s don't advance the read position | `cmd_editor.c:61-62`, `:170-171` | review, D1 | not yet |
 | U7 | The host-test stubs lack `leds_mode` and `rldp_*`, so four host tests fail to link (fork only: the LED and loop-detection web pages) | `test/env_tables.c`, `test/test_httpd_tx.c` | A0 | fixed on fork main b635486 |

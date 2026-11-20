@@ -1,0 +1,105 @@
+# FB: the numbers of the book as built, from builds of feat/sched 72cee59 (2026-11-20)
+
+The book's current sizes and the firmware's run sequence come from these
+builds. Tree: `git archive 72cee59` into /tmp/fb-72cee59 (no .git, so the
+version is given: GIT_VERSION=72cee59, the same length as a clean build's).
+In the rtlplayground-dev:main container, from that tree:
+
+    make -j MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 GIT_VERSION=72cee59   -> exit 0
+    make MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 GIT_VERSION=72cee59 gate
+    make -j MACHINE=SWGT024_V2_0_UNMANAGED LAYOUT=compact LOADER=1 GIT_VERSION=72cee59          -> exit 0
+    make MACHINE=SWGT024_V2_0_UNMANAGED LAYOUT=compact LOADER=1 GIT_VERSION=72cee59 gate
+    make -j schedtest MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact LOADER=1 GIT_VERSION=72cee59 -> exit 0
+
+No test was run here: these builds only measure.
+
+## The 8x firmware: the generator's report (sched/sequence.txt)
+
+    run sequence: 72 positions, 24 slots (12 fixed, 12 dynamic), 2 between high groups
+    slot       freq    runs worst gap
+    rx         high      12         6
+    link       high      12         6
+    loop       high      12         6
+    con        high      12         6
+    cli        once       1        72
+    net        once       1        72
+    stp        medium     3        24
+    lacp       medium     3        24
+    lldp       once       1        72
+    sfp0       once       1        72
+    sfp1       once       1        72
+    house      once       1        72
+    job0       once       1        72
+    ... job1 to job11 the same
+
+States (sched_gen.h): 28 and S_NONE (S_COUNT 29): RX_IDLE RX_STEP LINK_READ
+LOOP_START LOOP_POLL CON_EDIT CLI_IDLE CLI_RUN CLI_NEXT CLI_MORE CLI_PROMPT
+NET_START NET_TICK STP_TICK LACP_TICK LLDP_TICK SFP_START SFP_POLL SFP_WAKE
+SFP_READ SFP_CONFIG SFP_DDM HOUSE_START HOUSE_SEC FL_ERASE FL_PROG FL_VERIFY
+FL_DONE.
+
+run_seq (sched_gen.c):
+
+    rx link loop con stp  cli   rx link loop con net  lldp  rx link loop con lacp sfp0
+    rx link loop con sfp1 house rx link loop con stp  job0  rx link loop con job1 job2
+    rx link loop con lacp job3  rx link loop con job4 job5  rx link loop con stp  job6
+    rx link loop con job7 job8  rx link loop con lacp job9  rx link loop con job10 job11
+
+## The 8x firmware: the resource gate (against gate-8x.json)
+
+    internal RAM: data 90 B (baseline 90), overlay 8 B (baseline 8), bits 3 B (baseline 3)
+    DSEG symbols: 50, none new
+    stack: 146 B (at least 120)
+    common area: ends 0x3edd (gate 0x3f80, 163 B left)
+    bank 1: 48636 B used, 516 B free
+    bank 2: 49003 B used, 149 B free
+    bank 3: 48586 B used, 566 B free
+    PASS (3 warnings: every bank over 47 KiB)
+
+rtlplayground.mem: EXTERNAL RAM 0x0001-0x5109, 20745 B; code 162318 B.
+16 bit mode initial stack starts at 0x6e with 146 bytes available.
+rtlplayground.map: _crash_rec 0xbfe0, _sched_task 0x4f62, _con_tx_buf 0x020e,
+_ctl_buf 0x0a17, _vlan_bits 0x2712.
+
+## The scheduler's files (8x, from their .rel area sizes, bytes)
+
+    file             where     code   xdata  internal RAM
+    sched.c          common     618     283  0
+    crash.c          common     286      41  0
+    con_ring.c       common     456    2316  0
+    sched_gen.c      common     171 (CONST: step_addr, run_seq, fixed_first)
+    sched_bank.c     bank 1    1651      37  OSEG 1 (fine_read's locals: a leaf, the shared overlay)
+    sched_health.c   bank 1    1677       7  0
+    sched_gen_names  bank 1     488       0  0
+    tasks.c          bank 3    1814      14  BSEG 1 bit: _cli_web_live_sloc0_1_0
+    flash_job.c      bank 2     793      18  0
+
+The bit in tasks.c is SDCC's for cli_web_live()'s `&&` (since E1's review
+fix 0ce4fc8). It sits in the 3 bytes of bit space the baseline already has:
+the gate counts bytes, and bits stay 3.
+
+## SWGT024 (no baseline given)
+
+    internal RAM: data 90 B, overlay 8 B, bits 3 B; stack 146 B
+    common area: ends 0x3edc (164 B left)
+    banks free 130 / 550 / 507 B
+    EXTERNAL RAM 0x0001-0x5109, 20745 B; code 162361 B
+
+## schedtest (8x, against gate-schedtest.json)
+
+    run sequence: 44 positions, 24 slots (13 fixed, 11 dynamic), 2 between high groups
+    internal RAM: data 90 B (baseline 90), overlay 8, bits 3; DSEG symbols 50, none new
+    stack 146 B; common area ends 0x3dd7 (425 B left)
+    banks free 170 / 332 / 575 B
+    PASS (3 warnings)
+
+## Against the evidence
+
+- Common area: 163 B left here; E4's f336874 gave 169 B
+  (e4-polls-vlan-eee.txt). The commits after it (3e204d6's swdt_on test in
+  the resident hw_timeout(), 3b7886c) are the likely 6 B; not checked one by
+  one.
+- xdata: XSEG ends 0x50f4 (XISEG to 0x5109) here; e4-polls-vlan-eee.txt
+  says "XSEG ends at 0x5ef2 with the bitmap". That figure is from the
+  byte-map experiment (vlan_on[4096]) that E4 tried and dropped for the
+  bitmap (the orchestrator, 2026-11-20); the bitmap build ends at 0x50f4.
