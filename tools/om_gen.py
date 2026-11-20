@@ -950,23 +950,28 @@ def help_line_max(objs):
     return n
 
 
-def help_blob(objs, room):
-    for o in objs:
-        for what, s in [(o.regname, o.tip)] + [("%s.%s" % (o.regname, f.name), f.tip) for f in o.fields] + \
-                [("%s.%s unit" % (o.regname, f.name), f.unit) for f in o.fields]:
-            if not re.fullmatch(r"[ -~]*", s) or '"' in s or "\\" in s:
-                raise SystemExit("schema: %s: a tip or unit is printable text without \" or \\" % what)
+H_TIP_MAX = 60          # a tip's chars before om_gen warns: the blob is small (DESIGN 13)
+H_CLASSES = ("objects", "verbs", "config", "actions", "state")
+
+
+def help_pack(objs, keep):
+    """The blob, with the state fields' tips only for those in keep; and its bytes
+    by class (each entry's packed bytes and NUL), the tokens' and the table's."""
     used = {f.typ.code for o in objs for f in o.fields}
     units = help_units(objs)
     fixed = [(H_TYPE[n] if n in used else "").encode() for n in sorted(T, key=T.get)] + [b"object"]
     fixed += [('unit %s "' % (u if " " not in u else '"%s"' % u)).encode() for u in units]
-    ents = []                   # per object: its entries; then the usage
+    ents, cls = [], []          # per object: its entries; then the usage
     for o in objs:
-        e = [o.tip.encode()]
+        e, c = [o.tip.encode()], ["objects"]
         for f in o.fields:
-            e.append((bytes([0x80 + 21 + units.index(f.unit)]) if f.unit else b"") + f.tip.encode())
+            tip = f.tip if f.access != "state" or f in keep else ""
+            e.append((bytes([0x80 + 21 + units.index(f.unit)]) if f.unit else b"") + tip.encode())
+            c.append({"cfg": "config", "action": "actions", "state": "state"}[f.access])
         ents.append(e)
+        cls.append(c)
     ents.append([H_USAGE.encode()])
+    cls.append(["verbs"])
     # the tokens: the substring that saves most, while one does
     text = [t for e in ents for t in e]
     toks = []
@@ -992,9 +997,11 @@ def help_blob(objs, room):
         b = bytes([0x80 + len(fixed) + len(toks)])
         toks.append(best)
         text = [t.replace(best, b) for t in text]
-    for e in ents:
+    by = dict.fromkeys(H_CLASSES, 0)
+    for e, c in zip(ents, cls):
         for k in range(len(e)):
             e[k] = text.pop(0)
+            by[c[k]] += len(e[k]) + 1
     tok = fixed + toks
     at = 2 * (len(ents) + len(tok) + 1)
     tab, body = [], b""
@@ -1006,17 +1013,54 @@ def help_blob(objs, room):
     for e in ents:
         ent_at.append(at + len(body))
         body += b"".join(t + b"\0" for t in e)
-    blob = b"".join(struct.pack("<H", v) for v in ent_at + tab) + body
+    by["tokens"], by["table"] = sum(len(t) for t in tok), at
+    return b"".join(struct.pack("<H", v) for v in ent_at + tab) + body, by
+
+
+def help_blob(objs, room):
+    """The blob, packed by priority: the objects', the verbs', the config fields'
+    and the actions' tips must fit (else the build fails); the state fields'
+    tips go in, in schema order, while they fit, and the rest are left out
+    (listed). Returns the blob, its bytes by class, the headroom the first
+    four have, and the state fields left out."""
+    for o in objs:
+        for what, s in [(o.regname, o.tip)] + [("%s.%s" % (o.regname, f.name), f.tip) for f in o.fields] + \
+                [("%s.%s unit" % (o.regname, f.name), f.unit) for f in o.fields]:
+            if not re.fullmatch(r"[ -~]*", s) or '"' in s or "\\" in s:
+                raise SystemExit("schema: %s: a tip or unit is printable text without \" or \\" % what)
+        for what, s in [(o.regname, o.tip)] + [("%s.%s" % (o.regname, f.name), f.tip) for f in o.fields]:
+            if len(s) > H_TIP_MAX:
+                print("om_gen: warning: %s%s's tip is %d chars, over %d" % ("state." if o.state else "", what,
+                                                                           len(s), H_TIP_MAX), file=sys.stderr)
     if help_line_max(objs) > CLI_WEB_ROOM:
         raise SystemExit("schema: a help line can reach %d B, more than a web step's room (tasks.c CLI_WEB_ROOM %d)"
                          % (help_line_max(objs), CLI_WEB_ROOM))
-    if len(blob) > room:
-        print("om_gen: the help blob is %d B, %d over its %d B; per object (B of tips):" % (len(blob), len(blob) - room, room),
+    st = [f for o in objs for f in o.fields if f.access == "state" and f.tip]
+    base, by = help_pack(objs, ())
+    if len(base) > room:
+        print("om_gen: the help blob's objects, verbs, config and actions are %d B, %d over its %d B"
+              % (len(base), len(base) - room, room), file=sys.stderr)
+        print("  " + ", ".join("%s %d" % kv for kv in by.items()) + "; per object (B of tips, no state's):",
               file=sys.stderr)
-        for o, e in zip(objs, ents):
-            print("  %5d %s%s" % (sum(len(t) + 1 for t in e), "state." if o.state else "", o.regname), file=sys.stderr)
+        for o in objs:
+            n = len(o.tip) + 1 + sum(len(f.tip) + 1 for f in o.fields if f.access != "state")
+            print("  %5d %s%s" % (n, "state." if o.state else "", o.regname), file=sys.stderr)
         raise SystemExit("schema: the tips don't fit: shorten them")
-    return blob, sum(len(t) for t in tok)
+    lo, hi = 0, len(st)         # the most state tips, in order, that fit
+    blob, by = help_pack(objs, st)
+    if len(blob) > room:
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if len(help_pack(objs, st[:mid])[0]) <= room:
+                lo = mid
+            else:
+                hi = mid - 1
+        blob, by = help_pack(objs, st[:lo])
+    else:
+        lo = len(st)
+    out = [o_ for o_ in st[lo:]]
+    names = {id(f): "state.%s.%s" % (o.regname, f.name) for o in objs for f in o.fields}
+    return blob, by, room - len(base), [names[id(f)] for f in out]
 
 
 CONFIG_LEN = 0x1000      # layout.h: the saved config's sector
@@ -1098,11 +1142,14 @@ def main():
     if a.js:
         js(objs, a.js)
     if a.help_blob:
-        blob, nt = help_blob(objs, a.help_room)
+        blob, by, head, out = help_blob(objs, a.help_room)
         if not os.path.exists(a.help_blob) or open(a.help_blob, "rb").read() != blob:
             with open(a.help_blob, "wb") as fp:
                 fp.write(blob)
-        print("om_gen: help blob %d B of %d (tokens %d B)" % (len(blob), a.help_room, nt))
+        print("om_gen: help blob %d B of %d: %s; headroom %d B for config tips (state tips past it are left out)"
+              % (len(blob), a.help_room, ", ".join("%s %d" % kv for kv in by.items()), head))
+        if out:
+            print("om_gen: %d state tips left out (no room): %s" % (len(out), " ".join(out)))
     n_cfg = sum(len(o.fields) for o in objs if not o.state)
     n_st = sum(len(o.fields) for o in objs if o.state)
     print("om_gen: %d objects, %d config/action fields, %d state fields; saved config %d B at most"

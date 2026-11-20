@@ -338,8 +338,24 @@ usage, _ = help_text(b, 2, help_row(b, 2))
 check(usage.startswith("get [-c|-s|-d] PATH...\nset PATH VALUE\n") and usage.endswith("Tab completes\n"),
       "the verbs' usage after the objects'", repr(usage))
 rc, out, b, h = help_gen(HS, 200)
-check(rc != 0 and "the help blob is" in out and "over its 200 B" in out and " sys\n" in out and " state.sys\n" in out
-      and "the tips don't fit" in out, "a blob past its room fails the build, B per object", out)
+check(rc != 0 and "the help blob's objects, verbs, config and actions are" in out and "over its 200 B" in out
+      and " sys\n" in out and "the tips don't fit" in out, "the first four classes past the room fail the build, B per object", out)
+# the state fields' tips go in while they fit, in schema order; the rest are left out, listed
+ST = HS + "".join('st("s%d", U16(), tip="State field %d: a tip long enough to cost some room")\n' % (i, i) for i in range(12))
+rc, out, b, h = help_gen(ST, 3582)
+full = len(b)
+base = 3582 - int(re.search(r"headroom (\d+) B", out).group(1))     # without the state tips
+room = (base + full) // 2
+rc, out, b, h = help_gen(ST, room)
+m = re.search(r"(\d+) state tips left out \(no room\): (.*)", out)
+check(rc == 0 and len(b) <= room and m and m.group(2).split()[-1] == "state.sys.s11"
+      and "state.sys.up" not in m.group(2), "state tips past the room: the last left out, listed", out)
+t, _ = help_text(b, 2, help_row(b, 1))          # state.sys's entry, then up's: kept
+check(help_text(b, 2, _)[0] == 'unit s "The seconds since the switch started', "the first state tips kept")
+check(re.search(r"objects \d+, verbs \d+, config \d+, actions \d+, state \d+, tokens \d+, table \d+; headroom \d+ B", out),
+      "the bytes by class and the config tips' headroom", out)
+rc, out, b, h = help_gen('obj("s", tip="' + "x" * 61 + '")\ncfg("a", Bool, True)\n', 3582)
+check(rc == 0 and "warning: s's tip is 61 chars, over 60" in out, "a tip over 60 chars: a warning", out)
 rc, out, b, h = help_gen('obj("s", tip=\'say "hi"\')\ncfg("a", Bool, True)\n', 3582)
 check(rc != 0 and "printable text without" in out, "a tip with a quote fails", out)
 

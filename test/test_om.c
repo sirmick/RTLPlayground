@@ -2309,19 +2309,19 @@ static void help(void)
 	       "tsys.lp flags 10h|10f|100h|100f|1000h|1000f|2g5|5g|10g default none \"\"\n"
 	       "tsys.rnd action - \"\"\n"
 	       "ok\n");
-	expect("help port.2.tstorm", "port.N.tstorm.M object 1-9 bcast|mcast|ucast|umcast \"\"\n"
-	       "port.N.tstorm.M.rate u32 0-1048575 default 0 \"\"\n"
-	       "port.N.tstorm.M.unit enum pps|kbps default pps \"\"\n"
+	expect("help port.2.tstorm", "port.*.tstorm.* object 1-9 bcast|mcast|ucast|umcast \"\"\n"
+	       "port.*.tstorm.*.rate u32 0-1048575 default 0 \"\"\n"
+	       "port.*.tstorm.*.unit enum pps|kbps default pps \"\"\n"
 	       "ok\n");
-	expect("help tvlan.1.members", "tvlan.N.members ports 1-9 default none \"\"\nok\n");
-	expect("help tvlan", "tvlan.N object 1-4094 \"\"\ntvlan.N.name str 0-15 default \"\" \"\"\n"
-	       "tvlan.N.members ports 1-9 default none \"\"\ntvlan.N.tagged ports 1-9 default none \"\"\nok\n");
+	expect("help tvlan.1.members", "tvlan.*.members ports 1-9 default none \"\"\nok\n");
+	expect("help tvlan", "tvlan.* object 1-4094 \"\"\ntvlan.*.name str 0-15 default \"\" \"\"\n"
+	       "tvlan.*.members ports 1-9 default none \"\"\ntvlan.*.tagged ports 1-9 default none \"\"\nok\n");
 	/* the real schema's, from its tips: a unit, a CPU port mask, a field under a path */
-	expect("help port.3.mtu", "port.N.mtu u16 64-16383 default 16383 unit B \"Largest frame accepted, in bytes\"\nok\n");
-	expect("help port.isolate", "port.N.isolate ports 1-9,cpu default 1-9,cpu \"Ports this port may send to\"\nok\n");
+	expect("help port.3.mtu", "port.*.mtu u16 64-16383 default 16383 unit B \"Largest frame accepted, in bytes\"\nok\n");
+	expect("help port.isolate", "port.*.isolate ports 1-9,cpu default 1-9,cpu \"Ports this port may send to\"\nok\n");
 	const char *o = run("help state.port.cabletest");
-	CHECK(!strncmp(o, "state.port.N.cabletest.state enum idle|running|done|timeout \"\"\n", 63) &&
-	      strstr(o, "\nstate.port.N.cabletest.d.length_m decimal - unit m \"") && !strstr(o, "object") &&
+	CHECK(!strncmp(o, "state.port.*.cabletest.state enum idle|running|done|timeout \"\"\n", 63) &&
+	      strstr(o, "\nstate.port.*.cabletest.d.length_m decimal - unit m \"") && !strstr(o, "object") &&
 	      !strstr(o, ".link ") && status_ok(o), "help state.port.cabletest: those fields, no other");
 	expect("help sys.reset", "sys.reset action - \"Reset the switch; the web's reply goes out first\"\nok\n");
 	/* errors as get's */

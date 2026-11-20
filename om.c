@@ -86,7 +86,7 @@ static __xdata uint8_t lv, lk, ln, la;	/* a level, its kind, count, arg */
 static __xdata uint8_t cur_e, cur_l, cur_f, cur_ok;	/* element, logical port, field, valid */
 static __xdata uint8_t * __xdata vp;	/* the current value */
 static __code const char * __xdata np;	/* the object's name, being walked */
-static __xdata uint8_t e_star;		/* emit_obj: 1 '*' for the indices; help 'N' (and 'M') */
+static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices (and help's forms) */
 /* the job */
 #define J_GET	1
 #define J_DIFF	2
@@ -337,11 +337,7 @@ static void emit_obj(void)		/* the instance's path: "port.3", "vlan.10" */
 			v16 = om_ix1;
 #endif
 		if (e_star) {
-#if OM_HELP
-			write_char(e_star == 1 ? '*' : e_star - lv);
-#else
 			write_char('*');
-#endif
 #if OM_USE_WORD
 		} else if (lk == IX_WORD) {
 			words(la);
@@ -2578,7 +2574,9 @@ static void rd_open(void)		/* rd_head(), and the CRC at once (boot) */
  * help (DESIGN.md 13), a line a step: an object's line, then its fields',
  *   <path> object [<index form>...] "<tip>"
  *   <path> <type> <form> [default <v>] [unit <u>] "<tip>"
- * the path, form and default from the tables, the rest from the help blob
+ * with '*' for the path's indices (e_star, as get's list; it also makes
+ * print_words join with '|' and ix_form give the board's ports). The
+ * path, form and default from the tables, the rest from the help blob
  * in the default config sector's tail (tools/om_gen.py help_blob()): rd()
  * reads its entries (no load or get -s meanwhile: one cli job), a token's
  * text goes into om_txt.
@@ -2734,7 +2732,7 @@ static uint8_t h_line(void)		/* help's next line: 0 at the end */
 		}
 		while (rd());			/* not this one's */
 	}
-	e_star = 'N';
+	e_star = 1;
 	if (cur_f) {
 		emit_path();
 		v8 = 0x7f + ft;

@@ -5,7 +5,7 @@
 # Deferred (P5-5): age (not read today).
 
 state("l2", stream=4096, get="om_get_l2",
-      tip="The learned and static MAC addresses, by table index: an entry's index changes when it ages out and is learned again")
+      tip="MAC addresses by table index; an entry relearned may move")
 st("mac", MAC())
 st("vlan", U16())
 st("port", Port(), tip="The port it was learned on, or cpu")
