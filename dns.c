@@ -9,6 +9,7 @@
 #include "uip/uip.h"
 #include "dhcp.h"
 #include "dns.h"
+#include "om_gen.h"
 
 
 #define DNS_PORT	53
@@ -188,27 +189,29 @@ void dns_lookup(void) __banked
 }
 
 
+/* the servers; what DHCP gave and the lookups: get state.dns */
 void dns_show(void) __banked
 {
 	print_string("DNS servers ");
 	print_ip(dns_state.server[0]);
 	write_char(' ');
 	print_ip(dns_state.server[1]);
-	print_string(", from DHCP ");
-	print_ip(dhcp_state.dns);
 	write_char('\n');
-	if (!dns_state.name[0])
-		return;
-	print_string("Last lookup ");
-	print_string_x(dns_state.name);
-	print_string(": ");
-	if (dns_state.status == DNS_DONE)
-		print_ip(dns_state.addr);
-	else if (dns_state.status == DNS_PENDING)
-		print_string("pending");
-	else
-		print_string("failed");
-	write_char('\n');
+}
+
+
+/* state.dns (schema/state_svc.py) */
+#define D	om_st.dns
+typedef char name_fits[sizeof(D.lookup_name) == DNS_NAME_LEN ? 1 : -1];
+
+uint8_t om_get_dns(uint8_t idx) __banked
+{
+	(void)idx;
+	memcpy(D.dhcp_server, dhcp_state.dns, 4);
+	memcpy(D.lookup_name, dns_state.name, DNS_NAME_LEN);
+	D.lookup_status = dns_state.status;
+	memcpy(D.lookup_ip, dns_state.addr, 4);
+	return OM_OK;
 }
 
 

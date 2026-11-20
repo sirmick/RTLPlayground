@@ -164,6 +164,35 @@ static int sched_clears;
 uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
 uint8_t om_get_con(uint8_t idx) { memset(&om_st.con, 0, sizeof(om_st.con)); om_st.con.tx_free = 2047; return OM_OK; }
 uint8_t om_do_sched_clear(uint8_t idx) { sched_clears++; return OM_OK; }
+/* state.mgmt, state.ntp, state.dns, state.loop (dhcp.c, ntp.c, dns.c, rtl837x_rldp.c) */
+uint8_t om_get_mgmt(uint8_t idx)
+{
+	static const uint8_t a[12] = { 192, 168, 2, 3, 255, 255, 255, 0, 192, 168, 2, 1 };
+	memset(&om_st.mgmt, 0, sizeof(om_st.mgmt));
+	memcpy(om_st.mgmt.ip, a, 4);
+	memcpy(om_st.mgmt.netmask, a + 4, 4);
+	memcpy(om_st.mgmt.gateway, a + 8, 4);
+	om_st.mgmt.dhcp_state = 4;
+	om_st.mgmt.dhcp_renew_s = 3600;
+	return OM_OK;
+}
+uint8_t om_get_ntp(uint8_t idx)
+{
+	memset(&om_st.ntp, 0, sizeof(om_st.ntp));
+	om_st.ntp.synced = 1;
+	om_st.ntp.time = 1795160000;
+	om_st.ntp.local_offset_min = -300;
+	om_st.ntp.stratum = 2;
+	return OM_OK;
+}
+uint8_t om_get_dns(uint8_t idx)
+{
+	memset(&om_st.dns, 0, sizeof(om_st.dns));
+	strcpy((char *)om_st.dns.lookup_name, "pool.ntp.org");
+	om_st.dns.lookup_status = 3;
+	return OM_OK;
+}
+uint8_t om_get_loop(uint8_t idx) { om_st.loop.looped = 0x0003; om_st.loop.blocked = 0x0002; return OM_OK; }
 /* state.sched (sched_health.c): the rows are test_sched.c's tasks' */
 uint8_t om_get_sched(uint8_t idx) { memset(&om_st.sched, 0, sizeof(om_st.sched)); om_st.sched.slots = 8; return OM_OK; }
 uint8_t om_get_sched_slot(uint8_t idx)
@@ -400,7 +429,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -627,6 +656,15 @@ static void kinds(void)
 	expect("get state.health", "state.health.hw_timeouts 2\nstate.health.hw_timeout_reg 0\n"
 	       "state.health.stack_headroom 40\nok\n");
 	expect("get state.con.tx_free", "state.con.tx_free 2047\nok\n");
+	expect("get state.mgmt", "state.mgmt.ip 192.168.2.3\nstate.mgmt.netmask 255.255.255.0\n"
+	       "state.mgmt.gateway 192.168.2.1\nstate.mgmt.dhcp.state leasing\nstate.mgmt.dhcp.renew_s 3600\n"
+	       "state.mgmt.dhcp.server 0.0.0.0\nok\n");
+	expect("get state.ntp", "state.ntp.synced on\nstate.ntp.time 1795160000\nstate.ntp.local_offset_min -300\n"
+	       "state.ntp.dst_active off\nstate.ntp.last_sync_s 0\nstate.ntp.stratum 2\nstate.ntp.server_ip 0.0.0.0\nok\n");
+	expect("get state.dns.lookup", "state.dns.lookup.name pool.ntp.org\nstate.dns.lookup.status failed\n"
+	       "state.dns.lookup.ip 0.0.0.0\nok\n");
+	expect("get state.loop", "state.loop.looped 1-2\nstate.loop.blocked 2\nok\n");
+	expect("set state.mgmt.ip 10.0.0.1", "err state.mgmt.ip: read only\n");
 	expect("do sched.clear", "ok\n");
 	CHECK(sched_clears == 1, "do sched.clear: its handler, once");
 	{
@@ -769,7 +807,8 @@ static void kinds(void)
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
 		      strstr(o, "state.cfg.confirm_s 0\nstate.health.hw_timeouts 2\n") &&
-		      strstr(o, "state.con.tx_free 2047\nstate.sys.version ") &&
+		      strstr(o, "state.con.tx_free 2047\nstate.mgmt.ip 192.168.2.3\n") &&
+		      strstr(o, "state.loop.blocked 2\nstate.sys.version ") &&
 		      strstr(o, "state.sys.reset.states.8 B_STEP\nstate.loader.present on\nstate.sched.passes ") &&
 		      strstr(o, "state.sched.task.j.max_us 13\nstate.tsys.bridge ") &&
 		      status_ok(o) && !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state: the whole state tree");

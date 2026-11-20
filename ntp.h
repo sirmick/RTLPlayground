@@ -34,7 +34,6 @@ void ntp_init(void) __banked;
 void ntp_start(void) __banked;
 void ntp_stop(void) __banked;
 void ntp_show(void) __banked __reentrant;
-void ntp_show_time(void) __banked __reentrant;
 void ntp_callback(uint16_t lport) __banked __reentrant;
 void ntp_parse(void) __banked __reentrant;
 
