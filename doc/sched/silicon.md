@@ -143,3 +143,35 @@ fcf16cc and back again; logs `(bench notes, not published)`.
   overruns line ("con rx overruns N").
 - A 500-character paste fills the line editor (127 characters, as in the
   sim); the overrun count wasn't visible (above).
+
+## M3 firmware on the 8x (phase EB), 2026-11-20
+
+The scheduler firmware after M3, b27eeb6 (E0-E5), web-updated over fcf16cc
+and back; driven from the bench host (logs not published).
+
+| Check | Result |
+|---|---|
+| boot, loop detection on the 5-6 cable | blocks port 6 ~8 s after each reset |
+| `l2` with 1000 learned MACs (injected with scapy from one port) | 1008 lines in 3.15 s over 1966 CLI_MORE steps, longest 429 us; longest pass 2.0 ms; loop detection kept polling |
+| SFP (10G DAC in slot 1), console `sfp` and /information.json | from the caches (no live I2C) |
+| link flap on one port | LINK_READ max 337 us, 0 hw timeouts |
+| config save (web POST /config of the current config) | FL_ERASE 35.5 ms (the sanctioned exception), FL_PROG 0.47 ms; read back identical |
+| firmware upload (curl, install image) | 16.2 s on b27eeb6; fcf16cc receiving the same image: 14.9 s |
+| ^R ^R | correct record through the loader (`con/CON_EDIT ... PC 0x473c bank 2`) |
+| overruns, console RX overruns, hw timeouts | 0 throughout, except the config save's FL_ERASE overrun |
+
+Findings:
+
+- **The upload is ~3x slower on silicon than in the sim** (16.2 s vs 5.1 s in
+  rtlsim). The receive window is one MSS and the client is Linux curl over a
+  real link: per-segment round trips (and delayed ACKs) that rtlsim's paced
+  links don't reproduce. Within Michael's "a slower upload is fine", but the
+  sim's model is optimistic: measure per-segment timing on the bench, and
+  consider advertising more than one MSS when the stage has room.
+- **RX_STEP 18.2 ms while a config POST arrives** (under the 20 ms limit, over
+  the 5 ms target; the sim didn't show it): the config upload's multipart
+  parse runs in one step. Together with the erase it made a 55 ms pass.
+- Not measured here, still open: an L2 flush's duration (HW_FLUSH_TICKS is a
+  guess), SFP_CONFIG with a module insert (the DAC was present from boot),
+  a failing I2C transaction's step, LACP (no partner on the rig).
+- The 8x is on fcf16cc again.
