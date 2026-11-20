@@ -1267,9 +1267,11 @@ void httpd_appcall(void)
 		uip_rcv_wnd = UIP_TCP_MSS;
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
 		up_active = 0;
-		/* the job still writes from config_buf for a connection that has
-		 * ended: no request may land there until it is done */
-		if (fl_kind) {
+		/* a job still writing from config_buf (an upload's stage, a config
+		 * save's text) for a connection that has ended: no request may
+		 * land there until it is done. Other jobs (the boot count's
+		 * erase, a factory reset) leave config_buf alone. */
+		if (fl_kind == FL_UPLOAD || fl_kind == FL_CONFIG) {
 			uip_abort();
 			s->tstate = TSTATE_CLOSED;
 		}
