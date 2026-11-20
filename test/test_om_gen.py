@@ -227,6 +227,8 @@ for name, schema, want in [
      "max=MAX_V is no const() declared before it"),
     ("const name", 'const("max_v", 8)\nobj("s")\ncfg("a", Bool, True)\n', "an upper-case name"),
     ("const reserved", 'const("OM_PORTS", 8)\nobj("s")\ncfg("a", Bool, True)\n', "om_gen.h's own names"),
+    ("const reserved O_", 'const("O_SYS", 8)\nobj("s")\ncfg("a", Bool, True)\n', "om_gen.h's own names"),
+    ("const reserved E_", 'const("E_CFGAPPLY_IDLE", 8)\nobj("s")\ncfg("a", Bool, True)\n', "om_gen.h's own names"),
     ("const twice", 'const("MAX_V", 8)\nconst("MAX_V", 9)\nobj("s")\ncfg("a", Bool, True)\n',
      "declared twice with different values"),
 ]:
