@@ -81,28 +81,19 @@ void json_char_to_html(uint8_t c)
 	outbuf[slen++] = c;
 }
 
-/* up to five digits (65535), no leading zeros; by subtraction, a leaf
- * writing outbuf through a pointer (F1b: the 16-bit divisions cost ~0.1 ms
- * a number) */
-static __code const uint16_t itoa16_pow[4] = { 10000, 1000, 100, 10 };
-void itoa16_html(uint16_t v)
+void itoa16_html(uint16_t v) /* up to five digits (65535) */
 {
-	__xdata uint8_t *o = outbuf + slen;
-	uint8_t i, d, z = 0;
-
-	for (i = 0; i < 4; i++) {
-		d = '0';
-		while (v >= itoa16_pow[i]) {
-			v -= itoa16_pow[i];
-			d++;
-		}
-		if (d != '0' || z) {
-			*o++ = d;
-			z = 1;
-		}
-	}
-	*o++ = '0' + v;
-	slen = o - outbuf;
+	uint8_t print_zeros = 0;
+	uint8_t d;
+	d = v / 10000;
+	if (d) { char_to_html('0' + d); print_zeros = 1; }
+	d = (v / 1000) % 10;
+	if (d || print_zeros) { char_to_html('0' + d); print_zeros = 1; }
+	d = (v / 100) % 10;
+	if (d || print_zeros) { char_to_html('0' + d); print_zeros = 1; }
+	d = (v / 10) % 10;
+	if (d || print_zeros) char_to_html('0' + d);
+	char_to_html('0' + (v % 10));
 }
 
 static void temp_to_html(void)
@@ -1173,21 +1164,6 @@ void send_cmd_log(void)
 }
 
 
-/* a VLAN name (up to its ' ' or NUL) as json_char_to_html() would put it,
- * a leaf through pointers (F1b: a call a character before) */
-static void vlan_name_to_html(__xdata uint8_t *p)
-{
-	__xdata uint8_t *o = outbuf + slen;
-	uint8_t c;
-
-	while ((c = *p++) && c != ' ') {
-		if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
-			c = '.';
-		*o++ = c;
-	}
-	slen = o - outbuf;
-}
-
 void send_vlanlist(void)
 {
 	/* Worst case per entry: {"id":4094,"name":"<117-char name>"} = 138 bytes
@@ -1202,7 +1178,6 @@ void send_vlanlist(void)
 	itoa16_html(management_vlan);
 	str_code_to_html("," JSONQUOTE("vlan") ":[");
 
-	vlan_names_index();
 	for (i = vlan_next(1); i < 4095; i = vlan_next(i + 1)) {	/* E4: the bitmap */
 		if (slen + 141 > TCP_OUTBUF_SIZE) /* comma + 138-byte worst-case entry + closing "]}" */
 			break;
@@ -1215,9 +1190,11 @@ void send_vlanlist(void)
 		itoa16_html(i);
 		str_code_to_html("," JSONQUOTE("name") ":\"");
 
-		n = vlan_name_idx[i];	/* vlan_name(i) */
-		if (n != 0xffff)
-			vlan_name_to_html(vlan_names + n);
+		n = vlan_name(i);
+		if (n != 0xffff) {
+			while (vlan_names[n] && vlan_names[n] != ' ')
+				json_char_to_html(vlan_names[n++]);
+		}
 
 		char_to_html('"');
 		char_to_html('}');
