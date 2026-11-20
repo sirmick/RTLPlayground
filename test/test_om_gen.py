@@ -221,5 +221,33 @@ mt = os.path.getmtime(js_path)
 subprocess.run([sys.executable, GEN, "-s", d, "--js", js_path], capture_output=True)
 check(os.path.getmtime(js_path) == mt, "an unchanged schema.js is not rewritten")
 
+print("schema constants (const)")
+for name, schema, want in [
+    ("max names no const", 'obj("v", keyed=U16(1, 4094), max="MAX_V")\ncfg("a", Bool, True)\n',
+     "max=MAX_V is no const() declared before it"),
+    ("const name", 'const("max_v", 8)\nobj("s")\ncfg("a", Bool, True)\n', "an upper-case name"),
+    ("const twice", 'const("MAX_V", 8)\nconst("MAX_V", 9)\nobj("s")\ncfg("a", Bool, True)\n',
+     "declared twice with different values"),
+]:
+    rc, out, _ = gen(schema, register=True)
+    check(rc != 0 and want in out, name, out)
+d = tempfile.mkdtemp()
+with open(os.path.join(d, "a.py"), "w") as f:
+    f.write('''const("MAX_V", 8)
+obj("v", keyed=U16(1, 4094), max="MAX_V")
+cfg("a", Bool, True)
+default_entry(1)
+''')
+subprocess.run([sys.executable, GEN, "-s", d, "--register"], capture_output=True)
+js_path = os.path.join(d, "schema.js")
+p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o"), "--js", js_path],
+                   capture_output=True, text=True)
+hh = open(os.path.join(d, "o", "om_gen.h")).read() if p.returncode == 0 else ""
+cc = open(os.path.join(d, "o", "om_gen.c")).read() if p.returncode == 0 else ""
+check(p.returncode == 0 and "#define MAX_V 8" in hh and "[MAX_V]" in hh and "{ MAX_V, 1 }" in cc,
+      "a const: om_gen.h defines it, C dimensions and tables use its name", p.stdout + p.stderr)
+txt = open(js_path).read() if os.path.exists(js_path) else ""
+check('"i":"K8"' in txt, "schema.js has its number", txt[:200])
+
 print("\n%s" % ("TEST_OM_GEN PASSED" if not fails else "%d FAILED" % fails))
 sys.exit(1 if fails else 0)
