@@ -3024,6 +3024,7 @@ var LSPEED = {
 
 function gets(paths) {	/* get paths (state.port.link: every port's), as few lines as fit, into one object */
     return cli(getLines(paths)).then(function(r) {
+        if (r.errs.length) throw new Error(r.errs[0]);	/* refused (busy): the caller keeps its last */
         var o = {};
         r.out.forEach(function(l) {
             parseLines(l, o)
