@@ -1359,17 +1359,6 @@ static void dump(const char *name, int n)	/* the sector and get -d, for test_om_
 	snprintf(fn, sizeof fn, "%s/om_codec_%s.txt", out_dir, name);
 	f = fopen(fn, "w");
 	fwrite(d, 1, strlen(d) - 3, f);		/* without "ok\n" */
-	/* what get -d can't say of a keyed object (P4-2): a default entry
-	 * deleted, an entry with every field at its default */
-	int one = 0;
-	for (int k = 0; !n && k < 4; k++) {
-		struct cfg_tvlan *e = &cfg_run.tvlan[k];
-		one |= e->key == 1;
-		if (e->key && !e->name[0] && !e->members && !e->tagged)
-			fprintf(f, "tvlan.%d\n", e->key);
-	}
-	if (!n && !one)
-		fprintf(f, "del tvlan.1\n");
 	fclose(f);
 }
 
@@ -1436,7 +1425,7 @@ static void binary(void)
 	/* all defaults: vlan's and tvlan's reset, and their entry 1 (members 1-9 against an entry's 0) */
 	static const uint8_t empty[] = { 0, 'R', 'C', '1', 24, 0 };
 	CHECK(!memcmp(sec, empty, 6) && sec[32] == 0xff, "save of the defaults: the header and 24 B of records");
-	expect("get -s", "vlan.1.members 1-9\ntvlan.1.members 1-9\nok\n");
+	expect("get -s", "ok\n");		/* the default entries at their own defaults: nothing */
 	expect("get state.cfg.save state.cfg.saved_bytes", "state.cfg.save done\nstate.cfg.saved_bytes 32\nok\n");
 
 	expect("set port.3.mtu 9000", "ok\n");
@@ -1554,8 +1543,8 @@ static void binary(void)
 		sec_write(r, sizeof r);
 		boot();
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
-		expect("get -d", "port.3.mtu 9000\nvlan.1.members 1-9\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
-		expect("get -s", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -d", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -s", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
 		dump("skip", 1);
 	}
 
@@ -2181,6 +2170,20 @@ static void vlans(void)
 	expect("set vlan.4000.members 1", "err vlan.4000.members: table full\n");
 	expect("discard", "ok\n");
 	vlan_checks = 0;
+
+	/* the text views of a keyed object: a default entry deleted, an entry at
+	 * its defaults, a default entry at its own default */
+	om_init();
+	expect("get -d vlan", "ok\n");
+	expect("del vlan.1", "ok\n");
+	expect("set vlan.20.name", "ok\n");
+	expect("set vlan.30.members 2", "ok\n");
+	expect("diff", "- vlan.1\n- vlan.1.members 1-9\n+ vlan.20\n+ vlan.30\n+ vlan.30.members 2\nok\n");
+	expect("apply", "ok\n");
+	expect("get -d", "del vlan.1\nvlan.20.name \nvlan.30.members 2\nok\n");	/* each replays */
+	expect("del vlan", "ok\n");
+	expect("diff", "+ vlan.1\n+ vlan.1.members 1-9\n- vlan.20\n- vlan.30\n- vlan.30.members 2\nok\n");
+	expect("discard", "ok\n");
 }
 
 int main(int argc, char **argv)

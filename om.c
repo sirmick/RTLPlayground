@@ -90,12 +90,15 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 /* the job */
 #define J_GET	1
 #define J_DIFF	2
-#define J_SAVED	3	/* get -s: a record a step */
+#define J_SAVED	3	/* get -s: the sector loaded into the candidate, printed as get -d */
 #define J_SAVE	4	/* the cli waits for the flash job */
 #define J_LOAD	5	/* a load, 256 B of records a step */
 #define J_APPLY	6	/* J_SAVE on: the job runs to its end (CLI_JOB_OMAPPLY) */
 #define J_COPY	7	/* discard: the queued copy */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
+static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
+static __xdata uint8_t kd;		/* a default entry */
+static __xdata uint8_t j_sv;		/* get -s: printing the loaded sector (bin_line()) */
 static __xdata uint8_t j_hit;		/* get, this path: 1 a field matched, 2 done, 3 failed */
 /* numbers */
 static __xdata uint8_t num[8], num_len, dig[21], k, i, v8, w;
@@ -240,8 +243,9 @@ static __xdata uint8_t *inst(__xdata uint8_t *base)
 #define X_RUN_CAND	2
 #define X_RUN_ROLL	3
 #define X_ROLL_CAND	4
-static __xdata uint8_t * __code const x_dst[] = { CAND, ROLL, RUN, RUN, ROLL };
-static __xdata uint8_t * __code const x_src[] = { RUN, RUN, CAND, ROLL, CAND };
+#define X_CAND_ROLL	5
+static __xdata uint8_t * __code const x_dst[] = { CAND, ROLL, RUN, RUN, ROLL, CAND };
+static __xdata uint8_t * __code const x_src[] = { RUN, RUN, CAND, ROLL, CAND, ROLL };
 #define X_STEPS	((sizeof(struct cfg) + X_CHUNK - 1) / X_CHUNK)
 #define X_LAST	(sizeof(struct cfg) - (X_STEPS - 1) * X_CHUNK)
 static __xdata uint8_t x_q[4], x_n, x_i, x_c;
@@ -1365,6 +1369,7 @@ static void job_inst(void)		/* entering an instance */
 	}
 	cur_f = 0;
 	j_in = 3;
+	j_pr = 0;
 #if OM_USE_KEY
 	/* diff: an entry made or deleted is a line of its own */
 	if (j_mode == J_DIFF && obx.k[0] == IX_KEY) {
@@ -1397,6 +1402,10 @@ static void job_start(uint8_t mode)
 }
 
 static uint8_t f_diff(void);
+static void inst_def(void);
+#if OM_USE_KEY
+static void key_dels(void);
+#endif
 
 /* the next field to print, or 0 at the end of the instance */
 static uint8_t next_field(void)
@@ -1406,7 +1415,7 @@ static uint8_t next_field(void)
 		if (ft == T_ACT || !om_when())
 			continue;
 		if (j_mode == J_GET) {
-			if (fmatch(0) && (!c_def || f_diff()))
+			if (fmatch(0) && (!c_def || f_diff()) && !(j_sv && ft == T_SECRET))
 				return 1;
 		} else {
 			vp = inst(RUN) + fdx.off;
@@ -1439,8 +1448,13 @@ static uint8_t next_obj(void)
 				if (!has_field())
 					continue;
 				j_hit |= 1;
-				if (c_def)
+				if (c_def) {
 					j_hit = 2;	/* -d: a path may have nothing off its default */
+#if OM_USE_KEY
+					if (obx.k[0] == IX_KEY)
+						key_dels();
+#endif
+				}
 			} else if (obx.flags & OM_STATE) {
 				continue;
 			} else {
@@ -1733,6 +1747,7 @@ uint8_t om_line(void) __banked
 				vp = inst(c_cand ? CAND : RUN) + fdx.off;
 				emit_line();
 				j_hit = 2;
+				j_pr = 1;
 			} else {
 				if (j_in & 1) {
 					print_string("- ");
@@ -1747,11 +1762,31 @@ uint8_t om_line(void) __banked
 			cur_f++;
 			return 1;
 		}
+#if OM_USE_KEY
+		/* get -d: an entry with nothing off its default is one line that
+		 * makes it, its first field; a default entry is just there */
+		if (c_def && !j_pr && j_mode == J_GET && obx.k[0] == IX_KEY) {
+			inst_def();
+			cur_f = 0;
+			sel_field();
+			if (cp == obx.def && fmatch(0)) {
+				vp = inst(c_cand ? CAND : RUN) + fdx.off;
+				emit_line();
+			}
+		}
+#endif
 		next_instance();
 		if (j_mode != J_APPLY)
 			return 1;		/* an instance a step: a keyed one is a pass over the slots */
 	}
 done:
+	if (j_sv) {			/* get -s printed: the candidate back, then running's copy */
+		j_sv = 0;
+		x_add(X_CAND_ROLL);
+		x_add(X_ROLL_RUN);
+		j_mode = J_COPY;
+		return 1;
+	}
 	if (!j_quiet && j_hit != 3)
 		ok();
 	return 0;
@@ -1768,7 +1803,9 @@ static void om_get(void)
 	if (cmd_words_len > 1 && cmd_buffer[cmd_words_b[1]] == '-') {
 		v8 = cmd_buffer[cmd_words_b[1] + 1];
 		c_pw = 2;
-		if (v8 == 's') {		/* the saved config, all of it */
+		if (v8 == 's') {		/* the saved config, all of it: get -d's lines of it */
+			if (in_window())
+				return;
 			if (sector_ok(0))
 				job_start(J_SAVED);
 			return;
@@ -1894,6 +1931,41 @@ static void key_clear(void)		/* the candidate's entries of obx gone */
 		memcpyc(inst(CAND), obx.def, obx.size);
 		pend_post();
 	}
+}
+
+/* get -d: "del <path>" for each default entry the copy lacks, before the
+ * object's other lines (a replay of them can't make it again) */
+static __code const uint8_t * __xdata kdp;
+
+static void def_next(void)		/* the next default entry (kdp from obx.def): its key in kbest */
+{
+	kdp += obx.size;
+	kbest = kdp[0] | (uint16_t)kdp[1] << 8;
+}
+
+static __xdata uint8_t kf;
+static __xdata uint16_t kr, kk;
+
+static void key_dels(void)
+{
+	kf = r_fix;			/* the path's, for next_obj() */
+	kr = r_v;
+	kdp = obx.def;
+	for (kd = 0; kd < obx.ndef; kd++) {
+		def_next();
+		kk = kbest;		/* first_inst() uses kbest */
+		r_fix = 1;		/* the entry, looked up as a path naming it */
+		r_v = kk;
+		first_inst();
+		if (cur_ok)
+			continue;
+		cv = kk;
+		print_string("del ");
+		emit_obj();
+		write_char('\n');
+	}
+	r_fix = kf;
+	r_v = kr;
 }
 
 /* del of a keyed object: every entry gone, then its default entries again */
@@ -2080,13 +2152,32 @@ static uint8_t code_differs(void)
 	return 0;
 }
 
-/* fdx's value in running is off its default (vp at it); not for actions */
+/* cp: the instance's default. get -d's (c_def): a default entry of a keyed
+ * object has its own (vlan.1's members); else, and for save, the element's */
+static void inst_def(void)
+{
+	cp = def_ptr();
+#if OM_USE_KEY
+	if (!c_def || obx.k[0] != IX_KEY)
+		return;
+	kdp = obx.def;
+	for (kd = 0; kd < obx.ndef; kd++) {
+		def_next();
+		if (kbest == cv)
+			cp = kdp;
+	}
+#endif
+}
+
+/* fdx's value in running (get -c -d: the candidate) is off its default (vp at
+ * it); not for actions */
 static uint8_t f_diff(void)
 {
-	vp = inst(RUN) + fdx.off;
+	vp = inst(c_def && c_cand ? CAND : RUN) + fdx.off;
 	if (ft == T_ACT || !om_when())
 		return 0;
-	cp = def_ptr() + fdx.off;
+	inst_def();
+	cp += fdx.off;
 	x_k = fsize();
 	return code_differs();
 }
@@ -2454,6 +2545,7 @@ static uint8_t val_ok(void)
 /* load: rd() at the records; the candidate from the defaults (def_step()
  * first), the records (load_step()), then om_pend (pend_step()) */
 static __xdata uint8_t l_def, l_rec;
+static __xdata uint16_t sv_pend, sv_skip;	/* get -s: what its load mustn't change */
 
 static void load_begin(void)
 {
@@ -2539,36 +2631,6 @@ static uint8_t load_step(void)
 		}
 		memcpy(inst(CAND) + fdx.off, om_val, fsize());
 	}
-}
-
-/* get -s: the saved config's next field that a load takes, as a line (not a
- * Secret); 0 at the end */
-static uint8_t saved_line(void)
-{
-	while ((v8 = dec_next()) != D_END) {
-		if (v8 == D_INST) {
-			d_ok = d_obj();
-#if OM_USE_KEY
-			if (d_ok && obx.k[0] == IX_KEY) {
-				cv = r_v;		/* the key; 0: the object's reset */
-				if (!cv)
-					d_ok = 0;
-				continue;
-			}
-#endif
-			if (d_ok) {
-				first_inst();
-				d_ok = cur_ok;
-			}
-			continue;
-		}
-		if (d_ok && d_field() && ft != T_SECRET && om_when() && val_ok()) {
-			vp = om_val;		/* what a load takes */
-			emit_line();
-			return 1;
-		}
-	}
-	return 0;
 }
 
 static void rd_sector(uint8_t dflt)	/* the saved or the default sector: rd_open() it */
@@ -2713,23 +2775,48 @@ static uint8_t bin_line(void)
 			j_hit = 3;
 			return 0;
 		}
-		if (j_mode == J_LOAD)
+		if (j_mode == J_SAVED)		/* the candidate aside, into the rollback copy */
+			x_add(X_ROLL_CAND);
+		if (j_mode != J_SAVE) {
+			sv_pend = om_pend;
+			sv_skip = bs.skipped;
 			load_begin();
+		}
 		return 1;
 	}
-	if (j_mode == J_LOAD) {
-		if (l_def)
+	if (j_mode != J_SAVE) {		/* load; get -s: the sector into the candidate (it aside first) */
+		if (x_step())
+			return 1;
+		if (l_def) {
 			l_def = def_step();
-		else if (l_rec) {
+			return 1;
+		}
+		if (l_rec) {
 			l_rec = load_step();
-			if (!l_rec)
+			if (!l_rec && j_mode == J_LOAD)
 				pend_start();
-		} else
+			return 1;
+		}
+		if (j_mode == J_LOAD)
 			return pend_step();
+		pend_off = 0;			/* get -s: get -c -d of it */
+		om_pend = sv_pend;
+		bs.skipped = sv_skip;
+		c_def = 1;
+		c_cand = 1;
+		j_sv = 1;
+		cmd_words_b[2] = cmd_words_b[1] + 2;	/* every path, as get -d */
+		cmd_words_len = 3;
+		c_pw = 2;
+		r_first = 0xff;
+		j_hit = 0;
+		j_mode = J_GET;
+		j_new = 1;
+#if OM_USE_KEY
+		j_copies = 2 | K_SORT;
+#endif
 		return 1;
 	}
-	if (j_mode == J_SAVED)
-		return saved_line();
 	if (fl_kind == FL_SAVE)
 		return 1;
 	if (bs.save != E_CFGSAVE_DONE) {

@@ -47,8 +47,7 @@ def main():
             check(len(skipped) == 9, "skip: and skips what the load skipped (9)", "\n".join(skipped))
             continue
         got = rc.bin2txt(sch, b)
-        lines = [ln for ln in t if " " in ln and not ln.startswith("del ")]	# not test_om's keyed notes
-        check(got == lines, "%s: bin2txt is get -d" % n, "\n".join(got))
+        check(got == t, "%s: bin2txt is get -d (keyed: its dels and empty entries too)" % n, "\n".join(got))
         mine = rc.txt2bin(sch, t)
         check(mine == b, "%s: txt2bin of get -d is the firmware's save (%d B)" % (n, len(b)),
               "python %s\nC      %s" % (mine.hex(), b.hex()))
@@ -62,8 +61,12 @@ def main():
     # front 1 is logical 4, front 6 logical 3: bits 4 and 3
     check(b[8:] == bytes([1, 1, 0, 1, 11, 2, 0x18, 0]) + bytes([1, 6, 0, 1, 5, 2]) + struct.pack("<H", 9000) +
           vdef(0x1f8), "SWGT024: front-panel numbers to logical bits, the index as typed", b[8:].hex())
-    check(rc.bin2txt(sw, b) == ["port.1.isolate 1,6", "port.6.mtu 9000", "vlan.1.members 1-6"], "and back",
-          rc.bin2txt(sw, b))
+    check(rc.bin2txt(sw, b) == ["port.1.isolate 1,6", "port.6.mtu 9000"], "and back", rc.bin2txt(sw, b))
+    # keyed (P4-2): a default entry deleted, an entry with nothing off its default
+    for t in (["del vlan.1", "vlan.20.name "], ["vlan.1.members 2", "vlan.20.name ", "vlan.30.tagged 1", "vlan.30.members 1"]):
+        got = rc.bin2txt(rc.Schema(), rc.txt2bin(rc.Schema(), t))
+        want = [ln for ln in t if ln != "vlan.30.tagged 1"] + (["vlan.30.tagged 1"] if "vlan.30.tagged 1" in t else [])
+        check(got == want, "keyed round trip: %s" % " / ".join(t), "\n".join(got))
     b8 = rc.txt2bin(rc.Schema(), [])
     check(b8[8:] == vdef(0x1ff), "the defaults: a header and VLAN 1's records", b8.hex())
     for bad, why in (("port.10.mtu 100", "no such port"), ("port.1.mtu 63", "64-16383"),
