@@ -105,7 +105,6 @@ var LANG = {
         p_txfault: "TX fault",
         p_txdis: "TX disabled",
         p_rxlos: "RX LOS",
-        p_adv: "Advertising",
         pt_title: "Port configuration",
         f_port_duplex: "Duplex",
         f_port_ingress_filter: "Filter",
@@ -498,7 +497,6 @@ var LANG = {
         p_txfault: "TX 障害",
         p_txdis: "TX 無効",
         p_rxlos: "RX 信号ロス",
-        p_adv: "アドバタイズ",
         pt_title: "ポート設定",
         pt_conn: "学習済みデバイス",
         pt_speed: "速度",
@@ -783,7 +781,6 @@ var LANG = {
         p_txfault: "TX 故障",
         p_txdis: "TX 禁用",
         p_rxlos: "RX 信号丢失",
-        p_adv: "通告能力",
         pt_title: "端口配置",
         pt_conn: "已学习设备",
         pt_speed: "速率",
@@ -1134,7 +1131,6 @@ var LANG = {
         p_txfault: "Fallo TX",
         p_txdis: "TX deshabilitado",
         p_rxlos: "Pérdida RX (LOS)",
-        p_adv: "Anunciado",
         pt_title: "Configuración de puerto",
         pt_conn: "Dispositivos aprendidos",
         pt_speed: "Velocidad",
@@ -1491,7 +1487,6 @@ var LANG = {
         p_txfault: "TX erreur",
         p_txdis: "TX désactivé",
         p_rxlos: "RX pertes de signaux",
-        p_adv: "Capacités",
         pt_title: "Configuration du port",
         pt_conn: "Appareils appris",
         pt_speed: "Vitesse",
@@ -1810,7 +1805,6 @@ var LANG = {
         p_txfault: "TX-Fehler",
         p_txdis: "TX deaktiviert",
         p_rxlos: "RX LOS",
-        p_adv: "Angeboten",
         pt_title: "Port-Konfiguration",
         pt_conn: "Gelernte Geräte",
         pt_speed: "Geschwindigkeit",
@@ -3016,17 +3010,69 @@ function byPort(a) {
     })
 }
 
+/* The port strip's poll (DESIGN 14.4) on state.port, and the config it
+ * shows (portsCfg: at start and after a staging reload); S.ports keeps the
+ * old shape: link "DOWN" or the speed's text, txG..rxB decimal */
+var LSPEED = {
+    "10m": "10M",
+    "100m": "100M",
+    "500m": "500M",
+    "1g": "1000M",
+    "2g5": "2.5G",
+    "5g": "5G",
+    "10g": "10G"
+};
+
+function gets(paths) {	/* get paths, as few lines as fit, into one object */
+    return cli(getLines(paths)).then(function(r) {
+        var o = {};
+        r.out.forEach(function(l) {
+            parseLines(l, o)
+        });
+        return o;
+    });
+}
+
+function portsCfg() {
+    return gets(["port.*.name", "port.*.enabled", "port.*.speed", "state.port.*.media"]).then(function(o) {
+        S.pcfg = o;
+    });
+}
+omReloaders.push(function() {
+    portsCfg().catch(function() {})
+});
+
 function pollStatus() {
-    return Promise.all([
-        getJSON("/ports.json"),
-        getJSON("/traffic.json")
-    ]).then(function([s,t]) {
-        byPort(s);
-        byPort(t);
-        s = s.map((item,i) => ({ ...item, ...t[i]}));
+    return (S.pcfg ? Promise.resolve() : portsCfg()).then(function() {
+        return gets(["state.port.*.link", "state.port.*.speed", "state.port.*.duplex", "state.port.*.tx_good",
+            "state.port.*.rx_good", "state.port.*.tx_bad", "state.port.*.rx_bad", "state.sfp.*.present"]);
+    }).then(function(o) {
+        var c = S.pcfg.port || {},
+            m = (S.pcfg.state || {}).port || {},
+            st = (o.state || {}).port || {},
+            sfp = (o.state || {}).sfp || {},
+            s = [],
+            now = Date.now();
+        Object.keys(c).sort(function(a, b) {
+            return a - b
+        }).forEach(function(n) {
+            var x = st[n] || {},
+                sp = m[n] && m[n].media === "sfp";
+            s.push({
+                port: +n,
+                name: c[n].name,
+                isSFP: sp,
+                cspeed: c[n].speed,
+                link: x.link !== "up" ? "DOWN" : (LSPEED[x.speed] || "?") + (x.duplex === "half" ? "-HD" : ""),
+                txG: x.tx_good || "0",
+                rxG: x.rx_good || "0",
+                txB: x.tx_bad || "0",
+                rxB: x.rx_bad || "0"
+            });
+        });
+        var first = !S.n;
         S.ports = s;
-        var now = Date.now();
-        if (!S.n) {
+        if (first) {
             S.n = s.length;
             var slot = 0;
             s.forEach(function(p) {
@@ -3035,8 +3081,11 @@ function pollStatus() {
                     S.sfpSlot[p.port - 1] = slot;
                 }
             });
-            buildStrip();
         }
+        s.forEach(function(p) {	/* an SFP port is on with a module in its cage */
+            p.enabled = p.isSFP ? (sfp[S.sfpSlot[p.port - 1]] || {}).present === "on" : c[p.port].enabled === "on";
+        });
+        if (first) buildStrip();
         if (S.prev) {
             var dt = (now - S.prevT) / 1000;
             if (dt > 0.2) s.forEach(function(p, i) {
@@ -3232,8 +3281,8 @@ function portRows(p) {
                 ("pin=" + losPin + " mod=" + losMod + " !") : t((losMod != null ? losMod : losPin) ? "c_yes" : "c_no");
             rows.push([t("p_rxlos"), v]);
         }
-    } else if (p.adv) {
-        rows.push([t("p_adv"), p.adv.join(", ").replaceAll("-HD"," " + t("c_half")).replaceAll("-FD"," " + t("c_full")) || "-"]);
+    } else if (p.cspeed) {
+        rows.push([t("pt_speed"), p.cspeed === "auto" ? t("c_auto") : p.cspeed]);	/* the config's, not the PHY's */
     }
     return rows;
 }
