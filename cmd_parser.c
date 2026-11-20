@@ -25,7 +25,6 @@
 #include "rtl837x_cabletest.h"
 #include "sfp.h"
 #include "dhcp.h"
-#include "syslog.h"
 #include "sessions.h"
 #include "dns.h"
 #include "ntp.h"
@@ -54,9 +53,7 @@ extern __code const uint8_t * __code const hex;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
 
-extern __xdata char passwd[21];
 
-extern __xdata uint16_t session_timeout;
 
 extern __xdata struct dhcp_state dhcp_state;
 
@@ -80,10 +77,6 @@ __xdata	char save_cmd;
 
 __xdata uint8_t ip[4];
 __xdata uint8_t mac_parse_result[6];
-
-/* Scratch for parse_syslog(), in xdata: a local here would take internal RAM
- * the linker has none of. */
-__xdata uint8_t  syslog_port_was_on;
 
 // These variables combined create a Fixed-capacity vector/bounded buffer.
 // `N_WORDS`: The total number of command arguments that can be tracked.
@@ -445,6 +438,14 @@ void print_mac(__xdata uint8_t *ptr) __banked
 	}
 }
 
+static void cmd_error(__code const char *msg)
+{
+	err_status = ERR_INVALID_ARGUMENT;
+	print_string("Error: ");
+	print_string(msg);
+}
+
+
 // Parses a MAC address "aa:bb:cc:dd:ee:ff" (":" or "-" separators) from
 // cmd_buffer starting at idx into the global mac_parse_result[6]. Each octet
 // must be exactly two hex digits with a separator between octets and nothing
@@ -493,38 +494,6 @@ err:
 	return 0;
 }
 
-static void cmd_error(__code const char *msg)
-{
-	err_status = ERR_INVALID_ARGUMENT;
-	print_string("Error: ");
-	print_string(msg);
-}
-
-
-static uint8_t name_char(uint8_t c)
-{
-	if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
-		return '.';
-	return c;
-}
-
-
-// "led off" turns every LED off, "led off ports" only the port LEDs (the
-// system LED stays on), "led on" restores them. Saved in the startup
-// config like any command, so it holds across reboots.
-void parse_led(void)
-{
-	if (cmd_words_len == 2 && cmd_compare(1, "on"))
-		leds_off(0, 0);
-	else if (cmd_words_len == 2 && cmd_compare(1, "off"))
-		leds_off(1, 1);
-	else if (cmd_words_len == 3 && cmd_compare(1, "off") && cmd_compare(2, "ports"))
-		leds_off(1, 0);
-	else
-		cmd_error("led on|off [ports]\n");
-}
-
-
 // Sets the management MAC from a "mac <aa:bb:cc:dd:ee:ff>" command (or prints
 // the current one with a bare "mac"). Refuses blank/multicast/all-zero-OUI
 // addresses so the running MAC stays reachable, and
@@ -562,6 +531,13 @@ void parse_mac_cmd(void)
 	print_mac(uip_ethaddr.addr);
 	write_char('\n');
 	print_string("Save the startup config to keep it across reboots\n");
+}
+
+static uint8_t name_char(uint8_t c)
+{
+	if (c < 0x20 || c > 0x7e || c == '"' || c == '\\')
+		return '.';
+	return c;
 }
 
 
@@ -698,20 +674,9 @@ void parse_vlan(void)
 			goto err;
 		vlan_settings.vlan = atoi_results_short;
 
+		/* the management VLAN is mgmt.vlan now: not a name, the VLAN untouched */
 		if (cmd_compare(2, "mgmt")) {
-			if (management_vlan == vlan_settings.vlan) {
-				print_string("Management VLAN unchanged\n");
-				return;
-			}
-			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
-			management_vlan = vlan_settings.vlan;
-			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
-			if (dhcp_state.state != DHCP_OFF)
-				dhcp_start();
-			if (!vlan_settings.vlan)
-				print_string("Management VLAN disabled\n");
-			else
-				print_string("Management VLAN set to "); print_short(management_vlan); write_char('\n');
+			cmd_error("set mgmt.vlan\n");
 			return;
 		}
 
@@ -1218,27 +1183,6 @@ err:
 }
 
 
-void parse_passwd(void)
-{
-	// cmd_words_len can be more then 2 if a SPACE in the password.
-	if (cmd_words_len >= 2) {
-		uint8_t i = cmd_words_b[1];		
-		uint8_t c = 0;
-		uint8_t j = 0;
-		do {
-			c = cmd_buffer[i++];
-			passwd[j++] = c;
-		} while (c != NUL && j < 20);
-		passwd[j] = NUL;
-		/* Logins made with the old password end here. With one session the next
-		 * login pushed a leftover one out; with several it would stay valid. */
-		session_init();
-		return;
-	}
-	cmd_error("Missing password\n");
-}
-
-
 void parse_bw(void)
 {
 	if (cmd_words_len < 3) // Check for at least 3 arguments
@@ -1357,92 +1301,6 @@ void parse_storm(void)
 
 err:
 	print_string("usage: storm [<port> bcast|mcast|ucast|umcast <rate> pps|kbps|off]\n");
-}
-
-void parse_syslog(void)
-{
-	if (cmd_words_len < 2) // no argument -> print status
-	{
-		print_string("Current syslog status: ");
-		if (syslog_state.enabled) {
-			print_string("enabled, sending to ");
-			print_ip(syslog_state.server_ip);
-			write_char(':'); itoa_short(syslog_state.server_port);
-			write_char('\n');
-		} else {
-			print_string("disabled\n");
-		}
-		return;
-	}
-
-	if (cmd_compare(1, "on")) {
-		syslog_start();
-	} else if (cmd_compare(1, "off")){
-		syslog_stop();
-	} else if (cmd_compare(1, "ip")) {
-		if (cmd_words_len < 3) { // no additional arguemnt -> print current ip
-			print_string("Current syslog IP: ");
-			print_ip(syslog_state.server_ip);
-			return;
-		} else if (parse_ip(cmd_words_b[2]) != 0) {
-			uint8_t was_enabled = syslog_state.enabled;
-			if (was_enabled)
-				syslog_stop();
-			print_string("Setting new syslog IP.\n");
-			syslog_state.server_ip[0] = ip[0]; syslog_state.server_ip[1] = ip[1];
-			syslog_state.server_ip[2] = ip[2]; syslog_state.server_ip[3] = ip[3];
-			if (was_enabled)
-				syslog_start();
-		} else {
-			cmd_error("Invalid IP address\n");
-		}
-	} else if (cmd_compare(1, "port")) {
-		if (cmd_words_len < 3) { // no additional argument -> print current port
-			print_string("Current syslog port: ");
-			itoa_short(syslog_state.server_port); write_char('\n');
-			return;
-		}
-		/* atoi_short() returns zero for no digits and for a value past
-		 * 65535; port zero is not a port either, so both tests are needed. */
-		if (!atoi_short(cmd_words_b[2]) || !atoi_results_short) {
-			cmd_error("Invalid port\n");
-			return;
-		}
-		/* The port is frozen into the connection by uip_udp_new(), so
-		 * changing it has to tear the connection down and build a new one -
-		 * same dance as setting the address above. */
-		syslog_port_was_on = syslog_state.enabled;
-		if (syslog_port_was_on)
-			syslog_stop();
-		print_string("Setting new syslog port.\n");
-		syslog_state.server_port = atoi_results_short;
-		if (syslog_port_was_on)
-			syslog_start();
-	}
-	else
-	{
-		cmd_error("syslog [on|off|ip [ip-address]|port [number]]\n"
-			  "  on/off enables or disables syslog, ip sets the syslog server IP address,\n"
-			  "  port sets the destination UDP port (default 514)\n");
-	}
-}
-
-void parse_session(void)
-{
-	if (cmd_words_len >= 2) {
-		/* atoi_short() returns zero for no digits and for a value past
-		 * 65535; a zero-second timeout is not useful either, so both
-		 * tests are needed. */
-		if (!atoi_short(cmd_words_b[1]) || !atoi_results_short) {
-			print_string("Must be 1-65535 s\n");
-			return;
-		}
-		session_timeout = atoi_results_short;
-	}
-	/* Also the confirmation after setting: one message for both. */
-	print_string("Session timeout: ");
-	itoa_short(session_timeout);
-	print_string(" s\n");
 }
 
 void parse_flash(void)
@@ -1629,52 +1487,15 @@ void cmd_parser(void) __banked
 			parse_sfp();
 		} else if (cmd_compare(0, "flash")) {
 			parse_flash();
-		} else if (cmd_compare(0, "syslog")) {
-			parse_syslog();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
-		} else if (cmd_compare(0, "ntp")) {
-			ntp_parse();
-		} else if (cmd_compare(0, "ip")) {
-			if (cmd_compare(1, "dhcp")) {
-				dhcp_start();
-			} else {		/* the address now: get state.mgmt */
-				if (dhcp_state.state && cmd_words_len > 1)
-					dhcp_stop();
-				if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-					uip_ipaddr(&uip_hostaddr, ip[0], ip[1], ip[2], ip[3]);
-					print_string("Setting ip: ");
-					print_ip(ip); write_char('\n');
-				} else {
-					cmd_error("Invalid IP address\n" \
-								 "Error: ip <ip-address>|dhcp\n" \
-								 "  The dhcp option enables the dhcp client (get state.mgmt shows the address)\n" \
-								 "  Calling with a valid IP address will stop any ongoing dhcp client and set the IP address\n");
-				}
-			}
-		} else if (cmd_compare(0, "gw")) {
-			if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-				uip_ipaddr(&uip_draddr, ip[0], ip[1], ip[2], ip[3]);
-				print_string("Setting gw: ");
-				print_ip(ip); write_char('\n');
-			} else {
-				cmd_error("Invalid IP address\n" \
-								 "Error: gw <ip-address>\n");
-			}
-		} else if (cmd_compare(0, "netmask")) {
-			if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-				uip_ipaddr(&uip_netmask, ip[0], ip[1], ip[2], ip[3]);
-				print_string("Setting netmask: ");
-				print_ip(ip); write_char('\n');
-			} else {
-				cmd_error("Invalid IP address\n");
-			}
-			write_char('\n');
 		} else if (cmd_compare(0, "l2")) {
 			if (cmd_compare(1, "forget"))
 				port_l2_forget();
 			else
 				port_l2_learned();
+		} else if (cmd_compare(0, "mac")) {
+			parse_mac_cmd();
 		} else if (cmd_compare(0, "igmp")) {
 			if (cmd_compare(1, "on"))
 				igmp_enable();
@@ -1684,29 +1505,6 @@ void cmd_parser(void) __banked
 				igmp_show();
 			else {
 				cmd_error("igmp on|off|show\n");
-			}
-		} else if (cmd_compare(0, "mac")) {
-			parse_mac_cmd();
-		} else if (cmd_compare(0, "hostname")) {
-			/* "hostname" alone reports the current name; "hostname <text>"
-			 * sets it, sanitized to JSON-safe printable ASCII. A name with
-			 * spaces would tokenize into several words - reject it instead
-			 * of silently keeping the first one. */
-			if (cmd_words_len == 1) {
-				print_string_x(hostname);
-				write_char('\n');
-			} else if (cmd_words_len == 2) {
-				__xdata uint8_t *hp = &cmd_buffer[cmd_words_b[1]];
-				__xdata char *dst = hostname;
-				for (uint8_t hn = 0; hn < sizeof(hostname) - 1; hn++) {
-					uint8_t c = *hp++;
-					if (c == NUL || c == '\r' || c == '\n')
-						break;
-					*dst++ = name_char(c);
-				}
-				*dst = NUL;
-			} else {
-				cmd_error("hostname [name] - the name must not contain spaces\n");
 			}
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
@@ -1734,8 +1532,6 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
-		} else if (cmd_compare(0, "led")) {
-			parse_led();
 		} else if (cmd_compare(0, "loop")) {
 			if (cmd_words_len == 2 && cmd_compare(1, "on"))
 				rldp_set(1);
@@ -1757,8 +1553,6 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
-		} else if (cmd_compare(0, "passwd")) {
-			parse_passwd();
 		} else if (cmd_compare(0, "bw")) {
 			parse_bw();
 		} else if (cmd_compare(0, "storm")) {
@@ -1767,8 +1561,6 @@ void cmd_parser(void) __banked
 			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			hist_begun = 0;
 			cli_job = CLI_JOB_HISTORY;
-		} else if (cmd_compare(0, "session")) {
-			parse_session();
 		} else if (cmd_compare(0, "lldp")) {
 			if (cmd_compare(1, "on")) {
 				print_string("LLDP enabled\n");
@@ -1822,7 +1614,6 @@ void clear_command_history(void) __banked
 
 
 #define FLASH_READ_BURST_SIZE 0x100
-#define PASSWORD "1234"
 
 #if CONFIG_LEN % FLASH_READ_BURST_SIZE
 	#error "CONFIG_LEN not a multiple of FLASH_READ_BURST_SIZE"
@@ -1837,8 +1628,6 @@ void execute_config(void) __banked
 		pos = DEFAULT_CONFIG_START;
 	}
 
-	// Set default password, it can be overwritten in the configuration file
-	strtox(passwd, PASSWORD);
 	save_cmd = 0;
 
 	// Coming from the standard layout, the saved config is moved to its

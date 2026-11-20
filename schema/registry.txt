@@ -16,3 +16,27 @@ field 1.10 port.eee BOOL
 field 1.11 port.isolate PMASK
 obj 2 sys
 obj 3 sched
+obj 4 syslog
+field 4.1 syslog.enabled BOOL
+field 4.2 syslog.server IPV4
+field 4.3 syslog.port U16
+obj 5 dns
+field 5.1 dns.server1 IPV4
+field 5.2 dns.server2 IPV4
+obj 6 ntp
+field 6.1 ntp.enabled BOOL
+field 6.2 ntp.server Str(47)
+field 6.3 ntp.interval_min U16
+field 6.4 ntp.timezone TZ
+field 6.5 ntp.dst Enum(dst)
+obj 7 web
+field 7.1 web.password Secret(20)
+field 7.2 web.session_timeout_s U16
+obj 8 mgmt
+field 8.1 mgmt.mode Enum(mgmtmode)
+field 8.2 mgmt.ip IPV4
+field 8.3 mgmt.netmask MASK4
+field 8.4 mgmt.gateway IPV4
+field 8.5 mgmt.vlan U16
+field 2.1 sys.hostname Str(23)
+field 2.2 sys.led Enum(led)

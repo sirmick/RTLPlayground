@@ -122,24 +122,6 @@ static uint8_t ntp_in_dst(uint8_t sm, uint8_t sn, uint8_t sh, uint8_t em, uint8_
 }
 
 
-static void ntp_print2(uint8_t v) __reentrant
-{
-	write_char('0' + v / 10);
-	write_char('0' + v % 10);
-}
-
-
-static void ntp_print_offset(int16_t off) __reentrant
-{
-	uint16_t a = off < 0 ? -off : off;
-
-	write_char(off < 0 ? '-' : '+');
-	ntp_print2(a / 60);
-	write_char(':');
-	ntp_print2(a % 60);
-}
-
-
 static void ntp_connect(__xdata uint8_t *a) __reentrant
 {
 	if (ntp_state.conn)
@@ -259,22 +241,6 @@ uint8_t om_get_ntp(uint8_t idx) __banked
 	N.dst_active = g_dst;
 	N.local_offset_min = g_dst ? g_off + 60 : g_off;
 	return OM_OK;
-}
-
-
-void ntp_show(void) __banked __reentrant
-{
-	int16_t off = ntp_state.offset;
-
-	print_string(ntp_state.enabled ? "NTP on, server " : "NTP off, server ");
-	print_string_x(ntp_state.server);
-	print_string(", address ");
-	print_ip(ntp_state.addr);
-	print_string(", interval ");
-	itoa_short(ntp_state.interval);
-	print_string(" min, timezone ");
-	ntp_print_offset(off);
-	print_string(ntp_state.dst == NTP_DST_EU ? ", dst eu\n" : ntp_state.dst == NTP_DST_US ? ", dst us\n" : ", dst off\n");
 }
 
 

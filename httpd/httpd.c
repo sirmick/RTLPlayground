@@ -20,8 +20,8 @@
 
 #define SESSION_TIMEOUT_DEFAULT 3600
 
-/* Seconds of inactivity after which a session cookie stops validating.
- * Configurable with the "session" command, see cmd_parser.c. */
+/* Seconds of inactivity after which a session cookie stops validating:
+ * web.session_timeout_s (om_svc.c applies it). */
 __xdata uint16_t session_timeout = SESSION_TIMEOUT_DEFAULT;
 
 #define CMARK_S 6
@@ -81,7 +81,7 @@ __xdata uint16_t short_parsed;
 __xdata uint8_t postbody_endpoint;
 __xdata struct timer postbody_timer;
 
-__xdata char passwd[21];
+__xdata char passwd[21] = "1234";	/* web.password (om_svc.c) */
 // Up to four logins at once, see sessions.c
 __xdata uint8_t authenticated;
 __xdata uint32_t now;

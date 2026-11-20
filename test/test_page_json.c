@@ -101,9 +101,8 @@ static void t_vlanlist(void)
 	make_vlan(4094, 0x0001, 0x0000);
 	name_vlan(10, "lab");
 	name_vlan(4094, "top");
-	management_vlan = 10;
 	send_vlanlist();
-	CHECK(has("\"mgmt\":10"), "management VLAN");
+	CHECK(!has("\"mgmt\""), "no management VLAN: it is mgmt.vlan (P4-1)");
 	CHECK(has("{\"id\":10,\"name\":\"lab\"}"), "VLAN 10 with its name");
 	CHECK(has("{\"id\":20,\"name\":\"\"}"), "VLAN 20 without a name");
 	CHECK(has("{\"id\":4094,\"name\":\"top\"}"), "VLAN 4094 is the last one listed");

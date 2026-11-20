@@ -12,21 +12,21 @@ can reach config_buf meanwhile, unless the /cmd's own connection ends first.
 W1: a config upload (POST /config, staged in config_buf), a /cmd, another
     upload, another /cmd: each /cmd's reply is its commands' output and each
     upload is in flash.
-W2: a /cmd ("hostname aborted") and the client's RST in the same instant,
-    then a POST /config (its body "hostname cfgbody ...") on a new
+W2: a /cmd ("set sys.hostname aborted", apply) and the client's RST in the same instant,
+    then a POST /config (its body "set sys.hostname cfgbody ...") on a new
     connection: the cancelled command runs nothing, the upload's body isn't
     run as commands (hostname unchanged, the console silent), and the upload
     is in flash. The order is forced by the sim: the /cmd segment and the RST
     are in the NIC ring together, and the rx task takes up to RX_BUDGET (4)
     frames a step, so the RST is handled before cli's next step.
-W3: a /cmd ("hostname tail3\nip") followed, in a segment of its own in the
+W3: a /cmd ("set sys.hostname tail3", apply, "get mgmt.ip") followed, in a segment of its own in the
     same instant, by a CRLF; W4: the same with a second request pipelined
     behind it (GET /ports.json): the posted command runs exactly (hostname
     set, the reply its output, no parse error) and the extra data is
     dropped, as today's code drops data while the reply is sent.
 W5: a web /cmd "l2\nhostname oldbody" over 300 learned MACs, its connection
-    reset mid-dump, and at once a new /cmd "hostname w5\nip": the new one
-    gets its own reply (ip's, no l2 lines), the hostname is w5, and the old
+    reset mid-dump, and at once a new /cmd "set sys.hostname w5", apply, "get mgmt.ip": the new one
+    gets its own reply (mgmt.ip's, no l2 lines), the hostname is w5, and the old
     body's second line never runs (E1: the run checks its command's
     generation at every step).
 W6: STP off, "stp bpdu filter" (the BPDU entries CPU-only), VLAN 4000
@@ -40,13 +40,13 @@ Exit status 1 if any fails.
 """
 import argparse, os, re, struct, sys
 
-CMD = "ip\nversion"
+CMD = "get mgmt.ip\nget state.sys.version"
 CONFIG_START = 0x7f000
 
 
 def cmd_ok(resp):
     body = resp.partition(b"\r\n\r\n")[2]
-    return resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"Software version:" in body
+    return resp.startswith(b"HTTP/1.1 200") and b"mgmt.ip " in body and b"state.sys.version " in body
 
 
 class Conn:
@@ -162,7 +162,7 @@ def main(argv):
     from bench import Bench
 
     fails = []
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None, om=("state.mgmt",))	# its address: get state.mgmt.ip
     # the image's map (next to it), for W5 and W6's run-until on cli's steps
     mp = os.path.join(os.path.dirname(os.path.abspath(a.image)), "rtlplayground.map")
     r.b.close()
@@ -197,11 +197,12 @@ def main(argv):
 
         def hostname():
             k.b.pending()
-            before, out = k.b.console("hostname", k.b.now + 3000000)
-            return (out or "").replace("hostname", "", 1).replace("\n> ", "").strip()
+            before, out = k.b.console("get sys.hostname", k.b.now + 3000000)	# sys.hostname: P4-1
+            m = re.search(r"sys\.hostname (\S*)", out or "")
+            return m.group(1) if m else ""
 
         F = r.F
-        cfg = lambda name: f"hostname {name}\nvlan 10 {F[1]} {F[2]}t\npvid {F[1]} 10\n"
+        cfg = lambda name: f"set sys.hostname {name}\napply\nvlan 10 {F[1]} {F[2]}t\npvid {F[1]} 10\n"
 
         # W1
         res = []
@@ -220,7 +221,7 @@ def main(argv):
         name0 = hostname()
         k.b.pending()
         c = k.open()
-        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"hostname aborted"))
+        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"set sys.hostname aborted\napply"))
         c.tcp(0x04)				# RST, in the same instant
         k.run(1000000)
         ok_up, saved = upload(cfg("cfgbody"))
@@ -243,14 +244,14 @@ def main(argv):
             want = f"tail{name[1]}"
             k.b.pending()
             c = k.open()
-            k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", f"hostname {want}\nip".encode()))
+            k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", f"set sys.hostname {want}\napply\nget mgmt.ip".encode()))
             k.send(c, extra)			# in the same instant: before cli runs
             k.run(3000000, lambda: k.done(c))
             k.close(c)
             body = c.resp.partition(b"\r\n\r\n")[2]
             con = k.b.pending()
             got = hostname()
-            ok = (c.resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"rror" not in body
+            ok = (c.resp.startswith(b"HTTP/1.1 200") and b"mgmt.ip " in body and b"rror" not in body
                   and b"Unknown" not in body and got == want and "Unknown command" not in con)
             print(f"{name} /cmd then {'a CRLF' if name == 'W3' else 'a pipelined GET'}: hostname {got!r}, "
                   f"reply {body[:50]!r}: {'PASS' if ok else 'FAIL'}")
@@ -294,18 +295,18 @@ def main(argv):
         k.run(2000000)
         k.b.pending()
         c1 = k.open()
-        k.send(c1, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"l2\nhostname oldbody"))
+        k.send(c1, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"l2\nset sys.hostname oldbody\napply"))
         k.run(5000000, lambda: k.b.take_uart().count("\n") > 100)	# mid-dump, the TX ring full
         until_step(r, "_cli_more")		# a line printed: cli waits ~4 ms for room for the next
         c1.tcp(0x04)
         c2 = k.open()
-        k.send(c2, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"hostname w5\nip"))
+        k.send(c2, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"set sys.hostname w5\napply\nget mgmt.ip"))
         k.run(8000000, lambda: k.done(c2))
         k.close(c2)
         k.run(1000000)
         body = c2.resp.partition(b"\r\n\r\n")[2]
         got = hostname()
-        ok = (c2.resp.startswith(b"HTTP/1.1 200") and b"Current IP:" in body and b"02:00:00:10" not in body
+        ok = (c2.resp.startswith(b"HTTP/1.1 200") and b"mgmt.ip " in body and b"02:00:00:10" not in body
               and got == "w5")
         print(f"W5 a new /cmd after one reset mid-l2: hostname {got!r}, reply {body[:60]!r}: {'PASS' if ok else 'FAIL'}")
         if not ok:

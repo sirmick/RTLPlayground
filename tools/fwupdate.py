@@ -180,13 +180,15 @@ def fetch_info(host, port, timeout, cookie):
     info = {}
     try:
         status, _, _, body = http_request(
-            host, port, timeout, "POST", "/cli", body=b"get state.sys",
+            host, port, timeout, "POST", "/cli", body=b"get state.sys sys.hostname",
             cookie=cookie, content_type="text/plain")
         if status == 200:
             for line in body.decode("utf-8", "replace").splitlines():
                 path, _, value = line.partition(" ")
                 if path.startswith("state.sys."):
                     info[path[len("state.sys."):]] = value
+                elif path == "sys.hostname":	# config since P4-1
+                    info["hostname"] = value
         if info:
             return info
         status, _, _, body = http_request(

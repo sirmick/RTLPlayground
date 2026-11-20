@@ -159,6 +159,29 @@ uint8_t om_do_sys_factory_reset(uint8_t idx)
 }
 uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
 
+/* the services (om_svc.c): what each apply saw */
+static int t_syslog;
+static struct cfg_syslog syslog_new;
+uint8_t om_apply_syslog(uint8_t idx) { t_syslog++; syslog_new = cfg_run.syslog; return OM_OK; }
+static int t_dns, t_ntp, t_web, t_mgmt, t_renew, t_sysa;
+uint8_t om_apply_sys(uint8_t idx) { t_sysa++; return OM_OK; }
+uint8_t om_check_sys(uint8_t idx) { if (strchr(cfg_cand.sys.hostname, ' ')) { om_fail(OM_E_HOSTNAME_SPACE); return OM_ERR; } return OM_OK; }
+uint8_t om_derive_sys(uint8_t idx) { strcpy((char *)om_val, "RTLPlayground-0a0b0c"); return OM_OK; }
+uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
+uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
+{
+	t_renew++;
+	if (cfg_run.mgmt.mode != E_MGMTMODE_DHCP) {
+		om_fail(OM_E_MGMT_STATIC);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
+uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
+uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
+uint8_t om_do_ntp_sync(uint8_t idx) { if (!cfg_run.ntp.enabled) { om_fail(OM_E_NTP_OFF); return OM_ERR; } return OM_OK; }
+uint8_t om_apply_dns(uint8_t idx) { t_dns++; return OM_OK; }
+
 /* state.health, state.con, do sched.clear (om_health.c, sched_health.c) */
 static int sched_clears;
 uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
@@ -425,10 +448,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -632,7 +655,7 @@ static void kinds(void)
 	expect("do sys.factory_reset", "err sys.factory_reset: the flash is busy\n");
 	CHECK(sys_rnd == 1 && sys_factory == 1, "do sys.rnd, sys.factory_reset: their handlers");
 	expect("set sys.reset on", "err sys.reset: an action: do it\n");
-	expect("do sys", "err sys: reset factory_reset rnd\n");
+	expect("do sys", "err sys: hostname led reset factory_reset rnd\n");
 	expect("get state.sys.version state.sys.chip state.sys.ports state.sys.sfp_ports state.sys.ports_10g",
 	       "state.sys.version v0.1.0-test\nstate.sys.chip rtl8373\nstate.sys.ports 1-9\n"
 	       "state.sys.sfp_ports 9\nstate.sys.ports_10g none\nok\n");
@@ -799,7 +822,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -1285,10 +1308,75 @@ static void fuzz(void)
 	CHECK(bad == 0, "fuzz: 50000 random lines, no crash, each ends in one status line");
 }
 
+/* P4-1's objects: their defaults, their text, one apply each */
+static void services(void)
+{
+	printf("services\n");
+	om_init();
+	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nok\n");
+	expect("set sys.led ports_off", "ok\n");
+	expect("set sys.hostname lab 1", "ok\n");
+	expect("apply", "err sys: sys.hostname: no space\n");
+	expect("discard", "ok\n");
+	expect("set sys.led ports_off", "ok\n");
+	expect("set sys.hostname lab1", "ok\n");
+	t_sysa = 0;
+	expect("apply", "ok\n");
+	expect("get sys.hostname sys.led", "sys.hostname lab1\nsys.led ports_off\nok\n");
+	CHECK(t_sysa == 1, "sys: one apply");
+	expect("set sys.hostname", "ok\n");
+	expect("apply", "ok\n");
+	expect("get sys.hostname", "sys.hostname RTLPlayground-0a0b0c\nok\n");
+	expect("get mgmt", "mgmt.mode static\nmgmt.ip 192.168.2.2\nmgmt.netmask 255.255.255.0\nmgmt.gateway 192.168.2.22\nmgmt.vlan 1\nok\n");
+	expect("do mgmt.dhcp_renew", "err mgmt.dhcp_renew: mgmt.mode is static\n");
+	expect("set mgmt.ip 10.0.0.5", "ok\n");
+	expect("set mgmt.netmask 255.0.255.0", "err mgmt.netmask: a.b.c.d, contiguous\n");
+	expect("set mgmt.mode dhcp", "ok\n");
+	t_mgmt = 0;
+	expect("apply", "ok\n");
+	CHECK(t_mgmt == 1 && cfg_run.mgmt.mode == E_MGMTMODE_DHCP && cfg_run.mgmt.ip[3] == 5, "mgmt: one apply, dhcp, the static address kept");
+	expect("do mgmt.dhcp_renew", "ok\n");
+	expect("get dns", "dns.server1 0.0.0.0\ndns.server2 0.0.0.0\nok\n");
+	expect("set dns.server2 9.9.9.9", "ok\n");
+	t_dns = 0;
+	expect("apply", "ok\n");
+	CHECK(t_dns == 1 && cfg_run.dns.server2[0] == 9 && !cfg_run.dns.server1[0], "dns: one apply, server2 alone");
+	expect("get ntp", "ntp.enabled off\nntp.server pool.ntp.org\nntp.interval_min 60\nntp.timezone +00:00\nntp.dst off\nok\n");
+	expect("set ntp.interval_min 1441", "err ntp.interval_min: 1-1440\n");
+	expect("set ntp.timezone +05:30", "ok\n");
+	expect("set ntp.dst eu", "ok\n");
+	t_ntp = 0;
+	expect("apply", "ok\n");
+	expect("do ntp.sync", "err ntp.sync: ntp.enabled is off\n");
+	CHECK(t_ntp == 1 && cfg_run.ntp.timezone == 330 && cfg_run.ntp.dst == E_DST_EU, "ntp: one apply, +05:30 is 330 minutes");
+	expect("get web", "web.password *\nweb.session_timeout_s 3600\nok\n");
+	expect("set web.password two words", "err web.password: printable text without \" \\ or a space, at most its length\n");
+	expect("set web.password s3cret", "ok\n");
+	expect("set web.session_timeout_s 59", "err web.session_timeout_s: 60-65535\n");
+	t_web = 0;
+	expect("apply", "ok\n");
+	CHECK(t_web == 1 && !strcmp(cfg_run.web.password, "s3cret"), "web: one apply, the new password");
+	expect("get web.password", "web.password *\nok\n");
+	expect("get syslog", "syslog.enabled off\nsyslog.server 0.0.0.0\nsyslog.port 514\nok\n");
+	expect("set syslog.port 0", "err syslog.port: 1-65535\n");
+	expect("set syslog.server 10.1.2.3", "ok\n");
+	expect("set syslog.port 5514", "ok\n");
+	expect("set syslog.enabled on", "ok\n");
+	t_syslog = 0;
+	expect("apply", "ok\n");
+	CHECK(t_syslog == 1 && syslog_new.enabled && syslog_new.port == 5514 && syslog_new.server[0] == 10 &&
+	      syslog_new.server[3] == 3, "syslog: one apply, with the new fields");
+	expect("set syslog.enabled off", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(t_syslog == 2 && !syslog_new.enabled, "syslog off: applied again");
+	om_init();
+}
+
 int main(void)
 {
 	cases();
 	kinds();
+	services();
 	staging();
 	roundtrip();
 	roundtrip_kinds();

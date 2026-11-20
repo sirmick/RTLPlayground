@@ -189,17 +189,6 @@ void dns_lookup(void) __banked
 }
 
 
-/* the servers; what DHCP gave and the lookups: get state.dns */
-void dns_show(void) __banked
-{
-	print_string("DNS servers ");
-	print_ip(dns_state.server[0]);
-	write_char(' ');
-	print_ip(dns_state.server[1]);
-	write_char('\n');
-}
-
-
 /* state.dns (schema/state_svc.py) */
 #define D	om_st.dns
 /* state.dns.lookup.status's words are the DNS_* states (a negative size if not) */
