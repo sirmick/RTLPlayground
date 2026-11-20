@@ -60,9 +60,10 @@ ok
 | `GET /`, `/index.html`, `/login.html`, `app.js`, `favicon.ico` | The web UI's files. |
 
 Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.port`,
-`port.*`); `/eee.json` (`port.N.eee`, `state.port.N.eee_active`); `/isolation.json`
+`port.*`); `/eee.json` (`port.N.eee`, `.eee_speeds`, `state.port.N.eee.active`, `.eee.lp`); `/isolation.json`
 (`port.N.isolate`); `/information.json` (`get state.sys`, `state.sys.reset`,
 `state.loader`); `/l2.json` (`get state.l2`), `/counters.json` (`state.port.N.mib`);
+`/bandwidth.json`, `/storm.json` (`port.N.bw_*`, `port.N.storm.T.*`);
 `/cmd_log`, `/cmd_log_clear` (no command history any more); `/lag.json` (`get lag`,
 `state.lag`, `state.lacp.port`).
 
@@ -74,27 +75,6 @@ Each is a GET, needs the cookie, and goes when its object moves:
 |---|---|---|
 | `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
 | `/stp.json` | P4-4 | `stp.*`, `state.stp` |
-| `/bandwidth.json`, `/storm.json` | P4-6 | `port.N.bw_*`, `port.N.storm.*` |
-
-## bandwidth
-```json
-[
-    {"port":1,"iLimited":false,"iBW":"0x0fffff","iAction":"drop","eLimited":false,"eBW":"0x0fffff"},
-    {"port":2,"iLimited":false,"iBW":"0x0fffff","iAction":"fc","eLimited":false,"eBW":"0x0fffff"},
-    ...
-]
-```
-Array of port properties (until P4-6)
-
-
-| Property | Description
-|----------|------------
-| `port` | The physical port number
-| `iLimited` | Apply ingress (inbound) limit
-| `iBW` | The ingress rate limit applied
-| `iAction` | Action to preform on limit exceedence, "drop" - drop frame "fc" - use TCP flow control
-| `eLimited` | Apply egress (outbound) limit
-| `eBW` | The egress rate limit applied
 
 ## stp (until P4-4)
 ```json
@@ -155,34 +135,6 @@ doc/stp.md) over POST /cli, which also has most of this as `get state.stp`.
 | `tagged_members` | Ports that will send participate in this VLAN by transmitting and receiving tagged frames
 | `name` | The name of the VLAN
 | `pvid` | List of physical ports that have their Port VLAN ID set to this VLAN
-
-## storm (until P4-6)
-```json
-[
-    {
-        "port":1,
-        "bcast":{"enabled":true,"unit":"kbit/s","rate":"0x000037"},
-        "mcast":{"enabled":false,"unit":"pps","rate":"0x000000"},
-        "ucast":{"enabled":false,"unit":"pps","rate":"0x000000"},
-        "umcast":{"enabled":false,"unit":"pps","rate":"0x000000"}
-    }
-]
-```
-Array of port settings
-| Property | Description
-|----------|------------
-| `port` | Physical port number
-| `bcast` | Broadcast traffic settings
-| `mcast` | Multicast traffic settings
-| `ucast` | Unknown unicast traffic settings
-| `umcast` | Unknown multicast traffic settings
-
-* Setting
-| Property | Description
-|----------|------------
-| `enabled` | Storm control on or off
-| `unit` | The unit of the rate "pps" or "kbit/s"
-| `rate` | The value of the limit
 
 ## vlanlist (until P4-2)
 ```json

@@ -26,3 +26,5 @@ field 204.2 tstp.port.edge Enum(tedge)
 obj 205 port.tstorm
 field 205.1 port.tstorm.rate U32
 field 205.2 port.tstorm.unit Enum(tsunit)
+retired 205.1 port.tstorm.rate
+retired 205.2 port.tstorm.unit

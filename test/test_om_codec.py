@@ -282,27 +282,27 @@ def convert():
     warn = []
     lines, legacy, bad = legacy_map.convert(OLD.encode(), sch.board, warn, sch)
     mine = [ln for ln in WANT if not ln.split()[1 if ln.startswith("del ") else 0].startswith(
-        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac", "port.2.storm", "port.3.bw_", "port.9."))]
+        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac"))]
     check(lines == mine, "the schema's paths are path lines (%d)" % len(lines), "\n".join(lines))
     check(rc.txt2bin(sch, lines)[:4] == b"\0RC1", "and txt2bin takes them all")
     want = [("vlan 100 lab 1 2t 9t", "P4-2"), ("vlan 200 3 4", "P4-2"), ("vlan 200 d", "P4-2"),
             ("lag 1 lacp 7 8", "P4-3"), ("lag 2 lacp 8", "P4-3"), ("laghash 1 sip dip", "P4-3"),
             ("stp on", "P4-4"), ("stp prio 8", "P4-4"), ("stp port 3 cost 20000", "P4-4"),
-            ("stp lag 1 edge on", "P4-4"), ("storm 2 bcast 1000 pps", "P4-6"), ("bw in 3 1f4", "P4-6"),
-            ("sfp 1 10g", "P4-6"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
+            ("stp lag 1 edge on", "P4-4"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
     check(legacy == want, "the rest is legacy, in order, each with the node that migrates it", legacy)
     check(bad == ["a typo here"] and not warn, "the typo is still reported", (bad, warn))
     warn = []
     lines, legacy, bad = legacy_map.convert(b"mtu 2 10\nport 12 off\npvid 3 5000\nport 9 on\nport 9 name up\n"
                                             b"port 9 auto\nsfp 1 10g\nhostname ok\n", sch.board, warn, sch)
-    check(lines == ["port.9.name up", "sys.hostname ok"], "values the schema refuses aren't taken", lines)
+    check(lines == ["port.9.name up", "port.9.speed 10g", "sys.hostname ok"], "values the schema refuses aren't taken", lines)
     check(bad == ["mtu 2 10", "port 12 off", "pvid 3 5000"] and
           warn == ["mtu 2 10: port.2.mtu: 64-16383", "port 12 off: port.12.enabled: no such port",
                    "pvid 3 5000: port.3.pvid: 0-4094"], "they are reported, with set's reason", (bad, warn))
-    check(legacy == [("port 9 on", "P4-6"), ("port 9 auto", "P4-6"), ("sfp 1 10g", "P4-6")],
-          "an SFP port's copper fields are P4-6's legacy", legacy)
+    check(legacy == [("port 9 on", "P4-6"), ("port 9 auto", "P4-6")],
+          "an SFP port's copper fields are legacy; its speed isn't", legacy)
     lines, legacy, _ = legacy_map.convert(b"port 9 auto\nsfp 1 10g\nport 4 off\n", sch.board, None, sch)
-    check(lines == ["port.4.enabled off"] and len(legacy) == 2, "a legacy line's paths never reach the output",
+    check(lines == ["port.9.speed 10g", "port.4.enabled off"] and len(legacy) == 1,
+          "a legacy line's paths never reach the output",
           lines)
     b = rc.Board("SWGT024_V2_0_UNMANAGED")
     lines, legacy, bad = legacy_map.convert(b"port 1 on\neee on\nstp on\n", b, None, p41_schema(b))

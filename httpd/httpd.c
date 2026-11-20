@@ -1331,11 +1331,7 @@ void httpd_appcall(void)
 				goto do_send;
 			}
 			dbg_string("Not file entry\n");
-			if (is_word(q, "/bandwidth.json")) {
-				send_bandwidth();
-			} else if (is_word(q, "/storm.json")) {
-				send_storm();
-			} else if (is_word(q, "/stp.json")) {
+			if (is_word(q, "/stp.json")) {
 				send_stp();
 			} else if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */

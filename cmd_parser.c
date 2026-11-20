@@ -15,11 +15,8 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_igmp.h"
-#include "rtl837x_bandwidth.h"
-#include "rtl837x_storm.h"
 #include "rtl837x_trap.h"
 #include "rtl837x_cabletest.h"
-#include "sfp.h"
 #include "dhcp.h"
 #include "sessions.h"
 #include "dns.h"
@@ -512,52 +509,6 @@ void parse_mac_cmd(void)
 	print_string("Save the startup config to keep it across reboots\n");
 }
 
-void parse_sfp(void)
-{
-	uint8_t slot;
-
-	if (cmd_words_len != 3)		/* the modules: get state.sfp */
-		goto err;
-
-	uint8_t idx = cmd_words_b[1];
-	uint8_t ret = atoi_byte(idx);
-	idx += ret;
-	slot = atoi_results_u8 - 1;
-	if (ret == 0 || !cmd_is_space(idx) || slot > 1) {
-		cmd_error("Illegal SFP slot number\n");
-		return;
-	}
-	if (slot >= machine.n_sfp) {
-		cmd_error("SFP slot not present\n");
-		return;
-	}
-
-	if (cmd_compare(2, "10g")) {
-		print_string(" 10G\n");
-		sfp_speed[slot] = SFP_SPEED_10G;
-	} else if (cmd_compare(2, "2g5")) {
-		print_string(" 2.5G\n");
-		sfp_speed[slot] = SFP_SPEED_2G5;
-	} else if (cmd_compare(2, "1g")) {
-		print_string(" 1G\n");
-		sfp_speed[slot] = SFP_SPEED_1G;
-	} else if (cmd_compare(2, "100m")) {
-		print_string(" 100M\n");
-		sfp_speed[slot] = SFP_SPEED_100M;
-	} else if (cmd_compare(2, "auto")) {
-		print_string(" AUTO\n");
-		sfp_speed[slot] = SFP_SPEED_AUTO;
-	} else {
-		goto err;
-	}
-	sfp_pins_last |= 0x1 << (slot << 2);	/* found again at once, then read */
-	sfp_pins(slot);
-	return;
-err:
-	cmd_error("\nUsage:\n\tsfp [1|2] [1g|2g5|10g|100m|auto]\n\t(the modules: get state.sfp)\n");
-}
-
-
 void parse_regget(void)
 {
 	if (cmd_words_len != 2) {
@@ -846,126 +797,6 @@ err:
 }
 
 
-void parse_bw(void)
-{
-	if (cmd_words_len < 3) // Check for at least 3 arguments
-		goto err;
-
-	if (cmd_parse_port_separator(cmd_words_b[2]) == 0)
-		goto err;
-	uint8_t port = atoi_results_u8;
-
-	if (cmd_compare(1, "status")) {
-		bandwidth_status(port);
-		return;
-	}
-
-	if (cmd_words_len < 4) // Check for at least 4 arguments
-		goto err;
-
-	// Ensure first argument is only `in` or `out`.
-	__bit is_in = cmd_compare(1, "in") != 0;
-	if (!(is_in || cmd_compare(1, "out")))
-		goto err;
-
-	if (cmd_compare(3, "drop")) {
-		if (is_in) {
-			bandwidth_ingress_drop(port);
-			return;
-		}
-		goto err;
-	}
-
-	if (cmd_compare(3, "fc")) {
-		if (is_in) {
-			bandwidth_ingress_fc(port);
-			return;
-		}
-		goto err;
-	}
-
-	if (cmd_compare(3, "off")) {
-		if (is_in) {
-			bandwidth_ingress_disable(port);
-		} else  {
-			bandwidth_egress_disable(port);
-		}
-		return;
-	}
-
-	__xdata uint32_t bw = 0;
-	uint8_t hex_size = atoi_hex(cmd_words_b[3]);
-	if (hex_size == 0 || hex_size > 4)
-		goto err;
-
-	uint8_t i = 0;
-	do {
-		hex_size--;
-		*(((uint8_t *) &bw) + hex_size) = hexvalue[i++];
-	} while (hex_size);
-
-	if (is_in) {
-		bandwidth_ingress_set(port, bw);
-	} else {
-		bandwidth_egress_set(port, bw);
-	}
-	return;
-
-err:
-	cmd_error("bw [in|out|status] <port> [<hexvalue>|off|drop|fc]\n");
-}
-
-static __code const char * __code const storm_types[STORM_TYPES] = { "bcast", "mcast", "ucast", "umcast" };
-
-void parse_storm(void)
-{
-	uint8_t port, type, d;
-	__xdata uint32_t rate;
-	__xdata uint8_t *p;
-
-	if (cmd_words_len == 1)
-		return storm_show();
-	if (cmd_words_len < 4 || !cmd_parse_port_separator(cmd_words_b[1]))
-		goto err;
-	port = atoi_results_u8;
-
-	type = 0;
-	while (!cmd_compare(2, storm_types[type])) {
-		if (++type == STORM_TYPES)
-			goto err;
-	}
-
-	if (cmd_words_len == 4 && cmd_compare(3, "off"))
-		return storm_off(port, type);
-	if (cmd_words_len != 5)
-		goto err;
-
-	rate = 0;
-	p = &cmd_buffer[cmd_words_b[3]];
-	do {
-		d = *p++ - '0';
-		if (d > 9 || rate > 99999999)
-			goto err;
-		rate = (rate << 3) + (rate << 1) + d;
-	} while (*p != ' ' && *p != NUL);
-
-	if (cmd_compare(4, "pps")) {
-		if (!rate || rate > 0xfffff)
-			goto err;
-		storm_set(port, type, rate, 1);
-	} else if (cmd_compare(4, "kbps")) {
-		if (!rate || rate > 10000000)
-			goto err;
-		storm_set(port, type, rate, 0);
-	} else {
-		goto err;
-	}
-	return;
-
-err:
-	print_string("usage: storm [<port> bcast|mcast|ucast|umcast <rate> pps|kbps|off]\n");
-}
-
 void parse_flash(void)
 {
 	if (cmd_words_len >= 2) {
@@ -1146,7 +977,7 @@ void cmd_parser(void) __banked
 	if (cmd_words_len >= 1) {
 		if (om_cmd()) {
 		} else if (cmd_compare(0, "sfp")) {
-			parse_sfp();
+			cmd_error("\nUsage: get state.sfp; a cage's speed: port.N.speed\n");
 		} else if (cmd_compare(0, "flash")) {
 			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
@@ -1181,10 +1012,6 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
-		} else if (cmd_compare(0, "bw")) {
-			parse_bw();
-		} else if (cmd_compare(0, "storm")) {
-			parse_storm();
 		} else {
 			cmd_error("Unknown command\n");
 		}

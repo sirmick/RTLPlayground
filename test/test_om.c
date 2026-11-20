@@ -180,8 +180,8 @@ uint8_t om_get_port(uint8_t idx)
 	om_st.port.media = machine.is_sfp[idx] ? E_MEDIA_SFP : E_MEDIA_COPPER;
 	om_st.port.macs = 7;
 	memcpy(om_st.port.tx_good, &st_tx_good, 8);	/* little endian on x86 too */
-	om_st.port.cabletest_a_length_m = st_len;
-	om_st.port.cabletest_a_result = E_CTRES_OPEN;
+	om_st.port.cabletest_pair_a_length_m = st_len;
+	om_st.port.cabletest_pair_a_result = E_CTRES_OPEN;
 	return OM_OK;
 }
 
@@ -529,7 +529,8 @@ uint8_t om_apply_tvlan(uint8_t idx)
 
 uint8_t om_apply_tlag(uint8_t idx) { t_lag[idx]++; return OM_OK; }
 uint8_t om_apply_tstp_port(uint8_t idx) { t_stpp[idx]++; return OM_OK; }
-uint8_t om_apply_tstorm(uint8_t idx) { t_storm[idx]++; return OM_OK; }
+uint8_t om_apply_port_storm(uint8_t idx) { t_storm[idx]++; return OM_OK; }
+uint8_t om_check_port_storm(uint8_t idx) { (void)idx; return OM_OK; }
 
 uint8_t om_get_tsys(uint8_t idx)
 {
@@ -683,8 +684,8 @@ static int status_ok(const char *o)
 	return !strncmp(last, "ok\n", 3) || !strncmp(last, "err ", 4) || !strncmp(last, "err:", 4);
 }
 
-/* the test schema's port.N.tstorm.T, at its defaults */
-#define STORM1(n, t) "port." n ".tstorm." t ".rate 0\nport." n ".tstorm." t ".unit pps\n"
+/* port.N.storm.T, at its defaults */
+#define STORM1(n, t) "port." n ".storm." t ".rate 0\nport." n ".storm." t ".unit pps\n"
 #define STORM(n) STORM1(n, "bcast") STORM1(n, "mcast") STORM1(n, "ucast") STORM1(n, "umcast")
 
 static void cases(void)
@@ -697,9 +698,11 @@ static void cases(void)
 	expect("get port.3.isolate", "port.3.isolate 1-9,cpu\nok\n");
 	expect("get port.2", "port.2.name \nport.2.enabled on\nport.2.speed auto\nport.2.duplex auto\n"
 	       "port.2.mtu 16383\nport.2.pvid 1\nport.2.ingress all\nport.2.ingress_filter on\n"
-	       "port.2.lldp permit\nport.2.eee on\nport.2.isolate 1-9,cpu\n" STORM("2") "ok\n");
-	expect("get port.9", "port.9.name \nport.9.mtu 16383\nport.9.pvid 1\nport.9.ingress all\n"
-	       "port.9.ingress_filter on\nport.9.lldp permit\nport.9.isolate 1-9,cpu\n" STORM("9") "ok\n");
+	       "port.2.lldp permit\nport.2.eee on\nport.2.eee_speeds 100m,1g,2g5,5g,10g\nport.2.isolate 1-9,cpu\n"
+	       "port.2.bw_in_kbps 0\nport.2.bw_in_mode drop\nport.2.bw_out_kbps 0\n" STORM("2") "ok\n");
+	expect("get port.9", "port.9.name \nport.9.speed auto\nport.9.mtu 16383\nport.9.pvid 1\nport.9.ingress all\n"
+	       "port.9.ingress_filter on\nport.9.lldp permit\nport.9.isolate 1-9,cpu\n"
+	       "port.9.bw_in_kbps 0\nport.9.bw_in_mode drop\nport.9.bw_out_kbps 0\n" STORM("9") "ok\n");
 	expect("get port.*.pvid", "port.1.pvid 1\nport.2.pvid 1\nport.3.pvid 1\nport.4.pvid 1\n"
 	       "port.5.pvid 1\nport.6.pvid 1\nport.7.pvid 1\nport.8.pvid 1\nport.9.pvid 1\nok\n");
 	{
@@ -707,10 +710,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
+	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ndns\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nntp\nsyslog\nweb\nlag.*\nport.*\nport.*.tstorm.*\nstp\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.lag.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\ndns\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nntp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsyslog\nweb\nlag.*\nport.*\nport.*.storm.*\nstp\nstp.lag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -760,8 +763,8 @@ static void cases(void)
 	expect("set port.1.isolate 3-1", "err port.1.isolate: ports like 1-4,9 (none, all, cpu)\n");
 	expect("set port.1.isolate 1,", "err port.1.isolate: ports like 1-4,9 (none, all, cpu)\n");
 	expect("set port.1.isolate 10", "err port.1.isolate: ports like 1-4,9 (none, all, cpu)\n");
-	expect("set port.1.nonesuch 1", "err port.1.nonesuch: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee isolate cabletest\n");
-	expect("set port.1", "err port.1: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee isolate cabletest\n");
+	expect("set port.1.nonesuch 1", "err port.1.nonesuch: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee eee_speeds isolate bw_in_kbps bw_in_mode bw_out_kbps cabletest\n");
+	expect("set port.1", "err port.1: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee eee_speeds isolate bw_in_kbps bw_in_mode bw_out_kbps cabletest\n");
 	expect("set state.port.1.link up", "err state.port.1.link: read only\n");
 	expect("set", "err: a path\n");
 
@@ -789,10 +792,10 @@ static void cases(void)
 	gets = 0;
 	expect("get state.port.2.link", "state.port.2.link up\nok\n");
 	CHECK(gets == 1, "a state get calls the getter once");
-	expect("get state.port.3.cabletest.a",
-	       "state.port.3.cabletest.a.result open\nstate.port.3.cabletest.a.length_m 12.3\nok\n");
+	expect("get state.port.3.cabletest.pair.a",
+	       "state.port.3.cabletest.pair.a.result open\nstate.port.3.cabletest.pair.a.length_m 12.3\nok\n");
 	st_len = 5;
-	expect("get state.port.3.cabletest.a.length_m", "state.port.3.cabletest.a.length_m 0.5\nok\n");
+	expect("get state.port.3.cabletest.pair.a.length_m", "state.port.3.cabletest.pair.a.length_m 0.5\nok\n");
 	st_tx_good = 18446744073709551615ULL;
 	expect("get state.port.3.tx_good", "state.port.3.tx_good 18446744073709551615\nok\n");
 	st_tx_good = 0;
@@ -879,7 +882,7 @@ static void cases(void)
 	expect("do port.9.cabletest", "err port.9.cabletest: not on this port\n");
 	expect("do port.2.mtu", "err port.2.mtu: not an action\n");
 	expect("set port.2.cabletest 1", "err port.2.cabletest: an action: do it\n");
-	expect("get port.2.cabletest", "err port.2.cabletest: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee isolate cabletest\n");
+	expect("get port.2.cabletest", "err port.2.cabletest: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee eee_speeds isolate bw_in_kbps bw_in_mode bw_out_kbps cabletest\n");
 }
 
 /* the kinds and types of the test schema */
@@ -1139,47 +1142,47 @@ static void kinds(void)
 	expect("set tstp.port.3.cost 200000001", "err tstp.port.3.cost: 0-200000000\n");
 	expect("set tstp.port.3.edge sometimes", "err tstp.port.3.edge: auto on off\n");
 	expect("set tstp.port.10.edge on", "err tstp.port.10.edge: no such port\n");
-	expect("get port.3.tstorm.mcast", "port.3.tstorm.mcast.rate 0\nport.3.tstorm.mcast.unit pps\nok\n");
-	expect("set port.3.tstorm.mcast.rate 1000", "ok\n");
-	CHECK(cfg_cand.port_tstorm[2][1].rate == 1000, "port.3.tstorm.mcast is [logical 2][1]");
-	expect("set port.3.tstorm.mcast.unit kbps", "ok\n");
-	expect("get -c port.3.tstorm.mcast", "port.3.tstorm.mcast.rate 1000\nport.3.tstorm.mcast.unit kbps\nok\n");
-	expect("get port.3.tstorm.xcast", "err port.3.tstorm.xcast: bcast mcast ucast umcast\n");
-	expect("get port.3.tstorm.*.unit", "port.3.tstorm.bcast.unit pps\nport.3.tstorm.mcast.unit pps\n"
-	       "port.3.tstorm.ucast.unit pps\nport.3.tstorm.umcast.unit pps\nok\n");
-	expect("get port.*.tstorm.umcast.rate", "port.1.tstorm.umcast.rate 0\nport.2.tstorm.umcast.rate 0\n"
-	       "port.3.tstorm.umcast.rate 0\nport.4.tstorm.umcast.rate 0\nport.5.tstorm.umcast.rate 0\n"
-	       "port.6.tstorm.umcast.rate 0\nport.7.tstorm.umcast.rate 0\nport.8.tstorm.umcast.rate 0\n"
-	       "port.9.tstorm.umcast.rate 0\nok\n");
+	expect("get port.3.storm.mcast", "port.3.storm.mcast.rate 0\nport.3.storm.mcast.unit pps\nok\n");
+	expect("set port.3.storm.mcast.rate 1000", "ok\n");
+	CHECK(cfg_cand.port_storm[2][1].rate == 1000, "port.3.storm.mcast is [logical 2][1]");
+	expect("set port.3.storm.mcast.unit kbps", "ok\n");
+	expect("get -c port.3.storm.mcast", "port.3.storm.mcast.rate 1000\nport.3.storm.mcast.unit kbps\nok\n");
+	expect("get port.3.storm.xcast", "err port.3.storm.xcast: bcast mcast ucast umcast\n");
+	expect("get port.3.storm.*.unit", "port.3.storm.bcast.unit pps\nport.3.storm.mcast.unit pps\n"
+	       "port.3.storm.ucast.unit pps\nport.3.storm.umcast.unit pps\nok\n");
+	expect("get port.*.storm.umcast.rate", "port.1.storm.umcast.rate 0\nport.2.storm.umcast.rate 0\n"
+	       "port.3.storm.umcast.rate 0\nport.4.storm.umcast.rate 0\nport.5.storm.umcast.rate 0\n"
+	       "port.6.storm.umcast.rate 0\nport.7.storm.umcast.rate 0\nport.8.storm.umcast.rate 0\n"
+	       "port.9.storm.umcast.rate 0\nok\n");
 	{
 		char a[1024];
-		snprintf(a, sizeof a, "%s", run("get port.*.tstorm.umcast.rate"));
-		expect("get port.tstorm.umcast.rate", a);
+		snprintf(a, sizeof a, "%s", run("get port.*.storm.umcast.rate"));
+		expect("get port.storm.umcast.rate", a);
 	}
 	{
 		const char *o = run("get port.2");
-		CHECK(strstr(o, "port.2.isolate 1-9,cpu\nport.2.tstorm.bcast.rate 0\n") &&
-		      strstr(o, "port.2.tstorm.umcast.unit pps\nok\n"), "get port.2: the port, then its sub-objects");
+		CHECK(strstr(o, "port.2.bw_out_kbps 0\nport.2.storm.bcast.rate 0\n") &&
+		      strstr(o, "port.2.storm.umcast.unit pps\nok\n"), "get port.2: the port, then its sub-objects");
 	}
 	memset(t_storm, 0, sizeof t_storm);
 	memset(t_stpp, 0, sizeof t_stpp);
 	expect("apply", "ok\n");
 	CHECK(t_storm[2 * 4 + 1] == 1 && t_stpp[2] == 1, "a nested handler gets logical * 4 + type");
 	expect("diff", "ok\n");
-	expect("del port.3.tstorm.mcast", "ok\n");
-	expect("diff", "- port.3.tstorm.mcast.rate 1000\n+ port.3.tstorm.mcast.rate 0\n"
-	       "- port.3.tstorm.mcast.unit kbps\n+ port.3.tstorm.mcast.unit pps\nok\n");
+	expect("del port.3.storm.mcast", "ok\n");
+	expect("diff", "- port.3.storm.mcast.rate 1000\n+ port.3.storm.mcast.rate 0\n"
+	       "- port.3.storm.mcast.unit kbps\n+ port.3.storm.mcast.unit pps\nok\n");
 	expect("discard", "ok\n");
 
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
 		const char *o = run("get state");
-		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
+		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.lag 0\nstate.cfg.pending ") &&
 		      strstr(o, "state.cfg.load.skipped 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
 		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
@@ -1510,7 +1513,7 @@ static const char *big_lines[] = {
 	"set port.9.name the ninth port of this test, 31", "set tsys.hostname twenty-three-characters",
 	"set tsys.password twenty-character-pwd", "set tvlan.2.name fifteen-chars-a", "set tvlan.3.name fifteen-chars-b",
 	"set tvlan.4.name fifteen-chars-c", "set tvlan.1.name fifteen-chars-d",
-	"set tstp.port.cost 199999999", "set port.tstorm.bcast.rate 1000", "set port.tstorm.ucast.unit kbps", NULL,
+	"set tstp.port.cost 199999999", "set port.storm.bcast.rate 1000", "set port.storm.ucast.unit kbps", NULL,
 };
 
 static void dump(const char *name, int n)	/* the sector and get -d, for test_om_codec.py */
@@ -1541,7 +1544,7 @@ static void codec_samples(void)
 		{ "port.%d.isolate", "none", "1-3,cpu", "all", "9", "2,4,6,8" },
 		{ "port.%d.lldp", "block", "permit", "block", "permit", "block" },
 		{ "port.%d.eee", "off", "on", "off", "on", "off" },
-		{ "port.%d.tstorm.ucast.rate", "1", "1048575", "0", "77", "500" },
+		{ "port.%d.storm.ucast.rate", "1", "10000000", "0", "77", "500" },
 		{ "tstp.port.%d.edge", "on", "off", "auto", "on", "off" },
 		{ "tvlan.%d0.members", "1-3", "none", "9", "1-9", "4" },
 		{ "tvlan.%d0.name", "v", "fifteen-chars-x", "a b", "", "q" },
@@ -1625,7 +1628,7 @@ static void binary(void)
 	expect("set tvlan.10.members 1-3,9", "ok\n");
 	expect("set tlag.2.mode lacp", "ok\n");
 	expect("set tstp.port.4.cost 20000", "ok\n");
-	expect("set port.3.tstorm.mcast.rate 500", "ok\n");
+	expect("set port.3.storm.mcast.rate 500", "ok\n");
 	expect("save", "err save: apply or discard first\n");
 	expect("apply", "ok\n");
 	expect("get state.cfg.dirty", "state.cfg.dirty on\nok\n");
@@ -1638,7 +1641,7 @@ static void binary(void)
 		snprintf(sv, sizeof sv, "%s", run("get -s"));
 		CHECK(strstr(d, "tsys.password s3cret\n") && !strstr(sv, "password"), "get -d carries the Secret, get -s omits it");
 		CHECK(strstr(sv, "port.5.name lab rack 2\n") && strstr(sv, "tvlan.10.members 1-3,9\n") &&
-		      strstr(sv, "port.3.tstorm.mcast.rate 500\n") && strstr(sv, "tsys.tz -03:30\n"), "get -s: the saved fields");
+		      strstr(sv, "port.3.storm.mcast.rate 500\n") && strstr(sv, "tsys.tz -03:30\n"), "get -s: the saved fields");
 		char *pw = strstr(d, "tsys.password s3cret\n");
 		memmove(pw, pw + 21, strlen(pw + 21) + 1);
 		dump("save", 0);
@@ -1646,7 +1649,7 @@ static void binary(void)
 		if (strcmp(d, sv))
 			printf("        -d: \"%s\"\n        -s: \"%s\"\n", d, sv);
 	}
-	expect("get -d port.3", "port.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
+	expect("get -d port.3", "port.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
 	expect("get -d tvlan.10", "tvlan.10.name ten\ntvlan.10.members 1-3,9\nok\n");
 
 	printf("boot loads it\n");
@@ -1679,9 +1682,9 @@ static void binary(void)
 		for (n = 1; n <= OM_PORTS; n++) {
 			snprintf(c, sizeof c, "set port.%d.name port %02d is a name of 31 chars!!", n, n);
 			expect(c, "ok\n");
-			snprintf(c, sizeof c, "set port.%d.tstorm.bcast.rate %d", n, 100 + n);
+			snprintf(c, sizeof c, "set port.%d.storm.bcast.rate %d", n, 100 + n);
 			expect(c, "ok\n");
-			snprintf(c, sizeof c, "set port.%d.tstorm.ucast.rate %d", n, 200 + n);
+			snprintf(c, sizeof c, "set port.%d.storm.ucast.rate %d", n, 200 + n);
 			expect(c, "ok\n");
 			snprintf(c, sizeof c, "set tstp.port.%d.cost %d", n, 1000 + n);
 			expect(c, "ok\n");
@@ -1720,13 +1723,13 @@ static void binary(void)
 			201, 0, 0, 0,				/* tvlan: no entries */
 			201, 7, 0, 1,  1, 3, 's', 'e', 'v',	/* tvlan.7.name sev */
 			204, 4, 0, 1,  1, 4, 0, 0, 0, 0x7f,	/* tstp.port.4.cost: past 200000000 */
-			205, 1, 3, 1,  1, 4, 0xf4, 1, 0, 0,	/* port.3.tstorm.mcast.rate 500 */
+			18, 1, 3, 1,  1, 4, 0xf4, 1, 0, 0,	/* port.3.storm.mcast.rate 500 */
 		};
 		sec_write(r, sizeof r);
 		boot();
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
-		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
-		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
+		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
 		dump("skip", 1);
 	}
 
@@ -2117,7 +2120,7 @@ static void roundtrip_kinds(void)
 			sprintf(val, "%s", (const char *[]){"auto", "on", "off"}[rand() % 3]);
 			break;
 		case 15:
-			sprintf(path, "port.%d.tstorm.%s.rate", 1 + rand() % 9, storm[rand() % 4]);
+			sprintf(path, "port.%d.storm.%s.rate", 1 + rand() % 9, storm[rand() % 4]);
 			sprintf(val, "%d", rand() % 1048576);
 			break;
 		default:
@@ -2125,7 +2128,7 @@ static void roundtrip_kinds(void)
 				run("apply");
 				continue;
 			}
-			sprintf(path, "port.%d.tstorm.%s.unit", 1 + rand() % 9, storm[rand() % 4]);
+			sprintf(path, "port.%d.storm.%s.unit", 1 + rand() % 9, storm[rand() % 4]);
 			sprintf(val, "%s", rand() % 2 ? "kbps" : "pps");
 			break;
 		}
@@ -2201,7 +2204,7 @@ static void fuzz(void)
 		"tsys", "tsys.ip", "tsys.mask", "tsys.mac", "tsys.tz", "tsys.offset", "tsys.mirror", "tsys.hash",
 		"tsys.lp", "tsys.password", "tsys.hostname", "tsys.rnd", "tvlan", "tvlan.", "tvlan.1", "tvlan.4094",
 		"tvlan.*", "tvlan.7.name", "tvlan.9.members", "tlag", "tlag.4", "tlag.5.mode", "tstp", "tstp.port",
-		"tstp.port.3", "port.3.tstorm", "port.3.tstorm.mcast", "port.*.tstorm.*.rate", "port.tstorm.x",
+		"tstp.port.3", "port.3.storm", "port.3.storm.mcast", "port.*.storm.*.rate", "port.storm.x",
 		"state.tsys", "state", "1.2.3.4", "255.255.0.0", "255.0.255.0", "aa:bb:cc:dd:ee:ff", "aa-bb",
 		"+05:30", "-12:00", "+14:45", "-600", "+600", "--", "spa,dport", "10h,10g", ",", ":", "kbps"};
 	int bad = 0;
@@ -2338,9 +2341,9 @@ static void completion(void)
 	tab("get tlag.3.\t", "get tlag.3.m", NULL);	/* the common part */
 	tab("get tlag.3.\t\t\t", "get tlag.3.m", "\n mode  members > get tlag.3.m");
 	tab("get tstp.port.\t\t", "get tstp.port.", "\n 1. 2. 3. 4. 5. 6. 7. 8. 9.> get tstp.port.");
-	tab("get port.2.tstorm.u\t\t", "get port.2.tstorm.u", "\n ucast. umcast.> get port.2.tstorm.u");
-	tab("get port.2.tstorm.b\t", "get port.2.tstorm.bcast.", NULL);
-	tab("get port.2.tstorm.bcast.\t\t", "get port.2.tstorm.bcast.", "\n rate  unit > get port.2.tstorm.bcast.");
+	tab("get port.2.storm.u\t\t", "get port.2.storm.u", "\n ucast. umcast.> get port.2.storm.u");
+	tab("get port.2.storm.b\t", "get port.2.storm.bcast.", NULL);
+	tab("get port.2.storm.bcast.\t\t", "get port.2.storm.bcast.", "\n rate  unit > get port.2.storm.bcast.");
 	tab("set tsys.led p\t", "set tsys.led p", "\a");	/* a value: not completed (P3D's cut) */
 	tab("set tsys.led \t\t", "set tsys.led ", "\a\n> set tsys.led ");
 	tab("load d\t", "load default ", NULL);
@@ -2568,9 +2571,9 @@ static void help(void)
 	       "tsys.lp flags 10h|10f|100h|100f|1000h|1000f|2g5|5g|10g default none \"\"\n"
 	       "tsys.rnd action - \"\"\n"
 	       "ok\n");
-	expect("help port.2.tstorm", "port.*.tstorm.* object 1-9 bcast|mcast|ucast|umcast \"\"\n"
-	       "port.*.tstorm.*.rate u32 0-1048575 default 0 \"\"\n"
-	       "port.*.tstorm.*.unit enum pps|kbps default pps \"\"\n"
+	expect("help port.2.storm", "port.*.storm.* object 1-9 bcast|mcast|ucast|umcast \"Storm control\"\n"
+	       "port.*.storm.*.rate u32 0-10000000 default 0 \"\"\n"
+	       "port.*.storm.*.unit enum pps|kbps default pps \"\"\n"
 	       "ok\n");
 	expect("help tvlan.1.members", "tvlan.*.members ports 1-9 default none \"\"\nok\n");
 	expect("help tvlan", "tvlan.* object 1-4094 \"\"\ntvlan.*.name str 0-15 default \"\" \"\"\n"
@@ -2580,12 +2583,12 @@ static void help(void)
 	expect("help port.isolate", "port.*.isolate ports 1-9,cpu default 1-9,cpu \"Ports this port may send to\"\nok\n");
 	const char *o = run("help state.port.cabletest");
 	CHECK(!strncmp(o, "state.port.*.cabletest.state enum idle|running|done|timeout \"\"\n", 63) &&
-	      strstr(o, "\nstate.port.*.cabletest.d.length_m decimal - unit m \"") && !strstr(o, "object") &&
+	      strstr(o, "\nstate.port.*.cabletest.pair.d.length_m decimal - unit m \"") && !strstr(o, "object") &&
 	      !strstr(o, ".link ") && status_ok(o), "help state.port.cabletest: those fields, no other");
 	expect("help sys.reset", "sys.reset action - \"Reset the switch; the web's reply goes out first\"\nok\n");
 	/* errors as get's */
 	expect("help port.12", "err port.12: no such port\n");
-	expect("help port.foo", "err port.foo: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee isolate cabletest\n");
+	expect("help port.foo", "err port.foo: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee eee_speeds isolate bw_in_kbps bw_in_mode bw_out_kbps cabletest\n");
 	o = run("help nosuch");
 	CHECK(!strncmp(o, "err nosuch: ", 12) && strstr(o, " port.* ") && status_ok(o), "help nosuch: the objects");
 	/* -a: the version, then every object and field, each line in the format */
@@ -2652,7 +2655,7 @@ static void help(void)
 	cmd_finish();
 	/* after it: get's '*', set's words and a Secret as before */
 	o = run("get");
-	CHECK(strstr(o, "\nport.*\n") && strstr(o, "\nport.*.tstorm.*\n"), "get: the objects with '*' after help");
+	CHECK(strstr(o, "\nport.*\n") && strstr(o, "\nport.*.storm.*\n"), "get: the objects with '*' after help");
 	expect("set port.1.speed fast", "err port.1.speed: auto 10m 100m 1g 2g5 5g 10g\n");
 	expect("get tsys.password", "tsys.password *\nok\n");
 	/* Tab after help: paths, actions too; h is help's */

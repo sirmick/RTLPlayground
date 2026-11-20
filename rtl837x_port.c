@@ -412,19 +412,6 @@ void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 }
 
 
-void port_eee_disable(uint8_t port) __banked
-{
-	if (machine.is_sfp[port])
-		return;
-
-	REG_SET(RTL837X_EEE_CTRL_BASE + (port << 8), 0);
-	// Disable EEE advertisement for 100/1000BASE-T via EEE Advertisement Reg
-	phy_write(port, PHY_MMD_AN, PHY_EEE_ADV, 0);
-	// Disable EEE advertisement for 2.5GBASE-T via EEE Advertisement Reg 2
-	phy_write(port, PHY_MMD_AN, PHY_EEE_ADV2, 0);
-}
-
-
 static __xdata uint8_t eee_speed;	/* port_eee_enable_all()'s */
 
 /* all ports' speed: the 10G ports' own; 2.5G for the others' 10G */

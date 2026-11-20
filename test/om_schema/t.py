@@ -35,9 +35,6 @@ obj("tstp.port", count=PORTS, apply="om_apply_tstp_port")
 cfg("cost", U32(0, 200000000), 0)
 cfg("edge", Enum("tedge", "auto on off"), "auto")
 
-obj("tstorm", parent="port", count=Enum("tstype", "bcast mcast ucast umcast"), apply="om_apply_tstorm")
-cfg("rate", U32(0, 1048575), 0)
-cfg("unit", Enum("tsunit", "pps kbps"), "pps")
 
 state("tsys", get="om_get_tsys")
 st("bridge", BridgeId)
