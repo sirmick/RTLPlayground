@@ -8,7 +8,9 @@
 #include "rtl837x_common.h"
 #include "cmd_parser.h"
 #include "sched.h"
+#ifndef SCHED_SWEEP	/* the sweep runs before om_gen.h (it takes the scheduler's rows) */
 #include "om_gen.h"
+#endif
 
 static __xdata uint8_t cfg_slot, cfg_r, cfg_w;
 #define CFG_GET_WAIT	50	/* x 100 ms: a rollback waits for a get this long, at most */
