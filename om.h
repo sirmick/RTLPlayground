@@ -105,7 +105,8 @@ extern __xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
 extern __xdata uint8_t om_cut;		/* the get or diff's next line says a rollback cut it */
 uint8_t om_apply_next(void) __banked;	/* the next changed instance: OM_A_* */
 void om_undo(void) __banked;		/* running back to the rollback copy; walk again */
-void om_settle(uint8_t r) __banked;	/* the walk is over (r: its last result) */
+void om_settle(uint8_t r) __banked;	/* the walk is over (r: its last result): its copies queued */
+uint8_t om_copy(void) __banked;		/* the queued copies' next chunk: 1 while more */
 void om_prompt(void) __banked;		/* "[confirm N] " and "*" before "> " */
 uint8_t om_job_start(void) __banked;	/* om_job.c: the cfg job; 0 if no slot */
 void om_job_wake(void) __banked;		/* om_job.c: confirm came */

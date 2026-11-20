@@ -49,7 +49,7 @@ void crc16_bank1(__xdata uint8_t *v) __naked;	/* crc16.asm: *v into crc_value */
 
 #define RUN	((__xdata uint8_t *)&cfg_run)
 #define CAND	((__xdata uint8_t *)&cfg_cand)
-#define ROLL	((__xdata uint8_t *)&cfg_roll)	/* an apply's, until settled; else scratch */
+#define ROLL	((__xdata uint8_t *)&cfg_roll)	/* what the hardware has, until settled; else running */
 
 /* the command */
 static __xdata uint8_t c_pw;		/* the path's word */
@@ -86,6 +86,7 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 #define J_SAVE	4	/* the cli waits for the flash job */
 #define J_LOAD	5	/* a load, 256 B of records a step */
 #define J_APPLY	6	/* J_SAVE on: the job runs to its end (CLI_JOB_OMAPPLY) */
+#define J_COPY	7	/* discard: the queued copy */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 static __xdata uint8_t j_hit;		/* get, this path: 1 a field matched, 2 done, 3 failed */
 /* numbers */
@@ -102,25 +103,6 @@ static __code const uint8_t tsize[] = {	/* by type; strings: their length + 1 */
 };
 
 /* ---- small helpers ---------------------------------------------------- */
-
-/* whole copies: a call each is smaller code than a memcpy */
-static void cand_from_run(void)
-{
-	memcpy(&cfg_cand, &cfg_run, sizeof(cfg_cand));
-}
-
-static void roll_from_run(void)
-{
-	memcpy(&cfg_roll, &cfg_run, sizeof(cfg_roll));
-}
-
-
-static uint8_t cand_differs(void)	/* the candidate isn't running */
-{
-	if (memcmp(&cfg_cand, &cfg_run, sizeof(cfg_run)))
-		return 1;
-	return 0;
-}
 
 static void sel_obj(uint8_t n)
 {
@@ -231,6 +213,80 @@ static __xdata uint8_t *inst(__xdata uint8_t *base)
 	if (obx.flags & OM_STATE)
 		return (__xdata uint8_t *)&om_st;
 	return base + obx.base + (uint16_t)cur_e * obx.size;
+}
+
+/*
+ * Whole copies (DESIGN.md 5.2, P3I): one config copy into another, X_CHUNK
+ * bytes a step, queued (an undo's three in a row, a discard's then an
+ * undo's). The jobs step them (x_step()); the engine is busy while one is
+ * queued. A step never copies or compares a whole struct cfg.
+ */
+#define X_CHUNK	512
+#define X_CAND_RUN	0	/* the copies: destination, source */
+#define X_ROLL_RUN	1
+#define X_RUN_CAND	2
+#define X_RUN_ROLL	3
+#define X_ROLL_CAND	4
+static __xdata uint8_t * __code const x_dst[] = { CAND, ROLL, RUN, RUN, ROLL };
+static __xdata uint8_t * __code const x_src[] = { RUN, RUN, CAND, ROLL, CAND };
+#define X_STEPS	((sizeof(struct cfg) + X_CHUNK - 1) / X_CHUNK)
+#define X_LAST	(sizeof(struct cfg) - (X_STEPS - 1) * X_CHUNK)
+static __xdata uint8_t x_q[4], x_n, x_i, x_c;
+static __xdata uint16_t x_at;
+
+static void x_add(uint8_t op)
+{
+	x_q[x_n++] = op;
+}
+
+static uint8_t x_step(void)		/* the next chunk: 1 while more are queued */
+{
+	if (x_i == x_n) {
+		x_n = 0;
+		x_i = 0;
+		return 0;
+	}
+	x_at = (uint16_t)x_c * X_CHUNK;	/* chunk x_c of copy x_i */
+	memcpy(x_dst[x_q[x_i]] + x_at, x_src[x_q[x_i]] + x_at, x_c == X_STEPS - 1 ? X_LAST : X_CHUNK);
+	if (++x_c == X_STEPS) {
+		x_c = 0;
+		x_i++;
+	}
+	return 1;
+}
+
+/*
+ * The instances where the candidate differs from running (state.cfg.pending,
+ * the prompt's '*', save's refusal): set and del keep it an instance at a
+ * time, a load recounts it, apply and discard zero it, an undo counts what
+ * it puts back.
+ */
+static __xdata uint16_t om_pend;
+static __xdata uint8_t pd;
+
+static uint8_t inst_differs(void)	/* cur_e: the candidate's isn't running's */
+{
+	if (memcmp(inst(CAND), inst(RUN), obx.size))
+		return 1;
+	return 0;
+}
+
+static __xdata uint8_t pend_off;	/* a load: counted after it (pend_step()) */
+
+static void pend_pre(void)		/* before an instance of the candidate changes */
+{
+	if (!pend_off)
+		pd = inst_differs();
+}
+
+static void pend_post(void)		/* and after */
+{
+	if (pend_off)
+		return;
+	if (inst_differs())
+		om_pend++;
+	if (pd)
+		om_pend--;
 }
 
 static void lvl_load(void)		/* level lv's kind, count, arg */
@@ -1395,14 +1451,15 @@ static void walk_start(void)
 	a_e = 0;
 }
 
-static void apply_begin(void)		/* the candidate to running; the walk from the top */
+static void apply_begin(void)		/* the candidate to running (queued); the walk from the top */
 {
-	if (cand_differs())
+	if (om_pend)
 		om_dirty = 1;
 	if (l_saved)			/* what load saved put there */
 		om_dirty = 0;
-	roll_from_run();
-	memcpy(&cfg_run, &cfg_cand, sizeof(cfg_run));
+	om_pend = 0;
+	x_add(X_ROLL_RUN);
+	x_add(X_RUN_CAND);
 	om_apply_st = E_CFGAPPLY_RUNNING;
 	walk_start();
 }
@@ -1411,14 +1468,21 @@ static void apply_begin(void)		/* the candidate to running; the walk from the to
  * a_other (the rollback copy, or the candidate), as obx and cur_e; 0 at the end */
 static __xdata uint8_t * __xdata a_other;
 
+#define WALK_N	16			/* instances a step looks at */
+static __xdata uint8_t a_left, a_r;
+
+/* 1: found; 0: the end; 2: WALK_N looked at, the walk goes on at the next call */
 static uint8_t walk_next(void)
 {
+	a_left = WALK_N;
 	for (; a_o < OM_N_OBJ; a_o++, a_e = 0) {
 		sel_obj(a_o);
 		if (obx.flags & OM_STATE)
 			continue;
 		a_n = obx.n[0] * obx.n[1];
 		while (a_e < a_n) {
+			if (!a_left--)
+				return 2;
 			cur_e = a_e++;
 			if (memcmp(inst(RUN), inst(a_other), obx.size))
 				return 1;
@@ -1430,9 +1494,16 @@ static uint8_t walk_next(void)
 /* the next instance that changed: apply it. OM_A_MORE, OM_A_DONE, OM_A_FAIL */
 uint8_t om_apply_next(void) __banked
 {
+	if (x_step())			/* the copies first */
+		return OM_A_MORE;
 	a_other = ROLL;
-	if (!walk_next())
+	a_r = walk_next();
+	if (!a_r)
 		return OM_A_DONE;
+	if (a_r == 2)
+		return OM_A_MORE;
+	if (om_apply_st == E_CFGAPPLY_UNDO)
+		om_pend++;		/* the candidate keeps what is undone */
 	if (obx.apply == 0xff)
 		return OM_A_MORE;
 	c_inst = 1;			/* a handler's err names the instance */
@@ -1452,30 +1523,39 @@ void om_undo(void) __banked
 	om_apply_st = E_CFGAPPLY_UNDO;
 	/* swap running and the rollback copy, through the candidate: at a failure
 	 * it is running anyway, and after a window it becomes running again */
-	cand_from_run();
-	memcpy(&cfg_run, &cfg_roll, sizeof(cfg_run));
-	memcpy(&cfg_roll, &cfg_cand, sizeof(cfg_roll));
+	x_add(X_CAND_RUN);
+	x_add(X_RUN_ROLL);
+	x_add(X_ROLL_CAND);
+	om_pend = 0;
 	walk_start();
 }
 
-/* the job's end: r the last walk's result */
+/* the job's end: r the last walk's result; its copies are queued (om_copy()) */
 void om_settle(uint8_t r) __banked
 {
 	if (om_apply_st == E_CFGAPPLY_UNDO) {
 		om_apply_st = r == OM_A_DONE ? E_CFGAPPLY_ROLLED_BACK : E_CFGAPPLY_FAILED;
 		if (a_timeout) {		/* nobody waits for this one */
-			cand_from_run();
+			x_add(X_CAND_RUN);
+			om_pend = 0;
 			print_string("event state.cfg.apply rolled_back\n");
 		}
 	} else {
 		om_apply_st = E_CFGAPPLY_DONE;
 	}
 	om_confirm_s = 0;
-	roll_from_run();
+	x_add(X_ROLL_RUN);
 }
 
-static uint8_t om_busy(void)		/* the cfg job is walking */
+uint8_t om_copy(void) __banked		/* the queued copies' next chunk: 1 while more */
 {
+	return x_step();
+}
+
+static uint8_t om_busy(void)		/* the cfg job is walking, or a copy is queued */
+{
+	if (x_n)
+		return 1;
 	if (om_apply_st == E_CFGAPPLY_RUNNING)	/* ifs: a || returned costs a bit */
 		return 1;
 	if (om_apply_st == E_CFGAPPLY_UNDO)
@@ -1548,6 +1628,11 @@ uint8_t om_line(void) __banked
 			return 1;
 		goto done;
 	}
+	if (j_mode == J_COPY) {
+		if (x_step())
+			return 1;
+		goto done;
+	}
 	if (j_mode >= J_SAVED) {
 		if (bin_line())
 			return 1;
@@ -1598,7 +1683,6 @@ done:
 /* ---- the verbs ---------------------------------------------------------- */
 
 static uint8_t sector_ok(uint8_t dflt);
-static void defaults(__xdata uint8_t *base);
 
 static void om_get(void)
 {
@@ -1619,7 +1703,6 @@ static void om_get(void)
 				return;
 			c_pw = 2;		/* in_window()'s err names the verb */
 			c_def = 1;
-			defaults(ROLL);		/* f_diff()'s */
 		}
 		else
 			c_pw = 1;		/* a path: err */
@@ -1696,25 +1779,30 @@ found:
  * running and the candidate, and apply sees each slot's old and new entry.
  * 0 if no slot is free.
  */
+static __xdata uint8_t * __xdata kp;
+
 static uint8_t key_new(void)
 {
 	kb = 0xff;
-	for (ks = 0; ks < obx.n[0]; ks++) {
-		kv = key_at(RUN);
+	kp = RUN + obx.base;		/* running's slots, a pointer: a key a few instructions */
+	for (ks = 0; ks < obx.n[0]; ks++, kp += obx.size) {
+		kv = kp[0] | (uint16_t)kp[1] << 8;
 		if (kv == r_v) {
 			kb = ks;
 			break;
 		}
-		if (!kv && !key_at(CAND) && kb == 0xff)
+		if (!kv && kb == 0xff && !key_at(CAND))
 			kb = ks;
 	}
 	if (kb == 0xff)
 		return 0;
 	cur_e = kb;
+	pend_pre();
 	vp = inst(CAND);
 	memcpyc(vp, obx.def, obx.size);
 	vp[0] = r_v;
 	vp[1] = r_v >> 8;
+	pend_post();
 	return 1;
 }
 #endif
@@ -1722,8 +1810,13 @@ static uint8_t key_new(void)
 #if OM_USE_KEY
 static void key_clear(void)		/* the candidate's entries of obx gone */
 {
-	for (cur_e = 0; cur_e < obx.n[0]; cur_e++)
+	for (ks = 0; ks < obx.n[0]; ks++) {
+		if (!key_at(CAND))	/* cur_e is ks: a free slot is the default already */
+			continue;
+		pend_pre();
 		memcpyc(inst(CAND), obx.def, obx.size);
+		pend_post();
+	}
 }
 
 /* del of a keyed object: every entry gone, then its default entries again */
@@ -1738,7 +1831,9 @@ static uint8_t key_reset(void)
 			fail("no free entry");
 			return 0;
 		}
+		pend_pre();
 		memcpyc(vp, cp, obx.size);
+		pend_post();
 	}
 	return 1;
 }
@@ -1782,18 +1877,20 @@ static void om_set(uint8_t del)
 	k = fsize();
 	v8 = 0;
 	for (; cur_ok; next_inst()) {
+		if (cur_f != 0xff && !om_when())
+			continue;
+		pend_pre();
 		vp = inst(CAND);
 		if (cur_f == 0xff) {
 			memcpyc(vp, def_ptr(), obx.size);
 		} else {
-			if (!om_when())
-				continue;
 			vp += fdx.off;
 			if (del)
 				memcpyc(vp, def_ptr() + fdx.off, k);
 			else
 				memcpy(vp, om_val, k);
 		}
+		pend_post();
 		v8 = 1;
 	}
 	if (!v8) {
@@ -1896,16 +1993,25 @@ static void put(uint8_t b)		/* a record byte into flash_buf, and the CRC */
 	flash_buf[e_n++] = b;
 }
 
-/* fdx's value in running is off its default (vp at it); not for actions.
- * The defaults are in the rollback copy (save_cmd(), om_get()) */
+/* x_k bytes at vp (xdata) and cp (code): 1 if they differ */
+static __xdata uint8_t x_k, x_j;
+static uint8_t code_differs(void)
+{
+	for (x_j = 0; x_j < x_k; x_j++)
+		if (vp[x_j] != cp[x_j])
+			return 1;
+	return 0;
+}
+
+/* fdx's value in running is off its default (vp at it); not for actions */
 static uint8_t f_diff(void)
 {
 	vp = inst(RUN) + fdx.off;
 	if (ft == T_ACT || !om_when())
 		return 0;
-	if (memcmp(vp, inst(ROLL) + fdx.off, fsize()))
-		return 1;
-	return 0;
+	cp = def_ptr() + fdx.off;
+	x_k = fsize();
+	return code_differs();
 }
 
 static void f_len(void)			/* k: the bytes of vp's value that are saved */
@@ -1940,33 +2046,66 @@ static void inst_fields(void)
 	}
 }
 
-/* every config element of a copy at its default, and the default entries
- * of keyed objects; with base ROLL (f_diff()'s), every slot at the element's */
-static void defaults(__xdata uint8_t *base)
+/* every config element of d_base at its default, and the default entries
+ * of keyed objects with the object's last: WALK_N elements a step, from
+ * (d_o, d_e); 1 while there are more */
+static __xdata uint8_t * __xdata d_base;
+static __xdata uint8_t d_o, d_e;
+
+#define DEF_N	8			/* elements a step: from code, slower than a compare */
+
+static uint8_t def_step(void)
 {
-	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
-		sel_obj(r_o);
+	a_left = DEF_N;
+	for (; d_o < OM_N_OBJ; d_o++, d_e = 0) {
+		sel_obj(d_o);
 		if (obx.flags & OM_STATE)
 			continue;
 		r_first = obx.n[0] * obx.n[1];
-		for (cur_e = 0; cur_e < r_first; cur_e++)
-			memcpyc(inst(base), def_ptr(), obx.size);
+		while (d_e < r_first) {
+			if (!a_left--)
+				return 1;
+			cur_e = d_e++;
+			memcpyc(inst(d_base), def_ptr(), obx.size);
+		}
 #if OM_USE_KEY
 		cp = obx.def;
-		for (cur_e = 0; cur_e < obx.ndef && base != ROLL; cur_e++) {
+		for (cur_e = 0; cur_e < obx.ndef; cur_e++) {
 			cp += obx.size;
-			memcpyc(inst(base), cp, obx.size);
+			memcpyc(inst(d_base), cp, obx.size);
 		}
 #endif
 	}
+	return 0;
+}
+
+static void def_start(void)
+{
+	d_o = 0;
+	d_e = 0;
+}
+
+static void pend_start(void)		/* after the records */
+{
+	pend_off = 0;
+	walk_start();
+	om_pend = 0;
+}
+
+/* after a load: om_pend counted again, a walk step at a time: 1 while more */
+static uint8_t pend_step(void)
+{
+	a_other = CAND;
+	a_r = walk_next();
+	if (a_r == 1)
+		om_pend++;
+	return a_r;
 }
 
 /*
  * The next records into flash_buf (e_n bytes), whole instances, none
- * started past E_ROOM, from the cursor. The rollback copy holds the
- * defaults meanwhile (save_cmd()): it is scratch outside an apply's walk
- * and window, and save refuses in one; an instance at its defaults is then
- * one memcmp.
+ * started past E_ROOM, from the cursor. An instance at its defaults is
+ * one compare with the element default.
  */
 static void enc_chunk(void)
 {
@@ -2002,7 +2141,10 @@ static void enc_chunk(void)
 			e_st = 1;
 		}
 		for (; cur_ok; next_inst()) {
-			if (!memcmp(inst(RUN), inst(ROLL), obx.size) && obx.k[0] != IX_KEY)
+			vp = inst(RUN);
+			cp = def_ptr();
+			x_k = obx.size;
+			if (!code_differs() && obx.k[0] != IX_KEY)
 				continue;
 			e_put = 0;
 			inst_fields();
@@ -2165,9 +2307,11 @@ static uint8_t dec_next(void)		/* the next instance or field: D_* */
  * this build has no such object */
 static uint8_t d_obj(void)
 {
-	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
+	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {	/* the ID from the table: a descriptor copy each is slow */
+		if (om_obj[r_o].id != d_oid)
+			continue;
 		sel_obj(r_o);
-		if (!(obx.flags & OM_STATE) && obx.id == d_oid)
+		if (!(obx.flags & OM_STATE))
 			goto found;
 	}
 	return 0;
@@ -2233,10 +2377,17 @@ static uint8_t val_ok(void)
 	return k;
 }
 
-/* load: rd() at the records; the candidate from the defaults */
+/* load: rd() at the records; the candidate from the defaults (def_step()
+ * first), the records (load_step()), then om_pend (pend_step()) */
+static __xdata uint8_t l_def, l_rec;
+
 static void load_begin(void)
 {
-	defaults(CAND);
+	d_base = CAND;
+	def_start();
+	l_def = 1;
+	l_rec = 1;
+	pend_off = 1;
 	bs.skipped = 0;
 	d_nf = 0;
 #if OM_USE_KEY
@@ -2267,14 +2418,21 @@ static uint8_t d_inst(void)
 	return cur_ok;
 }
 
-/* the next 64 B of records into the candidate: 0 when they are all in.
- * A record this build can't take is skipped and counted: an unknown
- * object, field or index (its fields with it), a value outside the range */
+/* the next 64 B of records into the candidate, or LOAD_KN keyed entries
+ * (each a pass over the slots): 0 when they are all in. A record this
+ * build can't take is skipped and counted: an unknown object, field or
+ * index (its fields with it), a value outside the range */
+#define LOAD_KN	4
+static __xdata uint8_t l_kn;
+
 static uint8_t load_step(void)
 {
 	l_stop = rd_left > 64 ? rd_left - 64 : 0;
+	l_kn = 0;
 	while (1) {
 		if (rd_left && rd_left <= l_stop)
+			return 1;
+		if (l_kn == LOAD_KN)
 			return 1;
 		v8 = dec_next();
 		if (v8 == D_END)
@@ -2282,7 +2440,10 @@ static uint8_t load_step(void)
 		if (v8 == D_INST) {
 #if OM_USE_KEY
 			if (d_obj() && obx.k[0] == IX_KEY && !d_ix) {
-				key_clear();	/* a keyed object: its entries follow */
+				/* a keyed object: its entries follow. The candidate is
+				 * at the defaults: only the default entries to clear */
+				for (cur_e = 0; cur_e < obx.ndef; cur_e++)
+					memcpyc(inst(CAND), obx.def, obx.size);
 				d_ok = 0;
 				continue;
 			}
@@ -2290,6 +2451,10 @@ static uint8_t load_step(void)
 			d_ok = d_inst();
 			if (!d_ok)
 				bs.skipped++;
+#if OM_USE_KEY
+			if (obx.k[0] == IX_KEY)
+				l_kn++;
+#endif
 			continue;
 		}
 		if (!d_ok)
@@ -2372,7 +2537,7 @@ static void save_cmd(void)
 {
 	if (in_window())
 		return;
-	if (cand_differs()) {
+	if (om_pend) {
 		fail("apply or discard first");
 		return;
 	}
@@ -2384,7 +2549,6 @@ static void save_cmd(void)
 		fail("busy");
 		return;
 	}
-	defaults(ROLL);
 	e_o = 0;
 	e_st = 0;
 	b_len = 0;
@@ -2451,7 +2615,10 @@ uint8_t om_boot_load(uint8_t dflt) __banked
 	if (b_fmt != E_CFGFORMAT_OK)
 		return b_fmt;
 	load_begin();
+	while (def_step());
 	while (load_step());
+	pend_start();
+	while (pend_step());
 	l_saved = 0;			/* the default isn't what is saved */
 	if (!dflt) {
 		bs.saved = b_len + OM_HDR;
@@ -2477,8 +2644,17 @@ static uint8_t bin_line(void)
 			load_begin();
 		return 1;
 	}
-	if (j_mode == J_LOAD)
-		return load_step();
+	if (j_mode == J_LOAD) {
+		if (l_def)
+			l_def = def_step();
+		else if (l_rec) {
+			l_rec = load_step();
+			if (!l_rec)
+				pend_start();
+		} else
+			return pend_step();
+		return 1;
+	}
 	if (j_mode == J_SAVED)
 		return saved_line();
 	if (fl_kind == FL_SAVE)
@@ -2523,9 +2699,10 @@ void om_cmd(void) __banked
 		om_job_wake();
 		ok();
 	} else if (seg_is("discard")) {
-		cand_from_run();
+		x_add(X_CAND_RUN);
+		om_pend = 0;
 		l_saved = 0;
-		ok();
+		job_start(J_COPY);
 	} else if (seg_is("save")) {
 		save_cmd();
 	} else if (seg_is("load")) {
@@ -2535,9 +2712,13 @@ void om_cmd(void) __banked
 
 void om_init(void) __banked
 {
-	defaults(RUN);
-	cand_from_run();
-	roll_from_run();
+	d_base = RUN;
+	def_start();
+	while (def_step());
+	x_add(X_CAND_RUN);
+	x_add(X_ROLL_RUN);
+	while (x_step());
+	om_pend = 0;
 	om_apply_st = E_CFGAPPLY_IDLE;
 	om_dirty = 0;
 }
@@ -2558,6 +2739,7 @@ void om_boot_apply(void) __banked
 		}
 	}
 	om_settle(v8);
+	while (x_step());
 	if (om_apply_st == E_CFGAPPLY_DONE) {
 		om_apply_st = E_CFGAPPLY_IDLE;
 		return;
@@ -2569,13 +2751,7 @@ not_applied:				/* state.cfg.apply keeps rolled_back or failed */
 /* state.cfg (schema/state_cfg.py) */
 uint8_t om_get_cfg(uint8_t idx) __banked
 {
-	om_st.cfg.pending = 0;
-	walk_start();			/* the instances where the candidate differs */
-	a_other = CAND;
-	while (walk_next())
-		om_st.cfg.pending++;
-	sel_obj(j_o);			/* the get job's object: state.cfg */
-	cur_e = 0;
+	om_st.cfg.pending = om_pend;
 	om_st.cfg.dirty = om_dirty;
 	om_st.cfg.apply = om_apply_st;
 	om_st.cfg.confirm_s = om_confirm_s;
@@ -2591,6 +2767,6 @@ void om_prompt(void) __banked
 		itoa_short(om_confirm_s);
 		print_string("] ");
 	}
-	if (cand_differs())
+	if (om_pend)
 		write_char('*');
 }

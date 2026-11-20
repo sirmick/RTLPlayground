@@ -1,7 +1,8 @@
 /*
  * om_job.c - the object model's cfg job (DESIGN.md 5.2-5.3): apply, an
  * instance a step (om.c's om_apply_next()); apply N's confirm window, a
- * second a step; the rollback when it ends unconfirmed or a handler fails.
+ * second a step; the rollback when it ends unconfirmed or a handler fails;
+ * then the copies that settle it, a chunk a step.
  * The cli waits for the walk (om.c apply_wait()), not for the window.
  */
 #include <stdint.h>
@@ -41,7 +42,7 @@ STEP(cfg, apply)
 	}
 	if (!om_confirm_s) {
 		om_settle(cfg_r);
-		return STEP_END;		/* exit: applied, no window */
+		return S_CFG_SETTLE;		/* exit: applied, no window */
 	}
 	om_apply_st = E_CFGAPPLY_CONFIRM;
 	return STEP_SLEEP(S_CFG_WINDOW, 1000);	/* exit: the window, a second at a time */
@@ -51,7 +52,7 @@ STEP(cfg, window)
 {
 	if (om_confirmed) {
 		om_settle(OM_A_DONE);
-		return STEP_END;		/* exit: confirmed */
+		return S_CFG_SETTLE;		/* exit: confirmed */
 	}
 	if (om_confirm_s && --om_confirm_s)	/* a second gone: the window ends at N s */
 		return STEP_SLEEP(STEP_STAY, 1000);	/* exit: the next second, or confirm's wake */
@@ -70,5 +71,12 @@ STEP(cfg, undo)
 	if (cfg_r == OM_A_MORE)
 		return STEP_STAY;		/* exit: the next instance at the next position */
 	om_settle(cfg_r);
-	return STEP_END;			/* exit: rolled back (or failed to) */
+	return S_CFG_SETTLE;		/* exit: rolled back (or failed to) */
+}
+
+STEP(cfg, settle)
+{
+	if (om_copy())
+		return STEP_STAY;		/* exit: the next chunk */
+	return STEP_END;			/* exit: settled */
 }
