@@ -1972,23 +1972,32 @@ found:
  * set on a keyed entry the candidate lacks: make it, in running's slot for
  * the key, else in a slot free in both: so a key never moves between
  * running and the candidate, and apply sees each slot's old and new entry.
+ * The boot's load (k_boot) may also take a slot running holds for an entry
+ * the candidate deleted: running is the defaults, applied over whole, and
+ * a saved config that deletes vlan.1 and has 64 others needs every slot.
  * 0 if no slot is free.
  */
 static __xdata uint8_t * __xdata kp;
+static __xdata uint8_t kc, k_boot;
 
 static uint8_t key_new(void)
 {
 	kb = 0xff;
+	kc = 0xff;
 	kp = RUN + obx.base;		/* running's slots, a pointer: a key a few instructions */
 	for (ks = 0; ks < obx.n[0]; ks++, kp += obx.size) {
 		kv = kp[0] | (uint16_t)kp[1] << 8;
-		if (kv == r_v) {
+		if (kv == r_v && !key_at(CAND)) {
 			kb = ks;
 			break;
 		}
 		if (!kv && kb == 0xff && !key_at(CAND))
 			kb = ks;
+		else if (kv && k_boot && kc == 0xff && !key_at(CAND))
+			kc = ks;
 	}
+	if (kb == 0xff)
+		kb = kc;
 	if (kb == 0xff)
 		return 0;
 	cur_e = kb;
@@ -3125,7 +3134,13 @@ uint8_t om_boot_load(uint8_t dflt) __banked
 		return b_fmt;
 	load_begin();
 	while (def_step());
+#if OM_USE_KEY
+	k_boot = 1;
+#endif
 	while (load_step());
+#if OM_USE_KEY
+	k_boot = 0;
+#endif
 	pend_start();
 	while (pend_step());
 	l_saved = 0;			/* the default isn't what is saved */
