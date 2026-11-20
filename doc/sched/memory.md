@@ -74,4 +74,5 @@ broke the link three times.
 | web command buffer | 0: `config_buf`, with uIP's one connection (console.md); its own buffer (up to 4480 B, today's `/cmd` body limit) only if connections ever grow above 1, or smaller with a deliberate, tested limit (E phase) | XSEG |
 | control-frame TX buffer | 268 (`RTL_FRAME_DESC_SIZE` 12 + `CTL_FRAME_MAX` 256 = `LLDP_MAX_FRAME`; LLDP the largest, its worst case bounded in `rtl837x_lldp.c`) | XSEG |
 | upload stage | 0: `config_buf`, with uIP's one connection (net.md item 1, as the web command buffer); the window is its free space (decision 20). E3 adds 57 B of xdata: the flash job's request and state, the stage's bookkeeping, `uip_rcv_wnd`, net's due tick | XSEG |
+| VLAN bitmap (E4) | 512 (`vlan_bits`, a bit per VLAN ID) + 3; the eee job 8 (with `phy_v`, `cli_job_sleep`); the poll bounds 6, E2's `i2c_t0` gone | XSEG |
 | crash record | 32 | fixed at 0xbfe0, outside every XSEG (chapter 11). Survival across a reset was measured at 0xbf00 (chapter 2); B5 confirms 0xbfe0 |
