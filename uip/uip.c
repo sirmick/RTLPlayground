@@ -281,12 +281,15 @@ uip_add32(u8_t __xdata * op32, u16_t op16)
 
 #if ! UIP_ARCH_CHKSUM
 /*---------------------------------------------------------------------------*/
+/* RTLPlayground: xdata pointers (every caller's data is in uip_buf). Through
+   generic ones, each byte was a __gptrget call: ~3 us a byte of a reply, the
+   most of a full segment's step (F1b). */
 static u16_t
-chksum(u16_t sum, const u8_t *data, u16_t len)
+chksum(u16_t sum, __xdata const u8_t *data, u16_t len)
 {
   u16_t t;
-  const u8_t *dataptr;
-  const u8_t *last_byte;
+  __xdata const u8_t *dataptr;
+  __xdata const u8_t *last_byte;
 
   dataptr = data;
   last_byte = data + len - 1;
@@ -315,7 +318,7 @@ chksum(u16_t sum, const u8_t *data, u16_t len)
 u16_t
 uip_chksum(u16_t *data, u16_t len)
 {
-  return htons(chksum(0, (u8_t *)data, len));
+  return htons(chksum(0, (__xdata u8_t *)data, len));
 }
 /*---------------------------------------------------------------------------*/
 #ifndef UIP_ARCH_IPCHKSUM
@@ -347,7 +350,7 @@ upper_layer_chksum(u8_t proto)
   /* IP protocol and length fields. This addition cannot carry. */
   sum = upper_layer_len + proto;
   /* Sum IP source and destination addresses. */
-  sum = chksum(sum, (u8_t *)&BUF->srcipaddr[0], 2 * sizeof(uip_ipaddr_t));
+  sum = chksum(sum, (__xdata u8_t *)&BUF->srcipaddr[0], 2 * sizeof(uip_ipaddr_t));
 
   /* Sum TCP header and data. */
   sum = chksum(sum, &uip_buf[UIP_IPH_LEN + UIP_LLH_LEN],
@@ -1993,7 +1996,13 @@ uip_send(__xdata const void *data, __xdata uint16_t len) __banked
   if(len > 0) {
     uip_slen = len;
     if(data != uip_sappdata) {
-      memcpy(uip_sappdata, data, uip_slen);
+      /* RTLPlayground: xdata to xdata (memcpy's generic pointers cost
+         ~1 us a byte, F1b) */
+      __xdata u8_t *d = (__xdata u8_t *)uip_sappdata;
+      __xdata const u8_t *e = (__xdata const u8_t *)data + uip_slen;
+      __xdata const u8_t *s = data;
+      while(s != e)
+        *d++ = *s++;
     }
   }
 }
