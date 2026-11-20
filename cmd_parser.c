@@ -14,7 +14,6 @@
 #include "rtl837x_phy.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
-#include "rtl837x_igmp.h"
 #include "rtl837x_bandwidth.h"
 #include "rtl837x_lldp.h"
 #include "rtl837x_storm.h"
@@ -1229,16 +1228,6 @@ void cmd_parser(void) __banked
 				cmd_error("\nUsage:\n\tl2 forget\n\t(the table: get state.l2)\n");
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
-		} else if (cmd_compare(0, "igmp")) {
-			if (cmd_compare(1, "on"))
-				igmp_enable();
-			else if (cmd_compare(1, "off"))
-				igmp_setup();
-			else if (cmd_compare(1, "show"))
-				igmp_show();
-			else {
-				cmd_error("igmp on|off|show\n");
-			}
 		} else if (cmd_compare(0, "mirror")) {
 			parse_mirror();
 		} else if (cmd_compare(0, "sds")) {

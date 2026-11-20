@@ -74,3 +74,5 @@ field 13.4 stp.port.priority U8
 field 13.5 stp.port.guard Enum(stpguard)
 field 13.6 stp.port.filter BOOL
 field 13.7 stp.port.p2p Enum(stpp2p)
+obj 14 igmp
+field 14.1 igmp.enabled BOOL

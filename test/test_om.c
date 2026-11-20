@@ -315,6 +315,9 @@ uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
 uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
 uint8_t om_do_ntp_sync(uint8_t idx) { if (!cfg_run.ntp.enabled) { om_fail(OM_E_NTP_OFF); return OM_ERR; } return OM_OK; }
 uint8_t om_apply_dns(uint8_t idx) { t_dns++; return OM_OK; }
+/* igmp, lldp, loop, mirror (rtl837x_igmp.c, rtl837x_lldp.c, rtl837x_rldp.c, rtl837x_port.c) */
+static int t_igmp;
+uint8_t om_apply_igmp(uint8_t idx) { t_igmp++; return OM_OK; }
 
 /* state.health, state.con, do sched.clear (om_health.c, sched_health.c) */
 static int sched_clears;
@@ -684,10 +687,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.*\n");
+	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.* igmp\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp.port.*\nvlan.*\nmgmt\ndns\nntp\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nlag.*\nport.*\nport.*.tstorm.*\nstp\nstp.lag.*\nstp.port.*\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp.port.*\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nvlan.*\nmgmt\ndns\nntp\nsyslog\nweb\nlag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nport.*\nport.*.tstorm.*\nstp\nstp.lag.*\nstp.port.*\nigmp\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1151,7 +1154,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.* igmp\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -2282,6 +2285,18 @@ static void completion(void)
 	expect("get tsys.led", "tsys.led off\nok\n");	/* the commands after it */
 }
 
+/* igmp, lldp, loop, mirror (P4-5): defaults, one apply each */
+static void l2svc(void)
+{
+	om_init();
+	expect("get igmp", "igmp.enabled off\nok\n");
+	expect("set igmp.enabled on", "ok\n");
+	t_igmp = 0;
+	expect("apply", "ok\n");
+	CHECK(t_igmp == 1 && cfg_run.igmp.enabled, "igmp: one apply, on");
+	om_init();
+}
+
 /* vlan.V (P4-2): om_vlan.c's table calls and checks, pvid and mgmt.vlan */
 static void vlans(void)
 {
@@ -2759,6 +2774,7 @@ int main(int argc, char **argv)
 	kinds();
 	services();
 	completion();
+	l2svc();
 	vlans();
 	lags();
 	stps();
