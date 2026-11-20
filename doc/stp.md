@@ -24,8 +24,8 @@ set stp.enabled off     # stop, all ports back to forwarding
 apply
 ```
 
-Live status is on the Spanning Tree page of the web UI (or `/stp.json`),
-and on the console via `get state.stp`.
+Live status is on the Spanning Tree page of the web UI, and on the console
+(or over POST /cli) via `get state.stp`.
 
 With no other bridge around, the switch elects itself root and every port ends
 up forwarding — you can leave it on safely. `save` keeps the settings over a
@@ -274,11 +274,7 @@ live state read from the ASIC, or "No link", together with the configured
 options. For a port taking part in the tree it also shows the designated
 bridge, port and cost, and whether it talks RSTP or 802.1D to its neighbour;
 the Check button runs `do stp.port.N.mcheck`. The live data (not the config:
-`get stp`) is available as JSON:
-
-```
-GET /stp.json
-```
+`get stp`) is `get state.stp`, below.
 
 The Counters section of the same page shows per port the BPDUs received and
 sent, those of them that carried the topology change flag (TCNs included),
@@ -290,7 +286,11 @@ reset.
 bridge and root IDs, whether this switch is the root, the root port
 (`lag.L` for a LAG) and cost, the topology changes, and per port and LAG
 (`state.stp.port.N`, `state.stp.lag.L`) the state, role, edge, the time
-since the last BPDU in milliseconds and the four counters. A port is
+since the last BPDU in milliseconds and the four counters; the time since the
+last topology change (`tc_age_s`), the max age and forward delay in use
+(`root_maxage_s`, `root_fwd_s`); and per port and LAG whether BPDU guard has
+tripped it, its link, whether its neighbour speaks 802.1D (`legacy`), and the
+designated bridge, port ID (priority * 256 + number) and cost. A port is
 reported with one of the roles root, designated, alternate, backup or
 disabled; disabled covers a port with STP turned off on it, one shut down by
 BPDU guard and one without link. A port in a LAG, and a LAG with no

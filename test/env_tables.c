@@ -112,30 +112,6 @@ void     phy_on(uint8_t port) { (void)port; }
 uint8_t  stp_port_role(uint8_t port) { (void)port; return 0; }
 uint8_t  stp_port_state(uint8_t port) { (void)port; return 3; }
 
-/* ---- STP state send_stp() prints; the tree is not under test here ---- */
-#include "rtl837x_stp.h"
-struct bridge root_bridge;
-struct bridge stp_dbridge[STP_ENTITIES];
-uint16_t stp_bpdu_age[STP_ENTITIES];
-uint16_t stp_dpid[STP_ENTITIES];
-uint16_t stp_lag_mask[STP_LAG_COUNT];
-uint16_t stp_tc_count;
-uint32_t root_bridge_cost;
-uint32_t stp_dcost[STP_ENTITIES];
-uint32_t stp_pcost[STP_ENTITIES];
-uint8_t  stp_ent_of[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-uint8_t  stp_fwddelay_s = 15, stp_hello_s = 2, stp_maxage_s = 20;
-uint8_t  stp_pflags[STP_ENTITIES];
-uint8_t  stp_pp2p[STP_ENTITIES];
-uint8_t  stp_pprio[STP_ENTITIES];
-uint8_t  stp_prio = 0x80, stp_root_port = 0xff, stp_rstp = 1, stp_txhold = 6;
-uint8_t  stp_bpdu_filter, stp_pcost_short, stp_root_fwd = 15, stp_root_maxage = 20;
-uint16_t stp_legacy, stp_link_prev = 0x3ff;
-uint16_t stp_info_while[STP_ENTITIES];
-uint32_t stp_cnt[STP_CNT_N][STP_ENTITIES];
-uint32_t stp_tc_secs;
-uint8_t  stp_ent_id(uint8_t e) { return e >= STP_LAG_BASE ? e + 101 - STP_LAG_BASE : machine.log_to_phys_port[e]; }
-
 /* ---- SFP: no module present, reads fail ---- */
 uint8_t sfp_buf[16];
 bool    sfp_read_block(uint8_t slot, uint8_t reg, uint8_t len) { (void)slot; (void)reg; (void)len; return false; }

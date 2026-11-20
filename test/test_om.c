@@ -392,6 +392,9 @@ uint8_t om_get_stp(uint8_t idx)
 	om_st.stp.root_port = 11;		/* lag.2 */
 	om_st.stp.root_cost = 20000;
 	om_st.stp.tc_count = 3;
+	om_st.stp.tc_age_s = 90061;
+	om_st.stp.root_maxage_s = 20;
+	om_st.stp.root_fwd_s = 15;
 	return OM_OK;
 }
 uint8_t om_get_stp_port(uint8_t idx)
@@ -400,6 +403,12 @@ uint8_t om_get_stp_port(uint8_t idx)
 	om_st.stp_port.state = idx == 1 ? 3 : 1;
 	om_st.stp_port.role = idx == 1 ? 1 : 3;
 	om_st.stp_port.rx_bpdu = 70000;
+	om_st.stp_port.link = idx == 1;
+	om_st.stp_port.guard_tripped = idx == 2;
+	om_st.stp_port.dbridge[0] = 0x10;
+	memcpy(om_st.stp_port.dbridge + 2, "\x06\xeb\x00\xb5\x32\x5d", 6);
+	om_st.stp_port.dport = 0x8003;
+	om_st.stp_port.dcost = 20000;
 	return OM_OK;
 }
 uint8_t om_get_stp_lag(uint8_t idx)
@@ -1046,7 +1055,8 @@ static void kinds(void)
 	{
 		const char *o = run("get state.stp"), *w = "state.stp.bridge 8.0.06:eb:00:b5:32:5d\n"
 			"state.stp.root 1.0.06:eb:00:b5:32:5d\nstate.stp.is_root off\nstate.stp.root_port lag.2\n"
-			"state.stp.root_cost 20000\nstate.stp.tc_count 3\nstate.stp.port.1.state block\n";
+			"state.stp.root_cost 20000\nstate.stp.tc_count 3\nstate.stp.tc_age_s 90061\nstate.stp.root_maxage_s 20\n"
+			"state.stp.root_fwd_s 15\nstate.stp.port.1.state block\n";
 		CHECK(!strncmp(o, w, t_strlen(w)) && strstr(o, "state.stp.lag.4.members 1-2\nok\n"),
 		      "get state.stp: the bridge, then its ports and LAGs");
 	}
@@ -1060,7 +1070,9 @@ static void kinds(void)
 	expect("get state.sfp.2.present", "state.sfp.2.present off\nok\n");
 	expect("get state.stp.port.2", "state.stp.port.2.state fwd\nstate.stp.port.2.role root\nstate.stp.port.2.edge off\n"
 	       "state.stp.port.2.bpdu_age_ms 0\nstate.stp.port.2.rx_bpdu 70000\nstate.stp.port.2.tx_bpdu 0\n"
-	       "state.stp.port.2.rx_tc 0\nstate.stp.port.2.tx_tc 0\nok\n");
+	       "state.stp.port.2.rx_tc 0\nstate.stp.port.2.tx_tc 0\nstate.stp.port.2.guard_tripped off\n"
+	       "state.stp.port.2.link on\nstate.stp.port.2.legacy off\nstate.stp.port.2.dbridge 1.0.06:eb:00:b5:32:5d\n"
+	       "state.stp.port.2.dport 32771\nstate.stp.port.2.dcost 20000\nok\n");
 	expect("get state.stp.lag.4.role state.stp.lag.4.members", "state.stp.lag.4.role disabled\nstate.stp.lag.4.members 1-2\nok\n");
 	expect("get state.lag.1", "state.lag.1.active 1-2\nstate.lag.1.agg_valid on\nstate.lag.1.aggregator 02:11:22:33:44:55\nok\n");
 	expect("get state.lacp.port.1", "state.lacp.port.1.lag 1\n"

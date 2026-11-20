@@ -19,7 +19,6 @@ void char_to_html(char c);
 
 void itoa16_html(uint16_t v);
 
-void send_stp(void) __banked;
 
 /*  Convert only the lower nibble to ascii HEX char.
     For convenience the upper nibble is masked out.

@@ -1327,9 +1327,7 @@ void httpd_appcall(void)
 				goto do_send;
 			}
 			dbg_string("Not file entry\n");
-			if (is_word(q, "/stp.json")) {
-				send_stp();
-			} else if (is_word(q, "/config")) {
+			if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */
 				strtox(config_buf, "get -s");
 				webcmd_cli = 1;

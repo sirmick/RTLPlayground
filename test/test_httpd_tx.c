@@ -290,7 +290,6 @@ void send_bandwidth(void) { }
 void send_storm(void) { }
 void send_isolation(void) { }
 void send_eee(void) { }
-void send_stp(void) { }
 
 extern uint8_t authenticated;
 extern char session_id[];
