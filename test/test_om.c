@@ -188,7 +188,6 @@ uint8_t om_get_ntp(uint8_t idx)
 uint8_t om_get_dns(uint8_t idx)
 {
 	memset(&om_st.dns, 0, sizeof(om_st.dns));
-	strcpy((char *)om_st.dns.lookup_name, "pool.ntp.org");
 	om_st.dns.lookup_status = 3;
 	return OM_OK;
 }
@@ -661,7 +660,7 @@ static void kinds(void)
 	       "state.mgmt.dhcp.server 0.0.0.0\nok\n");
 	expect("get state.ntp", "state.ntp.synced on\nstate.ntp.time 1795160000\nstate.ntp.local_offset_min -300\n"
 	       "state.ntp.dst_active off\nstate.ntp.last_sync_s 0\nstate.ntp.stratum 2\nstate.ntp.server_ip 0.0.0.0\nok\n");
-	expect("get state.dns.lookup", "state.dns.lookup.name pool.ntp.org\nstate.dns.lookup.status failed\n"
+	expect("get state.dns.lookup", "state.dns.lookup.status failed\n"
 	       "state.dns.lookup.ip 0.0.0.0\nok\n");
 	expect("get state.loop", "state.loop.looped 1-2\nstate.loop.blocked 2\nok\n");
 	expect("set state.mgmt.ip 10.0.0.1", "err state.mgmt.ip: read only\n");

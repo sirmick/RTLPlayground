@@ -202,13 +202,11 @@ void dns_show(void) __banked
 
 /* state.dns (schema/state_svc.py) */
 #define D	om_st.dns
-typedef char name_fits[sizeof(D.lookup_name) == DNS_NAME_LEN ? 1 : -1];
 
 uint8_t om_get_dns(uint8_t idx) __banked
 {
 	(void)idx;
 	memcpy(D.dhcp_server, dhcp_state.dns, 4);
-	memcpy(D.lookup_name, dns_state.name, DNS_NAME_LEN);
 	D.lookup_status = dns_state.status;
 	memcpy(D.lookup_ip, dns_state.addr, 4);
 	return OM_OK;

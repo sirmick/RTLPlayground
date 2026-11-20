@@ -5,7 +5,9 @@
 # Deviations: state.ntp.time is seconds since 1970 (UTC), not a Time type.
 # Deferred for room (P5-3): state.ntp.next_sync_s (83 B of 32-bit code;
 # nothing shows it today), state.loop.pair.N (a Port type, ~100 B in the
-# engine, and a register read a port; the events name the pair).
+# engine, and a register read a port; the events name the pair),
+# state.dns.lookup.name (a Str(47): `dns lookup` names it, the event line
+# too).
 
 state("ntp", get="om_get_ntp")
 st("synced", Bool)
@@ -18,7 +20,6 @@ st("server_ip", IPv4)
 
 state("dns", get="om_get_dns")
 st("dhcp_server", IPv4, tip="The server DHCP gave, 0.0.0.0 if none")
-st("lookup.name", Str(47), tip="The current or last lookup")
 st("lookup.status", Enum("dnsst", "none pending done failed"))
 st("lookup.ip", IPv4)
 
