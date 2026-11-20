@@ -149,7 +149,7 @@ void reg_read(uint16_t reg_addr);
 void reg_read_m(uint16_t reg_addr);
 /* bounded polls (E4): rtlplayground.c */
 #define HW_POLL_TICKS	1		/* 5-10 ms */
-#define HW_FLUSH_TICKS	3		/* an L2 flush: 15-20 ms, the step limit (its time on silicon: unmeasured) */
+#define HW_FLUSH_TICKS	3		/* an L2 flush: 15-20 ms (its time on silicon: unmeasured) */
 #define HW_TO_FLASH_WEL	0xff01		/* hw_timeout_reg: the flash never set WEL */
 extern __xdata uint16_t hw_timeouts, hw_timeout_reg;
 extern __xdata uint8_t hw_stuck;	/* this step had a timeout: later polls give up at once */

@@ -382,13 +382,13 @@ class Silicon:
         return ov, st, mx
 
     def t_slow(self):
-        ov, st, mx = self.slow(30, 29500, 31000)
+        ov, st, mx = self.slow(60, 59500, 61000)
         self.record(overruns=ov, state=st, sl_slow_us=round(mx, 1))
-        self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"slow 30: one overrun, of SL_SLOW (overruns {ov}, state {st})")
-        self.check(29500 <= mx < 31000, f"its length measured: {mx:.0f} us" + self.sim("sl_slow_us"))
-        ov, st, mx = self.slow(20, 19500, 21000)
-        self.record(overruns20=ov, sl_slow20_us=round(mx, 1))
-        self.check(19500 <= mx <= 21000, f"slow 20: its length measured: {mx:.0f} us (overruns {ov}: 20 ms is the limit)")
+        self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"slow 60: one overrun, of SL_SLOW (overruns {ov}, state {st})")
+        self.check(59500 <= mx < 61000, f"its length measured: {mx:.0f} us" + self.sim("sl_slow_us"))
+        ov, st, mx = self.slow(50, 49500, 51000)
+        self.record(overruns50=ov, sl_slow50_us=round(mx, 1))
+        self.check(49500 <= mx <= 51000, f"slow 50: its length measured: {mx:.0f} us (overruns {ov}: 50 ms is the limit, decision 25)")
 
     def paste(self, what, prefix=""):
         names = ("st_con_rx_n", "st_con_rx_sum", "con_rx_overruns")

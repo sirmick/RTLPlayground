@@ -6,8 +6,8 @@ until old-vs-new): ovs-rtlpg's reference boot, CLI tour and web pages
 
   tools/sched_tour.py BOOT_IMAGE [--ovs DIR] [--board FILE]
 
-Checks: every slot listed; no state's longest step over 20 ms but
-FL_ERASE; stack headroom >= 30 B. The stack is painted (0xa5) from the sim
+Checks: every slot listed; no state's longest step over 50 ms (the step
+limit, decision 25; FL_ERASE, ~40 ms, is inside it); stack headroom >= 30 B. The stack is painted (0xa5) from the sim
 at the prompt, above the SP the idle firmware has then, and read at the end:
 the normal build has no paint of its own (health_stack_paint is HEALTH's).
 Exit status 1 on a failure.
@@ -55,11 +55,11 @@ def main(argv):
     for m in re.finditer(r"^([A-Z][A-Z0-9_]*)\t(\d+)\t(\S+)$", text, re.M):
         st, runs, mx = m.groups()
         us = float(mx[:-2]) * (1000 if mx.endswith("ms") else 1) if mx[-2:] in ("us", "ms") else 1e9
-        if us > 20000 and st != "FL_ERASE":
+        if us > 50000:
             long.append((st, mx))
-    print(f"steps over 20 ms (but FL_ERASE): {long or 'none'}")
+    print(f"steps over 50 ms: {long or 'none'}")
     if long:
-        fails.append(f"steps over 20 ms: {long}")
+        fails.append(f"steps over 50 ms: {long}")
     print(f"stack: SP at the prompt {sp:#x}, painted {paint_from:#x}..0xff, high-water {hw:#x}, "
           f"headroom {0xff - hw} B")
     if 0xff - hw < 30:
