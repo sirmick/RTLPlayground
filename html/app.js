@@ -3171,8 +3171,31 @@ function calRx(val, cal) {
         v.getFloat32(8) * Math.pow(val, 2) + v.getFloat32(12) * val + v.getFloat32(16);
 }
 
-function dBm(mw) {
-    return 10 * Math.log10(Math.max(mw, 1e-4))
+/* "0.603 mW / -2.20 dBm"; a dark port (under 1e-4 mW, the word's 0.1 uW) "- dBm" */
+function mwText(mw) {
+    return mw.toFixed(3) + " mW / " + (mw < 1e-4 ? "-" : (10 * Math.log10(mw)).toFixed(2)) + " dBm"
+}
+
+/* state.sfp.S's diagnostics in units: the raw SFF-8472 words back (vcc_v
+ * and the powers in 1/10000, temp an int16 in 1/256 C, tx_bias in 2 uA),
+ * calibrated with ddm.cal (bytes 184-223: the RX polynomial at hex 0-39,
+ * then the slope/offset pairs of tx_bias, tx_power, temp, vcc) when the
+ * module carries it */
+function sfpDdm(o) {
+    var d = o.ddm || {},
+        cal = d.cal || "",
+        tc = +d.temp;
+
+    function c(i) {
+        return cal.length === 80 ? cal.slice(40 + 8 * i, 48 + 8 * i) : null
+    }
+    return {
+        temp: calSO(tc > 32767 ? tc - 65536 : tc, c(2)) / 256,
+        vcc: calSO(Math.round(d.vcc_v * 10000), c(3)) / 10000,
+        bias: calSO(+d.tx_bias, c(0)) / 500,
+        tx: calSO(Math.round(d.tx_power_mw * 10000), c(1)) / 10000,
+        rx: calRx(Math.round(d.rx_power_mw * 10000), cal.slice(0, 40)) / 10000
+    };
 }
 
 function portRows(p) {
@@ -3187,27 +3210,18 @@ function portRows(p) {
     rows.push([t("st_rxg"), BigInt(p.rxG) + " " + t("p_pkts")]);
     rows.push([t("st_rxb"), BigInt(p.rxB) + " " + t("p_pkts")]);
     if (p.isSFP) {
-        /* state.sfp.S (detailShow): the raw SFF-8472 words, calibrated here
-         * with ddm.cal (bytes 184-223) when the module is externally calibrated */
+        /* state.sfp.S (detailShow) */
         var o = p.sfp || {},
-            d = o.ddm || {},
-            cal = d.cal || "",
-            st = (d.status || "").split(","),
+            st = ((o.ddm || {}).status || "").split(","),
             ext = o.ddm_ok === "on";
-
-        function c(i) {	/* tx_bias, tx_power, temp, vcc's slope and offset */
-            return cal.length === 80 ? cal.slice(40 + 8 * i, 48 + 8 * i) : null
-        }
         if (o.present === "on") rows.push([t("p_module"), [o.vendor, o.part, o.serial].filter(Boolean).join(" / ")]);
         if (ext) {
-            var tx = calSO(Math.round(d.tx_power_mw * 10000), c(1)) / 10000,
-                rx = calRx(Math.round(d.rx_power_mw * 10000), cal.slice(0, 40)) / 10000,
-                tc = +d.temp;
-            rows.push([t("p_temp"), (calSO(tc > 32767 ? tc - 65536 : tc, c(2)) / 256).toFixed(1) + " \u00b0C"]);
-            rows.push([t("p_vcc"), (calSO(Math.round(d.vcc_v * 10000), c(3)) / 10000).toFixed(2) + " V"]);
-            rows.push([t("p_txbias"), (calSO(+d.tx_bias, c(0)) / 500).toFixed(1) + " mA"]);
-            rows.push([t("p_txpower"), tx.toFixed(3) + " mW / " + dBm(tx).toFixed(2) + " dBm"]);
-            rows.push([t("p_rxpower"), rx.toFixed(3) + " mW / " + dBm(rx).toFixed(2) + " dBm"]);
+            var dd = sfpDdm(o);
+            rows.push([t("p_temp"), dd.temp.toFixed(1) + " \u00b0C"]);
+            rows.push([t("p_vcc"), dd.vcc.toFixed(2) + " V"]);
+            rows.push([t("p_txbias"), dd.bias.toFixed(1) + " mA"]);
+            rows.push([t("p_txpower"), mwText(dd.tx)]);
+            rows.push([t("p_rxpower"), mwText(dd.rx)]);
             rows.push([t("p_txfault"), t(st.indexOf("tx_fault") >= 0 ? "c_yes" : "c_no")]);
             rows.push([t("p_txdis"), t(st.indexOf("tx_disable") >= 0 ? "c_yes" : "c_no")]);
         }

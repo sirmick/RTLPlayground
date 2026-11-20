@@ -35,6 +35,7 @@ BUILDDIR = build
 TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_om \
         $(BUILDDIR)/test_om_gen \
+        $(BUILDDIR)/test_sfp_cal \
         $(BUILDDIR)/test_om_codec \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_page_json \
@@ -79,7 +80,7 @@ SCHED_T = $(BUILDDIR)/sched_core
 SCHED_OM = $(SCHED_T)/om/state_sched.py
 $(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -o $(BUILDDIR)/om > /dev/null
-$(filter-out $(BUILDDIR)/test_om_gen,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
+$(filter-out $(BUILDDIR)/test_om_gen $(BUILDDIR)/test_sfp_cal,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
 
 # om.c, the engine, UNMODIFIED, over the real schema and om_schema/ (every
 # kind and type no real object uses yet); the handlers are stubs in the test.
@@ -108,6 +109,10 @@ $(BUILDDIR)/test_check_cross_bank: test_check_cross_bank.py $(SRCROOT)/tools/che
 
 $(BUILDDIR)/test_om_gen: test_om_gen.py $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_om_gen.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+# The web UI's SFP diagnostics math (html/app.js) in node, against known
+# SFF-8472 calibration constants
+$(BUILDDIR)/test_sfp_cal: test_sfp_cal.py $(SRCROOT)/html/app.js | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_sfp_cal.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # cmd_editor.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_cmd_editor: test_cmd_editor.c support.c $(SRCROOT)/cmd_editor.c | $(BUILDDIR)
