@@ -35,6 +35,18 @@ var LANG = {
         th_sel_light: "Selenized Light",
         th_sel_dark: "Selenized Dark",
         c_port: "Port",
+        pt_state: "Port state",
+        om_str: "printable text, at most {n} characters, no \" or \\",
+        stg_n: "{n} staged",
+        stg_diff: "Diff",
+        stg_discard: "Discard",
+        stg_apply: "Apply",
+        stg_none: "Nothing staged",
+        stg_save: "Save",
+        stg_saved: "Saved",
+        stg_applied: "Applied",
+        stg_rolled: "Not confirmed: the switch rolls the change back",
+        stg_confirm: "confirming, {s} s",
         c_name: "Name",
         c_link: "Link",
         c_apply: "Apply",
@@ -94,12 +106,6 @@ var LANG = {
         p_rxlos: "RX LOS",
         p_adv: "Advertising",
         pt_title: "Port configuration",
-        pt_conn: "Devices learned",
-        pt_speed: "Speed",
-        pt_mtu: "MTU",
-        pt_sfp_note: "SFP speed is set per slot and is not saved in the startup config.",
-        pt_name_err: "Port name: 1-15 characters, no spaces",
-        pt_mtu_err: "MTU must be 64-16383",
         stp_title: "Spanning tree",
         loop_title: "Loop detection",
         loop_d: "The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.",
@@ -514,12 +520,6 @@ var LANG = {
         p_rxlos: "RX 信号ロス",
         p_adv: "アドバタイズ",
         pt_title: "ポート設定",
-        pt_conn: "学習済みデバイス",
-        pt_speed: "速度",
-        pt_mtu: "MTU",
-        pt_sfp_note: "SFP の速度はスロット単位で設定され、起動設定には保存されません。",
-        pt_name_err: "ポート名: 1〜15 文字、空白不可",
-        pt_mtu_err: "MTU は 64〜16383 の範囲で指定してください",
         stp_title: "スパニングツリー",
         stp_h: "RSTP, 802.1w",
         stp_version: "バージョン",
@@ -828,12 +828,6 @@ var LANG = {
         p_rxlos: "RX 信号丢失",
         p_adv: "通告能力",
         pt_title: "端口配置",
-        pt_conn: "已学习设备",
-        pt_speed: "速率",
-        pt_mtu: "MTU",
-        pt_sfp_note: "SFP 速率按插槽设置，不会保存到启动配置。",
-        pt_name_err: "端口名称: 1-15 个字符，不能包含空格",
-        pt_mtu_err: "MTU 范围为 64-16383",
         stp_title: "生成树",
         stp_h: "RSTP, 802.1w",
         stp_version: "版本",
@@ -1215,12 +1209,6 @@ var LANG = {
         p_rxlos: "Pérdida RX (LOS)",
         p_adv: "Anunciado",
         pt_title: "Configuración de puerto",
-        pt_conn: "Dispositivos aprendidos",
-        pt_speed: "Velocidad",
-        pt_mtu: "MTU",
-        pt_sfp_note: "La velocidad del SFP se ajusta por ranura y no se guarda en la configuración de inicio.",
-        pt_name_err: "Nombre de puerto: 1-15 caracteres, sin espacios",
-        pt_mtu_err: "El MTU debe estar entre 64 y 16383",
         stp_title: "Árbol de expansión",
         stp_h: "RSTP, 802.1w",
         stp_version: "Versión",
@@ -1609,12 +1597,6 @@ var LANG = {
         p_rxlos: "RX pertes de signaux",
         p_adv: "Capacités",
         pt_title: "Configuration du port",
-        pt_conn: "Appareils appris",
-        pt_speed: "Vitesse",
-        pt_mtu: "MTU",
-        pt_sfp_note: "La vitesse SFP est paramétrée pour le port et n'est pas enregistrée dans la configuration de démarrage.",
-        pt_name_err: "Nom du port: 1 à 15 caractères, sans espaces",
-        pt_mtu_err: "MTU doit être comrpis entre 64 et 16383",
         stp_title: "Arborescence",
         stp_h: "RSTP, 802.1w",
         stp_version: "Protocole",
@@ -1963,12 +1945,6 @@ var LANG = {
         p_rxlos: "RX LOS",
         p_adv: "Angeboten",
         pt_title: "Port-Konfiguration",
-        pt_conn: "Gelernte Geräte",
-        pt_speed: "Geschwindigkeit",
-        pt_mtu: "MTU",
-        pt_sfp_note: "Die SFP-Geschwindigkeit wird pro Steckplatz gesetzt und nicht in der Startkonfiguration gespeichert.",
-        pt_name_err: "Port-Name: 1-15 Zeichen, keine Leerzeichen",
-        pt_mtu_err: "MTU muss zwischen 64 und 16383 liegen",
         stp_title: "Spanning Tree",
         stp_h: "RSTP, 802.1w",
         stp_version: "Version",
@@ -2444,6 +2420,427 @@ function getText(p) {
         return r.body
     })
 }
+
+/* ---- The object model (DESIGN.md 14): CLI lines over POST /cli ---------- */
+
+/* Lines in, their output out. Each command's output ends in one status
+ * line, "ok" or "err <path>: <why>": r.out[i] is command i's lines, r.st[i]
+ * its status, r.errs the failures' reasons. */
+function cli(lines) {
+    return api("/cli", {
+        method: "POST",
+        body: lines.join("\n")
+    }).then(function(r) {
+        if (!r.ok) throw new Error("/cli " + r.status);
+        var res = {
+                out: [],
+                st: [],
+                errs: []
+            },
+            cur = [];
+        r.body.split("\n").forEach(function(l) {
+            if (l === "ok" || l.slice(0, 4) === "err ") {
+                res.out.push(cur);
+                res.st.push(l);
+                if (l !== "ok") res.errs.push(l.slice(4));
+                cur = [];
+            } else if (l) cur.push(l);
+        });
+        if (cur.length) {           /* an old command: no status line */
+            res.out.push(cur);
+            res.st.push("");
+        }
+        return res;
+    });
+}
+
+/* "path value" lines into nested objects: "port.3.mtu 1500" -> o.port[3].mtu */
+function parseLines(lines, o) {
+    o = o || {};
+    lines.forEach(function(l) {
+        var sp = l.indexOf(" ");
+        if (sp < 1) return;
+        var k = l.slice(0, sp).split("."),
+            n = o;
+        for (var i = 0; i < k.length - 1; i++) n = n[k[i]] = n[k[i]] || {};
+        n[k[i]] = l.slice(sp + 1);
+    });
+    return o;
+}
+
+/* Stand-in for schema.js, which om_gen.py is to emit (DESIGN 14.3): per
+ * field its type (t: bool enum num str pmask), enum words (e), limits,
+ * length, default (d), label (l), tip and when rule (w). */
+var SCHEMA = {
+    port: {
+        name: {
+            t: "str",
+            len: 31,
+            d: "",
+            l: "Name",
+            tip: "Shown in the UI and sent as the LLDP port description"
+        },
+        enabled: {
+            t: "bool",
+            d: "on",
+            w: "copper",
+            l: "Enabled",
+            tip: "Administrative state"
+        },
+        speed: {
+            t: "enum",
+            e: "auto 10m 100m 1g 2g5 5g 10g",
+            d: "auto",
+            w: "copper",
+            l: "Speed",
+            tip: "Autonegotiate, or force one speed; 5g and 10g only on 10G ports"
+        },
+        duplex: {
+            t: "enum",
+            e: "auto full half",
+            d: "auto",
+            w: "copper",
+            l: "Duplex",
+            tip: "Duplex for a forced 10m or 100m"
+        },
+        mtu: {
+            t: "num",
+            min: 64,
+            max: 16383,
+            d: "16383",
+            l: "MTU",
+            tip: "Largest frame accepted, in bytes"
+        },
+        pvid: {
+            t: "num",
+            min: 0,
+            max: 4094,
+            d: "1",
+            l: "PVID",
+            tip: "VLAN for untagged frames; 0 parks a tagged-only port"
+        },
+        ingress: {
+            t: "enum",
+            e: "all tagged untagged",
+            d: "all",
+            l: "Accept",
+            tip: "Acceptable frame types"
+        },
+        ingress_filter: {
+            t: "bool",
+            d: "on",
+            l: "Filter",
+            tip: "Drop frames of VLANs the port is not a member of"
+        },
+        lldp: {
+            t: "enum",
+            e: "permit block",
+            d: "permit",
+            l: "LLDP",
+            tip: "Send LLDP on this port"
+        },
+        eee: {
+            t: "bool",
+            d: "on",
+            w: "copper",
+            l: "EEE",
+            tip: "Energy-efficient Ethernet"
+        },
+        isolate: {
+            t: "pmask",
+            cpu: 1,
+            l: "Sends to",
+            tip: "Ports this port may send to"
+        }
+    },
+    "state.port": {
+        link: {
+            l: "Link"
+        },
+        speed: {
+            l: "Speed"
+        },
+        duplex: {
+            l: "Duplex",
+            w: "copper"
+        },
+        media: {
+            l: "Media"
+        },
+        ms_role: {
+            l: "Role",
+            w: "copper"
+        },
+        pause_tx: {
+            l: "Pause TX"
+        },
+        pause_rx: {
+            l: "Pause RX"
+        },
+        macs: {
+            l: "MACs"
+        },
+        eee_active: {
+            l: "EEE active",
+            w: "copper"
+        }
+    }
+};
+
+/* Port masks as text ("1-4,9,cpu", "none", "all") and back: a set of port
+ * numbers, "cpu" for the CPU port */
+function pmParse(s, n) {
+    var m = {};
+    (s || "").split(",").forEach(function(it) {
+        var r = it.split("-");
+        if (it === "all") {
+            for (var i = 1; i <= n; i++) m[i] = 1;
+            m.cpu = 1;
+        } else if (it === "cpu") m.cpu = 1;
+        else if (+r[0])
+            for (var j = +r[0]; j <= +(r[1] || r[0]); j++) m[j] = 1;
+    });
+    return m;
+}
+
+function pmText(m, n) {
+    var out = [],
+        a = 0;
+    for (var i = 1; i <= n + 1; i++) {
+        if (m[i] && i <= n) {
+            if (!a) a = i;
+        } else if (a) {
+            out.push(a === i - 1 ? a : a + "-" + (i - 1));
+            a = 0;
+        }
+    }
+    if (m.cpu) out.push("cpu");
+    return out.join(",") || "none";
+}
+
+/* A value the switch would refuse, checked here first: why, or "" */
+function omCheck(f, v) {
+    if (f.t === "num" && !(/^\d+$/.test(v) && +v >= f.min && +v <= f.max)) return f.min + "-" + f.max;
+    if (f.t === "str" && (v.length > f.len || /["\\]|[^ -~]/.test(v))) return t("om_str", {
+        n: f.len
+    });
+    return "";
+}
+
+/* Widgets bound to paths (W[path]): the candidate's value shown, marked
+ * when it differs from running; an edit is staged at once ("set" into the
+ * candidate). One being edited or focused keeps what the user has. */
+var W = {};
+
+function widget(path, f, nports) {
+    var w = {
+            f: f,
+            path: path
+        },
+        el, inp;
+    if (f.t === "bool") {
+        inp = h("input", {
+            type: "checkbox"
+        });
+        el = h("label", {
+            class: "switch"
+        }, [inp, h("i")]);
+        w.get = function() {
+            return inp.checked ? "on" : "off"
+        };
+        w.put = function(v) {
+            inp.checked = v === "on"
+        };
+    } else if (f.t === "enum") {
+        el = inp = h("select", {
+            class: "in"
+        });
+        f.e.split(" ").forEach(function(o) {
+            inp.appendChild(h("option", {
+                value: o,
+                text: o
+            }));
+        });
+    } else if (f.t === "pmask") {
+        var bs = {},
+            m = {};
+        el = h("span", {
+            class: "seg pm"
+        });
+        for (var i = 1; i <= nports + 1; i++)(function(k) {
+            bs[k] = h("button", {
+                text: k === "cpu" ? "C" : k,
+                title: k === "cpu" ? "CPU" : "",
+                onclick: function() {
+                    m[k] = !m[k];
+                    bs[k].classList.toggle("on", !!m[k]);
+                    stage(w);
+                }
+            });
+            el.appendChild(bs[k]);
+        })(i > nports ? "cpu" : i);
+        w.get = function() {
+            return pmText(m, nports)
+        };
+        w.put = function(v) {
+            m = pmParse(v, nports);
+            for (var k in bs) bs[k].classList.toggle("on", !!m[k]);
+        };
+    } else {
+        el = inp = h("input", {
+            class: "in" + (f.t === "num" ? " sm" : ""),
+            type: f.t === "num" ? "number" : "text",
+            size: "9"
+        });
+        if (f.t === "num") {
+            inp.min = f.min;
+            inp.max = f.max;
+        } else inp.maxLength = f.len;
+    }
+    if (!w.get) {
+        w.get = function() {
+            return inp.value.trim()
+        };
+        w.put = function(v) {
+            inp.value = v
+        };
+    }
+    if (inp) {
+        inp.addEventListener("input", function() {
+            w.edit = 1
+        });
+        inp.addEventListener("change", function() {
+            stage(w)
+        });
+    }
+    el.title = f.tip || "";
+    w.el = el;
+    w.inp = inp;
+    W[path] = w;
+    return el;
+}
+
+/* The candidate's and running's values into the widgets; "" where a
+ * field doesn't apply (its when rule) */
+function wShow(path, cand, run) {
+    var w = W[path];
+    if (!w) return;
+    var na = cand === undefined;
+    w.el.classList.toggle("na", na);
+    if (w.inp) w.inp.disabled = na;
+    w.el.classList.toggle("stg", !na && cand !== run);
+    if (na || w.edit || (w.inp && document.activeElement === w.inp)) return;
+    w.put(cand);
+    w.el.classList.remove("bad");
+}
+
+/* An edit into the candidate: "set path value", or "del" for an empty text */
+function stage(w) {
+    var v = w.get(),
+        why = omCheck(w.f, v);
+    if (why) {
+        w.el.classList.add("bad");
+        toast(w.path + ": " + why, "err");
+        return;
+    }
+    cli([v === "" ? "del " + w.path : "set " + w.path + " " + v]).then(function(r) {
+        w.edit = 0;
+        w.el.classList.toggle("bad", !!r.errs.length);
+        if (r.errs.length) toast(r.errs[0], "err");
+        omReload();
+    }, function() {
+        w.edit = 0
+    });
+}
+
+/* ---- Staging: the candidate against running (DESIGN 5, 14.3) ---------- */
+
+var omReloaders = [];
+
+/* state.cfg into the bar: the pending count, Save while running differs
+ * from saved */
+function stgRefresh() {
+    return cli(["get state.cfg"]).then(function(r) {
+        var c = (parseLines(r.out[0] || []).state || {}).cfg || {};
+        $("stgN").textContent = c.pending ? t("stg_n", {
+            n: c.pending
+        }) : "";
+        $("stgSave").classList.toggle("show", c.dirty === "on");
+    });
+}
+
+/* every tab bound to the model reloads its values, and the bar */
+function omReload() {
+    omReloaders.forEach(function(f) {
+        f()
+    });
+    return stgRefresh().catch(function() {});
+}
+
+function stgShowDiff() {
+    cli(["diff"]).then(function(r) {
+        modal(t("stg_diff"), h("pre", {
+            class: "mono small",
+            text: r.out[0].join("\n") || t("stg_none")
+        }), [h("button", {
+            class: "ctl",
+            text: t("c_cancel"),
+            onclick: closeModal
+        })]);
+    });
+}
+
+function stgDiscard() {
+    for (var k in W) W[k].edit = 0;
+    cli(["discard"]).then(omReload);
+}
+
+/* Apply with a window: the change is kept only once the UI gets through
+ * to the switch again and confirms, else the switch rolls it back */
+var STG_WINDOW = 30;
+
+function stgApply() {
+    $("stgApply").disabled = true;
+    cli(["apply " + STG_WINDOW]).then(function(r) {
+        if (r.errs.length) throw new Error(r.errs[0]);
+        return stgConfirm(Date.now() + STG_WINDOW * 1000);
+    }).then(function() {
+        toast(t("stg_applied"), "ok");
+    }, function(e) {
+        toast(e.message, "err");
+    }).then(function() {
+        $("stgApply").disabled = false;
+        omReload();
+    });
+}
+
+function stgConfirm(until) {
+    $("stgN").textContent = t("stg_confirm", {
+        s: Math.max(0, Math.round((until - Date.now()) / 1000))
+    });
+    return cli(["confirm"]).then(function(r) {
+        if (r.errs.length) throw new Error(r.errs[0]);
+    }, function() {
+        if (Date.now() > until) throw new Error(t("stg_rolled"));
+        return new Promise(function(ok) {
+            setTimeout(ok, 2000)
+        }).then(function() {
+            return stgConfirm(until)
+        });
+    });
+}
+
+function stgSave() {
+    cli(["save"]).then(function(r) {
+        toast(r.errs[0] || t("stg_saved"), r.errs.length ? "err" : "ok");
+        omReload();
+    });
+}
+$("stgDiffB").addEventListener("click", stgShowDiff);
+$("stgDiscard").addEventListener("click", stgDiscard);
+$("stgApply").addEventListener("click", stgApply);
+$("stgSave").addEventListener("click", stgSave);
+stgRefresh().catch(function() {});
 
 var CONF_CMDS = [
     /^ip\s+(\d{1,3}\.){3}\d{1,3}$/,
@@ -3045,144 +3442,110 @@ tabHooks.dash = {
     status: dashStatus,
 };
 
-var SPEEDS = [
-    ["auto", "c_auto"],
-    ["2g5", "2.5G"],
-    ["1g", "1G"],
-    ["100m full", "100M full"],
-    ["100m half", "100M half"],
-    ["10m full", "10M full"],
-    ["10m half", "10M half"]
-];
-var SFPRATES = [
-    ["auto", "c_auto"],
-    ["10g", "10G"],
-    ["2g5", "2.5G"],
-    ["1g", "1G"],
-    ["100m", "100M"]
-];
-var ADVSEL = {
-    63: "auto",
-    31: "auto",
-    32: "2g5",
-    16: "1g",
-    8: "100m full",
-    4: "100m half",
-    2: "10m full",
-    1: "10m half"
-};
+/* ---- Tables bound to paths: rows the ports, columns an object's fields -- */
 
-function speedLabel(s) {
-    if (s === "c_auto") return t("c_auto");
-    return s.replace(" full", " " + t("c_full")).replace(" half", " " + t("c_half"));
+function tHead(tbl, obj, cols) {
+    var f = SCHEMA[obj],
+        hr = tbl.createTHead().insertRow();
+    hr.appendChild(h("th", {
+        text: t("c_port")
+    }));
+    cols.forEach(function(c) {
+        hr.appendChild(h("th", {
+            text: f[c].l,
+            title: f[c].tip || ""
+        }));
+    });
 }
 
-function buildPorts() {
-    var tb = $("ptable").tBodies[0];
-    if (tb.rows.length || !S.n) return;
-    S.ports.forEach(function(p) {
-        var i = p.port - 1;
-        var spd = h("select", {
-            class: "in",
-            id: "pspd" + i
-        });
-        (p.isSFP ? SFPRATES : SPEEDS).forEach(function(o) {
-            spd.appendChild(h("option", {
-                value: o[0],
-                text: speedLabel(o[1])
-            }));
-        });
+/* config: a widget on obj.N.field in each cell */
+function cfgTable(tbl, obj, cols, ports) {
+    tbl.innerHTML = "";
+    tHead(tbl, obj, cols);
+    var tb = tbl.createTBody();
+    ports.forEach(function(n) {
         var tr = tb.insertRow();
-        tr.insertCell().textContent = p.port + (p.isSFP ? " (SFP)" : "");
-        tr.insertCell().appendChild(h("input", {
-            class: "in",
-            id: "pname" + i,
-            size: "9",
-            maxlength: "15",
-            value: p.name || "",
-            placeholder: "-"
-        }));
-        tr.insertCell().id = "plink" + i;
-        var mc = tr.insertCell();
-        mc.id = "pmac" + i;
-        mc.className = "mono";
-        mc.textContent = "-";
-        tr.insertCell().appendChild(spd);
-        var sw = h("label", {
-            class: "switch"
-        }, [h("input", {
-            type: "checkbox",
-            id: "pen" + i
-        }), h("i")]);
-        sw.firstChild.checked = p.enabled;
-        tr.insertCell().appendChild(sw);
-        tr.insertCell().appendChild(h("input", {
-            class: "in sm",
-            id: "pmtu" + i,
-            type: "number",
-            min: "64",
-            max: "16383",
-            value: parseInt(p.mtu, 16),
-        }));
-        tr.insertCell().appendChild(h("button", {
-            class: "ctl",
-            text: t("c_apply"),
-            onclick: function() {
-                applyPort(i)
-            }
-        }));
-        S.mtu[i] = parseInt(p.mtu, 16);
+        tr.insertCell().textContent = n;
+        cols.forEach(function(c) {
+            tr.insertCell().appendChild(widget(obj + "." + n + "." + c, SCHEMA[obj][c], ports.length));
+        });
     });
 }
 
-function portsStatus() {
-    buildPorts();
-    S.ports.forEach(function(p) {
-        var i = p.port - 1,
-            el = $("plink" + i);
-        var mc = $("pmac" + i);
-        if (mc) mc.textContent = parseInt(p.macs, 16) & 0x1fff;
-        if (el) el.innerHTML = linkBadge(p);
-        var sel = $("pspd" + i),
-            v = p.isSFP ? 0 : ADVSEL[parseInt(p.adv, 2)];
-        if (sel && v && document.activeElement !== sel) sel.value = v;
+/* state, read only: the cells filled by stShow() */
+function stTable(tbl, obj, cols, ports) {
+    tbl.innerHTML = "";
+    tHead(tbl, obj, cols);
+    var tb = tbl.createTBody();
+    ports.forEach(function(n) {
+        var tr = tb.insertRow();
+        tr.insertCell().textContent = n;
+        cols.forEach(function(c) {
+            tr.insertCell().id = obj + "." + n + "." + c;
+        });
     });
 }
 
-function applyPort(i) {
-    var p = S.ports[i],
-        cmds = [];
-    var name = $("pname" + i).value.trim();
-    var en = $("pen" + i).checked;
-    var spd = $("pspd" + i).value;
-    var mtu = parseInt($("pmtu" + i).value, 10);
-    var oldName = p.name || "";
-    if (name !== oldName) {
-        if (name && !/^\S{1,15}$/.test(name)) {
-            toast(t("pt_name_err"), "err");
-            return;
-        }
-        cmds.push("port " + p.port + " name" + (name ? " " + name : ""));
-    }
-    if (!en) cmds.push("port " + p.port + " off");
-    else if (p.isSFP) {
-        if (!p.enabled) cmds.push("port " + p.port + " on");
-        cmds.push("sfp " + S.sfpSlot[i] + " " + spd);
-    } else cmds.push("port " + p.port + " " + spd);
-    if (mtu && mtu !== S.mtu[i]) {
-        if (mtu < 64 || mtu > 16383) {
-            toast(t("pt_mtu_err"), "err");
-            return;
-        }
-        cmds.push("mtu " + p.port + " " + mtu);
-    }
-    postCmds(cmds).catch(function() {});
+function stShow(o, obj, cols, ports) {
+    ports.forEach(function(n) {
+        cols.forEach(function(c) {
+            var el = $(obj + "." + n + "." + c);
+            if (el) el.textContent = (o[n] || {})[c] || "-";
+        });
+    });
 }
+
+/* ---- The port tab, on port.N and state.port.N ------------------------- */
+
+var PT_CFG = ["name", "enabled", "speed", "duplex", "mtu", "pvid", "ingress", "ingress_filter", "lldp", "eee", "isolate"],
+    PT_ST = ["link", "speed", "duplex", "media", "ms_role", "macs", "eee_active"],
+    ptPorts = [];
+
+/* running and candidate: the widgets (built once the ports are known) */
+function ptLoad() {
+    return cli(["get port", "get -c port"]).then(function(r) {
+        var run = parseLines(r.out[0]).port || {},
+            cand = parseLines(r.out[1]).port || {},
+            ports = Object.keys(cand).map(Number).sort(function(a, b) {
+                return a - b
+            });
+        if (ports.join() !== ptPorts.join()) {
+            ptPorts = ports;
+            cfgTable($("ptable"), "port", PT_CFG, ports);
+            stTable($("pstate"), "state.port", PT_ST, ports);
+        }
+        ports.forEach(function(n) {
+            PT_CFG.forEach(function(c) {
+                wShow("port." + n + "." + c, cand[n][c], (run[n] || {})[c]);
+            });
+        });
+    });
+}
+
+function ptState() {
+    return cli(PT_ST.map(function(c) {
+        return "get state.port.*." + c
+    })).then(function(r) {
+        var o = {};
+        r.out.forEach(function(ls) {
+            parseLines(ls, o)
+        });
+        stShow((o.state || {}).port || {}, "state.port", PT_ST, ptPorts);
+    });
+}
+var ptPoller = new Poller(ptState, 3000);
+omReloaders.push(function() {
+    if (curTab === "ports") ptLoad().catch(function() {});
+});
 tabHooks.ports = {
     enter: function() {
-        needPorts(buildPorts)
+        ptLoad().then(function() {
+            ptPoller.start()
+        }).catch(function() {});
     },
-    status: portsStatus,
+    leave: function() {
+        ptPoller.stop()
+    },
 };
 
 var STP_PF = {
