@@ -144,7 +144,7 @@ var LANG = {
         stp_via: "via port",
         stp_cost: "path cost",
         stp_tc: "topology changes",
-        stp_prio_note: "Lower priority wins the root election (default 8 = 32768). Settings apply immediately; use Save to flash to keep them.",
+        stp_prio_note: "Lower priority wins the root election (default 8 = 32768).",
         stp_portcfg: "Port configuration",
         stp_edge: "Edge",
         stp_pcost: "Path cost",
@@ -522,7 +522,6 @@ var LANG = {
         stp_via: "経由ポート",
         stp_cost: "パスコスト",
         stp_tc: "トポロジ変更回数",
-        stp_prio_note: "優先度の値が小さいブリッジがルートに選出されます (既定 8 = 32768)。設定は即時に反映されます。保持するにはフラッシュに保存してください。",
         stp_portcfg: "ポート設定",
         stp_edge: "エッジ",
         stp_pcost: "パスコスト",
@@ -804,7 +803,6 @@ var LANG = {
         stp_via: "经由端口",
         stp_cost: "路径开销",
         stp_tc: "拓扑变更次数",
-        stp_prio_note: "优先级数值越小越容易被选为根桥 (默认 8 = 32768)。设置立即生效，如需保留请保存到 Flash。",
         stp_portcfg: "端口配置",
         stp_edge: "边缘端口",
         stp_pcost: "路径开销",
@@ -1151,7 +1149,6 @@ var LANG = {
         stp_via: "vía puerto",
         stp_cost: "coste de ruta",
         stp_tc: "cambios de topología",
-        stp_prio_note: "La prioridad más baja gana la elección de raíz (8 por defecto = 32768). Los ajustes se aplican inmediatamente; usa Guardar en flash para conservarlos.",
         stp_portcfg: "Configuración de puertos",
         stp_edge: "Borde",
         stp_pcost: "Coste de ruta",
@@ -1504,7 +1501,6 @@ var LANG = {
         stp_via: "via le port",
         stp_cost: "coût du chemin",
         stp_tc: "changements de topologie",
-        stp_prio_note: "La priorité la plus basse devient la racine (défaut 8 à 32768). Les paramètres s'appliquent immediatement; utiliser Sauvegarder en flash pour les conserver.",
         stp_portcfg: "Configuration du port",
         stp_edge: "Port terminal",
         stp_pcost: "Coût du chemin",
@@ -1820,7 +1816,6 @@ var LANG = {
         stp_via: "über Port",
         stp_cost: "Pfadkosten",
         stp_tc: "Topologieänderungen",
-        stp_prio_note: "Die niedrigere Priorität gewinnt die Root-Wahl (Standard 8 = 32768). Einstellungen wirken sofort; mit „Im Flash speichern“ bleiben sie erhalten.",
         stp_portcfg: "Port-Konfiguration",
         stp_edge: "Edge",
         stp_pcost: "Pfadkosten",
@@ -3770,7 +3765,7 @@ function stpCnt() {
 /* /stp.json the tree as it runs; get -c stp the fields, running's
  * enabled, version, priority and p2p for the status */
 function stpLoad() {
-    return Promise.all([getJSON("/stp.json"), cli(["get -c stp", "get stp.enabled stp.version stp.priority stp.port.*.p2p stp.lag.*.p2p"])]).then(function(x) {
+    return Promise.all([getJSON("/stp.json"), cli(["get -c stp", "get stp.enabled stp.version stp.priority stp.port.*.p2p stp.lag.*.p2p", "diff"])]).then(function(x) {
         var s = x[0],
             u = parseLines(x[1].out[1] || []).stp || {};
         STPC = parseLines(x[1].out[0] || []).stp || {};
@@ -3807,7 +3802,9 @@ function stpLoad() {
                 "; " + t("stp_times") + " " + s.rMaxage + " / " + s.rFwd + " s";
         }
         $("stpids").textContent = msg;
-        var bc = $("stpbridge");
+        var bc = $("stpbridge"),
+            df = (x[1].out[2] || []).join("\n") + "\n";	/* staged: diff's "- path v" lines */
+        bc.classList.toggle("stg", /^. stp\.[a-z_]+ /m.test(df));
         if (!bc.dataset.dirty) stpPut(STPB, "", STPC);
         s.ports.forEach(function(pt) {
             var p = stpKey(pt);
@@ -3829,6 +3826,7 @@ function stpLoad() {
             $("stpv" + p).textContent = s.on && pt.role ? (s.type == "rstp" && !pt.lg ? "RSTP" : "STP") : "-";
             $("stmc" + p).disabled = !(s.on && pt.role && s.type == "rstp");
             var row = $("sten" + p).closest("tr");
+            row.classList.toggle("stg", df.indexOf(" " + stpPath(p) + ".") >= 0);
             if (row.dataset.dirty) return;
             stpPut(STPF, p, stpObj(p, STPC));
         });
@@ -3842,12 +3840,13 @@ function stpApplyPort(p) {
         toast(t("stp_cost_err"), "err");
         return;
     }
-    delete $("sten" + p).closest("tr").dataset.dirty;
     stpStage(STPF, p, stpPath(p), stpObj(p, STPC));
+    delete $("sten" + p).closest("tr").dataset.dirty;	/* after: stgBusy's blur is a change */
 }
 /* set lines into the candidate, then the bar's Apply; a refused set
  * stages undo, this batch's old values */
 function omSet(l, undo) {
+    if (stgBusy()) return Promise.resolve();
     return cli(l).then(function(r) {
         if (!r.errs.length) return stgApply();
         toast(r.errs[0], "err");
@@ -3859,8 +3858,8 @@ $("stpbridge").addEventListener("change", function() {
     this.dataset.dirty = "1"
 });
 $("stpbapply").addEventListener("click", function() {
-    delete $("stpbridge").dataset.dirty;
     stpStage(STPB, "", "stp", STPC);
+    delete $("stpbridge").dataset.dirty;
 });
 $("stpen").addEventListener("change", function() {
     var el = this,
