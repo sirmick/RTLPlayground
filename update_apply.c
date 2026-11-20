@@ -135,9 +135,10 @@ uint16_t flash_crc16_more(void)
 }
 
 #if CONFIG_START != LEGACY_CONFIG_START
-/* Is the old config sector saved-config text: printable lines starting with
- * a letter and ending in NUL or erased flash? Staging leftovers (a gzipped web
- * UI, code) at the old address are binary, so they are not mistaken for one.
+/* Is the old config sector a saved config: binary records ("\0RC1"), or
+ * text, printable lines starting with a letter and ending in NUL or erased
+ * flash? Staging leftovers (a gzipped web UI, code) at the old address are
+ * neither, so they are not mistaken for one.
  * (No parameters and xdata locals: internal RAM is full.) */
 static uint8_t legacy_is_config_text(void)
 {
@@ -148,6 +149,9 @@ static uint8_t legacy_is_config_text(void)
 		flash_region.addr = LEGACY_CONFIG_START + off;
 		flash_region.len = FLASH_BUF_SIZE;
 		flash_read_bulk(flash_buf);
+		/* or binary records (om.c, DESIGN.md 15.3): "\0RC1" */
+		if (!off && !flash_buf[0] && flash_buf[1] == 'R' && flash_buf[2] == 'C' && flash_buf[3] == '1')
+			return 1;
 		for (i = 0; i < FLASH_BUF_SIZE; i++) {
 			c = flash_buf[i];
 			if (!off && !i && !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))

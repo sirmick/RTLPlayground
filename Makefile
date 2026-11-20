@@ -420,15 +420,23 @@ $(BUILDDIR)/rtlplayground.ihx: $(BUILDDIR)/placed.stamp
 $(BUILDDIR)/rtlplayground.img: $(BUILDDIR)/rtlplayground.ihx
 	objcopy --input-target=ihex -O binary $< $@
 
-$(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
+# The default config sector: binary records once the file is all paths
+# (tools/rtlpg_client.py, the schema's IDs), else its old command text
+DEFAULT_CFG = $(BUILDDIR)/default.cfg
+$(DEFAULT_CFG): $(CONFIG) $(CONFIG_STAMP) tools/rtlpg_client.py tools/om_gen.py $(wildcard schema/*.py) schema/registry.txt
+	python3 tools/rtlpg_client.py --machine $(MACHINE) default "$(CONFIG)" $@
+
+$(OUTPUT): $(BUILDDIR)/rtlplayground.img $(DEFAULT_CFG) | tools
 	@mkdir -p "$(dir $@)"
 	if [ -e "$@" ]; then rm "$@"; fi
 	tools/$(BUILDDIR)/imagebuilder -i $(BUILDDIR)/rtlplayground.img "$@"
 	python3 tools/check_layout.py --code "$@" --html-defs html_data.h --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
-	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@"
-	$(if $(CONFIG_IN_IMAGE),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@")
+	# the web data first: fileadder reads it raw (past the default config's
+	# sector, on the compact layout) and zeroes that tail after compressing
 	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
+	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(DEFAULT_CFG)" "$@"
+	$(if $(CONFIG_IN_IMAGE),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(DEFAULT_CFG)" "$@")
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
 	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)

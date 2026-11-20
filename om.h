@@ -110,10 +110,18 @@ void om_prompt(void) __banked;		/* "[confirm N] " and "*" before "> " */
 uint8_t om_job_start(void) __banked;	/* om_job.c: the cfg job; 0 if no slot */
 void om_job_wake(void) __banked;		/* om_job.c: confirm came */
 
+/* write_char's capture: om_cap 1 + bytes into om_txt (om.c val_ok()), 0xff: nowhere */
+#define OM_TXT	48
+extern __xdata uint8_t om_cap, om_txt[OM_TXT];
+void om_capture(char c) __banked;	/* write_char's, while om_cap */
+
 void om_init(void) __banked;		/* defaults into every copy */
 void om_cmd(void) __banked;		/* get set del diff apply confirm discard do */
 uint8_t om_line(void) __banked;		/* the cli job's next line; 0 when done */
 void om_boot_apply(void) __banked;	/* after the boot config: apply it */
+uint8_t om_boot_load(uint8_t dflt) __banked;	/* the saved (or default) sector into the candidate: E_CFGFORMAT_* */
+uint16_t om_save_chunk(void) __banked;	/* FL_SAVE: the next chunk into flash_buf */
+uint8_t om_save_end(void) __banked;	/* FL_SAVE: read it back, a step at a time: 1 while more */
 /*
  * for handlers: "err <the command's path>: <message>", err_status set. The
  * message is an ID (OM_E_*, from the schema's message() lines): a handler's

@@ -56,7 +56,6 @@ __xdata uint8_t boundary[72];
 // part header, so a configuration upload is parsed only once it is complete;
 // sized for a full config sector plus the multipart framing around it
 #define CONFIG_UPLOAD_BUF (CONFIG_LEN + 384)
-__xdata uint8_t config_upload;
 __xdata uint8_t config_buf[CONFIG_UPLOAD_BUF];
 // bytes buffered in config_buf so far (HTTP header, POST body, or a firmware
 // part header); accumulates across TCP segments
@@ -111,7 +110,6 @@ inline uint8_t is_separator(uint8_t c)
 
 void httpd_init(void) __banked
 {
-	config_upload = 0; // xdata is not zeroed by the startup code
 	webcmd_pending = 0;
 	webcmd_done = 0;
 	webcmd_busy = 0;
@@ -366,73 +364,6 @@ __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 		session_check();
 	return p;
 }
-
-/* 0: body incomplete, 1: configuration stored, 2: malformed */
-static uint8_t config_take(void)
-{
-	// #386: needs static, otherwise it still lands in SRAM/DSEG
-	static __xdata uint16_t cfg_pos, cfg_hdr, cfg_body, cfg_end, cfg_last, cfg_i;
-	__xdata uint8_t cfg_bl, cfg_run;
-
-	cfg_bl = strlen_x(boundary);
-
-	// the body is complete once the closing boundary has arrived
-	cfg_last = 0;
-	while (1) {
-		if (cfg_last + cfg_bl + 1 >= pre_acc)
-			return 0;
-		if (strstart_x(&config_buf[cfg_last], boundary)
-		    && strstart(&config_buf[cfg_last + cfg_bl], "--"))
-			break;
-		cfg_last++;
-	}
-
-	// every part lies ahead of the closing boundary, so it bounds the walk
-	cfg_pos = 0;
-	while (cfg_pos < cfg_last) {
-		if (!strstart_x(&config_buf[cfg_pos], boundary)) {
-			cfg_pos++;
-			continue;
-		}
-		cfg_hdr = cfg_pos + cfg_bl;
-		cfg_body = cfg_hdr;
-		while (1) {
-			if (cfg_body + 3 >= cfg_last)
-				return 2;
-			if (strstart(&config_buf[cfg_body], "\r\n\r\n"))
-				break;
-			cfg_body++;
-		}
-		cfg_end = cfg_body;
-		cfg_body += 4;
-		// reaching cfg_last is a match: the last part ends at the closing boundary
-		while (cfg_end < cfg_last && !strstart_x(&config_buf[cfg_end], boundary))
-			cfg_end++;
-		while (cfg_hdr + 8 < cfg_body) {
-			// the part carrying a filename holds the configuration
-			if (strstart(&config_buf[cfg_hdr], "filename")) {
-				// the payload plus its terminator must fit the sector
-				if (cfg_end - cfg_body + 1 > CONFIG_LEN)
-					return 2;
-				cfg_run = 0;
-				for (cfg_i = cfg_body; cfg_i < cfg_end; cfg_i++) {
-					if (config_buf[cfg_i] == '\n')
-						cfg_run = 0;
-					else if (++cfg_run >= CMD_BUF_SIZE - 1)
-						return 2;
-				}
-				config_buf[cfg_end] = 0;
-				fl_src = config_buf + cfg_body;	/* for the flash job */
-				fl_len = cfg_end - cfg_body + 1;
-				return 1;
-			}
-			cfg_hdr++;
-		}
-		cfg_pos = cfg_end;
-	}
-	return 2;
-}
-
 
 // unlike scan_header(), keeps no auth state, so it may run on every buffered segment
 static uint16_t preamble_payload_start(uint16_t n)
@@ -770,46 +701,6 @@ static uint8_t upload_take(void)
 	return 0;
 }
 
-static void handle_config_fragment(__xdata uint8_t *p)
-{
-	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
-	__xdata uint16_t frag_len;
-	uint8_t taken;
-
-	frag_len = uip_len - (p - (__xdata uint8_t *)uip_appdata);
-	if (pre_acc + frag_len >= CONFIG_UPLOAD_BUF) {
-		print_string("Configuration too large, aborting.\n");
-		config_upload = 0;
-		s->tstate = TSTATE_NONE;
-		send_bad_request();
-		return;
-	}
-	memcpy(config_buf + pre_acc, p, frag_len);
-	pre_acc += frag_len;
-	taken = config_take();
-	if (!taken) {
-		s->tstate = TSTATE_MULTIPART;
-		return;
-	}
-	config_upload = 0;
-	s->tstate = TSTATE_NONE;
-	if (taken == 2) {
-		send_bad_request();
-		return;
-	}
-	/* the job writes it; the poll after sends the OK */
-	send_ok();
-	fl_req = FL_CONFIG;
-	if (!flash_job_start()) {
-		send_bad_request();
-		return;
-	}
-	up_state = TSTATE_NONE;
-	up_reset = 0;
-	s->tstate = TSTATE_UPLOAD;	/* the request is whole: more data is dropped */
-}
-
-
 static void handle_firmware_fragment(__xdata uint8_t *p)
 {
 	__xdata struct httpd_state * __xdata s = &(uip_conn->appstate);
@@ -818,7 +709,6 @@ static void handle_firmware_fragment(__xdata uint8_t *p)
 	frag_len = uip_len - (p - (__xdata uint8_t *)uip_appdata);
 	if (pre_acc + frag_len >= CONFIG_UPLOAD_BUF) {
 		print_string("Firmware upload header too large, aborting.\n");
-		config_upload = 0;
 		s->tstate = TSTATE_NONE;
 		send_bad_request();
 		return;
@@ -1090,7 +980,6 @@ void handle_post(uint16_t body_off)
 				return;
 			}
 			print_string("Firmware upload started.");
-			config_upload = 0;
 			upload_loader = 0;
 			upload_mdata = 0;
 			uptr = FIRMWARE_UPLOAD_START;
@@ -1108,7 +997,6 @@ void handle_post(uint16_t body_off)
 				return;
 			}
 			print_string("Loader upload started.");
-			config_upload = 0;
 			upload_loader = 1;
 			upload_mdata = 0;
 			uptr = LDR_STAGE;
@@ -1133,7 +1021,6 @@ void handle_post(uint16_t body_off)
 #ifdef LAYOUT_COMPACT
 			}
 			print_string("Machine data upload started.");
-			config_upload = 0;
 			upload_loader = 0;
 			upload_mdata = 1;
 			uptr = MDATA_START;
@@ -1142,18 +1029,6 @@ void handle_post(uint16_t body_off)
 			max_upload = MDATA_LEN + 0x1000;
 			pre_acc = 0;
 #endif
-		} else if (is_word(request_path, "config")) {
-			if (!authenticated) {
-				send_unauthorized();
-				return;
-			}
-			dbg_string("Configuration upload\n");
-			verify_crc = 0;
-			config_upload = 1;
-			// config_take() matches CRLF-prefixed delimiters, including the first.
-			config_buf[0] = '\r';
-			config_buf[1] = '\n';
-			pre_acc = 2;
 		}
 		// Check for other POST requests, which are not multipart, below
 	} else {
@@ -1161,8 +1036,7 @@ void handle_post(uint16_t body_off)
 	}
 
 	if (s->tstate == TSTATE_MULTIPART || is_word(request_path, "upload") || is_word(request_path, "loader")
-	    || is_word(request_path, "mdata")
-	    || is_word(request_path, "config")) {
+	    || is_word(request_path, "mdata")) {
 		dbg_string("POST upload/config request\n");
 		if (!authenticated) {
 			send_unauthorized();
@@ -1173,10 +1047,7 @@ void handle_post(uint16_t body_off)
 			send_bad_request();
 			return;
 		}
-		if (config_upload)
-			handle_config_fragment(p);
-		else
-			handle_firmware_fragment(p);
+		handle_firmware_fragment(p);
 		return;
 	} else if (is_word(request_path, "login")) {
 		dbg_string("POST login\n");
@@ -1210,8 +1081,6 @@ void handle_post(uint16_t body_off)
 	} else if (is_word(request_path, "reset")) {
 		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
 		crash_pending = CRASH_WEB;
-	} else if (is_word(request_path, "cmd_log_clear")) {
-		clear_command_history();
 	} else {
 		send_not_found();
 		return;
@@ -1267,11 +1136,11 @@ void httpd_appcall(void)
 		uip_rcv_wnd = UIP_TCP_MSS;
 		s->fw_reset_pending = 0; // explicitly initialize reused XDATA appstate
 		up_active = 0;
-		/* a job still writing from config_buf (an upload's stage, a config
-		 * save's text) for a connection that has ended: no request may
-		 * land there until it is done. Other jobs (the boot count's
-		 * erase, a factory reset) leave config_buf alone. */
-		if (fl_kind == FL_UPLOAD || fl_kind == FL_CONFIG) {
+		/* a job still writing from config_buf (an upload's stage) for a
+		 * connection that has ended: no request may land there until it
+		 * is done. Other jobs (the boot count's erase, a factory reset, a
+		 * save: its records are in flash_buf) leave config_buf alone. */
+		if (fl_kind == FL_UPLOAD) {
 			uip_abort();
 			s->tstate = TSTATE_CLOSED;
 		}
@@ -1377,15 +1246,14 @@ void httpd_appcall(void)
 		 * is sent (TSTATE_TX). Taking it would overwrite the command. */
 		uip_len = 0;
 	} else if (uip_newdata() && s->tstate == TSTATE_UPLOAD
-		   && (fl_kind == FL_CONFIG || (!fl_kind && up_state != TSTATE_POST))) {
-		/* a config save being written, or a part that has ended, its
-		 * answer not sent yet: dropped, as behind a queued /cmd */
+		   && !fl_kind && up_state != TSTATE_POST) {
+		/* a part that has ended, its answer not sent yet: dropped, as
+		 * behind a queued /cmd */
 		uip_len = 0;
 	} else if (uip_newdata() && (s->tstate == TSTATE_POST || s->tstate == TSTATE_UPLOAD)) {
 		/* into the stage, behind what the job still has to write */
-		if (config_upload || uip_len <= max_upload) {
-			if (!config_upload)
-				max_upload -= uip_len;
+		if (uip_len <= max_upload) {
+			max_upload -= uip_len;
 			if (upload_take()) {
 				uip_len = 0;
 				return;
@@ -1492,9 +1360,12 @@ void httpd_appcall(void)
 			} else if (is_word(q, "/vlanlist.json")) {
 				send_vlanlist();
 			} else if (is_word(q, "/config")) {
-				send_config();
-			} else if (is_word(q, "/cmd_log")) {
-				send_cmd_log();
+				/* the saved config as text: get -s, as a /cli */
+				strtox(config_buf, "get -s");
+				webcmd_cli = 1;
+				webcmd_queue(config_buf);
+				uip_len = 0;
+				return;
 			} else {
 				send_not_found();
 			}

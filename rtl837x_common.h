@@ -89,7 +89,7 @@ struct vlan_tag {
 #include "layout.h"
 
 // Constants for the circular command buffer, the size must be 2^n
-#define CMD_HISTORY_SIZE 0x800
+#define CMD_HISTORY_SIZE 0x100	/* the editor's recall (cmd_editor.c) */
 #define CMD_HISTORY_MASK (CMD_HISTORY_SIZE - 1)
 
 enum sfp_speeds {

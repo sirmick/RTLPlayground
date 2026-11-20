@@ -35,6 +35,7 @@ BUILDDIR = build
 TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_om \
         $(BUILDDIR)/test_om_gen \
+        $(BUILDDIR)/test_om_codec \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_page_json \
         $(BUILDDIR)/test_httpd_tx \
@@ -86,10 +87,16 @@ OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
 $(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t > /dev/null
 $(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
-OM_T_SRCS = test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om_t/om_gen.c
+OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om_t/om_gen.c
 $(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
+
+# The Python codec (tools/rtlpg_client.py) against om.c's: test_om leaves its
+# saved sectors and their text in build/, so it runs after test_om passed.
+$(BUILDDIR)/test_om_codec: test_om_codec.py $(SRCROOT)/tools/rtlpg_client.py $(SRCROOT)/tools/legacy_map.py \
+		$(SRCROOT)/tools/om_gen.py $(OM_SCHEMA) $(OM_T_SCHEMA) $(BUILDDIR)/test_om.ok | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_om_codec.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # The generator: broken schemas fail with their message, the registry holds.
 # The bank placement (tools/place_banks.py) and its check on the linked

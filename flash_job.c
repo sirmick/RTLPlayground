@@ -8,9 +8,11 @@
  * An upload segment starts in FL_PROG: httpd.c's upload_prog() parses the
  * staged segment into pages and programs them, asking for FL_ERASE at each
  * sector, and for FL_VERIFY (upload_verify(), the read-back CRC) when the
- * part has ended. A config save and a factory reset start in FL_ERASE
- * (CONFIG_START), then FL_PROG copies FL_CHUNK bytes a step; the loader's
- * boot count (loader_confirm()) is one FL_ERASE.
+ * part has ended. The config save and a factory reset start in FL_ERASE
+ * (CONFIG_START), then FL_PROG writes FL_CHUNK bytes a step: the save's
+ * from om.c's encoder (om_save_chunk()), then FL_VERIFY reads it back
+ * (om_save_end()); a factory reset's from the default config sector. The
+ * loader's boot count (loader_confirm()) is one FL_ERASE.
  */
 #include <stdint.h>
 #include "rtl837x_common.h"
@@ -19,6 +21,7 @@
 #include "flash_job.h"
 #include "sched.h"
 #include "crash.h"
+#include "om.h"
 
 #define FL_CHUNK	512	/* bytes a config/factory FL_PROG step programs: ~9 ms */
 
@@ -26,7 +29,6 @@ extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 
 __xdata uint8_t fl_req, fl_kind, fl_finished, fl_poll;
-__xdata uint8_t * __xdata fl_src;
 __xdata uint16_t fl_len;
 __xdata uint32_t fl_addr;
 static __xdata uint32_t fl_from;	/* factory: the next default config byte */
@@ -51,7 +53,7 @@ uint8_t flash_job_start(void) __banked
 		fl_addr = LDR_BOOTCNT;
 	} else if (fl_kind != FL_UPLOAD) {
 		fl_addr = CONFIG_START;
-		if (fl_kind != FL_CONFIG) {
+		if (fl_kind >= FL_FACTORY) {
 			fl_from = DEFAULT_CONFIG_START;
 			fl_len = CONFIG_LEN;
 		}
@@ -83,26 +85,33 @@ STEP(fl, prog)
 		return STEP_STAY;
 	}
 	fl_n = fl_len > FL_CHUNK ? FL_CHUNK : fl_len;
-	if (fl_kind != FL_CONFIG) {
+	if (fl_kind == FL_SAVE) {
+		fl_n = om_save_chunk();		/* as many: running doesn't change meanwhile */
+	} else {
 		flash_region.addr = fl_from;
 		flash_region.len = fl_n;
 		flash_read_bulk(flash_buf);
 		FL_ADVANCE(fl_from);
-		fl_src = flash_buf;
 	}
 	flash_region.addr = fl_addr;
 	flash_region.len = fl_n;
-	flash_write_bytes(fl_src);
+	flash_write_bytes(flash_buf);
 	FL_ADVANCE(fl_addr);
-	fl_src += fl_n;
 	fl_len -= fl_n;
-	if (!fl_len)
-		return S_FL_DONE;
-	return STEP_STAY;
+	if (fl_len)
+		return STEP_STAY;
+	if (fl_kind == FL_SAVE)
+		return S_FL_VERIFY;
+	return S_FL_DONE;
 }
 
 STEP(fl, verify)
 {
+	if (fl_kind == FL_SAVE) {
+		if (om_save_end())
+			return STEP_STAY;
+		return S_FL_DONE;
+	}
 	if (upload_verify() == UP_DONE)
 		return S_FL_DONE;
 	return STEP_STAY;

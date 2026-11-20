@@ -379,6 +379,7 @@ void flash_erase_peek(void)
 #endif
 
 
+#ifdef LDR_BUILD	/* the loader as it was, byte for byte */
 void flash_write_bytes(__xdata uint8_t *ptr)
 {
     flash_configure_sio();
@@ -417,3 +418,54 @@ void flash_write_bytes(__xdata uint8_t *ptr)
     while (flash_read_status() & STATUS_REG_BUSY_MASK);
     flash_configure_mmio();
 }
+#else
+static __xdata uint8_t fw_n;		/* flash_write_bytes: this op's bytes */
+static __xdata uint8_t *__xdata fw_p;	/* and the next one */
+
+void flash_write_bytes(__xdata uint8_t *ptr)
+{
+    fw_p = ptr;
+    flash_configure_sio();
+
+    while(1) {
+        flash_write_enable();
+        SFR_FLASH_CMD = CMD_PAGE_PROGRAM;
+
+        /* to the next 4 B boundary: an op never crosses a 256 B page
+         * (NOR page program wraps to the page's start) */
+        fw_n = 4 - ((uint8_t)flash_region.addr & 3);
+        if (flash_region.len < fw_n)
+            fw_n = flash_region.len;
+
+		// Last transfer?
+        if (fw_n < 4 || flash_region.len == 4) {
+            SFR_FLASH_TCONF = 8 | fw_n;
+        } else {
+            SFR_FLASH_TCONF = 0x40 | 8 | 4;  // Bytes written is 4, 8 enables write, 0x40 is unknown
+        }
+
+        SFR_FLASH_ADDR16 = flash_region.addr >> 16;
+        SFR_FLASH_ADDR8 = flash_region.addr >> 8;
+        SFR_FLASH_ADDR0 = flash_region.addr;
+
+        // Safely load only the valid bytes remaining in the buffer
+        SFR_FLASH_DATA0 = fw_p[0];
+        if (fw_n > 1) SFR_FLASH_DATA8 = fw_p[1];
+        if (fw_n > 2) SFR_FLASH_DATA16 = fw_p[2];
+        if (fw_n > 3) SFR_FLASH_DATA24 = fw_p[3];
+        fw_p += fw_n;
+
+        // Execute transfer, wait for completion at top of loop
+        SFR_FLASH_EXEC_GO = 1;
+
+        if (flash_region.len == fw_n)
+            break;
+
+        flash_region.len -= fw_n;
+        flash_region.addr += fw_n;
+    };
+    
+    while (flash_read_status() & STATUS_REG_BUSY_MASK);
+    flash_configure_mmio();
+}
+#endif

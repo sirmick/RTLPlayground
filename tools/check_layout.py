@@ -10,7 +10,11 @@ next - the tools just overwrite - so this fails the build when:
   - code (the imagebuilder output) has data at or past HTML_LOCATION;
   - the web UI (html_data.h's FDATA_START/FDATA_SIZE) runs past the default
     config;
-  - the final image is not IMAGESIZE bytes.
+  - the final image is not IMAGESIZE bytes;
+  - the final image holds no default config at DEFAULT_CONFIG_LOCATION: old
+    command text (a letter first) or binary records ("\0RC1", om.c). A tool
+    that overwrites it (fileadder zeroed it on the compact layout until the
+    web data went in first) leaves zeros or erased flash.
 
 Usage: check_layout.py --html <addr> --default-config <addr> --size <bytes>
          [--code <imagebuilder output>] [--html-defs html_data.h] [--image <final.bin>]
@@ -49,9 +53,13 @@ def main(argv):
             bad.append(f"web UI ends at 0x{web_end:x}, past the default config at 0x{a.default_config:x}")
 
     if a.image:
-        n = len(open(a.image, "rb").read())
+        img = open(a.image, "rb").read()
+        n = len(img)
         if n != a.size:
             bad.append(f"image is 0x{n:x} bytes, expected 0x{a.size:x}")
+        d = img[a.default_config:a.default_config + 4]
+        if not (d[:1].isalpha() or d == b"\0RC1"):
+            bad.append(f"no default config at 0x{a.default_config:x} (it starts {d.hex()})")
 
     if code_end is not None:
         print(f"layout: code 0x0-0x{code_end:x} (web UI from 0x{a.html:x})")

@@ -154,10 +154,9 @@ uint8_t crash_pending;
 
 /* The flash job (flash_job.c), the bench's: it runs at once, through the
  * same calls (httpd.c's upload_prog() and upload_verify() for an upload; the
- * sector erase and the copy for a config save). The connection's next poll
- * finds it done and reopens the window. */
+ * other kinds do nothing). The connection's next poll finds it done and
+ * reopens the window. */
 uint8_t fl_req, fl_kind, fl_finished;
-uint8_t *fl_src;
 uint16_t fl_len;
 uint32_t fl_addr;
 static int job_busy;		/* a scenario's: the job refuses */
@@ -191,12 +190,6 @@ uint8_t flash_job_start(void)
 	}
 	if (fl_req == FL_UPLOAD) {
 		job_upload();
-	} else if (fl_req == FL_CONFIG) {
-		flash_region.addr = CONFIG_START;
-		flash_sector_erase();
-		flash_region.addr = CONFIG_START;
-		flash_region.len = fl_len;
-		flash_write_bytes(fl_src);
 	}
 	fl_finished = 1;
 	return 1;
@@ -305,8 +298,6 @@ void send_l2(uint16_t idx) { (void)idx; }
 static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
-void send_config(void) { }
-void send_cmd_log(void) { }
 void send_lag(void) { }
 void send_stp(void) { }
 void send_stp_counters(void) { }
@@ -1508,61 +1499,6 @@ static void scenario_split_method_names(void)
 	CHECK(post_ok, "split POST method: every split inside POST completes login");
 }
 
-static void scenario_config_upload(void)
-{
-	static const char expected[] = "hostname upload-test\nip 10.0.0.1\n";
-	static const char body[] =
-		"--upload-boundary\r\n"
-		"Content-Disposition: form-data; name=\"file\"; filename=\"config.txt\"\r\n"
-		"Content-Type: text/plain\r\n\r\n"
-		"hostname upload-test\nip 10.0.0.1\n"
-		"\r\n--upload-boundary--\r\n";
-	char request[768];
-	int request_len, first_bad_response = -1, first_bad_flash = -1;
-
-	request_len = snprintf(request, sizeof(request),
-		"POST /config HTTP/1.1\r\n"
-		"Host: sw\r\n"
-		"Cookie: session=0123456789ab\r\n"
-		"Content-Type: multipart/form-data; boundary=upload-boundary\r\n"
-		"Content-Length: %zu\r\n\r\n%s", sizeof(body) - 1, body);
-	if (request_len < 0 || request_len >= (int)sizeof(request)) {
-		CHECK(0, "multipart/config: test request fits the client buffer");
-		return;
-	}
-
-	/* The same well-formed request must work in one event and with a split
-	 * anywhere in its HTTP header, first multipart delimiter, part headers,
-	 * configuration, or closing delimiter. No extra CRLF is added to the body. */
-	for (int split = 0; split <= request_len; split++) {
-		session_start(MSS_FULL);
-		strcpy(session_id, "0123456789ab");
-		config_erases = config_writes = 0;
-		written_config_len = 0;
-		memset(written_config, 0xa5, sizeof(written_config));
-		if (split)
-			client_send(TCP_ACK | TCP_PSH, request, split);
-		if (split < request_len)
-			client_send(TCP_ACK | TCP_PSH, request + split, request_len - split);
-		run_periodic(1);	/* the poll after the flash job sends the answer */
-		if (!stream_contains("HTTP/1.1 200 OK\r\n") && first_bad_response < 0)
-			first_bad_response = split;
-		if ((config_erases != 1 || config_writes != 1
-		     || config_erase_addr != CONFIG_START || config_write_addr != CONFIG_START
-		     || written_config_len != sizeof(expected)
-		     || memcmp(written_config, expected, sizeof(expected))) && first_bad_flash < 0)
-			first_bad_flash = split;
-	}
-	if (first_bad_response >= 0)
-		printf("      multipart/config: first rejected request split at byte %d\n", first_bad_response);
-	if (first_bad_flash >= 0)
-		printf("      multipart/config: first incorrect flash write at split %d\n", first_bad_flash);
-	CHECK(first_bad_response < 0,
-	      "multipart/config: complete request and every two-event split return 200");
-	CHECK(first_bad_flash < 0,
-	      "multipart/config: every split writes the exact configuration and NUL to its sector");
-}
-
 /* Requiring octet-stream would leave alternate or absent MIME types buffered
  * as headers forever instead of staging the binary and checking its CRC. */
 static void scenario_upload(const char *name, const char *part_type, int split)
@@ -2304,7 +2240,7 @@ static void scenario_connect_during_job(void)
 	drain(MSS_FULL);
 	CHECK(first_body_mismatch() == -1, "and its GET is served whole");
 	CHECK(!connect_during_job(FL_UPLOAD), "a connection during an upload's job is reset");
-	CHECK(!connect_during_job(FL_CONFIG), "a connection during a config save is reset");
+	CHECK(connect_during_job(FL_SAVE), "a connection during a save is taken (its records are in flash_buf)");
 }
 
 static void scenario_side_effect_gets(void)
@@ -2328,7 +2264,7 @@ static void scenario_side_effect_gets(void)
 
 	cli_post("/cmd_log_clear", "");
 	drain(MSS_FULL);
-	CHECK(history_clears == 1 && stream_contains("HTTP/1.1 200 OK"), "POST /cmd_log_clear clears the log");
+	CHECK(!history_clears && stream_contains("404 Not found"), "POST /cmd_log_clear: gone (P3B), 404");
 	cli_post("/l2_del.json?idx=7", "");
 	drain(MSS_FULL);
 	CHECK(l2_deleted == 7, "POST /l2_del.json?idx=7 deletes entry 7");
@@ -2383,7 +2319,6 @@ int main(int argc, char **argv)
 	scenario_get_header_timeout();
 	scenario_oversized_get_header();
 	scenario_split_method_names();
-	scenario_config_upload();
 	scenario_upload("octet-stream control", "Content-Type: application/octet-stream\r\n", 0);
 	scenario_upload("MacBinary, split part terminator", "Content-Type: application/macbinary\r\n", 1);
 	scenario_upload("no part Content-Type", "", 0);

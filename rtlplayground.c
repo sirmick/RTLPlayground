@@ -231,6 +231,10 @@ void write_char_no_syslog(char c)
 
 void write_char(char c)
 {
+	if (om_cap) {			/* om.c: a value printed into om_txt, or nowhere */
+		om_capture(c);
+		return;
+	}
 	write_char_no_syslog(c);
 
 	if (syslog_state.enabled) {

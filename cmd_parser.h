@@ -16,7 +16,6 @@ void cmd_parser(void) __banked;
 void execute_config(void) __banked;
 
 /* Dumps as jobs (E1): cli_job set by the command, a line per cli_job_more() */
-#define CLI_JOB_HISTORY	1
 #define CLI_JOB_L2	2
 #define CLI_JOB_OM	4	/* om.c: get, diff */
 #define CLI_JOB_LACP	5
