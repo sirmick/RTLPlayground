@@ -130,8 +130,8 @@ The prompt is `> ` (the firmware's).
 
 | Command | Does |
 |---|---|
-| `health` | every slot (task, state, mask, wake), runs and longest step per state, passes, overruns, console RX overruns, the last reset |
-| `health clear` | resets those counters |
+| `health` | every slot (task, state, mask, wake), runs in the last second and longest step per state, passes, the load, overruns, console RX overruns, the last reset |
+| `health clear` | resets those counters, but the rates and the load (always the last second) |
 | `peek A N [A N..]` | N bytes of xdata from A (decimal) in hex, `x <hex>`, a line per pair; all of a line's pairs in one step (a snapshot), 64 bytes at a time with the interrupts off. For silicon.py |
 | `clear` | `health clear`, and the timestamp logs start again (but the poster's) |
 | `flashtime` | erase, 4-byte and 256-byte program in the upload area's second sector, timed on the fine clock into `st_ft`, read back into `st_ft_bad`; then `flashtime done` |
