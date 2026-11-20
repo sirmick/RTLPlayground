@@ -224,7 +224,7 @@ var LANG = {
         v_member: "Member",
         v_pvid: "PVID",
         v_add: "Add a new VLAN",
-        v_legend: "U = untagged member, T = tagged member, - = not a member. PVID is automatically assigned based on the untagged membership.",
+        v_legend: "U = untagged member, T = tagged member, - = not a member. An untagged member takes this VLAN as its PVID; a port whose PVID it was and that is no longer untagged here goes to PVID 0. Marked rows are staged, not yet running.",
         v_accept: "Accept",
         v_del_t: "Delete VLAN",
         v_rename: "Rename",
@@ -232,7 +232,7 @@ var LANG = {
         v_del_q: "Delete VLAN {n}?",
         v_del_d: "Ports keep their PVID until reassigned.",
         v_vid_err: "Enter a VLAN ID (1-4094)",
-        v_name_err: "Name must start with a letter (letters, digits, _) and cannot be just 'd' or 'mgmt'",
+        v_name_err: "Name must start with a letter (letters, digits, _)",
         v_loaded: "Loaded VLAN {n}",
         v_notfound: "VLAN {n} not found (a new one can still be created)",
         v_nomember: "Select at least one member port (or delete the VLAN instead)",
@@ -2740,9 +2740,6 @@ var CONF_CMDS = [
     /^ntp\s+timezone\s+[+-]?\d{1,2}(:\d{2})?$/,
     /^ntp\s+dst\s+(off|eu|us)$/,
     /^passwd\s+\S+$/, /^hostname\s+\S{1,23}$/,
-    /^vlan\s+\d+\s+(d|mgmt)$/m,
-    /^vlan\s+\d+(\s+[a-zA-Z]\w*)?(\s+\d+t?)*$/m,
-    /^pvid\s+\d+\s+\d+$/m,
     /^ingress(\s+\d+[tua])+$/, /^ingress\s+[tua]$/,
     /^port\s+\d+\s+(10m|100m|1g|2g5|5g|10g|auto|on|off)(\s+(half|full))?$/,
     /^port\s+\d+\s+name(\s+\S+)?$/,
@@ -4047,10 +4044,12 @@ function rangeStr(list) {
     return parts.join(", ");
 }
 
-/* VLANs (P4-2): VL the candidate's vlan.V, VP each port's PVID, VMG
- * mgmt.vlan, VV the VLAN in the editor; the editor stages set lines and
- * applies them with the bar's window (a VLAN change can cut the browser) */
+/* VLANs (P4-2): VL the candidate's vlan.V, VR running's, VP each port's
+ * PVID, VMG mgmt.vlan, VV the VLAN in the editor; the editor stages set
+ * lines and applies them with the bar's window (a VLAN change can cut the
+ * browser); a row that differs from running is marked staged */
 var VL = {},
+    VR = {},
     VP = [],
     VMG = "",
     VV = 0;
@@ -4058,16 +4057,27 @@ var VL = {},
 function vlanRefresh() {
     var tb = $("vtable").tBodies[0];
     tb.style = "cursor:pointer;"
-    return cli(["get -c vlan", "get -c port.*.pvid", "get -c mgmt.vlan"]).then(function(r) {
+    return cli(["get -c vlan", "get -c port.*.pvid", "get -c mgmt.vlan", "get vlan"]).then(function(r) {
         VL = parseLines(r.out[0] || []).vlan || {};
+        VR = parseLines(r.out[3] || []).vlan || {};
         var pv = parseLines(r.out[1] || []).port || {};
         VP = [];
         for (var p in pv) VP[p] = pv[p].pvid;
         VMG = (parseLines(r.out[2] || []).mgmt || {}).vlan;
         $("vempty").style.display = Object.keys(VL).length ? "none" : "";
         tb.innerHTML = "";
+        Object.keys(VR).forEach(function(id) {	/* deleted, not yet applied */
+            if (VL[id]) return;
+            var tr = tb.insertRow();
+            tr.className = "stg";
+            tr.style.textDecoration = "line-through";
+            [id, VR[id].name, VR[id].members, VR[id].tagged].forEach(function(x) {
+                tr.insertCell().textContent = x || "";
+            });
+        });
         Object.keys(VL).forEach(function(id) {
             var v = VL[id],
+                w = VR[id] || {},
                 m = pmParse(v.members, S.n),
                 tg = pmParse(v.tagged, S.n),
                 u = {},
@@ -4078,6 +4088,7 @@ function vlanRefresh() {
             }
             var tr = tb.insertRow();
             tr.className = id == VV ? "sel" : "";
+            tr.classList.toggle("stg", v.name !== w.name || v.members !== w.members || v.tagged !== w.tagged);
             tr.onclick = function() {
                 vlanLoad(id)
             };
@@ -4143,12 +4154,31 @@ function vlanRefresh() {
     });
 }
 
-/* lines into the candidate, then the bar's Apply; refused, they come out */
+/* the candidate as it was before lines l (VL, VP, VMG) */
+function vlanUndo(l) {
+    var u = [];
+    l.forEach(function(x) {
+        var w = x.split(" "),
+            k = w[1].split("."),
+            v = VL[k[1]];
+        if (k[0] === "port") u.push("set " + w[1] + " " + VP[k[1]]);
+        else if (k[0] === "mgmt") u.push("set mgmt.vlan " + VMG);
+        else if (!v || v.fresh) u.push("del vlan." + k[1]);
+        else ["name", "members", "tagged"].forEach(function(f) {
+            u.push(v[f] ? "set vlan." + k[1] + "." + f + " " + v[f] : "del vlan." + k[1] + "." + f);
+        });
+    });
+    return cli(u);
+}
+
+/* lines into the candidate, then the bar's Apply; a refused set takes
+ * this batch out again (not anyone else's staging); a refused apply stays
+ * staged, its rows marked */
 function vlanStage(l) {
     return cli(l).then(function(r) {
         if (r.errs.length) {
             toast(r.errs[0], "err");
-            return cli(["discard"]);
+            return vlanUndo(l);
         }
         return stgApply();
     }).catch(function() {}).then(vlanRefresh).then(function() {
@@ -4219,7 +4249,7 @@ function vlanLoad(vid) {
         $("vp" + p).innerText = VP[p] == vid ? "Y" : "N";
     }
     $("vmgmtpromote").checked = VMG == vid;
-    for (const r of $("vtable").tBodies[0].rows) r.className = r.cells[0].textContent.split(" ")[0] == vid ? "sel" : "";
+    for (const r of $("vtable").tBodies[0].rows) r.classList.toggle("sel", r.cells[0].textContent.split(" ")[0] == vid);
 }
 
 /* the editor's VLAN as set lines: a port untagged here leaves the other
@@ -4292,7 +4322,7 @@ $("vlan_add").addEventListener("click", function() {
 });
 
 function validVlanName(n) {
-    if (n && !/^[a-zA-Z][!-~]*$/.test(n)) {
+    if (n && !/^[a-zA-Z]\w*$/.test(n)) {
         toast(t("v_name_err"), "err");
         return false;
     }
