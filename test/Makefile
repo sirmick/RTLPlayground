@@ -37,6 +37,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_om_gen \
         $(BUILDDIR)/test_sfp_cal \
         $(BUILDDIR)/test_om_codec \
+        $(BUILDDIR)/test_fwupdate \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_page_json \
         $(BUILDDIR)/test_httpd_tx \
@@ -99,6 +100,12 @@ $(BUILDDIR)/test_om_codec: test_om_codec.py $(SRCROOT)/tools/rtlpg_client.py $(S
 	printf '#!/bin/sh\nexec python3 "%s/test_om_codec.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 # The generator: broken schemas fail with their message, the registry holds.
+# tools/fwupdate.py's upgrade flow against a fake switch (old firmware, then
+# the object model)
+$(BUILDDIR)/test_fwupdate: test_fwupdate.py $(SRCROOT)/tools/fwupdate.py $(SRCROOT)/tools/rtlpg_client.py \
+		$(SRCROOT)/tools/legacy_map.py $(SRCROOT)/tools/om_gen.py $(OM_SCHEMA) | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_fwupdate.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+
 # The bank placement (tools/place_banks.py) and its check on the linked
 # image (tools/check_cross_bank.py), on made-up .rel files and listings
 $(BUILDDIR)/test_place_banks: test_place_banks.py $(SRCROOT)/tools/place_banks.py | $(BUILDDIR)
