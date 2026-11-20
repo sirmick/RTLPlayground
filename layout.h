@@ -26,6 +26,8 @@
 #define IMAGE_SIZE           0x3a000
 #define HTML_START           0x28000
 #define DEFAULT_CONFIG_START 0x39000
+#define HELP_START           0x39200
+#define HELP_END             0x39ffe
 #define UPLOAD_START         0x40000
 #define CONFIG_START         0x7f000
 #define LDR_STAGE            0x7a000UL
@@ -36,6 +38,8 @@
 #define IMAGE_SIZE           0x80000
 #define HTML_START           0x40000
 #define DEFAULT_CONFIG_START 0x6f000
+#define HELP_START           0x6f200
+#define HELP_END             0x6fffe
 #define UPLOAD_START         0x80000
 #define CONFIG_START         0x70000
 #define LDR_STAGE            0x71000UL
@@ -44,6 +48,10 @@
 #define LDR_LAYOUT           1
 #endif
 #define CONFIG_LEN 0x1000
+/* The default config sector: the config in its first DEFAULT_CONFIG_LEN
+ * bytes (a factory reset copies those), then the help blob (om_gen.py
+ * --help-blob) from HELP_START to HELP_END, short of the compact image's CRC */
+#define DEFAULT_CONFIG_LEN   0x200
 /* Machine data (compact layout, chips of 1 MiB or more): a region no update
  * ever writes, for a board's own blobs - the POE-2G040210GSM's PoE controller
  * firmware. "MDT1", the payload length (uint32, little endian), the payload,
@@ -111,6 +119,9 @@
 #endif
 #if !(HTML_START < DEFAULT_CONFIG_START && DEFAULT_CONFIG_START < IMAGE_SIZE)
 #error "flash layout: the web UI, then the default config, must lie inside the image"
+#endif
+#if HELP_START != DEFAULT_CONFIG_START + DEFAULT_CONFIG_LEN || HELP_END != DEFAULT_CONFIG_START + CONFIG_LEN - 2
+#error "flash layout: the help blob is the default config sector's tail, short of its last 2 B"
 #endif
 #if UPLOAD_START < IMAGE_SIZE
 #error "flash layout: the upload must be staged past the running image"

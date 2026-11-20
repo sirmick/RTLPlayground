@@ -34,6 +34,7 @@ BUILDDIR = build
 # One binary per subsystem under test.
 TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_om \
+        $(BUILDDIR)/nohelp/test_om \
         $(BUILDDIR)/test_om_gen \
         $(BUILDDIR)/test_sfp_cal \
         $(BUILDDIR)/test_om_codec \
@@ -85,13 +86,22 @@ $(filter-out $(BUILDDIR)/test_om_gen $(BUILDDIR)/test_sfp_cal,$(TESTS)): | $(BUI
 # kind and type no real object uses yet); the handlers are stubs in the test,
 # but om_vlan.c's (the VLAN table calls are).
 OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
-$(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t > /dev/null
-$(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
+# help's blob too (om.c reads it from the flash model): a room of its own, as
+# the test schema's objects are extra. The compact layout's addresses: there a
+# blob past HELP_END doesn't carry out of the low 16 bits (om.c h_addr()).
+$(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h $(BUILDDIR)/om_t/help.bin &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t \
+		--help-blob $(BUILDDIR)/om_t/help.bin --help-room 8192 > /dev/null
+$(BUILDDIR)/test_om $(BUILDDIR)/nohelp/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS)) -DLAYOUT_COMPACT
 OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_vlan.c $(BUILDDIR)/om_t/om_gen.c
-$(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
+$(BUILDDIR)/test_om: $(OM_T_SRCS) $(BUILDDIR)/om_t/help.bin | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
+# The same with OM_HELP=0, in its own directory (test_om leaves its sectors there)
+$(BUILDDIR)/nohelp/test_om: $(OM_T_SRCS) | $(BUILDDIR)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -DOM_HELP=0 $(OM_T_SRCS) -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DOM_HELP=0 -MM -MP -MT $@ $(OM_T_SRCS) > $@.d
 
 # The Python codec (tools/rtlpg_client.py) against om.c's: test_om leaves its
 # saved sectors and their text in build/, so it runs after test_om passed.
@@ -244,7 +254,7 @@ quick: $(QUICK:=.ok)
 	@fail=0; for t in $(QUICK); do [ -e $$t.ok ] || { echo "=== $$t ==="; cat $$t.log; fail=1; }; done; \
 	if [ $$fail -ne 0 ]; then echo "TESTS FAILED"; exit 1; else echo "QUICK TESTS PASSED (test_loader skipped)"; fi
 
--include $(wildcard $(BUILDDIR)/*.d)
+-include $(wildcard $(BUILDDIR)/*.d $(BUILDDIR)/nohelp/*.d)
 
 clean:
 	rm -rf $(BUILDDIR)

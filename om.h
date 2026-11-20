@@ -9,6 +9,10 @@
 #include <stdint.h>
 #include "machine.h"
 
+#ifndef OM_HELP
+#define OM_HELP		1	/* help (DESIGN.md 13); 0 compiles it out, its text too */
+#endif
+
 /* field types (tools/om_gen.py: T) */
 #define T_BOOL		1
 #define T_U8		2

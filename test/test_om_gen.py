@@ -9,6 +9,7 @@ type change, a removed field and a missing ID must fail the build.
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -285,6 +286,62 @@ check(p.returncode == 0 and "#define MAX_V 8" in hh and "[MAX_V]" in hh and "{ M
       "a const: om_gen.h defines it, C dimensions and tables use its name", p.stdout + p.stderr)
 txt = open(js_path).read() if os.path.exists(js_path) else ""
 check('"i":"K8"' in txt, "schema.js has its number", txt[:200])
+
+print("the help blob (--help-blob)")
+
+
+def help_gen(schema, room):
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, "a.py"), "w") as f:
+        f.write(schema)
+    p = subprocess.run([sys.executable, GEN, "-s", d, "--register"], capture_output=True, text=True)
+    blob = os.path.join(d, "help.bin")
+    p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "out"), "--help-blob", blob,
+                        "--help-room", str(room)], capture_output=True, text=True)
+    h = open(os.path.join(d, "out", "om_gen.h")).read() if p.returncode == 0 else ""
+    return p.returncode, p.stdout + p.stderr, open(blob, "rb").read() if p.returncode == 0 else b"", h
+
+
+def help_row(b, row):
+    return struct.unpack_from("<H", b, 2 * row)[0]
+
+
+def help_text(b, nobj, i):
+    """The entry at offset i as om.c's help prints it (tokens expanded), and the next's offset."""
+    out = b""
+    while b[i]:
+        c = b[i]
+        out += b[help_row(b, nobj + 1 + c - 0x80):help_row(b, nobj + 2 + c - 0x80)] if c >= 0x80 else bytes([c])
+        i += 1
+    return out.decode(), i + 1
+
+
+HS = ('obj("sys", tip="The switch: its name and its LEDs")\n'
+      'cfg("name", Str(15), "", tip="The name the switch sends in LLDP and DHCP")\n'
+      'cfg("mtu", U16(64, 9000), 1500, tip="The largest frame the switch takes", unit="B")\n'
+      'cfg("cal", U16(), 0, tip="", unit="1/256 C")\n'
+      'state("sys")\nst("up", U32(), tip="The seconds since the switch started", unit="s")\n')
+rc, out, b, h = help_gen(HS, 3582)
+check(rc == 0 and "help blob %d B of 3582" % len(b) in out, "a blob within its room", out)
+check("#define OM_H_UNITS 3" in h, "om_gen.h: the units' tokens (OM_H_UNITS)", h)
+got = []
+for row, n in ((0, 4), (1, 2)):  # an object's entry, then its fields'
+    i = help_row(b, row)
+    for k in range(n):
+        t, i = help_text(b, 2, i)
+        got.append(t)
+want = ["The switch: its name and its LEDs", "The name the switch sends in LLDP and DHCP",
+        'unit B "The largest frame the switch takes', 'unit "1/256 C" "',
+        "", 'unit s "The seconds since the switch started']
+check(got == want, "the entries decode to the tips, a unit's token first", repr(got))
+usage, _ = help_text(b, 2, help_row(b, 2))
+check(usage.startswith("get [-c|-s|-d] PATH...\nset PATH VALUE\n") and usage.endswith("Tab completes\n"),
+      "the verbs' usage after the objects'", repr(usage))
+rc, out, b, h = help_gen(HS, 200)
+check(rc != 0 and "the help blob is" in out and "over its 200 B" in out and " sys\n" in out and " state.sys\n" in out
+      and "the tips don't fit" in out, "a blob past its room fails the build, B per object", out)
+rc, out, b, h = help_gen('obj("s", tip=\'say "hi"\')\ncfg("a", Bool, True)\n', 3582)
+check(rc != 0 and "printable text without" in out, "a tip with a quote fails", out)
 
 print("\n%s" % ("TEST_OM_GEN PASSED" if not fails else "%d FAILED" % fails))
 sys.exit(1 if fails else 0)

@@ -33,6 +33,9 @@ const struct machine machine = {
 
 uint8_t cmd_words_len;
 uint8_t cmd_words_b[15];
+uint8_t cli_job_sleep;
+static uint16_t t_tx_room = 2048;	/* the console's TX ring: free */
+uint16_t con_tx_room(void) { return t_tx_room; }
 
 void itoa_short(uint16_t v)
 {
@@ -1365,6 +1368,25 @@ static void boot(void)		/* as rtlplayground.c: defaults, the saved config, apply
 static uint8_t sec[CONFIG_LEN];
 static char out_dir[400] = ".";	/* the binary's: test_om_codec.py reads what binary() leaves there */
 
+/* a blank flash with the help blob where the image has it (om_gen --help-blob) */
+static void help_flash(void)
+{
+	if (fl.mem)
+		fd_free(&fl);
+	fd_init(&fl, 0x100000);
+#if OM_HELP
+	static uint8_t b[8192];
+	char path[450];
+	snprintf(path, sizeof path, "%s/om_t/help.bin", out_dir);
+	FILE *f = fopen(path, "rb");
+	CHECK(f != NULL, "the help blob");
+	if (f) {
+		fd_load(&fl, HELP_START, b, fread(b, 1, sizeof b, f));
+		fclose(f);
+	}
+#endif
+}
+
 static void sec_read(void)
 {
 	fd_read(&fl, CONFIG_START, sec, CONFIG_LEN);
@@ -1462,7 +1484,7 @@ static void binary(void)
 	int n;
 
 	printf("save, load, get -s, get -d\n");
-	fd_init(&fl, 0x100000);
+	help_flash();
 	fd_fail_after(&fl, -1);
 	om_init();
 	memcpy(&dflt, &cfg_run, sizeof dflt);
@@ -2237,6 +2259,153 @@ static void vlans(void)
 	expect("discard", "ok\n");
 }
 
+/* help (DESIGN.md 13): its lines, from the tables and om_gen's blob */
+#if OM_HELP
+static const char *const h_types[] = { "object", "bool", "u8", "u16", "u32", "u64", "enum", "str",
+	"ports", "decimal", "action", "ipv4", "netmask", "mac", "flags", "secret", "i16", "tz", "port",
+	"bridge", NULL };
+
+/* "<path> <type> ... "<tip>"": one word, a type, a tip in quotes at the end */
+static int help_line_ok(const char *l, size_t n)
+{
+	const char *sp = memchr(l, ' ', n), *q;
+	if (!sp || n < 4 || l[n - 1] != '"' || memchr(l, '"', sp - l))
+		return 0;
+	for (int i = 0; h_types[i]; i++) {
+		size_t k = strlen(h_types[i]);
+		if (!strncmp(sp + 1, h_types[i], k) && (sp[1 + k] == ' '))
+			goto typed;
+	}
+	return 0;
+typed:
+	for (q = l + n - 2; q > sp && *q != '"'; q--);	/* the tip's opening quote */
+	return q > sp && q[-1] == ' ';
+}
+
+static void help(void)
+{
+	printf("help\n");
+	static const char usage[] =
+		"get [-c|-s|-d] PATH...\nset PATH VALUE\ndel PATH\ndiff\napply [N]\nconfirm\ndiscard\n"
+		"do ACTION\nsave\nload saved|default\nhelp [-a|PATH]\nTab completes\nok\n";
+	expect("help", usage);
+	expect("h", usage);
+	expect("?", usage);
+	expect("set port.5.name a?b", "ok\n");		/* '?' past the first word: a character */
+	expect("get -c port.5.name", "port.5.name a?b\nok\n");
+	expect("discard", "ok\n");
+	/* the test schema's: every type, the tables' forms, the chip's default (an 8373) */
+	expect("help tsys", "tsys object \"\"\n"
+	       "tsys.hostname str 0-23 default \"\" \"empty: RTLPlayground-<mac>\"\n"
+	       "tsys.ip ipv4 a.b.c.d default 192.168.2.2 \"\"\n"
+	       "tsys.mask netmask a.b.c.d default 255.255.255.0 \"\"\n"
+	       "tsys.mac mac aa:bb:cc:dd:ee:ff default auto \"\"\n"
+	       "tsys.password secret 0-20 default \"1234\" \"\"\n"
+	       "tsys.offset i16 -600..600 default 0 \"\"\n"
+	       "tsys.tz tz -12:00..+14:00 default +00:00 \"\"\n"
+	       "tsys.mirror port 1-9 default none \"\"\n"
+	       "tsys.led enum on|ports_off|off default off \"\"\n"
+	       "tsys.hash flags spa|smac|dmac|sip|dip|sport|dport default smac,dmac \"\"\n"
+	       "tsys.lp flags 10h|10f|100h|100f|1000h|1000f|2g5|5g|10g default none \"\"\n"
+	       "tsys.rnd action - \"\"\n"
+	       "ok\n");
+	expect("help port.2.tstorm", "port.N.tstorm.M object 1-9 bcast|mcast|ucast|umcast \"\"\n"
+	       "port.N.tstorm.M.rate u32 0-1048575 default 0 \"\"\n"
+	       "port.N.tstorm.M.unit enum pps|kbps default pps \"\"\n"
+	       "ok\n");
+	expect("help tvlan.1.members", "tvlan.N.members ports 1-9 default none \"\"\nok\n");
+	expect("help tvlan", "tvlan.N object 1-4094 \"\"\ntvlan.N.name str 0-15 default \"\" \"\"\n"
+	       "tvlan.N.members ports 1-9 default none \"\"\ntvlan.N.tagged ports 1-9 default none \"\"\nok\n");
+	/* the real schema's, from its tips: a unit, a CPU port mask, a field under a path */
+	expect("help port.3.mtu", "port.N.mtu u16 64-16383 default 16383 unit B \"Largest frame accepted, in bytes\"\nok\n");
+	expect("help port.isolate", "port.N.isolate ports 1-9,cpu default 1-9,cpu \"Ports this port may send to\"\nok\n");
+	const char *o = run("help state.port.cabletest");
+	CHECK(!strncmp(o, "state.port.N.cabletest.state enum idle|running|done|timeout \"\"\n", 63) &&
+	      strstr(o, "\nstate.port.N.cabletest.d.length_m decimal - unit m \"") && !strstr(o, "object") &&
+	      !strstr(o, ".link ") && status_ok(o), "help state.port.cabletest: those fields, no other");
+	expect("help sys.reset", "sys.reset action - \"Reset the switch; the web's reply goes out first\"\nok\n");
+	/* errors as get's */
+	expect("help port.12", "err port.12: no such port\n");
+	expect("help port.foo", "err port.foo: name enabled speed duplex mtu pvid ingress ingress_filter lldp eee isolate cabletest\n");
+	o = run("help nosuch");
+	CHECK(!strncmp(o, "err nosuch: ", 12) && strstr(o, " port.* ") && status_ok(o), "help nosuch: the objects");
+	/* -a: the version, then every object and field, each line in the format */
+	o = run("help -a");
+	int lines = 0, bad = 0, nf = 0, longest = 0;
+	for (const char *l = o, *e; *l; l = e + 1) {
+		e = strchr(l, '\n');
+		if (!e)
+			break;
+		if (e - l > longest)
+			longest = e - l;
+		if (lines && strncmp(l, "ok\n", 3) && !help_line_ok(l, e - l)) {
+			if (!bad++)
+				printf("        bad line: %.*s\n", (int)(e - l), l);
+		}
+		lines++;
+	}
+	for (int i = 0; i < OM_N_OBJ; i++)
+		nf += om_obj[i].nf;
+	printf("        help -a: %d lines, the longest %d B (OM_H_LINE %d)\n", lines, longest, OM_H_LINE);
+	CHECK(longest < OM_H_LINE, "help -a: its longest line within om_gen's bound (OM_H_LINE)");
+	CHECK(!strncmp(o, "help 1\n", 7) && strstr(o, "\nsys object \"The switch\"\n") && !bad && lines == OM_N_OBJ + nf + 2 &&
+	      strstr(o, "\nstate.sys object ") && strstr(o, "\nsys.factory_reset action - ") && status_ok(o),
+	      "help -a: help 1, a line per object and field, each <path> <type> ... \"<tip>\"");
+	/* a line a step, as a job */
+	run("discard");
+	out_reset();
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "help tsys");
+	tokenize();
+	om_cmd();
+	int steps = 0, one = 1;
+	while (cli_job) {
+		size_t at = out_len;
+		if (!om_line())
+			cli_job = 0;
+		int n = 0;
+		for (size_t i = at; i < out_len; i++)
+			n += out_buf[i] == '\n';
+		if (n != 1)
+			one = 0;
+		steps++;
+	}
+	if (!one || steps != 14)
+		printf("        %d steps, %s\n", steps, one ? "a line each" : "not a line each");
+	CHECK(one && steps == 14, "help tsys: a job, one line a step (the object, 12 fields, ok)");
+	/* the console's ring without room for the longest line: the step sleeps, prints nothing */
+	out_reset();
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "help tsys");
+	tokenize();
+	om_cmd();
+	t_tx_room = OM_H_LINE - 1;
+	cli_job_sleep = 0;
+	CHECK(om_line() && cli_job_sleep && !out_len, "help: no room on the console for a line: it sleeps");
+	t_tx_room = 2048;
+	cli_job_sleep = 0;
+	CHECK(om_line() && !cli_job_sleep && !strncmp(out_buf, "tsys object", 11), "and then prints it");
+	cmd_finish();
+	/* after it: get's '*', set's words and a Secret as before */
+	o = run("get");
+	CHECK(strstr(o, "\nport.*\n") && strstr(o, "\nport.*.tstorm.*\n"), "get: the objects with '*' after help");
+	expect("set port.1.speed fast", "err port.1.speed: auto 10m 100m 1g 2g5 5g 10g\n");
+	expect("get tsys.password", "tsys.password *\nok\n");
+	/* Tab after help: paths, actions too; h is help's */
+	tab("help po\t", "help port.", NULL);
+	tab("help tsys.r\t", "help tsys.rnd ", NULL);
+	tab("h\t", "help ", NULL);
+	tab("? tsys.h\t", "? tsys.h", NULL);
+}
+#else
+static void help(void)
+{
+	printf("help (OM_HELP=0)\n");
+	expect("help", "err help: not in this build\n");
+	expect("? port", "err help: not in this build\n");
+	expect("help -a", "err help: not in this build\n");
+	tab("h\t", "help ", NULL);
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -2245,6 +2414,8 @@ int main(int argc, char **argv)
 		*strrchr(out_dir, '/') = 0;
 	else
 		snprintf(out_dir, sizeof out_dir, ".");
+	help_flash();
+	help();
 	cases();
 	kinds();
 	services();
@@ -2254,6 +2425,7 @@ int main(int argc, char **argv)
 	binary();
 	roundtrip();
 	roundtrip_kinds();
+	help_flash();			/* binary() freed it: help reads it */
 	fuzz();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed != 0;

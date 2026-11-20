@@ -86,7 +86,7 @@ static __xdata uint8_t lv, lk, ln, la;	/* a level, its kind, count, arg */
 static __xdata uint8_t cur_e, cur_l, cur_f, cur_ok;	/* element, logical port, field, valid */
 static __xdata uint8_t * __xdata vp;	/* the current value */
 static __code const char * __xdata np;	/* the object's name, being walked */
-static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
+static __xdata uint8_t e_star;		/* emit_obj: 1 '*' for the indices; help 'N' (and 'M') */
 /* the job */
 #define J_GET	1
 #define J_DIFF	2
@@ -97,6 +97,7 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 #define J_COPY	7	/* discard: the queued copy */
 #define J_CHECK	8	/* apply's checks, CHECK_N instances a step; then J_APPLY */
 #define J_SET	9	/* set and del, SET_N instances a step (a get's cli job: a window waits) */
+#define J_HELP	10	/* help <path>: a line a step (a get's cli job), in bin_line() */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
 static __xdata uint8_t kd;		/* a default entry */
@@ -177,13 +178,17 @@ static void skip1(void)			/* cp past a word */
 	while (*cp++);
 }
 
-static void print_words(void)		/* cp's words, space-separated */
+static void print_words(void)		/* cp's words, space-separated (help: '|') */
 {
 	while (*cp) {
 		print_string((__code const char *)cp);
 		skip1();
 		if (*cp)
+#if OM_HELP
+			write_char(e_star ? '|' : ' ');
+#else
 			write_char(' ');
+#endif
 	}
 }
 
@@ -332,7 +337,11 @@ static void emit_obj(void)		/* the instance's path: "port.3", "vlan.10" */
 			v16 = om_ix1;
 #endif
 		if (e_star) {
+#if OM_HELP
+			write_char(e_star == 1 ? '*' : e_star - lv);
+#else
 			write_char('*');
+#endif
 #if OM_USE_WORD
 		} else if (lk == IX_WORD) {
 			words(la);
@@ -679,6 +688,13 @@ static uint8_t byte_dec(void)		/* a decimal 0-255 at p into num[0] */
 	return 1;
 }
 
+static void all_ports(void)		/* the board's front-panel ports into pm */
+{
+	for (pn = 1; pn <= 9; pn++)
+		if ((v8 = log_of(pn)) != 0xff)
+			pm |= 1 << v8;
+}
+
 static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, into pm */
 {
 	if (seg_is("none"))
@@ -690,9 +706,7 @@ static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, in
 		return 1;
 	}
 	if (seg_is("all")) {
-		for (pn = 1; pn <= 9; pn++)
-			if ((v8 = log_of(pn)) != 0xff)
-				pm |= 1 << v8;
+		all_ports();
 		if (fdx.arg)
 			pm |= PMASK_CPU;
 		return 1;
@@ -753,6 +767,29 @@ static uint8_t str_ch(void)		/* v8 may be in fdx's Str or Secret */
 	if (v8 == ' ' && ft == T_SECRET)
 		return 0;
 	return 1;
+}
+
+/* signed limits: set parses them, help prints them */
+#define OM_LIM_SIGNED	(OM_SET_I16 || OM_SET_TZ || (OM_HELP && (OM_USE_I16 || OM_USE_TZ)))
+
+static void lim_form(void)		/* fdx's limits: "lo-hi"; I16 and TZ "lo..hi", as their values print */
+{
+	cp = (__code const uint8_t *)&om_lim[fdx.arg];
+#if OM_LIM_SIGNED
+	if (ft == T_I16 || ft == T_TZ) {
+		for (w = 0; w < 2; w++) {
+			om_val[0] = cp[0];
+			om_val[1] = cp[1] ^ 0x80;
+			vp = om_val;
+			emit_value();
+			if (!w)
+				print_string("..");
+			cp += 4;
+		}
+		return;
+	}
+#endif
+	print_lim();
 }
 
 /* the value at p into om_val, checked; prints err and returns 0 if bad */
@@ -963,21 +1000,7 @@ bad_words:
 	return 0;
 bad_range:
 	err_head();
-	cp = (__code const uint8_t *)&om_lim[fdx.arg];
-#if OM_SET_I16 || OM_SET_TZ
-	if (ft == T_I16 || ft == T_TZ) {	/* "lo..hi", as the values print */
-		for (w = 0; w < 2; w++) {
-			om_val[0] = cp[0];
-			om_val[1] = cp[1] ^ 0x80;
-			vp = om_val;
-			emit_value();
-			if (!w)
-				print_string("..");
-			cp += 4;
-		}
-	} else
-#endif
-	print_lim();
+	lim_form();
 	err_end();
 	return 0;
 }
@@ -1160,6 +1183,8 @@ static void path_at(void)		/* the path at p */
 	r_path = p;
 }
 
+static void ix_form(void);
+
 /* level lv's index at p into r_v (r_v1); prints err and returns 0 if bad */
 static uint8_t ix_parse(void)
 {
@@ -1223,7 +1248,26 @@ got:
 	return 1;
 bad:
 	err_head();
+	ix_form();
+	err_end();
+	return 0;
+}
+
+#if OM_HELP
+static void h_mask(void);
+#endif
+
+static void ix_form(void)		/* level lv's indices: "1-8", "0-15", "lo-hi", the words */
+{
 	if (lk == IX_PORT) {
+#if OM_HELP
+		if (e_star) {			/* help: the board's */
+			pm = 0;
+			all_ports();
+			h_mask();
+			return;
+		}
+#endif
 		print_string("no such port");
 #if OM_USE_NUM
 	} else if (lk == IX_NUM) {
@@ -1246,8 +1290,6 @@ bad:
 		print_words();
 #endif
 	}
-	err_end();
-	return 0;
 }
 
 /*
@@ -2455,9 +2497,7 @@ static uint8_t rd(void)
 	}
 	if (rd_left)
 		rd_left--;
-	e_b = rb[rb_i++];
-	crc16_bank1(&e_b);		/* rd_open()'s check */
-	return e_b;
+	return e_b = rb[rb_i++];
 }
 
 static __xdata uint16_t r16;
@@ -2508,8 +2548,10 @@ static void rd_head(void)
 static uint8_t crc_step(void)
 {
 	crc_value = l_crc;
-	for (i = 0; i < CRC_N && rd_left; i++)
+	for (i = 0; i < CRC_N && rd_left; i++) {
 		rd();
+		crc16_bank1(&e_b);	/* only here: an upload's verify shares crc_value */
+	}
 	l_crc = crc_value;
 	if (rd_left)
 		return 1;
@@ -2530,6 +2572,210 @@ static void rd_open(void)		/* rd_head(), and the CRC at once (boot) */
 	if (b_fmt == E_CFGFORMAT_OK)
 		while (crc_step());
 }
+
+#if OM_HELP
+/*
+ * help (DESIGN.md 13), a line a step: an object's line, then its fields',
+ *   <path> object [<index form>...] "<tip>"
+ *   <path> <type> <form> [default <v>] [unit <u>] "<tip>"
+ * the path, form and default from the tables, the rest from the help blob
+ * in the default config sector's tail (tools/om_gen.py help_blob()): rd()
+ * reads its entries (no load or get -s meanwhile: one cli job), a token's
+ * text goes into om_txt.
+ */
+#define H_OBJECT	(0x80 + 20)	/* the blob's "object", after the types' tokens */
+#define H_TOK	(OM_N_OBJ + 1)		/* the table: the objects', the verbs', the tokens' rows */
+static __xdata uint8_t h_all;		/* help -a */
+static __xdata uint16_t h_at, h_row[2];	/* an offset in the blob; a table row and the next */
+
+static void h_addr(void)		/* flash_region.addr: the blob's byte h_at */
+{
+	/* within the sector: the low half never carries */
+	((__xdata uint16_t *)&flash_region.addr)[0] = (uint16_t)HELP_START + h_at;
+	((__xdata uint16_t *)&flash_region.addr)[1] = HELP_START >> 16;
+}
+
+static void h_rows(void)		/* table row h_at and the next into h_row */
+{
+	h_at <<= 1;
+	h_addr();
+	flash_region.len = 4;
+	flash_read_bulk((__xdata uint8_t *)h_row);
+}
+
+static void h_entry(void)		/* rd() at the entries of row h_at */
+{
+	h_rows();
+	h_at = h_row[0];
+	h_addr();
+	rd_at = flash_region.addr;
+	rb_i = sizeof(rb);
+}
+
+static void h_tok(void)			/* token byte v8's text */
+{
+	h_at = v8 + (H_TOK - 0x80);
+	h_rows();
+	h_at = h_row[0];
+	h_addr();
+	k = (uint8_t)h_row[1] - (uint8_t)h_at;	/* < OM_TXT */
+	flash_region.len = k;
+	flash_read_bulk(om_txt);
+	om_txt[k] = 0;
+	print_string_x((__xdata char *)om_txt);
+}
+
+static void h_text(void)		/* the entry at rd() from v8, tokens expanded */
+{
+	for (; v8; v8 = rd()) {
+		if (v8 & 0x80)
+			h_tok();
+		else
+			write_char(v8);
+	}
+}
+
+static void h_tip(void)			/* the entry: " [unit <u> ]"<tip>"" and the line's end */
+{
+	write_char(' ');
+	v8 = rd();
+	if ((uint8_t)(v8 - OM_H_UNIT) >= OM_H_UNITS)
+		write_char('"');		/* a unit's token ends in it */
+	h_text();
+	print_string("\"\n");
+}
+
+static void h_mask(void)		/* pm, as a port mask prints */
+{
+	om_val[0] = pm;
+	om_val[1] = pm >> 8;
+	vp = om_val;
+	emit_pmask();
+}
+
+/* fdx's form from the tables, after its type's token ("u16 ", "str 0-"; the
+ * fixed forms are the token's: "bool on|off", "ipv4 a.b.c.d") */
+static void h_form(void)
+{
+	switch (ft) {
+	case T_ENUM:
+#if OM_USE_FLAGS
+	case T_FLAGS: case T_FLAGS16:
+#endif
+		words(fdx.arg);
+		print_words();
+		break;
+	case T_U8: case T_U16: case T_U32:
+#if OM_USE_I16 || OM_USE_TZ
+	case T_I16: case T_TZ:
+#endif
+		lim_form();
+		break;
+	case T_STR:
+#if OM_USE_SECRET
+	case T_SECRET:
+#endif
+		itoa_short(fdx.arg);
+		break;
+	case T_PMASK:
+#if OM_USE_PORT
+	case T_PORT:
+#endif
+		pm = 0;
+		all_ports();
+		if (ft == T_PMASK && fdx.arg)
+			pm |= PMASK_CPU;
+		h_mask();
+	}
+}
+
+static void h_quote(void)		/* a Str default is quoted: it may hold a space */
+{
+	if (ft == T_STR || ft == T_SECRET)
+		write_char('"');
+}
+
+static uint8_t h_line(void)		/* help's next line: 0 at the end */
+{
+	if (con_tx_room() < OM_H_LINE) {	/* write_char would wait for the UART: later */
+		cli_job_sleep = 1;
+		return 1;
+	}
+	while (1) {
+		if (cur_f == obx.nf) {		/* the next object the path names */
+			if (++j_o == OM_N_OBJ)
+				goto end;
+			sel_obj(j_o);
+			cur_f = obx.nf;
+			r_rest = &zero;
+			if (!h_all) {
+				path_start();
+				v8 = match();
+				if (v8 == 2)
+					goto bad;	/* ix_parse()'s err */
+				if (!v8)
+					continue;
+				if (r_first == 0xff)
+					r_first = j_o;
+			}
+			h_at = j_o;
+			h_entry();
+			cur_f = 0xff;
+		}
+		if (cur_f == 0xff) {		/* its own line, if the path names no field */
+			cur_f = 0;
+			if (!*r_rest)
+				break;
+		} else {
+			sel_field();
+			cur_f++;
+			if (fmatch(0))
+				break;
+		}
+		while (rd());			/* not this one's */
+	}
+	e_star = 'N';
+	if (cur_f) {
+		emit_path();
+		v8 = 0x7f + ft;
+	} else {
+		emit_obj();
+		v8 = (uint8_t)H_OBJECT;
+	}
+	write_char(' ');
+	h_tok();
+	if (cur_f) {				/* a field's form and default */
+		h_form();
+		if (!(obx.flags & OM_STATE) && ft != T_ACT) {
+			print_string(" default ");
+			memcpyc(om_val, def_ptr() + fdx.off, fsize());
+			vp = om_val;
+			h_quote();
+			emit_value();		/* c_def: a Secret's as text */
+			h_quote();
+		}
+	} else {				/* the object's index forms */
+		for (lv = 0; lv < 2; lv++) {
+			lvl_load();
+			if (lk == IX_NUM && ln == 1)
+				break;		/* no index */
+			write_char(' ');
+			ix_form();
+		}
+	}
+	h_tip();
+	e_star = 0;
+	j_hit = 1;
+	return 1;
+end:
+	if (j_hit)
+		return 0;
+	path_err();				/* it named nothing */
+bad:
+	j_hit = 3;
+	return 0;
+}
+#endif
 
 #define D_END	0
 #define D_INST	1
@@ -2865,9 +3111,13 @@ uint8_t om_boot_load(uint8_t dflt) __banked
 	return E_CFGFORMAT_OK;
 }
 
-/* the cli's wait for the save, the load's steps, get -s: 1 while there are more */
+/* the cli's wait for the save, the load's steps, get -s, help: 1 while there are more */
 static uint8_t bin_line(void)
 {
+#if OM_HELP
+	if (j_mode == J_HELP)
+		return h_line();
+#endif
 	if (j_mode != J_SAVE && l_phase) {	/* the CRC first: a bad one takes nothing */
 		if (crc_step())
 			return 1;
@@ -2931,17 +3181,19 @@ static uint8_t bin_line(void)
 }
 
 /* the verbs, in om_cmd()'s order: om_tab() completes them too */
-static __code const char om_verbs[] =
-	"get\0set\0del\0do\0diff\0apply\0confirm\0discard\0save\0load\0";
+static __code const char om_verbs[] =	/* Tab: to the "" (h<Tab> is help) */
+	"get\0set\0del\0do\0diff\0apply\0confirm\0discard\0save\0load\0help\0\0h\0?\0";
 #define V_DO	3
 #define V_PATH	4	/* get to diff: a path */
 #define V_LOAD	9
+#define V_HELP	10	/* and h, ?: help */
+#define V_N	14
 
 static uint8_t verb_of(void)		/* the verb at p: its index, or 0xff */
 {
 	cp = (__code const uint8_t *)om_verbs;
-	for (k = 0; *cp; k++) {
-		if (seg_is((__code const char *)cp))
+	for (k = 0; k < V_N; k++) {
+		if (*cp && seg_is((__code const char *)cp))
 			return k;
 		skip1();
 	}
@@ -2994,8 +3246,32 @@ uint8_t om_cmd(void) __banked
 	case 8:
 		save_cmd();
 		break;
-	default:
+	case 9:
 		load_cmd();
+		break;
+	default:			/* help, h, ? (a '?' mid-line is a character) */
+#if OM_HELP
+		if (cmd_words_len > 1) {
+			word(1);
+			h_all = ch() == '-';
+			if (h_all)
+				print_string("help 1\n");	/* the lines' format (DESIGN.md 13) */
+			c_pw = 1;
+			c_def = 1;		/* a Secret's default as text */
+			job_start(J_HELP);
+			cli_job = CLI_JOB_OM;	/* as get's: a window waits for it, a drop ends it */
+			j_o = 0xff;
+			cur_f = obx.nf;		/* the next object first */
+			break;
+		}
+		h_at = OM_N_OBJ;		/* the verbs, from the blob */
+		h_entry();
+		v8 = rd();
+		h_text();
+		ok();
+#else
+		err_line("err help: not in this build\n");
+#endif
 	}
 	return 1;
 }
@@ -3154,8 +3430,12 @@ uint8_t om_tab(uint8_t arg) __banked
 		cp = (__code const uint8_t *)w_load;
 		goto words;
 	}
+#if OM_HELP
+	if ((t_v > V_PATH && t_v < V_HELP) || t_v == 0xff || (t_v && cmd_words_len > 1))
+#else
 	if (t_v > V_PATH || (t_v && cmd_words_len > 1))
-		goto end;			/* a path: get's words, the others' first */
+#endif
+		goto end;			/* a path: get's words, the others' (help's) first */
 	if (t_pre[-1] == '.') {			/* the path: the word to its last '.' */
 		t_pre[-1] = 0;
 		p = r_path;
@@ -3185,8 +3465,8 @@ uint8_t om_tab(uint8_t arg) __banked
 		}
 		for (cur_f = 0; cur_f < obx.nf; cur_f++) {
 			sel_field();
-			if ((ft == T_ACT) != (t_v == V_DO))
-				continue;
+			if ((ft == T_ACT) != (t_v == V_DO) && t_v < V_HELP)
+				continue;		/* help: the actions too */
 			if (!fmatch(0) || !*cp)		/* under the path: cp its rest */
 				continue;
 			if (*cp == '.')
