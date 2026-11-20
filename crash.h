@@ -40,6 +40,12 @@
 
 #define SWDT_TICKS	1000		/* 5 s */
 
+/*
+ * The layout is shared across images (an update's record is read by the next
+ * image): any change to it bumps CRASH_MAGIC, so a record in the old layout
+ * is garbage to the new one. crash.c pins the layout; the pin fails the build
+ * until both are changed.
+ */
 struct crash_rec {
 	uint16_t magic;		/*  0 */
 	uint8_t  cause;		/*  2 */
