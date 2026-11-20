@@ -234,7 +234,10 @@ built from one-parameter calls.
   `STP_TICK`, `LACP_TICK`, `LLDP_TICK` 200/s). A pass of more than a second
   starts the grid again from it. The first second after boot is half a
   second (its rates and load read half). The counts start at 0 with XSEG's
-  clear.
+  clear. The roll writes the next second's tick (`sched_roll_tick`) last:
+  a tool that stops the firmware anywhere and sees it move sees the whole
+  second, so it can total the runs (`tools/flash_job_steps.py` counts
+  `FL_ERASE` since power-on that way).
 - **Time asleep:** `sched_idle()` reads the fine clock before its check and
   after the wake, and adds what it slept, in 1% steps of a second (2 ticks,
   1626 units, `sl_unit`) and a remainder under one (16 bits: memory.md
