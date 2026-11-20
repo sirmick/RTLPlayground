@@ -52,8 +52,8 @@ in the snapshot (it wasn't at a ready position, or the event came after its
 position) sees it only if it is still there at the next pass's start. So a
 step **re-checks the level, never trusts the edge alone**: rx reads the NIC
 ring's count, link reads and clears the ISR register, con drains the ring
-until it is empty or a line waits for cli, cli checks the free room again (`CLI_RUN` and
-`CLI_NEXT` want `CLI_ROOM`, 1 KiB, though `HW_CON_TX` means 100 B; they wait
+until it is empty or a line waits for cli, cli checks the free room again
+(`CLI_RUN` and `CLI_NEXT` want `CLI_ROOM`, 1 KiB, though `HW_CON_TX` means 100 B; they wait
 again if it isn't there). The ISR bits are set again on the next edge, and
 the sampled ones are levels, read every pass.
 
@@ -99,6 +99,6 @@ decision 23). lacp hears of link changes inside `link_service()`
   and keeps itself ready (`return STEP_STAY;`) while work remains.
 - A woken step re-checks why it was woken; a wake the step finds nothing
   for is simply lost, and a second wake before it runs is the same wake.
-- No new hardware event without a reader: the old software events
-  (decision 4's 16-bit mask with task posts) went where they had no reader
-  (decision 23).
+- No event without a reader. Decision 4's 16-bit mask had task-posted
+  software events; decision 23 made those with a reader wakes and dropped
+  the rest.
