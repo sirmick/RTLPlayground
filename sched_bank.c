@@ -113,9 +113,8 @@ void sched_m_step_end(void) __banked
 /* ---- the second (decision 26) ---- */
 
 __xdata uint16_t sched_roll_tick;	/* the next second starts at this tick (sched.h) */
-static __xdata uint16_t sl_unit;	/* 1% of a second: 2 ticks' fine units */
-static __xdata uint16_t sl_part;	/* fine units asleep, under sl_unit */
-static __xdata uint8_t  sl_pct;		/* whole sl_units asleep this second */
+static __xdata uint16_t sl_part;	/* fine units asleep, under 1% of a second */
+static __xdata uint8_t  sl_pct;		/* whole 1% steps asleep this second */
 
 /* At the first pass end at or past the second's tick: this second's runs
  * become the rates, and the time asleep the load. The seconds keep to a
@@ -123,7 +122,7 @@ static __xdata uint8_t  sl_pct;		/* whole sl_units asleep this second */
  * next second, not from the average; a pass longer than a second starts
  * the grid again. The new tick is written last: a reader (the sim's
  * tools) that sees sched_roll_tick move sees the whole second published.
- * A leaf: its locals stay in registers. */
+ * A leaf: its locals are registers, but t, 2 B in the shared overlay. */
 static void roll(void)
 {
 	__xdata uint16_t *p, *q;
@@ -229,9 +228,7 @@ void sched_init(void) __banked
 	fine_reload = ((uint16_t)RCAP2H << 8) | RCAP2L;
 	sched_fine_per_tick = (uint16_t)(0 - fine_reload) >> 6;
 	fine_mid_h = ((uint16_t)RCAP2H + 0x100) >> 1;
-	sl_unit = sched_fine_per_tick << 1;	/* the second's runs start at 0 with XSEG */
-	sl_part = 0;
-	sl_pct = 0;
+	/* the second's counts and the asleep sum start at 0 with XSEG's clear (crtxclear) */
 	sched_roll_tick = sched_now + SCHED_SEC_TICKS / 2;	/* half a second off the 1 s tasks' grid */
 	sched_clear_stats();
 }
@@ -263,13 +260,14 @@ uint8_t sched_events(void) __banked
  * The IE write delays the interrupt by one instruction, so the interrupt
  * that should wake us is taken after the PCON write (core.md). A tick since
  * the pass started counts: a task may have come due after its position.
- * The time asleep is summed for the load, in 1% steps and a remainder
- * (16-bit, memory.md): from just before the check to just after the wake,
- * which takes in the waking ISR. A sleep ends at the next interrupt, the
+ * The time asleep is summed for the load, in 1% steps of a second (2
+ * ticks' fine units) and a remainder (16-bit, memory.md): from just
+ * before the check to just after the wake, which takes in the waking ISR. A sleep ends at the next interrupt, the
  * tick's at the latest: half a step at most, and fine_elapsed() counts a
  * tick that came inside it. */
 void sched_idle(void) __banked
 {
+	uint16_t s, u;		/* after the last call: registers */
 	if (!++sched_idle_lo)
 		sched_idle_hi++;
 	fine_read();
@@ -284,11 +282,13 @@ void sched_idle(void) __banked
 	EA = 1;
 	PCON |= 1;
 	fine_read();
-	sl_part += fine_elapsed();
-	if (sl_part >= sl_unit) {
-		sl_part -= sl_unit;
+	s = sl_part + fine_elapsed();
+	u = sched_fine_per_tick << 1;
+	if (s >= u) {
+		s -= u;
 		sl_pct++;
 	}
+	sl_part = s;
 }
 
 void sched_run(void) __banked
