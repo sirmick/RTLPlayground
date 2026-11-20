@@ -10,6 +10,7 @@
 #include "uip/uip.h"
 #include "dns.h"
 #include "ntp.h"
+#include "om_gen.h"
 
 
 #define NTP_PORT	123
@@ -231,48 +232,33 @@ void ntp_stop(void) __banked
 }
 
 
-void ntp_show_time(void) __banked __reentrant
-{
-	int16_t off = ntp_state.offset;
-	uint8_t dst = 0;
-	uint32_t t;
+/* state.ntp (schema/state_svc.py): the time from the last synchronisation */
+#define N	om_st.ntp
 
-	if (!ntp_state.synced) {
-		print_string("Time not synchronised\n");
-		return;
+static __xdata int16_t g_off;
+static __xdata uint8_t g_dst;
+
+uint8_t om_get_ntp(uint8_t idx) __banked
+{
+	(void)idx;
+	memset((__xdata uint8_t *)&N, 0, sizeof(N));
+	memcpy(N.server_ip, ntp_state.addr, 4);
+	N.stratum = ntp_state.stratum;
+	if (!ntp_state.synced)
+		return OM_OK;
+	N.synced = 1;
+	ntp_uptime();				/* ntp_now */
+	N.last_sync_s = ntp_now - ntp_state.at;
+	N.time = ntp_state.utc + N.last_sync_s;
+	g_off = ntp_state.offset;
+	g_dst = ntp_state.dst;
+	if (g_dst) {				/* EU's rule is in UTC, the US's in local time */
+		ntp_split(g_dst == NTP_DST_US ? N.time + (int32_t)g_off * 60 : N.time);
+		g_dst = g_dst == NTP_DST_EU ? ntp_in_dst(3, 0, 1, 10, 0, 1) : ntp_in_dst(3, 2, 2, 11, 1, 1);
 	}
-	t = ntp_state.utc + (ntp_uptime() - ntp_state.at);
-	if (ntp_state.dst == NTP_DST_EU) {
-		ntp_split(t);
-		dst = ntp_in_dst(3, 0, 1, 10, 0, 1);
-	} else if (ntp_state.dst == NTP_DST_US) {
-		ntp_split(t + (int32_t)off * 60);
-		dst = ntp_in_dst(3, 2, 2, 11, 1, 1);
-	}
-	if (dst)
-		off += 60;
-	ntp_split(t + (int32_t)off * 60);
-	print_string("Time ");
-	itoa_short(ntp_year);
-	write_char('-');
-	ntp_print2(ntp_mon);
-	write_char('-');
-	ntp_print2(ntp_mday);
-	write_char(' ');
-	ntp_print2(ntp_hour);
-	write_char(':');
-	ntp_print2(ntp_min);
-	write_char(':');
-	ntp_print2(ntp_sec);
-	print_string(" UTC");
-	ntp_print_offset(off);
-	print_string(dst ? " DST, synchronised " : ", synchronised ");
-	ntp_t = ntp_uptime() - ntp_state.at;
-	ntp_divmod(60);
-	itoa_short(ntp_t);
-	print_string(" min ago, stratum ");
-	itoa_short(ntp_state.stratum);
-	write_char('\n');
+	N.dst_active = g_dst;
+	N.local_offset_min = g_dst ? g_off + 60 : g_off;
+	return OM_OK;
 }
 
 
@@ -289,7 +275,6 @@ void ntp_show(void) __banked __reentrant
 	print_string(" min, timezone ");
 	ntp_print_offset(off);
 	print_string(ntp_state.dst == NTP_DST_EU ? ", dst eu\n" : ntp_state.dst == NTP_DST_US ? ", dst us\n" : ", dst off\n");
-	ntp_show_time();
 }
 
 

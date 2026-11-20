@@ -12,6 +12,7 @@
 #include "uip.h"
 #include "uip/uip.h"
 #include "timer.h"
+#include "om_gen.h"
 
 __xdata struct dhcp_state dhcp_state;
 static __xdata struct timer dhcp_second;
@@ -421,4 +422,20 @@ void dhcp_callback(uint16_t lport) __banked
 
 	// By default we do not send anything out
 	uip_len = 0;
+}
+
+
+/* state.mgmt (schema/state_mgmt.py): the address in use, and DHCP's */
+#define M	om_st.mgmt
+
+uint8_t om_get_mgmt(uint8_t idx) __banked
+{
+	(void)idx;
+	memcpy(M.ip, uip_hostaddr, 4);
+	memcpy(M.netmask, uip_netmask, 4);
+	memcpy(M.gateway, uip_draddr, 4);
+	M.dhcp_state = dhcp_state.state;
+	M.dhcp_renew_s = dhcp_state.state ? dhcp_state.dhcp_timer : 0;
+	memcpy(M.dhcp_server, dhcp_state.server, 4);
+	return OM_OK;
 }

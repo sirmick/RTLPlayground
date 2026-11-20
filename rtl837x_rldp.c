@@ -14,6 +14,7 @@
 #include "rtl837x_sfr.h"
 #include "rtl837x_rldp.h"
 #include "machine.h"
+#include "om_gen.h"
 
 extern __xdata uint8_t sfr_data[4];
 
@@ -135,23 +136,18 @@ void rldp_tick(void) __banked
 }
 
 
+/* on or off; the ports: get state.loop */
 void rldp_show(void) __banked
 {
 	print_string("Loop detection: ");
 	print_string(rldp_enabled ? "on\n" : "off\n");
-	if (!rldp_enabled)
-		return;
-	print_string("Looped ports: ");
-	for (uint8_t p = MACHINE_MIN_PORT; p <= MACHINE_MAX_PORT; p++) {
-		if (rldp_looped & (1 << p)) {
-			print_phys_port(p); write_char(' ');
-		}
-	}
-	print_string("\nBlocked ports: ");
-	for (uint8_t p = MACHINE_MIN_PORT; p <= MACHINE_MAX_PORT; p++) {
-		if (rldp_blocked & (1 << p)) {
-			print_phys_port(p); write_char(' ');
-		}
-	}
-	write_char('\n');
+}
+
+/* state.loop (schema/state_svc.py): none while detection is off */
+uint8_t om_get_loop(uint8_t idx) __banked
+{
+	(void)idx;
+	om_st.loop.looped = rldp_enabled ? rldp_looped : 0;
+	om_st.loop.blocked = rldp_enabled ? rldp_blocked : 0;
+	return OM_OK;
 }

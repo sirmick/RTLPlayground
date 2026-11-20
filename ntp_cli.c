@@ -65,10 +65,6 @@ static uint8_t ntp_cli_timezone(void) __reentrant
 
 void ntp_parse(void) __banked __reentrant
 {
-	if (cmd_compare(0, "time")) {
-		ntp_show_time();
-		return;
-	}
 	if (cmd_words_len < 2) {
 		ntp_show();
 		return;
