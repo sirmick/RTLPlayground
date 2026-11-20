@@ -49,9 +49,14 @@ void itoa_html(uint8_t v)
 	outbuf[slen++] = '0' + (v % 10);
 }
 
+/* a leaf, through a pointer (F1b: a call a character before) */
 void str_code_to_html(__code const char *s)
 {
-	while (*s) char_to_html(*s++);
+	__xdata uint8_t *o = outbuf + slen;
+
+	while (*s)
+		*o++ = *s++;
+	slen = o - outbuf;
 }
 
 void json_add_array_string_item(__code const char *item) {

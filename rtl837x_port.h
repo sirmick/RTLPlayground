@@ -53,6 +53,9 @@ int8_t vlan_get(uint16_t vlan) __banked;
 #define VLAN_BITS_SIZE	512	/* a bit per VLAN ID */
 extern __xdata uint8_t vlan_bits[VLAN_BITS_SIZE];
 uint16_t vlan_next(uint16_t vlan) __banked;
+#define VLAN_ON_IDS	4096
+void vlan_names_index(void) __banked;	/* /vlanlist.json: vlan_name_idx[] for the valid VLANs */
+extern __xdata uint16_t vlan_name_idx[VLAN_ON_IDS];
 __xdata uint16_t vlan_name(uint16_t vlan) __banked;
 void vlan_name_remove(uint16_t vlan) __banked;
 void vlan_setup(void) __banked;

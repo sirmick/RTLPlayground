@@ -264,6 +264,43 @@ __xdata uint16_t vlan_name(uint16_t vlan) __banked
 }
 
 
+/*
+ * /vlanlist.json's names (F1b): vlan_name() scans the table from its start,
+ * 0.4 ms a lookup with 40 names. vlan_names_index() gives every valid VLAN
+ * vlan_name_idx[] = 0xffff (the bitmap's walk), then every entry's VLAN its
+ * name's offset (one pass over the table): vlan_name()'s answers, for the
+ * valid VLANs, until the table or the bitmap changes.
+ */
+__xdata uint16_t vlan_name_idx[VLAN_ON_IDS];
+static __xdata uint16_t vni;
+
+/* the name pass: a leaf, its locals in registers */
+static void vlan_names_pass(void)
+{
+	__xdata uint8_t *p = vlan_names;
+	uint16_t id;
+	uint8_t c, k;
+
+	while (*p) {
+		id = 0;
+		for (k = 3; k; k--) {	/* the entry's 3 hex digits (hex[]: lower case) */
+			c = *p++;
+			id = id << 4 | (c <= '9' ? c - '0' : c - ('a' - 10));
+		}
+		vlan_name_idx[id & 0xfff] = p - vlan_names;
+		while (*p && *p++ != ' ')
+			;
+	}
+}
+
+void vlan_names_index(void) __banked
+{
+	for (vni = vlan_next(1); vni < 0xfff; vni = vlan_next(vni + 1))
+		vlan_name_idx[vni] = 0xffff;
+	vlan_names_pass();
+}
+
+
 /* The first valid VLAN from vlan on, from the bitmap; 4096 if none */
 uint16_t vlan_next(uint16_t vlan) __banked
 {
