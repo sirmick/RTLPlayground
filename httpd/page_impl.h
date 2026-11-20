@@ -30,7 +30,6 @@ void send_l2(uint16_t idx);
 void l2_delete(uint16_t idx);
 void send_mirror(void);
 void send_config(void);
-void send_cmd_log(void);
 void send_lag(void);
 void send_stp(void) __banked;
 void send_lldp(void);

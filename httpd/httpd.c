@@ -1210,8 +1210,6 @@ void handle_post(uint16_t body_off)
 	} else if (is_word(request_path, "reset")) {
 		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
 		crash_pending = CRASH_WEB;
-	} else if (is_word(request_path, "cmd_log_clear")) {
-		clear_command_history();
 	} else {
 		send_not_found();
 		return;
@@ -1493,8 +1491,6 @@ void httpd_appcall(void)
 				send_vlanlist();
 			} else if (is_word(q, "/config")) {
 				send_config();
-			} else if (is_word(q, "/cmd_log")) {
-				send_cmd_log();
 			} else {
 				send_not_found();
 			}

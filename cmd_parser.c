@@ -91,8 +91,6 @@ __xdata uint16_t cmd_history_ptr;
 __xdata uint8_t cli_job;		/* a dump in progress (cli_job_more) */
 __xdata uint8_t cli_job_sleep;
 static void cmd_save(void);
-static __xdata uint16_t hist_p;		/* the history job's cursor */
-static __xdata uint8_t hist_begun, hist_n, hist_c;
 
 // Error set by commands
 __xdata uint8_t err_status;
@@ -1557,10 +1555,6 @@ void cmd_parser(void) __banked
 			parse_bw();
 		} else if (cmd_compare(0, "storm")) {
 			parse_storm();
-		} else if (cmd_compare(0, "history")) {
-			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-			hist_begun = 0;
-			cli_job = CLI_JOB_HISTORY;
 		} else if (cmd_compare(0, "lldp")) {
 			if (cmd_compare(1, "on")) {
 				print_string("LLDP enabled\n");
@@ -1579,9 +1573,8 @@ void cmd_parser(void) __banked
 		}
 
 
-		/* history's own line goes in when its job has printed the rest */
-		if (save_cmd && cmd_words_len && err_status == ERR_OK && cli_job != CLI_JOB_HISTORY)
-			cmd_save();
+		if (save_cmd && cmd_words_len && err_status == ERR_OK)
+			cmd_save();	/* the editor's recall (cmd_editor.c) */
 	}
 }
 
@@ -1713,34 +1706,9 @@ config_done:
  */
 static __xdata uint8_t job_more;
 
-/* history: up to and including the next newline, at most 64 bytes looked at */
-static uint8_t history_line(void)
-{
-	hist_n = 64;
-	while (hist_p != cmd_history_ptr && hist_n--) {
-		hist_c = cmd_history[hist_p];
-		hist_p = (hist_p + 1) & CMD_HISTORY_MASK;
-		if (!hist_c || hist_c == '\n')
-			hist_begun = 1;
-		if (hist_begun && hist_c) {
-			write_char(hist_c);
-			if (hist_c == '\n')
-				break;
-		}
-	}
-	if (hist_p != cmd_history_ptr)
-		return 1;
-	if (save_cmd)
-		cmd_save();		/* the history command itself, as before: after the dump */
-	return 0;
-}
-
 void cli_job_more(void) __banked
 {
 	switch (cli_job) {
-	case CLI_JOB_HISTORY:
-		job_more = history_line();
-		break;
 	case CLI_JOB_L2:
 		job_more = port_l2_line();
 		break;

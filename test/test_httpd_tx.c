@@ -306,7 +306,6 @@ static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
 void send_config(void) { }
-void send_cmd_log(void) { }
 void send_lag(void) { }
 void send_stp(void) { }
 void send_stp_counters(void) { }
@@ -2328,7 +2327,7 @@ static void scenario_side_effect_gets(void)
 
 	cli_post("/cmd_log_clear", "");
 	drain(MSS_FULL);
-	CHECK(history_clears == 1 && stream_contains("HTTP/1.1 200 OK"), "POST /cmd_log_clear clears the log");
+	CHECK(!history_clears && stream_contains("404 Not found"), "POST /cmd_log_clear: gone (P3B), 404");
 	cli_post("/l2_del.json?idx=7", "");
 	drain(MSS_FULL);
 	CHECK(l2_deleted == 7, "POST /l2_del.json?idx=7 deletes entry 7");

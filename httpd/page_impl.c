@@ -41,8 +41,6 @@ extern __xdata uint8_t sfr_data[4];
 extern __xdata uint8_t sfp_pins_last;
 extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 
-extern __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
-extern __xdata uint16_t cmd_history_ptr;
 
 extern __xdata struct flash_region_t flash_region;
 
@@ -940,24 +938,6 @@ found_end:
 	flash_read_bulk(outbuf + slen);
 	slen += valid_len;
 }
-
-void send_cmd_log(void)
-{
-	dbg_string("send_cmd_log called\n");
-	slen = strtox(outbuf, HTTP_RESPONSE_TXT);
-	__xdata uint16_t p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
-	__xdata uint8_t found_begin = 0;
-	dbg_string("History ptr: ");
-	dbg_short(cmd_history_ptr); dbg_char('\n');
-	while (p != cmd_history_ptr && slen < TCP_OUTBUF_SIZE) {
-		if (!cmd_history[p] || cmd_history[p] == '\n')
-			found_begin = 1;
-		if (found_begin && cmd_history[p])
-			outbuf[slen++] = cmd_history[p];
-		p = (p + 1) & CMD_HISTORY_MASK;
-	}
-}
-
 
 void send_vlanlist(void)
 {
