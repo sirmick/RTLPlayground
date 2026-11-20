@@ -118,16 +118,26 @@ STEP(con, edit)
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
-/* a web reply's lines a step: another only if the step so far and the
- * dearest line stay under 5 ms. The last line's cost doesn't say: a cheap
- * line may come before a getter's. The dearest is a line that starts the
- * get's next path (its lookup, then the getter: 3.96 ms, state.port.9.macs
- * then port.9.mtu, on the console, 58c6566), not a getter alone (~1.9 ms);
- * sim_smoke's line_costs() fails when a probed line passes CLI_LINE_MAX.
- * Measured: one line a step is no slower (the dashboard poll 104 ms, at
- * 3 ms 128) */
+/* a web reply's lines a step: another only if the step so far and what
+ * the next line may cost stay under 5 ms (the last line's cost doesn't
+ * say). The engine says which line comes (om_dear): another field of the
+ * instance, the next instance (its getter, ~1.9 ms), or the walk to the
+ * next path's object, the dearest (its lookup, then the getter: 3,962 us,
+ * state.port.9.macs then port.9.mtu, on the console, 58c6566; ~50 us more
+ * an object). sim_smoke's line_costs() fails when a probed line passes
+ * CLI_LINE_MAX. A flat 3 ms held only by where path starts fell; a flat
+ * 4.5 ms cost the dashboard poll 17% (pollcost.py) */
 #define CLI_LINE_MAX	4500000UL	/* ns */
 #define CLI_WEB_FINE	((uint16_t)((5000000UL - CLI_LINE_MAX) / SCHED_FINE_NS))
+/* a get's cheaper lines (om_dear): another field of its instance, the
+ * next instance (its getter) */
+#define CLI_LINE_CHEAP	1500000UL	/* ns */
+#define CLI_LINE_INST	2500000UL	/* ns */
+static __code const uint16_t cli_web_fine[3] = {
+	(uint16_t)((5000000UL - CLI_LINE_CHEAP) / SCHED_FINE_NS),	/* OM_CHEAP */
+	(uint16_t)((5000000UL - CLI_LINE_INST) / SCHED_FINE_NS),	/* OM_INST */
+	CLI_WEB_FINE							/* OM_WALK */
+};
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
 #define CLI_WEB_ROOM	640
@@ -249,7 +259,7 @@ STEP(cli, more)
 		do				/* lines while outbuf has room, to CLI_WEB_FINE */
 			cli_job_more();
 		while (cli_job && !cli_job_sleep && !cli_job_one && WEBCMD_ROOM(CLI_WEB_ROOM)
-		       && sched_step_fine() < CLI_WEB_FINE);
+		       && sched_step_fine() < (cli_job == CLI_JOB_OM ? cli_web_fine[om_dear] : CLI_WEB_FINE));
 		WEBCMD_CAPTURE_OFF();
 		cli_job_one = 0;
 	} else {				/* the console's: a line a step, the UART paces it */
