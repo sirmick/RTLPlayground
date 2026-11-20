@@ -53,9 +53,9 @@ FINE_NS = 6144					# sched.h SCHED_FINE_NS
 
 
 def health(out):
-    """state -> (runs, longest µs) from `health tasks`"""
+    """state -> (runs in the last second, longest µs) from `health tasks`"""
     res = {}
-    for l in out.split("state\truns\tmax", 1)[-1].splitlines():
+    for l in re.split(r"state\truns(?:/s)?\tmax", out, maxsplit=1)[-1].splitlines():
         m = re.match(r"(\w+)\t(\d+)\t(>?)(\d+)(us|ms)$", l)
         if m:
             st, runs, over, v, unit = m.groups()
@@ -65,13 +65,13 @@ def health(out):
 
 def judge(name, steps):
     long = {s: v for s, v in steps.items() if v[1] > LIMIT_US}
-    fl = " ".join(f"{s} {v[0]}x max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
+    fl = " ".join(f"{s} {v[0]}/s max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
     top = max(((v[1], s) for s, v in steps.items() if s != "FL_ERASE"), default=(0, "-"))
     hs = steps.get("HOUSE_SEC")
     print(f"   {name}: {fl}; longest other {top[1]} {top[0] / 1000:.1f} ms"
-          + (f"; HOUSE_SEC {hs[0]}x max {hs[1] / 1000:.1f} ms" if hs else ""))
+          + (f"; HOUSE_SEC {hs[0]}/s max {hs[1] / 1000:.1f} ms" if hs else ""))
     for s, v in long.items():
-        print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs)")
+        print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs/s)")
     return not long and any(s.startswith("FL_") for s in steps)
 
 
@@ -259,19 +259,20 @@ def main(argv):
     names = ["NONE"] + [n.strip()[2:] for n in names.split(",") if n.strip()]
     xsym = {}
     for l in open(os.path.join(build, "rtlplayground.map")):
-        m = re.match(r"\w*:?\s+([0-9A-F]{8})\s+(_sched_st_max|_sched_st_runs)\s", l)
+        m = re.match(r"\w*:?\s+([0-9A-F]{8})\s+(_sched_st_max|_sched_st_rate)\s", l)
         if m:
             xsym[m.group(2)] = int(m.group(1), 16)
 
     def xsteps(r):
-        """state -> (runs, longest µs), from the scheduler's xdata"""
+        """state -> (runs in the last second, longest µs), from the scheduler's
+        xdata: every state that has run since the clear (its longest isn't 0)"""
         mx = r.b.sim.peek(f"x:{xsym['_sched_st_max']:#x}", 2 * len(names))
-        rn = r.b.sim.peek(f"x:{xsym['_sched_st_runs']:#x}", 2 * len(names))
+        rn = r.b.sim.peek(f"x:{xsym['_sched_st_rate']:#x}", 2 * len(names))
         steps = {}
         for i, n in enumerate(names):
-            runs = rn[2 * i] | rn[2 * i + 1] << 8
-            if runs:
-                steps[n] = (runs, (mx[2 * i] | mx[2 * i + 1] << 8) * FINE_NS // 1000)
+            runs, m = rn[2 * i] | rn[2 * i + 1] << 8, mx[2 * i] | mx[2 * i + 1] << 8
+            if m:
+                steps[n] = (runs, m * FINE_NS // 1000)
         return steps
 
     def upload_req(r, data, name):

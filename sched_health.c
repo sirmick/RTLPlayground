@@ -81,7 +81,8 @@ static void crash_print(void)
 }
 
 /* health tasks, a line per call (the cli's health job, E1): the header,
- * each slot, the states' header, each state, then the totals. */
+ * each slot, the states' header, each state (its runs in the last second,
+ * its longest step), then the totals. */
 static __xdata uint8_t hl;
 
 void sched_health_begin(void) __banked
@@ -117,12 +118,12 @@ uint8_t sched_health_line(void) __banked
 			}
 		}
 	} else if (hl == SCHED_SLOTS + 1) {
-		print_string("state\truns\tmax\n");
+		print_string("state\truns/s\tmax\n");
 	} else if (hl < SCHED_SLOTS + 1 + S_COUNT) {
 		ps = hl - SCHED_SLOTS - 1;
 		print_state();
 		write_char('\t');
-		itoa_short(sched_st_runs[ps]);
+		itoa_short(sched_st_rate[ps]);
 		write_char('\t');
 		u = sched_st_max[ps];
 		print_fine();
@@ -136,7 +137,9 @@ uint8_t sched_health_line(void) __banked
 		u = sched_idle_hi;
 		lo = sched_idle_lo;
 		print_halves();
-		print_string(" longest ");
+		print_string(" load ");
+		itoa(sched_load);
+		print_string("% longest ");
 		u = sched_pass_max;
 		print_fine();
 		print_string("\noverruns ");
