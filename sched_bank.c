@@ -112,7 +112,7 @@ void sched_m_step_end(void) __banked
 
 /* ---- the second (decision 26) ---- */
 
-static __xdata uint16_t roll_tick;	/* the next second starts at this tick */
+__xdata uint16_t sched_roll_tick;	/* the next second starts at this tick (sched.h) */
 static __xdata uint16_t sl_unit;	/* 1% of a second: 2 ticks' fine units */
 static __xdata uint16_t sl_part;	/* fine units asleep, under sl_unit */
 static __xdata uint8_t  sl_pct;		/* whole sl_units asleep this second */
@@ -121,17 +121,17 @@ static __xdata uint8_t  sl_pct;		/* whole sl_units asleep this second */
  * become the rates, and the time asleep the load. The seconds keep to a
  * 200-tick grid, so a late roll (by at most one pass) takes time from the
  * next second, not from the average; a pass longer than a second starts
- * the grid again. A leaf: its locals stay in registers. */
+ * the grid again. The new tick is written last: a reader (the sim's
+ * tools) that sees sched_roll_tick move sees the whole second published.
+ * A leaf: its locals stay in registers. */
 static void roll(void)
 {
 	__xdata uint16_t *p, *q;
 	uint8_t n;
-	uint16_t t = sched_f_tick - roll_tick;
+	uint16_t t = sched_f_tick - sched_roll_tick;
 	if ((int16_t)t < 0)
 		return;
-	roll_tick += SCHED_SEC_TICKS;
-	if (t >= SCHED_SEC_TICKS)
-		roll_tick = sched_f_tick + SCHED_SEC_TICKS;
+	t = t >= SCHED_SEC_TICKS ? sched_f_tick : sched_roll_tick;
 	p = sched_st_sec;
 	q = sched_st_rate;
 	for (n = S_COUNT; n; n--) {
@@ -140,6 +140,7 @@ static void roll(void)
 	}
 	sched_load = sl_pct < 100 ? 100 - sl_pct : 0;
 	sl_pct = 0;
+	sched_roll_tick = t + SCHED_SEC_TICKS;	/* last: who sees it move sees the whole second */
 }
 
 void sched_m_pass_end(void) __banked
@@ -231,7 +232,7 @@ void sched_init(void) __banked
 	sl_unit = sched_fine_per_tick << 1;	/* the second's runs start at 0 with XSEG */
 	sl_part = 0;
 	sl_pct = 0;
-	roll_tick = sched_now + SCHED_SEC_TICKS / 2;	/* half a second off the 1 s tasks' grid */
+	sched_roll_tick = sched_now + SCHED_SEC_TICKS / 2;	/* half a second off the 1 s tasks' grid */
 	sched_clear_stats();
 }
 
