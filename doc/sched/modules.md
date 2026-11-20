@@ -149,9 +149,9 @@ What remains:
 
 | Step | Time | Where measured | Owner |
 |---|---|---|---|
-| `FL_ERASE` | 40 ms; 35.5-41.6 ms on the 8x | sim, 8x | the sanctioned exception |
-| RX_STEP while a config POST arrives (its multipart parse in one step) | 18.2 ms | 8x (EB); the sim didn't show it | F1b |
-| RX_STEP for `/vlanlist.json` with 40 VLANs of 20-character names | 34 ms (67-100 ms before) | sim (e4); not a reference scenario | F1b (the reply's JSON, ~1.5 ms an entry) |
-| `FL_VERIFY`, `FL_PROG` | 14.2, 8.1 ms | sim (e3) | under 20 ms, over the 5 ms target |
+| `FL_ERASE` | 40 ms; 35.5-41.6 ms on the 8x | sim, 8x | inside the 50 ms limit (decision 25) |
+| RX_STEP while a config POST arrives (its multipart parse in one step) | 18.2 ms; 8.6 ms in the sim with Linux curl | 8x (EB), sim (F1b) | the object-model project (decision 25) |
+| RX_STEP for `/vlanlist.json` with 40 VLANs of 20-character names | 34 ms (67-100 ms before) | sim (e4); not a reference scenario | the object-model project (decision 25; F1b's analysis: 41 `vlan_name()` scans ~16 ms, the output the rest; a patch on the local branch `f1b-dropped`) |
+| `FL_VERIFY`, `FL_PROG` | 14.2, 8.1 ms | sim (e3) | inside the 50 ms limit, over the 5 ms target |
 | a forced poll timeout's step | 9.5-16.6 ms | sim (e4) | by design: one timeout a step |
 | the end of a `/loader` or install-image upload, `loader_update()` | not measured | - | rare paths (chapter 10) |

@@ -78,8 +78,8 @@ free or not-ready position costs a load and a compare.
 
 ## Rules every step follows
 
-1. Return within 20 ms; aim for under 5 ms. The one exception is a sector
-   erase (`FL_ERASE`).
+1. Return within 50 ms; aim for under 5 ms (decision 25). A sector erase
+   (`FL_ERASE`, ~40 ms) is inside the limit.
 2. Leave shared buffers (`uip_buf`, `sfr_data`, `cmd_buffer`, `ctl_buf`)
    consistent, and never hold one across steps. The exception is uIP's one
    TCP connection: a `/cmd` or an upload holds `config_buf` (and a `/cmd`

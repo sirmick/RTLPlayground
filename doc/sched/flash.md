@@ -21,7 +21,8 @@ A flash step **starts an operation and waits for it to finish, in the
 common area, before it returns.** `flash_sector_erase()` and
 `flash_write_bytes()` already return only when the flash is idle, so the
 job's steps call them as they are: no new common-area helper. An erase is
-the one sanctioned exception to the 20 ms step limit: 40 ms in the sim,
+inside the 50 ms step limit (decision 25; until F1b, the one sanctioned
+exception to the 20 ms limit): 40 ms in the sim,
 35.5-41.6 ms on the 8x. The waits run with interrupts on: ISRs keep filling
 rings and setting bits.
 

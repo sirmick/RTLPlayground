@@ -75,7 +75,7 @@ without its extra tick: "never early" failed).
 | `hang`: a step that spins for ever | the watchdog resets 4995-5000 ms after the step began; through the loader; the record names `sl/SL_HANG`, the PC inside `sl_hang`, SP, the reset count; the boot prints it, clears it, `health` keeps it |
 | `ctrl_r` (on the hang image) | `^R ^R` and the `reset` command: their records, causes 2 and 3 |
 | `powercut` | the record is gone, nothing printed |
-| `overrun`: a 25 ms step | one overrun, the state named in `health` |
+| `overrun`: a 55 ms step (25 ms until decision 25) | one overrun, the state named in `health` |
 | `bad_flash`: starts an erase and returns | exactly one check, `flash-busy`, in `fl_erase`; rtlsim exits 6 |
 | `bad_spec`: a state no step reaches | the generator fails the build |
 | `fall_through`: a step that can fall off its end | the build fails with SDCC's error 59 |
@@ -113,7 +113,7 @@ F1 runs them all at once on the final branch (`evidence/f1-acceptance.txt`).
 
 | Tool | What |
 |---|---|
-| `sched_tour.py` | the reference boot, CLI tour and web pages, then `health tasks`: every slot listed, no step over 20 ms but `FL_ERASE`, the stack's headroom (D2) |
+| `sched_tour.py` | the reference boot, CLI tour and web pages, then `health tasks`: every slot listed, no step over 50 ms (decision 25; 20 ms but `FL_ERASE` until F1b), the stack's headroom (D2) |
 | `cli_steps.py` | each command's longest cli step between `health clear` and `health tasks`, console and web; fails a cli state over 5 ms (E1) |
 | `console_bugs.py` | U2 and U4 (D3) |
 | `webcmd_abort.py` | the web command in `config_buf`: W1-W6 (D3, E1) |

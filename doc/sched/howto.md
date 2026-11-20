@@ -242,7 +242,7 @@ later poll in the same step give up at once (chapter 9).
 - No `delay()` in a step: return with a wait.
 - 8- and 16-bit arithmetic; data and locals in `__xdata`; no function with
   two parameters. The resource gate fails any internal RAM growth.
-- Under 5 ms a step; 20 ms is the limit. Check `health tasks`, and
+- Under 5 ms a step; 50 ms is the limit (decision 25). Check `health tasks`, and
   `tools/cli_steps.py` or `tools/sched_tour.py` in rtlsim.
 - Print at most a line (100 B) a step after checking room, unless the
   output is known to be small (a command starts with 1 KiB free).

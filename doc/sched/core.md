@@ -213,8 +213,9 @@ built from one-parameter calls.
   `RCAP2` at `sched_init`).
 - Around each step (`sched_m_step_start`, `sched_m_step_end`): the step's
   length, saturating at 80 ticks (400 ms, shown as `>400ms`); per state the
-  longest and the run count. A step of 20 ms or more (3255 units) is an
-  overrun: counted, with its state. The step start also clears `hw_stuck`
+  longest and the run count. A step of 50 ms or more (8138 units,
+  decision 25; 20 ms, 3255, until F1b) is an overrun: counted, with its
+  state. The step start also clears `hw_stuck`
   (chapter 9).
 - Around each pass: the longest pass, the pass count.
 - `health tasks` prints every slot (name, state name, mask, wake), every

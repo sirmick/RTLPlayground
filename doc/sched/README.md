@@ -69,7 +69,7 @@ Where it is in the code:
 
 - **Step:** a `uint8_t f(void) __banked` function (`STEP(task, name)`) that
   does a bounded amount of work and returns the state it wants next.
-  Target under 5 ms, limit 20 ms (chapter 1).
+  Target under 5 ms, limit 50 ms (chapter 1, decision 25).
 - **State:** a one-byte ID naming a step. A slot's state is the step it runs
   next; 0 is a free slot.
 - **Task:** a slot in the task table, `{state, mask, wake, arg}`.

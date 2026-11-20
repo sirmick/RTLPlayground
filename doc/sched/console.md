@@ -45,9 +45,10 @@ Code: `con_ring.h`, `con_ring.c` (resident), the serial ISR in
 
 Fixed, frequency **high**: at 115200 a byte arrives every 87 µs, so the
 256 B ring fills in ~22 ms, and con is never more than a few steps from its
-next run. A step of up to the 20 ms limit loses nothing (schedtest: 501 of
+next run. A step of up to 20 ms loses nothing (schedtest: 501 of
 501 pasted bytes across a 20.1 ms step); a 40 ms erase across a fast paste
-can (294 of 501; decision 19; b4-sim-tests.txt).
+can (294 of 501; decision 19; b4-sim-tests.txt). So can any step near the
+50 ms limit (decision 25): the ring was sized for decision 7's 20 ms.
 
 | State | Does | Next |
 |---|---|---|
