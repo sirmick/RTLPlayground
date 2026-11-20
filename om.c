@@ -2488,7 +2488,7 @@ static uint8_t bin_line(void)
 		fail("failed");
 		j_hit = 3;
 	} else if (e_legacy >= 'A' && e_legacy != 0xff) {	/* rd_open()'s test */
-		print_string("saved; the old text config is replaced, its unmigrated commands are dropped\n");
+		print_string("saved over old text: unmigrated commands dropped\n");
 	}
 	return 0;
 }

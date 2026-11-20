@@ -1372,7 +1372,7 @@ static void binary(void)
 
 		fd_write(&fl, CONFIG_START, (const uint8_t *)"ip 192.168.1.1\n", 15);
 		boot();
-		expect("save", "saved; the old text config is replaced, its unmigrated commands are dropped\nok\n");
+		expect("save", "saved over old text: unmigrated commands dropped\nok\n");
 		expect("get state.cfg.format", "state.cfg.format ok\nok\n");
 		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
 	}
