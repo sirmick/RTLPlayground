@@ -308,6 +308,15 @@ void send_ok(void)
 }
 
 
+/* scan_header()'s walk (F1b): the next '\r', '\n' or NUL from p. A leaf,
+ * its pointer in registers */
+static __xdata uint8_t *hdr_eol(__xdata uint8_t *p)
+{
+	while (*p && *p != '\r' && *p != '\n')
+		p++;
+	return p;
+}
+
 __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 {
 	__xdata uint8_t *v;
@@ -317,11 +326,19 @@ __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 	session = 0;
 	authenticated = 0;
 
-	while (!strstart(p, "\r\n\r\n")) {
-		dbg_char(*p);
+	/* line to line, the compares only where they can match (F1b) */
+	while (1) {
+		p = hdr_eol(p);
 		if (!*p)
 			break;
-		p++;
+		if (*p == '\r') {
+			if (strstart(p, "\r\n\r\n"))
+				break;
+			p++;
+			if (*p != '\n')
+				continue;
+		}
+		/* at a '\n': each name below starts with it */
 		if ((v = header_value(p, "\ncontent-type:")))
 			content_type = v;
 		else if ((v = header_value(p, "\ncontent-length:"))) {
@@ -340,6 +357,7 @@ __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 				v++;
 			}
 		}
+		p++;
 	}
 	if (content_type && is_word(content_type, "multipart/form-data; boundary")) {
 		dbg_string("\nFound multipart\n");
@@ -365,60 +383,107 @@ __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 	return p;
 }
 
+/* config_take()'s scans (F1b): cfg_p to the next '\r' before cfg_to, or to
+ * cfg_to. Every delimiter it looks for starts with "\r\n", and this is a
+ * leaf, its pointers in registers: the compares run only at a '\r' (at
+ * every byte, they made a 4-line config POST an 18 ms rx step on silicon). */
+static __xdata uint16_t cfg_p, cfg_to;
+static void cfg_to_cr(void)
+{
+	__xdata uint8_t *p = config_buf + cfg_p;
+	__xdata uint8_t *e = config_buf + cfg_to;
+
+	while (p != e && *p != '\r')
+		p++;
+	cfg_p = p - config_buf;
+}
+
+/* every line of cfg_p..cfg_to shorter than a command: 1 */
+static uint8_t cfg_lines_ok(void)
+{
+	__xdata uint8_t *p = config_buf + cfg_p;
+	__xdata uint8_t *e = config_buf + cfg_to;
+	uint8_t run = 0;
+
+	for (; p != e; p++) {
+		if (*p == '\n')
+			run = 0;
+		else if (++run >= CMD_BUF_SIZE - 1)
+			return 0;
+	}
+	return 1;
+}
+
 /* 0: body incomplete, 1: configuration stored, 2: malformed */
 static uint8_t config_take(void)
 {
 	// #386: needs static, otherwise it still lands in SRAM/DSEG
-	static __xdata uint16_t cfg_pos, cfg_hdr, cfg_body, cfg_end, cfg_last, cfg_i;
-	__xdata uint8_t cfg_bl, cfg_run;
+	static __xdata uint16_t cfg_pos, cfg_hdr, cfg_body, cfg_end, cfg_last;
+	__xdata uint8_t cfg_bl;
 
 	cfg_bl = strlen_x(boundary);
 
 	// the body is complete once the closing boundary has arrived
-	cfg_last = 0;
+	if (pre_acc < cfg_bl + 2)
+		return 0;
+	cfg_p = 0;
+	cfg_to = pre_acc - cfg_bl - 1;
 	while (1) {
-		if (cfg_last + cfg_bl + 1 >= pre_acc)
+		cfg_to_cr();
+		if (cfg_p == cfg_to)
 			return 0;
-		if (strstart_x(&config_buf[cfg_last], boundary)
-		    && strstart(&config_buf[cfg_last + cfg_bl], "--"))
+		if (strstart_x(&config_buf[cfg_p], boundary)
+		    && strstart(&config_buf[cfg_p + cfg_bl], "--"))
 			break;
-		cfg_last++;
+		cfg_p++;
 	}
+	cfg_last = cfg_p;
 
 	// every part lies ahead of the closing boundary, so it bounds the walk
+	cfg_to = cfg_last;
 	cfg_pos = 0;
 	while (cfg_pos < cfg_last) {
+		cfg_p = cfg_pos;
+		cfg_to_cr();
+		if (cfg_p == cfg_last)
+			break;
+		cfg_pos = cfg_p;
 		if (!strstart_x(&config_buf[cfg_pos], boundary)) {
 			cfg_pos++;
 			continue;
 		}
 		cfg_hdr = cfg_pos + cfg_bl;
-		cfg_body = cfg_hdr;
+		cfg_p = cfg_hdr;
 		while (1) {
-			if (cfg_body + 3 >= cfg_last)
+			cfg_to_cr();
+			if (cfg_p + 3 >= cfg_last)
 				return 2;
-			if (strstart(&config_buf[cfg_body], "\r\n\r\n"))
+			if (strstart(&config_buf[cfg_p], "\r\n\r\n"))
 				break;
-			cfg_body++;
+			cfg_p++;
 		}
+		cfg_body = cfg_p;
 		cfg_end = cfg_body;
 		cfg_body += 4;
 		// reaching cfg_last is a match: the last part ends at the closing boundary
-		while (cfg_end < cfg_last && !strstart_x(&config_buf[cfg_end], boundary))
-			cfg_end++;
+		cfg_p = cfg_end;
+		while (1) {
+			cfg_to_cr();
+			if (cfg_p == cfg_last || strstart_x(&config_buf[cfg_p], boundary))
+				break;
+			cfg_p++;
+		}
+		cfg_end = cfg_p;
 		while (cfg_hdr + 8 < cfg_body) {
 			// the part carrying a filename holds the configuration
-			if (strstart(&config_buf[cfg_hdr], "filename")) {
+			if (config_buf[cfg_hdr] == 'f' && strstart(&config_buf[cfg_hdr], "filename")) {
 				// the payload plus its terminator must fit the sector
 				if (cfg_end - cfg_body + 1 > CONFIG_LEN)
 					return 2;
-				cfg_run = 0;
-				for (cfg_i = cfg_body; cfg_i < cfg_end; cfg_i++) {
-					if (config_buf[cfg_i] == '\n')
-						cfg_run = 0;
-					else if (++cfg_run >= CMD_BUF_SIZE - 1)
-						return 2;
-				}
+				cfg_p = cfg_body;
+				cfg_to = cfg_end;
+				if (!cfg_lines_ok())
+					return 2;
 				config_buf[cfg_end] = 0;
 				fl_src = config_buf + cfg_body;	/* for the flash job */
 				fl_len = cfg_end - cfg_body + 1;
@@ -436,13 +501,18 @@ static uint8_t config_take(void)
 static uint16_t preamble_payload_start(uint16_t n)
 {
 	// Skip the HTTP header separator retained by handle_post().
-	uint16_t pos = 4;
-
-	while (pos + 3 < n && !strstart(&config_buf[pos], "\r\n\r\n"))
-		pos++;
-	if (pos + 3 >= n)
+	if (n < 8)
 		return 0;
-	return pos + 4;
+	cfg_p = 4;
+	cfg_to = n - 3;
+	while (1) {
+		cfg_to_cr();
+		if (cfg_p == cfg_to)
+			return 0;
+		if (strstart(&config_buf[cfg_p], "\r\n\r\n"))
+			return cfg_p + 4;
+		cfg_p++;
+	}
 }
 
 
