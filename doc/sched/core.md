@@ -240,7 +240,7 @@ built from one-parameter calls.
   `FL_ERASE` since power-on that way).
 - **Time asleep:** `sched_idle()` reads the fine clock before its check and
   after the wake, and adds what it slept, in 1% steps of a second (2 ticks,
-  1626 units, `sl_unit`) and a remainder under one (16 bits: memory.md
+  1626 units) and a remainder under one (16 bits: memory.md
   rule 3; the remainder carries into the next second). The fine clock is
   Timer 2, which runs in IDL (its ISR is what wakes the CPU), and a sleep
   ends at the next interrupt, the tick's at the latest: so a sleep is at
