@@ -275,12 +275,8 @@ SRCS += \
 	uip/uip-neighbor.c \
 	uip/uip-split.c
 
-# DEBUG_OBJ=1: the debug namespace (DESIGN.md 9), for rtlsim, bench and test
-# images; release images leave it out. So far: the leds dump (the `leds`
-# command).
-DEBUG_OBJ ?=
-ifneq ($(DEBUG_OBJ),)
-CC_FLAGS += -DDEBUG_OBJ
+# OM_DBG (above): the leds dump (the `leds` command) with the other pokes
+ifneq ($(OM_DBG),0)
 SRCS += rtl837x_leds_dump.c
 endif
 OBJS = ${SRCS:%.c=$(BUILDDIR)/%.rel}

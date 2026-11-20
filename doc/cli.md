@@ -123,8 +123,9 @@ once they move:
 learned MAC entries; the table itself is `get state.l2`), and `do l2.delete K` deletes entry K. The debugging
 tools stay: `regget`, `regset`, `phyget`, `physet`, `sdsget`, `sdsset`,
 `leds`, `flash`; `sds`, `gpio` and `igmp show` are `get state.dbg` (the SerDes
-modes, the GPIO inputs, each port's IGMP_PORT_CFG, as raw words; not in an
-OM_DBG=0 image). Removed, with no command:
+modes, the GPIO inputs, each port's IGMP_PORT_CFG, as raw words). An image
+built with `OM_DBG=0` (for release) has none of them: they answer
+`Error: Unknown command`. Removed, with no command:
 `ip`, `gw`, `netmask`, `hostname`, `passwd`, `session`, `led`, `ntp ...`,
 `syslog ...`, `dns server`, `pvid`, `ingress`, `isolate`, `eee`, `mtu`,
 `port N ...`, `reset`, `health`, `history`, `time`, `version`. Use their

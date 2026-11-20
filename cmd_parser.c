@@ -54,7 +54,9 @@ extern __xdata struct uip_eth_addr uip_ethaddr;
 
 // Temporatly for str to hex convertion value.
 // Support up to 32_bits.
+#if OM_DBG
 __xdata uint8_t hexvalue[4] = { 0 };
+#endif
 
 
 // Buffer for writing to flash 0x1fd000, copy to 0x1fe000
@@ -93,6 +95,7 @@ inline uint8_t isnumber(uint8_t l)
 	return (l <= ('9'-'0'));
 }
 
+#if OM_DBG	/* the raw pokes' parsers (OM_DBG=0: release) */
 inline uint8_t ishexnumber(uint8_t l)
 {
 	if ((l >= '0' && l <= '9') || (l >= 'a' && l <= 'f') || (l >= 'A' && l <= 'F')) {
@@ -134,6 +137,7 @@ uint8_t atoi_short_hex(__xdata uint16_t *num, uint8_t idx)
 	*num = (uint16_t) temp;
 	return err;
 }
+#endif
 
 uint8_t cmd_compare(uint8_t start, __code const uint8_t * cmd)
 {
@@ -168,6 +172,7 @@ uint8_t cmd_compare(uint8_t start, __code const uint8_t * cmd)
 }
 
 
+#if OM_DBG
 /* Converts ascii-hex array into value.
 	returns number of hexvalue[] entries has been written.
 	return value = 0 means error.
@@ -228,6 +233,8 @@ uint8_t atoi_hex(uint8_t idx)
 
 // Returns 0 or the number of digits taken into account for conversion.
 // Stops at any non-digit '0'-'9' char or more than 3 bytes.
+#endif
+
 uint8_t atoi_byte(uint8_t idx)
 {
 	uint8_t cnt = 0;
@@ -508,6 +515,7 @@ void parse_mac_cmd(void)
 	print_string("Save the startup config to keep it across reboots\n");
 }
 
+#if OM_DBG
 void parse_regget(void)
 {
 	if (cmd_words_len != 2) {
@@ -877,6 +885,8 @@ void parse_flash(void)
 	}
 }
 
+#endif
+
 // Parse command into words
 // cmd_words_len contains the number of words found.
 // cmd_words_b[] contains only start of a word offset.
@@ -948,16 +958,15 @@ void cmd_parser(void) __banked
 		if (om_cmd()) {
 		} else if (cmd_compare(0, "sfp")) {
 			cmd_error("\nUsage: get state.sfp; a cage's speed: port.N.speed\n");
-		} else if (cmd_compare(0, "flash")) {
-			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
-#ifdef DEBUG_OBJ
+#if OM_DBG
+		} else if (cmd_compare(0, "flash")) {
+			parse_flash();
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
-#endif
 		} else if (cmd_compare(0, "regget")) {
 			parse_regget();
 		} else if (cmd_compare(0, "regset")) {
@@ -970,6 +979,7 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
+#endif
 		} else {
 			cmd_error("Unknown command\n");
 		}

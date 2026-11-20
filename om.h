@@ -12,6 +12,9 @@
 #ifndef OM_HELP
 #define OM_HELP		1	/* help (DESIGN.md 13); 0 compiles it out, its text too */
 #endif
+#ifndef OM_DBG
+#define OM_DBG		1	/* state.dbg and the raw pokes (DESIGN.md 9); 0: release */
+#endif
 
 /* field types (tools/om_gen.py: T) */
 #define T_BOOL		1
