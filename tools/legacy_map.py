@@ -71,7 +71,20 @@ def _n(s, lo, hi):
 
 # --- port.N
 
-row(r"pvid (\d+) (\d+)", lambda m, b, p: {f"port.{m[1]}.pvid": m[2]})
+
+
+def _pvid(m, b, p):
+    """pvid P V: the old port_pvid_set spread V over P's LAG (the hardware
+    trunk), as of this line; a later lag line doesn't spread again."""
+    P = int(m[1])
+    for k in range(1, 5):
+        mem = _ports_of(p, f"lag.{k}.members")
+        if p.get(f"lag.{k}.mode", "off") != "off" and P in mem:
+            return {f"port.{n}.pvid": m[2] for n in sorted(set(mem))}
+    return {f"port.{P}.pvid": m[2]}
+
+
+row(r"pvid (\d+) (\d+)", _pvid)
 row(r"mtu (\d+) (\d+)", lambda m, b, p: {f"port.{m[1]}.mtu": m[2]})
 row(r"port (\d+) name (\S.*)", lambda m, b, p: {f"port.{m[1]}.name": "".join(map(name_char, m[2]))[:31]})
 row(r"port (\d+) lldp (block|permit)", lambda m, b, p: {f"port.{m[1]}.lldp": m[2]})
@@ -358,8 +371,25 @@ def convert(data, board, warn=None, sch=None):
                 continue
         _take(seen, out)
         _take(vals, out)
+    if warn is not None:
+        warn += _lag_pvids(seen)
     lines = ["del %s" % p if v is DEL else "%s %s" % (p, v) for p, v in vals.items()]
     return lines, legacy, bad
+
+
+def _lag_pvids(p):
+    """The new firmware refuses a LAG whose members' pvids differ (a member
+    that joined after its pvid line): say which."""
+    out = []
+    for k in range(1, 5):
+        mem = sorted(set(_ports_of(p, f"lag.{k}.members")))
+        if p.get(f"lag.{k}.mode", "off") == "off" or not mem:
+            continue
+        pv = {n: p.get(f"port.{n}.pvid", "1") for n in mem}
+        if len(set(pv.values())) > 1:
+            out.append("lag.%d: its members' pvids differ (%s): the new firmware refuses it" % (
+                k, ", ".join("%d: %s" % (n, v) for n, v in pv.items())))
+    return out
 
 
 def _take(vals, out):

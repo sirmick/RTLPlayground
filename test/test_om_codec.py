@@ -192,6 +192,17 @@ def convert():
     check(lines == ["web.session_timeout_s 60"] and len(warn) == 1 and "raised to 60" in warn[0],
           "a session under 60 is raised to 60, with a warning", (lines, warn))
     check(bad == ["passwd a b", 'passwd a"b', "passwd a\\b"], "a passwd with a space or quote isn't translated", bad)
+    print("pvid on a LAG member: spread over the LAG, as the old port_pvid_set did")
+    for text, want, w in ((b"lag 1 2 4\npvid 2 7\n", ["port.2.pvid 7", "port.4.pvid 7"], 0),
+                          (b"lag 1 lacp 2 4\npvid 4 7\n", ["port.2.pvid 7", "port.4.pvid 7"], 0),
+                          (b"lag 1 2 4\nlag 1 d\npvid 2 7\n", ["port.2.pvid 7"], 0),
+                          (b"pvid 2 7\nlag 1 2 4\n", ["port.2.pvid 7"], 1),
+                          (b"lag 1 2 4\npvid 2 7\nlag 1 2 4 6\n", ["port.2.pvid 7", "port.4.pvid 7"], 1)):
+        warn = []
+        lines, _, _ = legacy_map.convert(text, rc.Board(), warn)
+        got = [ln for ln in lines if ".pvid " in ln]
+        check(got == want and len(warn) == w and all("lag.1: its members' pvids differ" in x for x in warn),
+              "%r: %s%s" % (text.decode(), " ".join(want), ", warned" if w else ""), (got, warn))
     print("convert against the schema: path lines, legacy, refused")
     sch = p41_schema()
     warn = []
