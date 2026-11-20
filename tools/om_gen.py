@@ -74,7 +74,11 @@ def _words(name, words):
     return w
 
 
-def Enum(name, words):
+def Enum(name, words=None):
+    """words=None: an enum another schema file declares (state.sched's, from
+    the scheduler's generator), for a state field; resolved once all are read."""
+    if words is None:
+        return Type("ENUM", "uint8_t", 1, enum=name)
     w = _words(name, words)
     return Type("ENUM", "uint8_t", 1, 0, len(w) - 1, words=w, enum=name)
 
@@ -306,6 +310,12 @@ def load_schema(dirs):
             for n in vals:
                 if n not in [f.cname for f in o.fields]:
                     raise SystemExit("%s: default entry sets no field %s" % (o.regname, n))
+        for f in o.fields:
+            if f.typ.code == "ENUM" and f.typ.words is None:
+                if o.state is False:
+                    raise SystemExit("%s.%s: Enum(%r) without words in a config object" % (o.regname, f.name, f.typ.enum))
+                if f.typ.enum not in SCHEMA["enums"]:
+                    raise SystemExit("%s.%s: Enum(%r) is declared nowhere" % (o.regname, f.name, f.typ.enum))
         dv = [f.name for f in o.fields if f.derived]
         if bool(dv) != bool(o.derive):
             raise SystemExit("%s: derive= and derived fields go together" % o.regname)

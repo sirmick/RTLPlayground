@@ -35,12 +35,14 @@ st("button", Bool, tip="The reset button is held")
 
 state("sys.reset", get="om_get_sys_reset")
 st("cause", Enum("rcause", "power watchdog ctrl_r cmd update web button factory"))
-st("slot", Str(11))
-st("state", Str(11))
+# the scheduler's words (state_sched.py, generated with the build)
+st("slot", Enum("sslotn"), tip="none: the reset came before the scheduler, or from another image")
+st("state", Enum("sstate"))
 st("step_ms", U16())
 st("pc", U16(), tip="0: not from an interrupt")
 st("bank", U8())
-st("states", Str(95), tip="The last 8 states run, oldest first")
+for n in "12345678":
+    st("states.%s" % n, Enum("sstate"), tip="The last 8 states run, oldest first")
 
 # state.loader (DESIGN.md 7.12): the rest of it with P5-3
 state("loader", get="om_get_loader")

@@ -23,7 +23,7 @@ static inline int    t_strcmp(const char *a, const char *b) {
 }
 
 /* ---- captured terminal output (what the firmware would send over serial) ---- */
-extern char     out_buf[8192];
+extern char     out_buf[32768];
 extern size_t   out_len;
 void            out_reset(void);
 

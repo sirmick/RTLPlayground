@@ -16,7 +16,9 @@
 #include "con_ring.h"
 #include "crash.h"
 #include "build_id.h"
+#ifndef SCHED_SWEEP	/* the sweep runs before om_gen.h (it takes these tasks' rows) */
 #include "om_gen.h"
+#endif
 
 static int tests_run, tests_failed;
 #define CHECK(cond, msg) do { \
@@ -446,8 +448,6 @@ union om_st om_st;
 
 static void test_crash(void)
 {
-	size_t n;
-
 	printf("watchdog and crash record\n");
 	memset((void *)&crash_rec, 0xa5, sizeof(crash_rec));	/* power-on garbage */
 	out_reset();
@@ -486,17 +486,16 @@ static void test_crash(void)
 	CHECK(out_len == 0 && crash_last.magic == CRASH_MAGIC, "boot keeps it, printing nothing (state.sys.reset shows it)");
 	CHECK(crash_rec.magic != CRASH_MAGIC && crash_prior == 1, "and consumes it; one recorded reset before this boot");
 	om_get_sys_reset(0);
-	CHECK(R.cause == CRASH_SWDT && !strcmp(R.slot, "w") && !strcmp(R.state, "W_STEP") &&
+	CHECK(R.cause == CRASH_SWDT && R.slot == E_SSLOTN_W && R.state == E_SSTATE_W_STEP &&
 	      R.step_ms == 5000 && R.pc == 0x1234 && R.bank == 2,
 	      "state.sys.reset: the record kept, as get prints it");
-	n = strlen(R.states);
-	CHECK(n > 14 && !strcmp(R.states + n - 13, "B_STEP W_STEP") && R.states[0] != ' ',
-	      "state.sys.reset.states: eight, oldest first");
+	CHECK(R.states_7 == E_SSTATE_B_STEP && R.states_8 == E_SSTATE_W_STEP,
+	      "state.sys.reset.states.1-8: eight, oldest first");
 	out_reset();
 	crash_boot();
 	CHECK(out_len == 0, "a second boot prints nothing");
 	om_get_sys_reset(0);
-	CHECK(R.cause == E_RCAUSE_POWER && !R.slot[0] && !R.states[0], "no record: cause power, the rest empty");
+	CHECK(R.cause == E_RCAUSE_POWER && R.slot == E_SSLOTN_NONE && !R.states_1, "no record: cause power, the rest empty");
 
 	crash_prior = 1;
 	if (!setjmp(reset_jmp))
@@ -529,8 +528,8 @@ static void test_crash(void)
 	CHECK(crash_last.magic == CRASH_MAGIC && crash_last.cause == CRASH_UPDATE && crash_last.slot == 0xff,
 	      "an update's record from another image: kept, without its slot and states");
 	om_get_sys_reset(0);
-	CHECK(R.cause == E_RCAUSE_UPDATE && !strcmp(R.slot, "-") && !strcmp(R.state, "-") && R.pc == 0 &&
-	      !strcmp(R.states, "- - - - - - - -") && R.step_ms == 0 && R.bank == 0,
+	CHECK(R.cause == E_RCAUSE_UPDATE && R.slot == E_SSLOTN_NONE && R.state == E_SSTATE_NONE && R.pc == 0 &&
+	      !(R.states_1 | R.states_2 | R.states_3 | R.states_4 | R.states_5 | R.states_6 | R.states_7 | R.states_8) && R.step_ms == 0 && R.bank == 0,
 	      "state.sys.reset: cause update; no slot, states, step time, PC or bank");
 	CHECK(crash_rec.slot == 0xff && crash_rec.state == 0 && crash_rec.ring_idx == 0 && crash_rec.step_tick == 0,
 	      "after the boot the live notes are blank: a reset before the scheduler records no step");

@@ -1,9 +1,9 @@
 /*
  * sched_health.c - the scheduler's state for the object model (state.sched,
  * do sched.clear), the crash record at boot and as state.sys.reset; and
- * schedtest's `health tasks` printer. Banked: it reads state_name, slot_name
- * and state_task directly, so place_banks.py puts it in the bank with
- * sched_gen_names.c and sched_gen_tasks.c.
+ * schedtest's `health tasks` printer. Banked: it reads state_task (and, in
+ * schedtest, state_name and slot_name) directly, so place_banks.py puts it
+ * in the bank with sched_gen_tasks.c (and sched_gen_names.c).
  */
 #include <8051.h>
 #include <stdint.h>
@@ -246,15 +246,9 @@ out:
 }
 
 /* state.sys.reset (schema/state_sys.py): the record crash_boot kept; none,
- * cause power. The names are copied here, beside their tables. */
+ * cause power. Numbers: get prints the slot and state names. */
 #define R	om_st.sys_reset
 
-static void put(__code const char *s)
-{
-	while (*s)
-		*dp++ = *s++;
-	*dp = 0;
-}
 
 /* state.sched (the rows tools/sched_gen.py --om writes): numbers only, get
  * prints the slot, state and task names from the object model's tables */
@@ -334,23 +328,15 @@ uint8_t om_get_sys_reset(uint8_t idx) __banked
 	if (crash_last.magic != CRASH_MAGIC)
 		return OM_OK;
 	R.cause = crash_last.cause;
-	ps = crash_last.slot;
-	dp = (__xdata uint8_t *)R.slot;
-	put(ps < SCHED_SLOTS ? slot_name[ps] : "-");
-	ps = crash_last.state;
-	dp = (__xdata uint8_t *)R.state;
-	put(ps < S_COUNT ? state_name[ps] : "?");
+	R.slot = crash_last.slot + 1;		/* sslotn: none (0xff), then the slots */
+	R.state = crash_last.state;		/* sstate: none (S_NONE), then the states */
 	u = crash_last.tick - crash_last.step_tick;
 	R.step_ms = u < 13107 ? u * SCHED_TICK_MS : 65535;
 	R.pc = crash_last.pc;
 	R.bank = crash_last.bank;
-	dp = (__xdata uint8_t *)R.states;
-	for (i = 0; i < 8; i++) {		/* oldest first */
-		if (i)
-			put(" ");
-		ps = crash_last.ring[(crash_last.ring_idx + i) & 7];
-		put(ps < S_COUNT ? state_name[ps] : "?");
-	}
+	dp = &R.states_1;			/* oldest first */
+	for (i = 0; i < 8; i++)
+		dp[i] = crash_last.ring[(crash_last.ring_idx + i) & 7];
 	return OM_OK;
 }
 

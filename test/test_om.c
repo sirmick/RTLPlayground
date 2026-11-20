@@ -142,8 +142,9 @@ uint8_t om_get_sys_reset(uint8_t idx)
 {
 	memset(&om_st.sys_reset, 0, sizeof(om_st.sys_reset));
 	om_st.sys_reset.cause = E_RCAUSE_WEB;
-	strcpy(om_st.sys_reset.slot, "cli");
-	strcpy(om_st.sys_reset.states, "CLI_RUN CLI_NEXT");
+	om_st.sys_reset.slot = E_SSLOTN_B;		/* test_sched.c's tasks: a, b, w */
+	om_st.sys_reset.states_7 = E_SSTATE_A_STEP;
+	om_st.sys_reset.states_8 = E_SSTATE_B_STEP;
 	return OM_OK;
 }
 
@@ -163,6 +164,20 @@ static int sched_clears;
 uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
 uint8_t om_get_con(uint8_t idx) { memset(&om_st.con, 0, sizeof(om_st.con)); om_st.con.tx_free = 2047; return OM_OK; }
 uint8_t om_do_sched_clear(uint8_t idx) { sched_clears++; return OM_OK; }
+/* state.sched (sched_health.c): the rows are test_sched.c's tasks' */
+uint8_t om_get_sched(uint8_t idx) { memset(&om_st.sched, 0, sizeof(om_st.sched)); om_st.sched.slots = 8; return OM_OK; }
+uint8_t om_get_sched_slot(uint8_t idx)
+{
+	memset(&om_st.sched_slot, 0, sizeof(om_st.sched_slot));
+	if (idx == 0) {
+		om_st.sched_slot.task = E_STASK_A;
+		om_st.sched_slot.state = E_SSTATE_A_STEP;
+		om_st.sched_slot.mask = 0x82;
+	}
+	return OM_OK;
+}
+uint8_t om_get_sched_state(uint8_t idx) { om_st.sched_state.runs = idx; om_st.sched_state.max_us = 402640; return OM_OK; }
+uint8_t om_get_sched_task(uint8_t idx) { om_st.sched_task.max_us = 10 + idx; return OM_OK; }
 
 /* the test schema's (om_schema/t.py) */
 static int t_sys, t_rnd, t_lag[4], t_stpp[OM_PORTS], t_storm[OM_PORTS * 4], t_vlan;
@@ -385,7 +400,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: port.* sched sys tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.sys\nstate.sys.reset\nstate.loader\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -596,9 +611,18 @@ static void kinds(void)
 	expect("get state.sys.uptime_s state.sys.temp_c state.sys.flash.size state.sys.poe",
 	       "state.sys.uptime_s 70000\nstate.sys.temp_c 41.5\nstate.sys.flash.size 2097152\n"
 	       "state.sys.poe none\nok\n");
-	expect("get state.sys.reset", "state.sys.reset.cause web\nstate.sys.reset.slot cli\n"
-	       "state.sys.reset.state \nstate.sys.reset.step_ms 0\nstate.sys.reset.pc 0\n"
-	       "state.sys.reset.bank 0\nstate.sys.reset.states CLI_RUN CLI_NEXT\nok\n");
+	expect("get state.sys.reset", "state.sys.reset.cause web\nstate.sys.reset.slot b\n"
+	       "state.sys.reset.state none\nstate.sys.reset.step_ms 0\nstate.sys.reset.pc 0\n"
+	       "state.sys.reset.bank 0\nstate.sys.reset.states.1 none\nstate.sys.reset.states.2 none\n"
+	       "state.sys.reset.states.3 none\nstate.sys.reset.states.4 none\nstate.sys.reset.states.5 none\n"
+	       "state.sys.reset.states.6 none\nstate.sys.reset.states.7 A_STEP\nstate.sys.reset.states.8 B_STEP\nok\n");
+	expect("get state.sched.slot.a", "state.sched.slot.a.task a\nstate.sched.slot.a.state A_STEP\n"
+	       "state.sched.slot.a.mask link,forever\nstate.sched.slot.a.wake 0\nstate.sched.slot.a.arg 0\nok\n");
+	expect("get state.sched.slot.job0.state", "state.sched.slot.job0.state none\nok\n");
+	expect("get state.sched.state.B_STEP", "state.sched.state.B_STEP.runs 1\nstate.sched.state.B_STEP.max_us 402640\nok\n");
+	expect("get state.sched.task.w", "state.sched.task.w.max_us 12\nok\n");
+	expect("get state.sched.slot.nope", "err state.sched.slot.nope: a b w job0 job1 job2 job3 job4\n");
+	expect("set state.sched.slots 3", "err state.sched.slots: read only\n");
 	expect("get state.loader", "state.loader.present on\nok\n");
 	expect("get state.health", "state.health.hw_timeouts 2\nstate.health.hw_timeout_reg 0\n"
 	       "state.health.stack_headroom 40\nok\n");
@@ -746,7 +770,8 @@ static void kinds(void)
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
 		      strstr(o, "state.cfg.confirm_s 0\nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.sys.version ") &&
-		      strstr(o, "state.sys.reset.states CLI_RUN CLI_NEXT\nstate.loader.present on\nstate.tsys.bridge ") &&
+		      strstr(o, "state.sys.reset.states.8 B_STEP\nstate.loader.present on\nstate.sched.passes ") &&
+		      strstr(o, "state.sched.task.j.max_us 13\nstate.tsys.bridge ") &&
 		      status_ok(o) && !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state: the whole state tree");
 	}
 }
