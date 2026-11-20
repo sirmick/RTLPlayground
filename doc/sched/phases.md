@@ -1,59 +1,65 @@
 # 15. Phases
 
-The wash plan (`.wash/plan.toml`) mirrors this. Each package has a "done
-when" that a reviewer checks before it is accepted.
+The wash plan (`.wash/plan.toml`) mirrors this. Each package had a "done
+when" that a reviewer checked before it was accepted; its evidence file
+gives the commands and results. M1, M2 and M3 are done; M4 is in progress.
 
-## M1: simulator + scheduler test image + silicon bring-up
+## M1: simulator + scheduler test image + silicon bring-up (done)
 
-| Pkg | Repo | Work | Needs | Done when |
-|---|---|---|---|---|
-| A0 | both | branches; baselines: every ovs-rtlpg test, RTLPlayground host tests, the 8x image's boot transcript in the sim | - | baselines recorded in `doc/sched/baseline/` |
-| A1 | ovs-rtlpg | control socket, test-driven clock, `rtlsim_ctl.py` (ch. 13) | A0 | a test boots the 8x image, runs until the prompt, peeks a symbol; two runs give byte-identical stamped transcripts |
-| A2 | ovs-rtlpg | UART at baud rate | A1 | `bench` in the sim ~87 µs/char; an unread 16 B ring overflows on a paste |
-| A3 | ovs-rtlpg | flash busy: timings, 0xFF reads, fetch checker | A1 | the jump-into-bank-during-erase program is flagged; the correct one isn't |
-| A4 | ovs-rtlpg | coverage + `cov_report.py` | A1 | a boot's function list; two runs diff clean |
-| A5 | ovs-rtlpg | regression | A2, A3, A4 | every existing test passes; boot transcript matches the baseline in content |
-| B1 | RTLPlayground | generator + `.def` format + host tests | A0 | host tests pass incl. broken specs; the 3-byte table question (C or asm) settled |
-| B2 | RTLPlayground | scheduler core, rings, swdt, crash record, `health tasks` + host tests | A0 | host tests pass; core compiles into HOME within budget |
-| B3 | RTLPlayground | `make schedtest`, dummy tasks across all banks | B1, B2 | builds; the resource report printed |
-| B4 | both | sim tests for the schedtest image (ch. 14 layer 2) | B3, A2, A3, A4 | all pass, deterministic, < 2 min wall |
-| B5 | both | negative tests | B4 | each fails exactly as intended |
-| B6 | RTLPlayground | resource gate | B3 | gate runs in the test target with a baseline |
-| C | bench | schedtest on the 8x; record flash-busy garbage values; match the sim | B4, B5 | timing within the sim's bounds; crash record survives the reset; findings in `doc/sched/silicon.md` |
+| Pkg | Repo | What was done | Evidence |
+|---|---|---|---|
+| A0 | both | branches; baselines: every ovs-rtlpg test, the host tests, the 8x image's boot transcript, resources | `baseline/` |
+| A1 | ovs-rtlpg | the control socket, the test-driven clock, `rtlsim_ctl.py`: deterministic runs | ovs-rtlpg 4afe1d0 .. cc6d513 |
+| A2 | ovs-rtlpg | the UART at its baud rate | ovs-rtlpg 6d8d57d, e614896 |
+| A3 | ovs-rtlpg | the flash busy model and the fetch checker | ovs-rtlpg 0ce53de, 07c6457, 224393b |
+| A4 | ovs-rtlpg | coverage and `cov_report.py` | ovs-rtlpg 1de392d, 7ed1d8e |
+| A5 | ovs-rtlpg | regression: every existing test passes, the boot transcript as the baseline | `baseline/a5-regression.txt` |
+| B1 | RTLPlayground | the generator, the `.def` format, host tests; the 3-byte table is C (decision 16) | `evidence/o1-bank-byte.txt` |
+| B2 | RTLPlayground | the core, the rings, the watchdog, the crash record, `health tasks`; the resident/banked split | `evidence/b2-resources.txt` |
+| B3 | RTLPlayground | `make schedtest`, dummies in every bank (decision 17) | `evidence/b3-schedtest.txt` |
+| B4 | both | the sim tests for schedtest: all pass, deterministic | `evidence/b4-sim-tests.txt` |
+| B5 | both | the negative tests, each failing as intended | `evidence/b5-neg-tests.txt` |
+| B6 | RTLPlayground | the resource gate | `evidence/b6-gate.txt` |
+| C | bench | schedtest on the 8x: timing as in the sim, the record survives, the bank window reads 0x00, the early-reset hang; schedtest then runs the firmware's own init | `silicon.md`, `evidence/c-firmware-init.txt` |
 
-## M2 (D): foundation on the real firmware, no behaviour change
+## M2 (D): the scheduler in the real firmware, no behaviour change (done)
 
-D0 sim P1 (NIC ring, LACP partner) + the old-vs-new harness + reference
-scenarios; D1 UART rings; D2 today's loop phases become fixed tasks; D3
-control-frame TX buffer, web command buffer, one cli task.
+| Pkg | What was done | Evidence |
+|---|---|---|
+| D0a | sim: the NIC RX ring's capacity and drops, an LACP partner, MAC learning | ovs-rtlpg ceb7e0a, fa7c7ed, b24a643 |
+| D0b | the old-vs-new harness and the reference scenarios | ovs-rtlpg 2f3b6dd .. bb0ee65, 307c230 |
+| D1 | the UART rings in the firmware: RX 256 B, TX ring, drain before reset; old-vs-new 13/13 with explained differences | `evidence/d1-uart-rings.txt`, `d1-oldnew.expect` |
+| D2 | the main loop's phases as fixed tasks (`tasks.def` then); the old loop's long steps listed, each with an owner | `evidence/d2-tasks.txt`, `d2-oldnew.expect` |
+| D3 | `ctl_buf` for control frames, the console's own line, one cli task, the web command in `config_buf`; U2 and U4 fixed | `evidence/d3-console-net.txt`, `d3-oldnew.expect` |
+| DB | bench: the M2 firmware on the 8x; found HOUSE_SEC's 40 ms and the foreign crash record | `silicon.md` |
 
-For D2: schedtest's bank 3 has 28 B free (5 B in the overrun variant), so
-M2 must move code.
+## M3 (E): break up the blockers (done)
 
-Carried from B2's review, for D1 and the crash line (done in D1):
-- `con_putc()` waits on a full TX ring for the ISR to drain it; with EA or
-  ES off the ISR can't, so the wait polls TI and sends the next byte itself:
-  it never hangs, and the `if (EA)` debug prints are safe either way. It
-  leaves ES as it found it.
-- `crash_boot()`'s line can be longer than the 127 free bytes of the TX
-  ring: it is printed with interrupts on (schedtest_main), and a full ring
-  only waits, polled if need be.
+| Pkg | What was done | Evidence |
+|---|---|---|
+| E0 | M2's leftovers: the crash record carries the image's identity; HOUSE_SEC traced to the boot-count erase | `evidence/e0-leftovers.txt` |
+| E1 | cli jobs for the long dumps, the 2 KiB TX ring (decision 21), the web `/cmd` a line a step | `evidence/e1-chunked-cli.txt`, `e1-oldnew.expect` |
+| E2 | SFP slot tasks, a transaction a step, and the DDM cache | `evidence/e2-sfp.txt`, `e2-oldnew.expect` |
+| E3 | the flash job: upload, config save, factory reset, the boot count; the window stage (decision 20); U9 | `evidence/e3-flash-job.txt`, `e3-oldnew.expect`, `e3-known`; merged with E1: `e1e3-merge.txt`, `e1e3-oldnew.expect` |
+| E4 | hardware-poll timeouts, `eee` as a cli job, the VLAN bitmap; U10 | `evidence/e4-polls-vlan-eee.txt`, `e4-oldnew.expect` |
+| EH | the harness's new-only checks and `known-failures` (ovs-rtlpg) | ovs-rtlpg d3d1843, 9020430 .. 83efa85 |
+| E5 | the explicit step API: steps return their state (22), direct wakes and an 8-bit hardware mask (23), inline `TASK`/`STEP` (24) | `evidence/e5-step-api.txt` |
+| ES | code space measured; SDCC's loop optimizations off per file (Michael's choice) | `evidence/es-code-space.txt`, `es-loop-flags.txt` |
+| EB | bench: the M3 firmware on the 8x; found the slower upload and the 18 ms config-POST step | `silicon.md` |
 
-## M3 (E): break up the blockers
+## M4 (F): validation (in progress)
 
-E1 chunked CLI dumps; E2 SFP slot tasks + DDM cache; E3 flash job for
-upload, config, factory reset; E4 hardware-poll timeouts, `eee` waits, VLAN
-bitmap.
-
-## M4 (F): validation
-
-F1 the full acceptance suite + old-vs-new on every reference scenario; F2
-bring-up on the 8x, then the 4+2 (RTL8372, web only); F3 a 24 h bench soak;
-F4 the estate in rollout order (switch A or switch B first; switch C and switch D
-only when very sure).
+| Pkg | Work | Needs |
+|---|---|---|
+| F1 | full acceptance in the sim, both boards: old-vs-new on all 17 scenarios with the final expect file; the new-only checks; no step > 20 ms but `FL_ERASE` (`known-failures` shrunk to what's left, each with its owner); a 500-character paste; the gate; coverage ⊇ the old build's by function, minus the replaced; a 10-minute schedtest soak. One report: `evidence/f1-acceptance.txt` | - |
+| F1b | EB's follow-ups in the sim and the firmware: upload speed (per-segment timing; more than one MSS of window if the stage has room, O9); the 18 ms RX_STEP while a config POST arrives, split under 5 ms; a sim test bounding the boot when `vlan_setup`'s table scan is stuck | - |
+| F2 | bench: LACP on the 8x against a Linux bond (aggregate, fast timeout, member flap, `l2` of 1000 MACs and an upload during it); the L2 flush and `SFP_CONFIG` on silicon; upload timing per segment. Then the 4+2 (RTL8372, web only), only with Michael's go | F1, F1b |
+| F3 | a 24 h soak on the 8x: no watchdog reset or crash record, no LACP member lost, no overruns but `FL_ERASE`, no hw timeouts, stack headroom ≥ 30 B | F2 |
+| F4 | the estate, in Michael's rollout order, each switch with his go: a config backup, the install image, a watch period, the way back ready | F3 |
+| FB | this book, from plan to as built | - |
 
 ## Independent of the phases
 
-Bugs found by the audit, each a small PR with a sim test: the shared console
-and web command buffer (also fixed by D3), the CRC routine leaving `PSBANK` at
-1, the health phase-ID clash.
+Bugs found on the way, each a small upstream PR when Michael says:
+upstream-bugs.md. The audit's CRC routine leaving `PSBANK` at 1 (U5) was
+already fixed on fork main (67d09dd, in 612116e).
