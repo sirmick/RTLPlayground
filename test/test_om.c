@@ -165,6 +165,7 @@ static struct cfg_syslog syslog_new;
 uint8_t om_apply_syslog(uint8_t idx) { t_syslog++; syslog_new = cfg_run.syslog; return OM_OK; }
 static int t_dns, t_ntp, t_web, t_mgmt, t_renew, t_sysa;
 uint8_t om_apply_sys(uint8_t idx) { t_sysa++; return OM_OK; }
+uint8_t om_check_sys(uint8_t idx) { if (strchr(cfg_cand.sys.hostname, ' ')) { om_fail(OM_E_HOSTNAME_SPACE); return OM_ERR; } return OM_OK; }
 uint8_t om_derive_sys(uint8_t idx) { strcpy((char *)om_val, "RTLPlayground-0a0b0c"); return OM_OK; }
 uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
@@ -1313,6 +1314,10 @@ static void services(void)
 	printf("services\n");
 	om_init();
 	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nok\n");
+	expect("set sys.led ports_off", "ok\n");
+	expect("set sys.hostname lab 1", "ok\n");
+	expect("apply", "err sys: sys.hostname: no space\n");
+	expect("discard", "ok\n");
 	expect("set sys.led ports_off", "ok\n");
 	expect("set sys.hostname lab1", "ok\n");
 	t_sysa = 0;

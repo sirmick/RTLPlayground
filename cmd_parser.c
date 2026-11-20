@@ -674,6 +674,12 @@ void parse_vlan(void)
 			goto err;
 		vlan_settings.vlan = atoi_results_short;
 
+		/* the management VLAN is mgmt.vlan now: not a name, the VLAN untouched */
+		if (cmd_compare(2, "mgmt")) {
+			cmd_error("set mgmt.vlan\n");
+			return;
+		}
+
 		// Other commands vlan 0 is invalid
 		if (!vlan_settings.vlan)
 			goto err;

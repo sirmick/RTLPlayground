@@ -7,6 +7,7 @@ cfg("mode", Enum("mgmtmode", "static dhcp"), "static", tip="A fixed address, or 
 cfg("ip", IPv4, "192.168.2.2", tip="The address, in static mode")
 cfg("netmask", Mask4, "255.255.255.0", tip="The subnet mask, in static mode")
 cfg("gateway", IPv4, "192.168.2.22", tip="The default gateway, in static mode")
+# mgmt.vlan has no check yet (DESIGN 6.3: the VLAN exists and has the CPU); it comes with vlan (P4-2)
 cfg("vlan", U16(0, 4094), 1, tip="The VLAN the switch answers on; 0: any")
 action("dhcp_renew", "om_do_mgmt_dhcp_renew", tip="Ask the DHCP server again")
 message("mgmt_static", "mgmt.mode is static")

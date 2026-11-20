@@ -47,6 +47,18 @@ static __xdata uint8_t * __xdata dp;
 #define S	om_st.sys
 #define UP	((__xdata uint8_t *)&om_st.sys.uptime_s)
 
+/* sys.hostname: one word (DHCP option 12, LLDP's system name) */
+uint8_t om_check_sys(uint8_t idx) __banked
+{
+	(void)idx;
+	for (l = 0; l < sizeof(cfg_cand.sys.hostname); l++)
+		if (cfg_cand.sys.hostname[l] == ' ') {
+			om_fail(OM_E_HOSTNAME_SPACE);
+			return OM_ERR;
+		}
+	return OM_OK;
+}
+
 uint8_t om_apply_sys(uint8_t idx) __banked
 {
 	(void)idx;
