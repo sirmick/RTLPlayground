@@ -841,20 +841,9 @@ void parse_sfp(void)
 {
 	uint8_t slot;
 
-	if (cmd_words_len != 1 && cmd_words_len != 3)
+	if (cmd_words_len != 3)		/* the modules: get state.sfp */
 		goto err;
 
-	if (cmd_words_len == 1) {
-		for (slot = 0; slot < machine.n_sfp; slot++) {
-			print_string("\nSlot "); write_char('1' + slot);
-			if (gpio_pin_test(machine.sfp_port[slot].pin_detect)) {
-				print_string(" - empty\n");
-				continue;
-			}
-			sfp_print(slot);
-		}
-		return;
-	}
 	uint8_t idx = cmd_words_b[1];
 	uint8_t ret = atoi_byte(idx);
 	idx += ret;
@@ -890,7 +879,7 @@ void parse_sfp(void)
 	sfp_pins(slot);
 	return;
 err:
-	cmd_error("\nUsage:\n\tsfp\n\tsfp [1|2] [1g|2g5|10g]\n");
+	cmd_error("\nUsage:\n\tsfp [1|2] [1g|2g5|10g|100m|auto]\n\t(the modules: get state.sfp)\n");
 }
 
 

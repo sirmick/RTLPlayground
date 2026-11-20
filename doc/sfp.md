@@ -105,3 +105,18 @@ apart, solder wires to the pins of the on-board PCB which are then routed back t
 the end of the module. By pulling e.g. TX-Fault low while printing out the GPIOs, the
 correct GPIO can be identified.
 
+## The module's state
+
+`get state.sfp` (or `state.sfp.S`, S the cage 1-2) shows what the sfp task
+holds; it never reads the module itself. `present`, `los` (none: the cage
+has no LOS pin), `ready`, `id_ok` and `ddm_ok`; the EEPROM's `vendor`,
+`part`, `rev`, `serial`, `encoding` and `rate_mbps` as read at insertion;
+`options` (after the quirks) and `quirks`. The diagnostics, from the last
+poll (every 2 s), are SFF-8472's raw words: `ddm.vcc_v`, `ddm.tx_power_mw`
+and `ddm.rx_power_mw` in their units, `ddm.temp` in 1/256 C (signed) and
+`ddm.tx_bias` in 2 uA, `ddm.laser` as the module means it and `ddm.status`
+as flags. A module that wants external calibration has its 40 calibration
+bytes (184-223) in `ddm.cal`, in hex, and its values are then uncalibrated:
+the web UI applies the calibration and works out dBm.
+
+`sfp <1|2> <10g|2g5|1g|100m|auto>` sets a cage's speed.

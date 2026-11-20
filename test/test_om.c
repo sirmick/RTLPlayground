@@ -310,6 +310,22 @@ uint8_t om_get_lacp_port(uint8_t idx)
 	om_st.lacp_port.rx_state = 4;
 	return OM_OK;
 }
+/* state.sfp (sfp.c) */
+uint8_t om_get_sfp(uint8_t idx)
+{
+	memset(&om_st.sfp, 0, sizeof(om_st.sfp));
+	if (idx)
+		return OM_OK;
+	om_st.sfp.present = om_st.sfp.ready = om_st.sfp.id_ok = om_st.sfp.ddm_ok = 1;
+	om_st.sfp.los = 2;
+	strcpy((char *)om_st.sfp.vendor, "RTLSIM");
+	om_st.sfp.rate_mbps = 10300;
+	om_st.sfp.ddm_temp = 0x1880;
+	om_st.sfp.ddm_vcc_v = 33000;
+	om_st.sfp.ddm_rx_power_mw = 5012;
+	om_st.sfp.ddm_status = 0x82;
+	return OM_OK;
+}
 /* state.sched (sched_health.c): the rows are test_sched.c's tasks' */
 uint8_t om_get_sched(uint8_t idx) { memset(&om_st.sched, 0, sizeof(om_st.sched)); om_st.sched.slots = 8; return OM_OK; }
 uint8_t om_get_sched_slot(uint8_t idx)
@@ -548,7 +564,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -791,6 +807,14 @@ static void kinds(void)
 		CHECK(!strncmp(o, w, t_strlen(w)) && strstr(o, "state.stp.lag.4.members 1-2\nok\n"),
 		      "get state.stp: the bridge, then its ports and LAGs");
 	}
+	{
+		const char *o = run("get state.sfp.1");
+		CHECK(strstr(o, "state.sfp.1.present on\nstate.sfp.1.los none\n") && strstr(o, "state.sfp.1.vendor RTLSIM\n") &&
+		      strstr(o, "state.sfp.1.rate_mbps 10300\n") && strstr(o, "state.sfp.1.ddm.temp 6272\nstate.sfp.1.ddm.vcc_v 3.3000\n") &&
+		      strstr(o, "state.sfp.1.ddm.rx_power_mw 0.5012\n") && strstr(o, "state.sfp.1.ddm.status rx_los,tx_disable\n"),
+		      "get state.sfp.1: the module, the raw words, Scaled in their units");
+	}
+	expect("get state.sfp.2.present", "state.sfp.2.present off\nok\n");
 	expect("get state.stp.port.2", "state.stp.port.2.state fwd\nstate.stp.port.2.role root\nstate.stp.port.2.edge off\n"
 	       "state.stp.port.2.bpdu_age_ms 0\nstate.stp.port.2.rx_bpdu 70000\nstate.stp.port.2.tx_bpdu 0\n"
 	       "state.stp.port.2.rx_tc 0\nstate.stp.port.2.tx_tc 0\nok\n");

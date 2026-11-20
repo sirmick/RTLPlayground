@@ -44,22 +44,11 @@ extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 
 extern __xdata struct flash_region_t flash_region;
 
-extern __xdata char sfp_module_vendor[2][17];
-extern __xdata char sfp_module_model[2][17];
-extern __xdata char sfp_module_serial[2][17];
-extern __xdata uint8_t sfp_options[2];
-
 extern __xdata uint16_t lldp_logical_port_status;
 extern __xdata bool lldp_enabled;
 
 
 __code const char * __code const http_storm_names[STORM_TYPES] = { "bcast", "mcast", "ucast", "umcast" };
-
-static void str_x_to_html(__xdata const char *s)
-{
-	while (*s)
-		outbuf[slen++] = *s++;
-}
 
 // Convert uint8_t to ascii HEX char push on html-buffer.
 void charhex_to_html(char c)
@@ -159,17 +148,6 @@ void counter_to_html(void)
 	}
 }
 
-
-/* Diagnostics bytes reg.. (0x51, SFP_DDM_FIRST..), from the cache the sfp
- * task refreshes every 2 s; nothing until it holds this module's */
-void sfp_send_data(uint8_t slot, uint8_t reg, uint8_t len)
-{
-	if (!sfp_diag_ok[slot] || reg < SFP_DDM_FIRST || len > SFP_DDM_FIRST + SFP_DDM_LEN - reg)
-		return;
-
-	for (uint8_t i = 0; i < len; i++)
-		byte_to_html(sfp_diag[slot][reg - SFP_DDM_FIRST + i]);
-}
 
 
 void send_vlan(uint16_t vlan)
@@ -752,52 +730,7 @@ void send_ports(void)
 		if (machine.is_sfp[i]) {
 			uint8_t sfp = machine.is_sfp[i] - 1;
 			str_code_to_html("," JSONQUOTE("isSFP") ":true," JSONQUOTE("enabled") ":");
-			if (!(sfp_pins_last & (0x1 << (sfp << 2)))) {
-				bool_to_json(1);
-				str_code_to_html("," JSONQUOTE("sfp_options") ":\"0x");
-				byte_to_html(sfp_options[sfp]);
-				if (sfp_options[sfp] & 0x40) {
-					str_code_to_html("\"," JSONQUOTE("sfp_temp") ":\"0x");
-					sfp_send_data(sfp, 224, 2);
-					str_code_to_html("\"," JSONQUOTE("sfp_vcc") ":\"0x");
-					sfp_send_data(sfp, 226, 2);
-					str_code_to_html("\"," JSONQUOTE("sfp_txbias") ":\"0x");
-					sfp_send_data(sfp, 228, 2);
-					str_code_to_html("\"," JSONQUOTE("sfp_txpower") ":\"0x");
-					sfp_send_data(sfp, 230, 2);
-					str_code_to_html("\"," JSONQUOTE("sfp_rxpower") ":\"0x");
-					sfp_send_data(sfp, 232, 2);
-					if (sfp_options[sfp] & 0x10) {
-						str_code_to_html("\"," JSONQUOTE("sfp_temp_cal") ":\"0x");
-						sfp_send_data(sfp, 212, 4);
-						str_code_to_html("\"," JSONQUOTE("sfp_vcc_cal") ":\"0x");
-						sfp_send_data(sfp, 216, 4);
-						str_code_to_html("\"," JSONQUOTE("sfp_txbias_cal") ":\"0x");
-						sfp_send_data(sfp, 204, 4);
-						str_code_to_html("\"," JSONQUOTE("sfp_txpower_cal") ":\"0x");
-						sfp_send_data(sfp, 208, 4);
-						str_code_to_html("\"," JSONQUOTE("sfp_rxpower_cal") ":\"0x");
-						sfp_send_data(sfp, 184, 16);
-						sfp_send_data(sfp, 200, 4);
-					}
-					str_code_to_html("\"," JSONQUOTE("sfp_state") ":\"0x");
-					sfp_send_data(sfp, 238, 1);
-				}
-				str_code_to_html("\"," JSONQUOTE("sfp_vendor") ":\"");
-				str_x_to_html(sfp_module_vendor[sfp]);
-				str_code_to_html("\"," JSONQUOTE("sfp_model") ":\"");
-				str_x_to_html(sfp_module_model[sfp]);
-				str_code_to_html("\"," JSONQUOTE("sfp_serial") ":\"");
-				str_x_to_html(sfp_module_serial[sfp]);
-				str_code_to_html("\"," JSONQUOTE("sfp_los") ":");
-				if (machine.sfp_port[sfp].pin_los == GPIO_NA) {
-					str_code_to_html("null");
-				} else {
-					bool_to_json(sfp_pins_last & (0x2 << (sfp << 2)));
-				}
-			} else {
-				bool_to_json(0);
-			}
+			bool_to_json(~sfp_pins_last >> (sfp << 2) & 1);	/* the module: get state.sfp */
 		} else {
 			str_code_to_html("," JSONQUOTE("isSFP") ":false," JSONQUOTE("enabled") ":");
 			phy_read(i, PHY_MMD31, 0xa610);

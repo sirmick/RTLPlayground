@@ -271,7 +271,7 @@ Object representing static and LACP lags
     {"port":1,"name":"","isSFP":false,"enabled":true,"adv":["2.5G","1G","100M-FD","100M-HD","10M-HD","10M-FD"],"mtu":"0x3fff"},
     {"port":2,"name":"","isSFP":false,"enabled":true,"adv":["2.5G","1G","100M-FD","100M-HD","10M-HD","10M-FD"],"mtu":"0x3fff"},
     ...
-    {"port":9,"name":"","isSFP":true,"enabled":true,"sfp_options":"0x68","sfp_temp":"0x2640","sfp_vcc":"0x83bd","sfp_txbias":"0x0bb8","sfp_txpower":"0x1390","sfp_rxpower":"0x09c0","sfp_state":"0x02","sfp_vendor":"OEM","sfp_model":"SOD-10GT-I","sfp_serial":"A1A1A1A1A1A1","sfp_los":1,"mtu":"0x3fff"}
+    {"port":9,"name":"","isSFP":true,"enabled":true,"mtu":"0x3fff"}
 ]
 ```
 | Property | Description
@@ -279,7 +279,7 @@ Object representing static and LACP lags
 | `port` | Physical port number
 | `name` | User entered name
 | `isSFP` | Is SFP port
-| `enabled` | Is port enabled/disabled in the firmware
+| `enabled` | Is port enabled/disabled in the firmware (an SFP port: a module is in the cage; the module itself: `get state.sfp`)
 | `adv` | List of advertised link modes
 | `mtu` | Maximum Transmission Unit
 
