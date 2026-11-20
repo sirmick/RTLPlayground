@@ -100,5 +100,6 @@ the gate counts bytes, and bits stay 3.
   the resident hw_timeout(), 3b7886c) are the likely 6 B; not checked one by
   one.
 - xdata: XSEG ends 0x50f4 (XISEG to 0x5109) here; e4-polls-vlan-eee.txt
-  says "XSEG ends at 0x5ef2 with the bitmap". Not reproduced: flagged, not
-  explained.
+  says "XSEG ends at 0x5ef2 with the bitmap". That figure is from the
+  byte-map experiment (vlan_on[4096]) that E4 tried and dropped for the
+  bitmap (the orchestrator, 2026-11-20); the bitmap build ends at 0x50f4.
