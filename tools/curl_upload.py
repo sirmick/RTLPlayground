@@ -75,7 +75,7 @@ def main(argv):
     data[-1] ^= 0xff
     open(bad, "wb").write(data)
     cfg = os.path.join(tmp, "config.txt")
-    open(cfg, "w").write("hostname curlcfg\n")
+    open(cfg, "w").write("set sys.hostname curlcfg\napply\n")
     host = a.ip.rsplit(".", 1)[0] + ".11/24"
     lab = Lab(a.image, board, a.name, {"1": host}, rtlsim=os.path.join(a.ovs, "build", "rtlsim"), console=True)
     ns = lab.host_ns("1")

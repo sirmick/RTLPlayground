@@ -282,7 +282,7 @@ def main(argv):
                 f"\r\nContent-Type: multipart/form-data; boundary={bnd}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
 
     fails = []
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload, om=("state.mgmt",))
     try:
         r.boot()
         r.login()
@@ -325,7 +325,7 @@ def main(argv):
         # FIN: S1's connection holds it in LAST_ACK for a while
         r.b.advance(r.b.now + 20 * 1000000)
         ask("health clear")
-        text = "hostname flashjob\nvlan 10 " + " ".join(f"{f}" for f in r.F[1:3]) + "\n"
+        text = "set sys.hostname flashjob\napply\nvlan 10 " + " ".join(f"{f}" for f in r.F[1:3]) + "\n"
         body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
                 f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
         req = (b"POST /config HTTP/1.1\r\nCookie: session=" + r.cookie +
@@ -359,7 +359,7 @@ def main(argv):
     finally:
         r.b.close()
 
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload, om=("state.mgmt",))
     try:
         r.boot()
         r.login()
@@ -387,7 +387,7 @@ def main(argv):
             fails.append("S4")
     finally:
         r.b.close()
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload, om=("state.mgmt",))
     try:
         r.boot(slot=12000)	# the prompt at ~11 s, the confirm at ~17.6 s (sim)
         r.login(slot=1000)
@@ -421,7 +421,7 @@ def main(argv):
             fails.append("S5")
     finally:
         r.b.close()
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload, om=("state.mgmt",))
     try:
         r.boot()
         r.login()
@@ -443,7 +443,7 @@ def main(argv):
             fails.append("S6")
     finally:
         r.b.close()
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload, om=("state.mgmt",))
     try:
         r.boot(slot=12000)	# as S5: the confirm at ~17.6 s, during the preamble
         r.login(slot=1000)

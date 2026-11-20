@@ -60,7 +60,7 @@ def main(argv):
     from oldnew import Run
 
     fails = []
-    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None)
+    r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None, om=("state.mgmt",))	# its address: get state.mgmt.ip
     b = r.b
     try:
         r.boot()
@@ -71,8 +71,8 @@ def main(argv):
             before, out = b.console(line, b.now + ms * 1000)
             return out or ""
 
-        for line in (f"hostname {HOSTNAME}", f"vlan 10 tenname {F[1]} {F[2]}t",
-                     f"vlan 20 twentyname {F[2]} {F[1]}t", f"port {F[0]} name {PORTNAME}"):
+        for line in (f"set sys.hostname {HOSTNAME}", f"vlan 10 tenname {F[1]} {F[2]}t",
+                     f"vlan 20 twentyname {F[2]} {F[1]}t", f"set port.{F[0]}.name {PORTNAME}", "apply"):
             cli(line)
         r.login()
         r._now()
@@ -82,14 +82,14 @@ def main(argv):
                                b.now + 5000000)
             return (resp or b"").partition(b"\r\n\r\n")[2].decode("latin-1")
 
-        state = lambda: [vlanlist()] + [cli(c) for c in ("hostname", f"port {F[0]}")]
+        state = lambda: [vlanlist()] + [cli(c) for c in ("get sys.hostname", f"get port.{F[0]}.name")]
         before = state()
         tap = Tap()
         b.devices.append(tap)
         cli("lldp on")
         b.advance(b.now + 70 * 1000000)
         after = state()
-        version = re.search(r"Software version: (\S+)", cli("version"))
+        version = re.search(r"state\.sys\.version (\S+)", cli("get state.sys.version"))
         version = version.group(1) if version else "?"
 
         bad = []
