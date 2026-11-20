@@ -14,5 +14,6 @@
 
 void igmp_setup(void) __banked;
 uint8_t igmp_packet_handler(void) __banked;
+void igmp_show(void) __banked;
 
 #endif
