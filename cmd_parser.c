@@ -5,7 +5,6 @@
 // #define DEBUG
 // #define REGDBG 1
 
-#include "update_apply.h"
 #include <8051.h>
 #include "cmd_parser.h"
 #include "rtl837x_common.h"
@@ -1597,16 +1596,9 @@ void clear_command_history(void) __banked
 }
 
 
-#define FLASH_READ_BURST_SIZE 0x100
-
-#if CONFIG_LEN % FLASH_READ_BURST_SIZE
-	#error "CONFIG_LEN not a multiple of FLASH_READ_BURST_SIZE"
-#endif
 void execute_config(void) __banked
 {
-	__xdata uint32_t pos = CONFIG_START;
-	__xdata uint8_t pages_left;
-	__xdata uint8_t dflt = 0;	/* pos is DEFAULT_CONFIG_START (a byte: a compare costs a bit) */
+	__xdata uint8_t dflt = 0;
 
 	if (loader_recovery()) {
 		print_string("Recovery boot: using the default configuration\n");
@@ -1615,82 +1607,12 @@ void execute_config(void) __banked
 
 	save_cmd = 0;
 
-	// Coming from the standard layout, the saved config is moved to its
-	// compact place once. If the copy didn't take, keep the old one for the
-	// next try and boot on the default config.
-	if (config_migrate() == CONFIG_MOVE_FAILED)
-		dflt = 1;
-
 	// The saved config is binary records (om.c, DESIGN.md 15.3), loaded into
-	// the candidate. A blank or bad one boots on the default config and is
-	// left as it is until a save. Old command text (the saved config, or a
-	// default not yet in paths) is replayed below, as it always was, until
-	// the last object leaves the old commands (state.cfg.format legacy).
-	pages_left = om_boot_load(dflt);
-	if (pages_left == E_CFGFORMAT_BLANK || pages_left == E_CFGFORMAT_BAD) {
-		if (!dflt) {
-			dflt = 1;
-			pages_left = om_boot_load(1);
-		}
-	}
-	if (pages_left != E_CFGFORMAT_LEGACY)
-		goto config_done;
-	if (dflt)
-		pos = DEFAULT_CONFIG_START;
-	pages_left = CONFIG_LEN / FLASH_READ_BURST_SIZE;
-
-	uint8_t cmd_idx = 0;
-	uint8_t skipping = 0;
-	do {
-		flash_region.addr = pos;
-		flash_region.len = FLASH_READ_BURST_SIZE;
-		flash_read_bulk(flash_buf);
-
-		__xdata uint8_t cfg_idx = 0;
-		uint8_t c = 0;
-		do {
-			if (cmd_idx >= (CMD_BUF_SIZE - 1)) {
-				cmd_buffer[cmd_idx] = NUL;
-				print_string("ERROR: Command too long, skipped: ");
-				print_string_x(cmd_buffer);
-				write_char('\n');
-				cmd_idx = 0;
-				skipping = 1;
-			}
-			c = flash_buf[cfg_idx++];
-			/* a NUL ends the config, or erased flash: a config saved
-			 * without its NUL (older firmware) */
-			if (c == 0 || c == 0xff || c == '\n' || c == '\r') {
-				if (skipping) {
-					skipping = 0;
-				} else {
-					cmd_buffer[cmd_idx] = NUL;
-					if (cmd_idx) {
-						cmd_tokenize();
-						if (err_status == ERR_OK) {
-							cmd_parser();
-							cmd_finish();
-						}
-					}
-				}
-				if (c == 0 || c == 0xff)
-					goto config_done;
-				cmd_idx = 0;
-				continue;
-			}
-
-			if (!skipping) {
-				cmd_buffer[cmd_idx] = c;
-				cmd_idx++;
-			}
-		} while (cfg_idx);
-
-		pages_left--;
-		pos += FLASH_READ_BURST_SIZE;
-	} while(pages_left);
-
-config_done:
-	om_boot_apply();	/* the records, or the text's set lines */
+	// the candidate. Anything else (blank, bad, old command text) boots on the
+	// default config and is left as it is until a save.
+	if (om_boot_load(dflt) != E_CFGFORMAT_OK && !dflt)
+		om_boot_load(1);
+	om_boot_apply();
 	// Start saving commands to cmd_history
 	clear_command_history();
 	save_cmd = 1;

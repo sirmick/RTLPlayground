@@ -893,6 +893,9 @@ def saved_worst(objs):
     a save step can't hold them."""
     total, big = 8, (0, None)
     for o in objs:
+        sz = sum(f.typ.size for f in o.fields if f.typ.code != "ACT") + (2 if o.levels and o.levels[0][0] == "KEY" else 0)
+        if sz > 255:            # om_obj.size and om.c's code_differs() indexes are uint8
+            raise SystemExit("schema: %s is %d B, over 255 for an object" % (o.regname, sz))
         if o.state:
             continue
         inst = 4 + sum(2 + (f.typ.arg if f.typ.code in ("STR", "SECRET") else f.typ.size)

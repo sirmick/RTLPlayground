@@ -70,13 +70,13 @@ def main():
             check(False, "refused: " + bad)
         except rc.Bad as e:
             check(why in str(e), "refused: %s (%s)" % (bad, e))
-    for data, why in ((b"\xff" * 8, "blank"), (b"ip 1.2.3.4\n", "old command text"),
+    for data, why in ((b"\xff" * 8, "blank"), (b"ip 1.2.3.4\n", "bad"),
                       (b8[:6] + b"\1\0", "bad")):
         try:
             rc.bin2txt(rc.Schema(), data)
             check(False, "a sector it refuses: " + why)
         except rc.Bad as e:
-            check(why in str(e), "a sector it refuses: %s" % e)
+            check(why in str(e), "a sector it refuses: %s (%s)" % (why, e))
 
     convert()
     print("\n%d checks, %d failed" % (runs, fails))

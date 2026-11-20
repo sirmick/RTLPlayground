@@ -52,7 +52,6 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_flash_dev \
         $(BUILDDIR)/test_update_apply \
         $(BUILDDIR)/test_update_apply_compact \
-        $(BUILDDIR)/test_config_migrate \
         $(BUILDDIR)/test_mdata_migrate \
         $(BUILDDIR)/test_sched_gen \
         $(BUILDDIR)/test_sched \
@@ -184,15 +183,12 @@ $(BUILDDIR)/test_flash_dev: test_flash_dev.c flash_dev.c | $(BUILDDIR)
 # run against the modelled flash device - built for both flash layouts.
 $(BUILDDIR)/test_update_apply_compact: CFLAGS += -DLAYOUT_COMPACT
 
-# The one-time config move (compact layout) against the modelled flash.
-$(BUILDDIR)/test_config_migrate $(BUILDDIR)/test_mdata_migrate: CFLAGS += -DLAYOUT_COMPACT
-$(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/config_migrate.c $(SRCROOT)/boot0.c | $(BUILDDIR)
+# The one-time machine data move (compact layout) against the modelled flash.
+$(BUILDDIR)/test_mdata_migrate: CFLAGS += -DLAYOUT_COMPACT
+$(BUILDDIR)/test_mdata_migrate: test_mdata_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
-$(BUILDDIR)/test_config_migrate: test_config_migrate.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/config_migrate.c $(SRCROOT)/boot0.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
-	$(DEPEND)
-$(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/config_migrate.c $(SRCROOT)/boot0.c | $(BUILDDIR)
+$(BUILDDIR)/test_update_apply $(BUILDDIR)/test_update_apply_compact: test_update_apply.c update_shim.c crc16_host.c flash_dev.c $(SRCROOT)/update_apply.c $(SRCROOT)/boot0.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
 

@@ -224,7 +224,6 @@ SRCS = \
 	rtlplayground.c \
 	boot0.c \
 	update_apply.c \
-	config_migrate.c \
 	boot.c \
 	sfp.c \
 	dns.c \
@@ -421,8 +420,8 @@ $(BUILDDIR)/rtlplayground.ihx: $(BUILDDIR)/placed.stamp
 $(BUILDDIR)/rtlplayground.img: $(BUILDDIR)/rtlplayground.ihx
 	objcopy --input-target=ihex -O binary $< $@
 
-# The default config sector: binary records once the file is all paths
-# (tools/rtlpg_client.py, the schema's IDs), else its old command text
+# The default config sector: the file's path lines as binary records
+# (tools/rtlpg_client.py, the schema's IDs); old command text fails the build
 DEFAULT_CFG = $(BUILDDIR)/default.cfg
 $(DEFAULT_CFG): $(CONFIG) $(CONFIG_STAMP) tools/rtlpg_client.py tools/om_gen.py $(wildcard schema/*.py) schema/registry.txt
 	python3 tools/rtlpg_client.py --machine $(MACHINE) default "$(CONFIG)" $@

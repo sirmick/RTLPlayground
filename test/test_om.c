@@ -1450,10 +1450,10 @@ static void binary(void)
 		sec_read();
 		memcpy(before, sec, CONFIG_LEN);
 		boot();
-		expect("get state.cfg.format", "state.cfg.format legacy\nok\n");
+		expect("get state.cfg.format", "state.cfg.format bad\nok\n");
 		sec_read();
 		CHECK(cfg_is(&dflt) && !memcmp(before, sec, CONFIG_LEN), "old command text: the defaults, the sector untouched");
-		expect("load saved", "err load: bad, or old command text\n");
+		expect("load saved", "err load: bad\n");
 
 		fd_erase_sector(&fl, CONFIG_START);
 		boot();
@@ -1486,7 +1486,7 @@ static void binary(void)
 
 		fd_write(&fl, CONFIG_START, (const uint8_t *)"ip 192.168.1.1\n", 15);
 		boot();
-		expect("save", "saved over old text: unmigrated commands dropped\nok\n");
+		expect("save", "ok\n");	/* over old text: no word for it */
 		expect("get state.cfg.format", "state.cfg.format ok\nok\n");
 		fd_erase_sector(&fl, DEFAULT_CONFIG_START);
 	}
