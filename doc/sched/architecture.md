@@ -80,10 +80,16 @@ free or not-ready position costs a load and a compare.
 
 1. Return within 20 ms; aim for under 5 ms. The one exception is a sector
    erase (`FL_ERASE`).
-2. Leave shared buffers (`uip_buf`, `outbuf`, `config_buf`, `sfr_data`,
-   `cmd_buffer`, `ctl_buf`) consistent. Never hold one across steps
-   (chapter 8).
-3. No `delay()`; wait by returning with a wake time (`STEP_SLEEP`).
+2. Leave shared buffers (`uip_buf`, `sfr_data`, `cmd_buffer`, `ctl_buf`)
+   consistent, and never hold one across steps. The exception is uIP's one
+   TCP connection: a `/cmd` or an upload holds `config_buf` (and a `/cmd`
+   `outbuf`) across steps, which is safe because no other request can
+   arrive meanwhile (chapters 7, 8).
+3. No `delay()` in a step; wait by returning with a wake time
+   (`STEP_SLEEP`). The old code's `delay()`s that a step can reach were
+   taken out where measured (`eee`, chapter 9); `cmd_finish()`, which runs a
+   cli job to its end outside the scheduler (the config at boot), keeps
+   one.
 4. No 32-bit arithmetic on scheduler and step paths; locals of functions
    that call others are `static __xdata` (chapter 12).
 5. Never start a flash erase or program and return while it is busy: the
