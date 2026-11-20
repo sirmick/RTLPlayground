@@ -12,6 +12,8 @@ C1: a config save (curl -F, POST /config): 200, the console quiet.
 C2: a firmware upload whose CRC is wrong (the payload, its last byte
     flipped): written, read back, refused (400), no reset.
 C3: the payload as it is: accepted (200), then the reset.
+With --steps, C1 runs between `health clear` and `health tasks` on the
+console, and its longest RX_STEP is printed (F1b: 18.2 ms on silicon).
 For each: curl's time and upload speed, and from a capture on the host the
 segments the switch sent with a zero window, the window updates after them,
 the host's zero-window probes and retransmissions, and the longest silence
@@ -63,6 +65,8 @@ def main(argv):
     ap.add_argument("--board", default=None)
     ap.add_argument("--name", default="e3")
     ap.add_argument("--ip", default="192.168.2.2", help="the switch's address (its default config's)")
+    ap.add_argument("--steps", action="store_true", help="C1's longest RX_STEP, from health tasks")
+    ap.add_argument("--config", default=None, help="C1's configuration file (default: one hostname line)")
     a = ap.parse_args(argv)
     board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
     payload = a.payload or a.image.replace("rtlplayground-boot-", "rtlplayground-")
@@ -75,7 +79,7 @@ def main(argv):
     data[-1] ^= 0xff
     open(bad, "wb").write(data)
     cfg = os.path.join(tmp, "config.txt")
-    open(cfg, "w").write("hostname curlcfg\n")
+    open(cfg, "w").write(open(a.config).read() if a.config else "hostname curlcfg\n")
     host = a.ip.rsplit(".", 1)[0] + ".11/24"
     lab = Lab(a.image, board, a.name, {"1": host}, rtlsim=os.path.join(a.ovs, "build", "rtlsim"), console=True)
     ns = lab.host_ns("1")
@@ -92,6 +96,12 @@ def main(argv):
         if not m:
             raise SystemExit(f"curl_upload: no login: {r.stdout[:200]!r} {r.stderr[:200]!r}")
         cookie = f"session={m.group(1)}"
+
+        def con_cli(cmd):
+            start = len(lab.console.log)
+            lab.console.send(cmd)
+            lab.console.expect(PROMPT, 20)
+            return lab.console.log[start:].decode(errors="replace")
 
         def upload(name, path, field, file, want):
             pcap = os.path.join(tmp, f"{name}.pcap")
@@ -117,7 +127,14 @@ def main(argv):
             if not ok:
                 fails.append(name)
 
+        if a.steps:
+            con_cli("health clear")
         upload("C1 config", "/config", "configuration", cfg, "200")
+        if a.steps:
+            time.sleep(2)
+            h = con_cli("health tasks")
+            m = re.search(r"^RX_STEP\t(\d+)\t(\S+)$", h, re.M)
+            print(f"   C1 longest RX_STEP: {m.group(2) if m else '?'}")
         upload("C2 bad image", "/upload", "uploadedfile", bad, "400")
         upload("C3 image", "/upload", "uploadedfile", payload, "200")
     finally:
