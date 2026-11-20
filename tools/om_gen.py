@@ -42,7 +42,7 @@ import sys
 # Field types: code (om.h T_*)
 T = {}
 for i, n in enumerate(("BOOL U8 U16 U32 U64 ENUM STR PMASK SCALED ACT IPV4 MASK4 MAC "
-                       "FLAGS FLAGS16 SECRET I16 TZ PORT BRID").split()):
+                       "FLAGS FLAGS16 SECRET I16 TZ PORT BRID HEX32").split()):
     T[n] = i + 1
 WHEN = {"always": 0, "copper": 1, "sfp": 2, "10g": 3}
 IX = {"PORT": 0, "NUM": 1, "KEY": 2, "WORD": 3, "IDX": 4, "STREAM": 5}
@@ -109,6 +109,7 @@ Action = Type("ACT", None, 0)
 IPv4 = Type("IPV4", "uint8_t", 4)      # a.b.c.d, in memory order (uip's)
 Mask4 = Type("MASK4", "uint8_t", 4)
 BridgeId = Type("BRID", "uint8_t", 8)  # priority (big endian), MAC
+Hex32 = Type("HEX32", "uint32_t", 4)   # state only: a register, 0x and 8 digits
 
 
 def TZ(lo=-12 * 60, hi=14 * 60):
@@ -299,7 +300,7 @@ def message(name, text):
 
 
 DSL = {k: v for k, v in globals().items() if k in (
-    "Enum Flags U8 U16 U32 I16 U64 Bool Str Secret PortMask Scaled IPv4 Mask4 MAC Port TZ BridgeId "
+    "Enum Flags U8 U16 U32 I16 U64 Bool Str Secret PortMask Scaled IPv4 Mask4 MAC Port TZ BridgeId Hex32 "
     "obj state cfg st action default_entry message const".split())}
 
 
@@ -628,10 +629,11 @@ def gen(objs, outdir):
         H("#define %s %d" % (k, v))
     H("#define OM_N_OBJ %d" % len(objs))
     H("#define OM_VMAX %d\t/* the largest settable value */" % vmax)
-    H("#define OM_H_UNIT (0x80 + 21)\t/* help: the blob's unit tokens (help_blob()) */")
+    H("#define OM_H_OBJECT (0x80 + %d)\t/* help: the blob's \"object\", after the types' tokens */" % len(T))
+    H("#define OM_H_UNIT (0x80 + %d)\t/* help: the blob's unit tokens (help_blob()) */" % (len(T) + 1))
     H("#define OM_H_UNITS %d" % len(help_units(objs)))
     H("#define OM_H_LINE %d\t/* help's longest line, at most */" % help_line_max(objs))
-    for u in ("NUM KEY WORD IDX STREAM IX2 CHIPDEF DERIVE IPV4 MAC FLAGS SECRET I16 TZ PORT BRID").split():
+    for u in ("NUM KEY WORD IDX STREAM IX2 CHIPDEF DERIVE IPV4 MAC FLAGS SECRET I16 TZ PORT BRID HEX32").split():
         H("#define OM_USE_%s %d" % (u, u in use))
     # OM_SET_<type>: a config field has it, so om.c parses it (a state-only
     # type is printed, never parsed)
@@ -860,7 +862,7 @@ def gen(objs, outdir):
 JS_T = {"BOOL": "b", "ENUM": "e", "FLAGS": "f", "FLAGS16": "f", "U8": "n", "U16": "n",
         "U32": "n", "I16": "n", "U64": "n", "SCALED": "d", "STR": "s", "SECRET": "p",
         "PMASK": "m", "IPV4": "ip", "MASK4": "ip", "MAC": "mac", "PORT": "pt", "TZ": "tz",
-        "BRID": "br", "ACT": "a"}
+        "BRID": "br", "HEX32": "x", "ACT": "a"}
 
 
 def js_default(f):
@@ -918,16 +920,17 @@ def js(objs, path):
 # u16 offsets from the blob's start (each object's entries, the verbs' usage,
 # each token, then the tokens' end), the tokens, then per object its entry
 # and one per field, in table order, and the usage, each NUL-ended. A byte
-# >= 0x80 in an entry is token byte - 0x80. Tokens 0-19 are the types by T
-# code, each with what om.c prints before the form from the tables ("u16 ",
-# "str 0-") or with its fixed form ("bool on|off"); 20 is "object"; then the
+# >= 0x80 in an entry is token byte - 0x80. The first tokens are the types by
+# T code, each with what om.c prints before the form from the tables ("u16 ",
+# "str 0-") or with its fixed form ("bool on|off"); then "object"; then the
 # units (om_gen.h OM_H_UNIT, OM_H_UNITS: 'unit B "', which a field's entry
 # starts with); the rest are the commonest substrings, picked greedily.
 H_TYPE = {"BOOL": "bool on|off", "U8": "u8 ", "U16": "u16 ", "U32": "u32 ",
           "U64": "u64 0-18446744073709551615", "ENUM": "enum ", "STR": "str 0-", "PMASK": "ports ",
           "SCALED": "decimal -", "ACT": "action -", "IPV4": "ipv4 a.b.c.d", "MASK4": "netmask a.b.c.d",
           "MAC": "mac aa:bb:cc:dd:ee:ff", "FLAGS": "flags ", "FLAGS16": "flags ", "SECRET": "secret 0-",
-          "I16": "i16 ", "TZ": "tz ", "PORT": "port ", "BRID": "bridge 0-15.0-4095.aa:bb:cc:dd:ee:ff"}
+          "I16": "i16 ", "TZ": "tz ", "PORT": "port ", "BRID": "bridge 0-15.0-4095.aa:bb:cc:dd:ee:ff",
+          "HEX32": "hex32 0x00000000-0xffffffff"}
 H_TOK_MAX = 15          # a picked token's bytes at most (a type's fit om.c's om_txt)
 # help alone: om.c's verbs (om_verbs), each with its usage
 H_USAGE = ("get [-c|-s|-d] PATH...\nset PATH VALUE\ndel PATH\ndiff\napply [N]\nconfirm\ndiscard\n"
@@ -992,7 +995,7 @@ def help_pack(objs, keep):
         e, c = [o.tip.encode()], ["objects"]
         for f in o.fields:
             tip = f.tip if f.access != "state" or f in keep else ""
-            e.append((bytes([0x80 + 21 + units.index(f.unit)]) if f.unit else b"") + tip.encode())
+            e.append((bytes([0x80 + len(T) + 1 + units.index(f.unit)]) if f.unit else b"") + tip.encode())
             c.append({"cfg": "config", "action": "actions", "state": "state"}[f.access])
         ents.append(e)
         cls.append(c)
@@ -1118,7 +1121,7 @@ def text_max(t):
     if c == "SCALED":
         return len("65535") + 1
     return {"BOOL": 3, "U8": 3, "U16": 5, "U32": 10, "U64": 20, "I16": 6, "TZ": 6, "IPV4": 15,
-            "MASK4": 15, "MAC": 17, "PORT": 4}[c]
+            "MASK4": 15, "MAC": 17, "PORT": 4, "HEX32": 10}[c]
 
 
 def saved_worst(objs, sector=True):

@@ -115,7 +115,7 @@ static __code const uint8_t * __xdata cp;
 __xdata uint8_t om_val[OM_VMAX], om_fid;	/* a parsed or derived value */
 
 static __code const uint8_t tsize[] = {	/* by type; strings: their length + 1 */
-	0, 1, 1, 2, 4, 8, 1, 0, 2, 2, 0, 4, 4, 6, 1, 2, 0, 2, 2, 1, 8
+	0, 1, 1, 2, 4, 8, 1, 0, 2, 2, 0, 4, 4, 6, 1, 2, 0, 2, 2, 1, 8, 4
 };
 
 /* ---- small helpers ---------------------------------------------------- */
@@ -594,6 +594,13 @@ static void emit_value(void)		/* fd's value at vp */
 		write_char('.');
 		vp += 2;
 		emit_mac();
+		return;
+#endif
+#if OM_USE_HEX32
+	case T_HEX32:
+		print_string("0x");
+		for (i = 4; i--; )
+			print_byte(vp[i]);
 		return;
 #endif
 #if OM_USE_FLAGS
@@ -2676,7 +2683,6 @@ static void rd_open(void)		/* rd_head(), and the CRC at once (boot) */
  * reads its entries (no load or get -s meanwhile: one cli job), a token's
  * text goes into om_txt.
  */
-#define H_OBJECT	(0x80 + 20)	/* the blob's "object", after the types' tokens */
 #define H_TOK	(OM_N_OBJ + 1)		/* the table: the objects', the verbs', the tokens' rows */
 static __xdata uint8_t h_all;		/* help -a */
 static __xdata uint16_t h_at, h_row[2];	/* an offset in the blob; a table row and the next */
@@ -2834,7 +2840,7 @@ static uint8_t h_line(void)		/* help's next line: 0 at the end */
 		v8 = 0x7f + ft;
 	} else {
 		emit_obj();
-		v8 = (uint8_t)H_OBJECT;
+		v8 = (uint8_t)OM_H_OBJECT;
 	}
 	write_char(' ');
 	h_tok();

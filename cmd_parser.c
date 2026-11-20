@@ -51,7 +51,6 @@ extern __xdata struct dhcp_state dhcp_state;
 
 extern __xdata uint16_t management_vlan;
 extern __xdata struct uip_eth_addr uip_ethaddr;
-__xdata uint8_t gpio_last_value[8] = { 0 };
 
 // Temporatly for str to hex convertion value.
 // Support up to 32_bits.
@@ -927,35 +926,6 @@ void cmd_tokenize(void) __banked
 	}
 }
 
-#ifdef DEBUG_OBJ
-// Print GPIO status
-void print_gpio_status(void) {
-	for (uint8_t idx = 0; idx < 2; idx++) {
-		reg_read(RTL837X_REG_GPIO_00_31_INPUT + (idx * 4));
-		print_string("GPIO ");
-		write_char(idx + '0');
-		write_char(':');
-		write_char(' ');
-
-		print_byte(SFR_DATA_24);
-		print_byte(SFR_DATA_16);
-		print_byte(SFR_DATA_8);
-		print_byte(SFR_DATA_0);
-
-		write_char(' ');
-		print_byte( gpio_last_value[(idx *4)] ^ SFR_DATA_24);
-		gpio_last_value[(idx *4)] = SFR_DATA_24;
-		print_byte( gpio_last_value[(idx *4) + 1] ^ SFR_DATA_16);
-		gpio_last_value[(idx *4) + 1] = SFR_DATA_16;
-		print_byte( gpio_last_value[(idx *4) + 2] ^ SFR_DATA_8);
-		gpio_last_value[(idx *4) + 2] = SFR_DATA_8;
-		print_byte( gpio_last_value[(idx *4) + 3] ^ SFR_DATA_0);
-		gpio_last_value[(idx *4) + 3] = SFR_DATA_0;
-		write_char('\n');
-	}
-}
-#endif
-
 // Identify command
 void cmd_parser(void) __banked
 {
@@ -984,14 +954,7 @@ void cmd_parser(void) __banked
 			dns_parse();
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
-		} else if (cmd_compare(0, "igmp") && cmd_compare(1, "show")) {
-			igmp_show();	/* the ports' IGMP_PORT_CFG; on or off: get igmp */
-		} else if (cmd_compare(0, "sds")) {
-			print_reg(RTL837X_REG_SDS_MODES);
-			write_char('\n');
 #ifdef DEBUG_OBJ
-		} else if (cmd_compare(0, "gpio")) {
-			print_gpio_status();
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif

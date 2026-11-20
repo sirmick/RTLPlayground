@@ -98,8 +98,12 @@ endif
 # has none
 OM_HELP ?= $(if $(SCHEDTEST),0,1)
 CC_FLAGS += -DOM_HELP=$(OM_HELP)
+# OM_DBG=0: no debug namespace (DESIGN 9: state.dbg), for release images;
+# rtlsim, the bench and the tests need it. schedtest has none
+OM_DBG ?= $(if $(SCHEDTEST),0,1)
+CC_FLAGS += -DOM_DBG=$(OM_DBG)
 ifndef BUILDDIR
-	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH)),$(if $(filter 0,$(OM_HELP)),-nohelp))
+	BUILDDIR = output/$(MACHINE)$(if $(filter compact,$(LAYOUT)),-compact)$(if $(SCHEDTEST),-schedtest$(if $(ST_NEG),-$(ST_NEG))$(if $(ST_CRASH),-crash$(ST_CRASH)),$(if $(filter 0,$(OM_HELP)),-nohelp)$(if $(filter 0,$(OM_DBG)),-nodbg))
 endif
 
 CONFIG_STAMP := $(BUILDDIR)/.config
@@ -330,7 +334,7 @@ $(HTML_MIN_LIST): FORCE
 # So it lists state.health and state.con even for a schedtest image, and
 # never state.sched (the build's rows); the build's words: none (om_gen.py).
 html/schema.js: $(wildcard schema/*.py) schema/registry.txt tools/om_gen.py
-	python3 tools/om_gen.py -s schema --js $@
+	python3 tools/om_gen.py -s schema -x state_dbg.py --js $@
 
 $(HTML_MIN_STAMP): $(HTML) html/app.js html/schema.js $(HTML_MIN_LIST) tools/minify.py tools/rjsmin.py tools/filter_langs.py $(if $(wildcard $(HTML_MIN)),,FORCE)
 	rm -rf $(HTML_MIN)

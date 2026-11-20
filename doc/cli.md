@@ -121,8 +121,10 @@ once they move:
 
 `dns lookup <name>` stays a command. `l2 forget` is `do l2.flush` (it flushes the
 learned MAC entries; the table itself is `get state.l2`), and `do l2.delete K` deletes entry K. The debugging
-tools stay: `regget`, `regset`, `phyget`, `physet`, `sds`, `sdsget`,
-`sdsset`, `gpio`, `leds`, `flash`. Removed, with no command:
+tools stay: `regget`, `regset`, `phyget`, `physet`, `sdsget`, `sdsset`,
+`leds`, `flash`; `sds`, `gpio` and `igmp show` are `get state.dbg` (the SerDes
+modes, the GPIO inputs, each port's IGMP_PORT_CFG, as raw words; not in an
+OM_DBG=0 image). Removed, with no command:
 `ip`, `gw`, `netmask`, `hostname`, `passwd`, `session`, `led`, `ntp ...`,
 `syslog ...`, `dns server`, `pvid`, `ingress`, `isolate`, `eee`, `mtu`,
 `port N ...`, `reset`, `health`, `history`, `time`, `version`. Use their

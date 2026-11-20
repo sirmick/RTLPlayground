@@ -344,6 +344,9 @@ static int sched_clears;
 uint8_t om_get_health(uint8_t idx) { memset(&om_st.health, 0, sizeof(om_st.health)); om_st.health.hw_timeouts = 2; om_st.health.stack_headroom = 40; return OM_OK; }
 uint8_t om_get_con(uint8_t idx) { memset(&om_st.con, 0, sizeof(om_st.con)); om_st.con.tx_free = 2047; return OM_OK; }
 uint8_t om_do_sched_clear(uint8_t idx) { sched_clears++; return OM_OK; }
+/* state.dbg, state.dbg.igmp.port (om_dbg.c): raw words */
+uint8_t om_get_dbg(uint8_t idx) { om_st.dbg.sds_modes = 0x00001a2b; om_st.dbg.gpio_0 = 0; om_st.dbg.gpio_1 = 0xffffffff; return OM_OK; }
+uint8_t om_get_dbg_igmp_port(uint8_t idx) { om_st.dbg_igmp_port.cfg = 0x40000000 | idx; return OM_OK; }
 /* do l2.flush, do l2.delete (om_port.c): the argument they were given */
 static int l2_arg = -1;
 uint8_t om_do_l2_flush(uint8_t idx) { l2_arg = om_key; return OM_OK; }
@@ -746,7 +749,7 @@ static void cases(void)
 	expect("get lacp.1", "err lacp.1: sched l2 sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.storm.* stp stp.lag.* stp.port.* igmp lldp loop mirror\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nl2\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ndns\nstate.l2.*\nntp\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsyslog\nweb\nlag.*\nport.*\nport.*.storm.*\nstp\nstp.lag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
+	expect("get", "sched\nl2\nsys\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nvlan.*\nmgmt\nstate.port.*\nstate.cfg\nstate.dbg\nstate.dbg.igmp.port.*\nstate.health\nstate.con\ndns\nstate.l2.*\nntp\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsyslog\nweb\nlag.*\nport.*\nport.*.storm.*\nstp\nstp.lag.*\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nstp.port.*\nigmp\nlldp\nloop\nmirror\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1080,6 +1083,10 @@ static void kinds(void)
 	       "state.lacp.port.1.rx_state current\nstate.lacp.port.1.rx_pdus 0\nstate.lacp.port.1.partner_sys 00:00:00:00:00:00\nok\n");
 	expect("do sched.clear", "ok\n");
 	CHECK(sched_clears == 1, "do sched.clear: its handler, once");
+	expect("get state.dbg.sds_modes state.dbg.gpio_0 state.dbg.gpio_1 state.dbg.igmp.port.3",
+	       "state.dbg.sds_modes 0x00001a2b\nstate.dbg.gpio_0 0x00000000\nstate.dbg.gpio_1 0xffffffff\n"
+	       "state.dbg.igmp.port.3.cfg 0x40000002\nok\n");
+	expect("set state.dbg.gpio_0 1", "err state.dbg.gpio_0: read only\n");
 	expect("do l2.flush", "ok\n");
 	CHECK(l2_arg == 0xffff, "do l2.flush: no argument, 0xffff");
 	expect("do l2.flush 3", "ok\n");
@@ -1230,7 +1237,8 @@ static void kinds(void)
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.lag 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.load.skip_id 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.cfg.load.skip_id 0\nstate.cfg.boot_defaults \nstate.dbg.sds_modes 0x00001a2b\n") &&
+		      strstr(o, "state.dbg.igmp.port.9.cfg 0x40000008\nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
 		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
 		      strstr(o, "state.port.9.mib.54 34359738422\nstate.sfp.1.present on\n") &&
@@ -2590,7 +2598,7 @@ static void vlans(void)
 #if OM_HELP
 static const char *const h_types[] = { "object", "bool", "u8", "u16", "u32", "u64", "enum", "str",
 	"ports", "decimal", "action", "ipv4", "netmask", "mac", "flags", "secret", "i16", "tz", "port",
-	"bridge", NULL };
+	"bridge", "hex32", NULL };
 
 /* "<path> <type> ... "<tip>"": one word, a type, a tip in quotes at the end */
 static int help_line_ok(const char *l, size_t n)

@@ -34,6 +34,7 @@
 #define T_TZ		18	/* I16 minutes, as +hh:mm */
 #define T_PORT		19	/* one port: logical inside, front-panel number outside */
 #define T_BRID		20	/* bridge ID: priority (big endian) and MAC, as prio/4096.MAC */
+#define T_HEX32		21	/* a register (state only): 0x and eight digits */
 #define T_TYPE		0x1f	/* om_field.tw: the type; the when rule above it */
 #define T_WHEN		5
 #define T_DERIVED	0x80	/* a Str stored empty is printed as the object's derive handler's */
