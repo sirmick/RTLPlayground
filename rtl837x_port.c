@@ -189,6 +189,7 @@ void vlan_delete(uint16_t vlan) __banked
 	vlan_name_remove(vlan);
 	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
+	wait_table_ready();	/* E4: the next command must not find it busy (rtlsim: dropped) */
 	vb_on = 0;
 	vlan_bit_put(vlan);
 }
