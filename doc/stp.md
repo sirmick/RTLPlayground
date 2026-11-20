@@ -102,7 +102,9 @@ encodes. All configured values are in seconds:
 checks it on the whole candidate, so the values can be set in any order;
 an apply that breaks it is refused and nothing changes:
 `err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)`. The saved
-config is checked the same way at boot.
+config is checked the same way at boot: a saved `stp` this build refuses (timers
+from another release) boots at its defaults, named in `get state.cfg.boot_defaults`,
+and the rest of the config applies.
 
 The values above are what the switch uses while it is the root. Otherwise it
 takes max age and forward delay from the BPDUs on its root port, as 802.1D

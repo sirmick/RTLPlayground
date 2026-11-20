@@ -1144,7 +1144,7 @@ static void kinds(void)
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.load.skipped 0\nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.cfg.load.skipped 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
 		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
 		      strstr(o, "state.port.9.mib.54 34359738422\nstate.sfp.1.present on\n") &&
@@ -1165,7 +1165,7 @@ static void staging(void)
 	memset(applied, 0, sizeof applied);
 
 	printf("staging\n");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
 	CHECK(!t_strcmp(prompt(), ""), "the prompt: nothing to add");
 	expect("set port.3.mtu 1500", "ok\n");
 	expect("set port.3.pvid 7", "ok\n");
@@ -1182,7 +1182,7 @@ static void staging(void)
 	CHECK(job_steps >= 3 * chunks + 2 && job_steps <= 3 * chunks + 2 + 1 + OM_N_OBJ,
 	      "apply: the copies, the walk and the settle, each in bounded steps");
 	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
 	memset(applied, 0, sizeof applied);
 	job_steps = 0;
 	expect("apply", "ok\n");
@@ -1376,19 +1376,39 @@ static void staging(void)
 	CHECK(applied[5] && applied[6] && applied[7] && applied[8] && applied[0],
 	      "and the ports after it were applied too (the boot's whole apply)");
 	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
-	fail_check_on = 4;		/* the check refuses it: nothing applied */
+	fail_check_on = 4;		/* the check refuses it, at its defaults too: nothing applied */
 	memset(applied, 0, sizeof applied);
 	out_reset();
 	om_boot_apply();
 	out_buf[out_len] = 0;
 	fail_check_on = -1;
 	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
-	      !memcmp(&cfg_cand, &mid, sizeof mid) && !applied[4], "a boot check refuses: none applied, the candidate kept");
-	expect("diff", "- port.5.mtu 16383\n+ port.5.mtu 5000\nok\n");
-	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	      cfg_cand.port[4].mtu == 16383 && !applied[4],
+	      "a boot check refuses an object at its defaults: none applied, the object reset in the candidate");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply rolled_back\nstate.cfg.boot_defaults port.#\nok\n");
 	expect("discard", "ok\n");
 	om_boot_apply();
-	expect("get state.cfg.apply", "state.cfg.apply idle\nok\n");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults \nok\n");
+	/* P4-4b: an object a check refuses goes back to its defaults, the rest applies */
+	expect("set port.5.mtu 5000", "ok\n");
+	expect("set stp.maxage_s 40", "ok\n");	/* with hello 2, fwd 15: 6.20.5 refuses */
+	expect("set stp.priority 3", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "err stp: needs") && !strstr(out_buf, "Boot config not applied") &&
+	      cfg_run.port[4].mtu == 5000 && cfg_run.stp.maxage_s == 20 && cfg_run.stp.priority == 8,
+	      "boot: stp refused goes back to its defaults, port applies");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults stp\nok\n");
+	expect("diff", "ok\n");
+	expect("set lag.1.hash none", "ok\n");	/* two objects: both named, in apply order */
+	expect("set stp.hello_s 10", "ok\n");
+	expect("set stp.port.2.priority 8", "ok\n");
+	om_boot_apply();
+	expect("get state.cfg.boot_defaults", "state.cfg.boot_defaults lag.# stp stp.port.#\nok\n");
+	CHECK(cfg_run.lag[0].hash == cfg_cand.lag[1].hash && cfg_run.stp.hello_s == 2 && cfg_run.stp_port[1].priority == 128,
+	      "each refused object at its defaults");
+	om_init();
 }
 
 /* ---- the saved config: binary records, save, load, boot ----------------- */
@@ -2569,6 +2589,18 @@ static void stps(void)
 	CHECK(!strcmp(stp_ops, "on prio ") && stp_enabled && stp_prio == 0xf0, "on: stp_setup");
 	expect("set stp.maxage_s 40", "ok\n");
 	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.fwd_delay_s 21", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.hello_s 10", "ok\n");	/* 6.20.5's edges: 2*(12-1) = 22 = 2*(10+1) */
+	expect("set stp.maxage_s 22", "ok\n");
+	expect("set stp.fwd_delay_s 12", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.maxage_s 21", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.maxage_s 23", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.hello_s 1", "ok\n");
+	expect("set stp.maxage_s 40", "ok\n");
 	expect("set stp.fwd_delay_s 21", "ok\n");
 	expect("apply", "ok\n");
 	expect("set stp.maxage_s 6", "ok\n");

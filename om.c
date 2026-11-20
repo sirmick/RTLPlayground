@@ -2263,9 +2263,11 @@ static __xdata uint8_t b_fmt;		/* rd_open()'s: E_CFGFORMAT_* */
 static __xdata struct {
 	uint8_t boot, save;		/* what boot found, E_CFGFORMAT_*; E_CFGSAVE_* */
 	uint16_t saved, skipped;
+	char reset[sizeof(om_st.cfg.boot_defaults)];	/* the objects boot put back to their defaults */
 } bs;
-_Static_assert(offsetof(struct st_cfg, load_skipped) == offsetof(struct st_cfg, format) + 4,
-	       "state.cfg's format, save, saved_bytes, load.skipped: bs's order");
+_Static_assert(offsetof(struct st_cfg, load_skipped) == offsetof(struct st_cfg, format) + 4 &&
+	       offsetof(struct st_cfg, boot_defaults) == offsetof(struct st_cfg, format) + 6,
+	       "state.cfg's format, save, saved_bytes, load.skipped, boot_defaults: bs's order");
 
 static __code const uint8_t om_magic[4] = { 0, 'R', 'C', '1' };
 static __xdata uint8_t e_put;
@@ -2351,9 +2353,9 @@ static void inst_fields(void)
 
 /* every config element of d_base at its default, and the default entries
  * of keyed objects with the object's last: DEF_B bytes a step (an element
- * at least), from (d_o, d_e); 1 while there are more */
+ * at least), from (d_o, d_e) to the object d_end; 1 while there are more */
 static __xdata uint8_t * __xdata d_base;
-static __xdata uint8_t d_o, d_e;
+static __xdata uint8_t d_o, d_e, d_end;
 static __xdata uint16_t d_b;
 
 #define DEF_B	160			/* bytes a step: from code, ~50 instructions a byte */
@@ -2361,7 +2363,7 @@ static __xdata uint16_t d_b;
 static uint8_t def_step(void)
 {
 	d_b = 0;
-	for (; d_o < OM_N_OBJ; d_o++, d_e = 0) {
+	for (; d_o < d_end; d_o++, d_e = 0) {
 		sel_obj(d_o);
 		if (obx.flags & OM_STATE)
 			continue;
@@ -2388,6 +2390,7 @@ static void def_start(void)
 {
 	d_o = 0;
 	d_e = 0;
+	d_end = OM_N_OBJ;
 }
 
 static void pend_start(void)		/* after the records */
@@ -3556,14 +3559,43 @@ void om_init(void) __banked
 	om_dirty = 0;
 }
 
-/* after the boot config's set lines: check and apply them, at once */
 static __xdata uint8_t b_fail, b_fo, b_fe;
 
+/* the refusing object (r_o) to its defaults in the candidate, its name
+ * pattern ("stp.port.#") onto bs.reset while there is room; 0 if it is the
+ * one reset last (it refuses at its defaults), or after OM_N_OBJ resets */
+static __xdata uint8_t b_last, b_n, b_k;
+static uint8_t boot_reset(void)
+{
+	if (r_o == b_last || ++b_k > OM_N_OBJ)
+		return 0;
+	b_last = d_o = r_o;
+	d_end = r_o + 1;
+	d_e = 0;
+	d_base = CAND;
+	while (def_step());
+	if (b_n)
+		bs.reset[b_n++] = ' ';
+	for (cp = (__code const uint8_t *)obx.name; *cp && b_n < sizeof(bs.reset) - 1; cp++)
+		bs.reset[b_n++] = *cp;
+	bs.reset[b_n] = 0;
+	return 1;
+}
+
+/* after the boot config's set lines: check and apply them, at once. An
+ * object a check refuses goes back to its defaults (state.cfg.boot_defaults
+ * names it) and the rest applies: a saved mgmt survives another object's
+ * values this build refuses. One that refuses at its defaults: none applies */
 void om_boot_apply(void) __banked
 {
-	if (!check_all()) {
-		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
-		goto not_applied;			/* the candidate what was refused (diff) */
+	b_last = 0xff;
+	b_n = b_k = 0;
+	bs.reset[0] = 0;
+	while (!check_all()) {
+		if (!boot_reset()) {
+			om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
+			goto not_applied;			/* the candidate what was refused (diff) */
+		}
 	}
 	/* A soft reset keeps the chip and the PHYs as they were: every instance
 	 * but keyed entries (vlan_setup clears those) is applied whole, at its
