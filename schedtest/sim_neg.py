@@ -14,7 +14,7 @@ sim_tests.py, every sim test runs in a fresh rtlsim in firmware time, so a
 run is deterministic (--twice compares every number). Exit status 1 on any
 failure.
 """
-import argparse, concurrent.futures, contextlib, glob, io, json, os, re, struct, subprocess, sys, tempfile, time, shutil
+import argparse, concurrent.futures, contextlib, fcntl, glob, io, json, os, re, struct, subprocess, sys, tempfile, time, shutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sim_tests import Suite, Fail, PROMPT
@@ -226,8 +226,15 @@ class Neg(Suite):
         machine = os.path.basename(self.build).split("-compact")[0]
         target = os.path.join(os.path.dirname(self.build), f"{machine}{'-compact' if mk else ''}-schedtest-{variant}",
                               target)
-        r = subprocess.run(["make", "-s", "SCHEDTEST=1", f"ST_NEG={variant}", f"MACHINE={machine}"]
-                           + (["LAYOUT=compact"] if mk else []) + [target], capture_output=True, text=True)
+        # --twice runs both suites at once, and both would make this target
+        # in the same build directory: its html_min rule (rm -rf, then
+        # write) and html_min.list's .tmp race (a missing favicon.ico or
+        # .tmp, 11 of 40 makes from fresh). One make at a time.
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(os.path.join(os.path.dirname(os.path.dirname(target)), ".sim_neg.lock"), "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            r = subprocess.run(["make", "-s", "SCHEDTEST=1", f"ST_NEG={variant}", f"MACHINE={machine}"]
+                               + (["LAYOUT=compact"] if mk else []) + [target], capture_output=True, text=True)
         self.record(exit=r.returncode, message=msg in r.stdout + r.stderr)
         self.check(r.returncode == 2, f"make fails ({r.returncode})")
         self.check(msg in r.stdout + r.stderr, what, (r.stdout + r.stderr).strip()[-300:])
