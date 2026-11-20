@@ -841,20 +841,9 @@ void parse_sfp(void)
 {
 	uint8_t slot;
 
-	if (cmd_words_len != 1 && cmd_words_len != 3)
+	if (cmd_words_len != 3)		/* the modules: get state.sfp */
 		goto err;
 
-	if (cmd_words_len == 1) {
-		for (slot = 0; slot < machine.n_sfp; slot++) {
-			print_string("\nSlot "); write_char('1' + slot);
-			if (gpio_pin_test(machine.sfp_port[slot].pin_detect)) {
-				print_string(" - empty\n");
-				continue;
-			}
-			sfp_print(slot);
-		}
-		return;
-	}
 	uint8_t idx = cmd_words_b[1];
 	uint8_t ret = atoi_byte(idx);
 	idx += ret;
@@ -890,7 +879,7 @@ void parse_sfp(void)
 	sfp_pins(slot);
 	return;
 err:
-	cmd_error("\nUsage:\n\tsfp\n\tsfp [1|2] [1g|2g5|10g]\n");
+	cmd_error("\nUsage:\n\tsfp [1|2] [1g|2g5|10g|100m|auto]\n\t(the modules: get state.sfp)\n");
 }
 
 
@@ -1511,12 +1500,10 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
 		} else if (cmd_compare(0, "lacp")) {
-			if (cmd_compare(1, "show"))
-				lacp_show();
-			else if (cmd_compare(1, "off"))
+			if (cmd_compare(1, "off"))	/* the state: get state.lag state.lacp */
 				lacp_off();
 			else
-				cmd_error("lacp (show | off); a group starts LACP with: lag <1-4> lacp <port>...\n");
+				cmd_error("lacp off; a group starts LACP with: lag <1-4> lacp <port>...\n");
 		} else if (cmd_compare(0, "vlan")) {
 			parse_vlan();
 		} else if (cmd_compare(0, "mirror")) {
@@ -1727,9 +1714,6 @@ void cli_job_more(void) __banked
 	case CLI_JOB_OM:
 	case CLI_JOB_OMAPPLY:
 		job_more = om_line();
-		break;
-	case CLI_JOB_LACP:
-		job_more = lacp_show_line();
 		break;
 	case CLI_JOB_STPFDB:
 		job_more = stp_fdb_line();

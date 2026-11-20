@@ -64,7 +64,6 @@ void lacp_off(void) __banked;
 void lacp_lag_set(uint8_t lag, __xdata uint16_t ports) __banked;
 void lacp_in(void) __banked;
 void lacp_timers(void) __banked;
-void lacp_show(void) __banked;
 ```
 
 `lacp_init()` has to run before the startup configuration replays, because xdata
@@ -87,17 +86,20 @@ cleared and rebuilt from the ports that converge. The other way round, `lag 1 d`
 and a static member list take the group out of LACP before they touch the
 trunk. A port named in another LACP group moves to the new one. The protocol
 starts with the first group put under LACP and stops when the last one is taken
-out; there is no separate switch for it. Two commands act on the whole engine:
+out; there is no separate switch for it. One command acts on the whole engine,
+and `get` shows its state:
 
 ```
 lacp off            # every group leaves LACP, protocol stopped
-lacp show
+get state.lag state.lacp
 ```
 
-`lacp show` prints the engine state, then one line per group with its candidate
-ports, the elected aggregator and the trunk members actually programmed into the
-hardware, then one line per port with the actor and partner state bytes and the
-receive-machine state.
+Per group `state.lag.L` has the members
+aggregated now (an LACP group's choice, a static group's trunk), whether an
+aggregator is elected, and the partner system it aggregates with; per port
+`state.lacp.port.N` has its LACP group (0: none), the actor and partner states
+as flags, the receive machine's state, the LACPDUs received and the partner
+system.
 
 ## LACP configuration via the Web Interface
 

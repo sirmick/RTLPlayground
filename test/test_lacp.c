@@ -8,6 +8,7 @@
 #include "uip.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_lacp.h"
+#include "om_gen.h"
 
 /* ---------- platform mocks ---------- */
 
@@ -121,7 +122,9 @@ static struct wire_pdu_out last_tx[10];
 static int tx_count[10];
 
 __xdata uint8_t ctl_buf[CTL_BUF_SIZE];
-__xdata uint8_t cli_job;		/* cmd_parser.c: lacp show sets it (E1) */
+__xdata uint8_t cli_job;		/* cmd_parser.c */
+union om_st om_st;			/* om_gen.c: the getters fill it */
+uint16_t port_lag_members_get(uint8_t lag) { (void)lag; return 0; }
 __xdata uint16_t ctl_len;
 
 void tcpip_output(void) { uip_len = 0; }

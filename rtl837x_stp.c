@@ -7,6 +7,7 @@
 // #define DEBUG
 
 #include <stdint.h>
+#include <stddef.h>
 #include "rtl837x_common.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_regs.h"
@@ -16,6 +17,7 @@
 #include "rtl837x_trap.h"
 #include "uip.h"
 #include "machine.h"
+#include "om_gen.h"
 
 __xdata struct timer stp_step;
 
@@ -82,7 +84,6 @@ __xdata uint16_t stp_tc_seen;
 __xdata uint32_t stp_tc_secs;		/* seconds since the topology change counter last moved */
 __xdata uint8_t  stp_pcost_short;	/* 1: automatic port costs from the 802.1D-1998 table */
 __xdata uint8_t  stp_bpdu_filter;	/* 1: keep BPDUs on the CPU while STP is off instead of flooding */
-__xdata uint16_t stp_scratch16;	/* scratch for status printing only */
 
 __xdata uint16_t port_timers[STP_ENTITIES];	/* listen-period countdown (0 = not listening) */
 __xdata uint16_t port_hello[STP_ENTITIES];	/* hello TX countdown */
@@ -250,74 +251,62 @@ static void print_port_nl(uint8_t port) __reentrant
 }
 
 
-static void print_bridge_id(uint8_t prio, uint8_t ext, __xdata uint8_t *mac) __reentrant
-{
-	print_byte(prio); print_byte(ext); write_char('/');
-	for (stp_i = 0; stp_i < 6; stp_i++)
-		print_byte(mac[stp_i]);
-}
-
-
-/* Fixed width columns so the rows line up under the header without a
- * formatter. The state indices are the ASIC's own two bits, in the order
- * stp_state_set() writes them. */
-static __code const char stp_state_txt[] = "off  blocklearnfwd  ";
-static __code const char stp_role_txt[]  = "dis rootdesgaltnback";
-static __code const char stp_edge_txt[]  = "no  yes ";
-
 static uint8_t stp_state_get(uint8_t port) __reentrant;
 static uint8_t stp_ent_active(uint8_t e) __reentrant;
 
-static void print_field(__code const char *txt, uint8_t idx, uint8_t width) __reentrant
+
+/* state.stp (schema/state_stp.py) */
+#define SS	om_st.stp
+#define SP	om_st.stp_port		/* state.stp.lag's layout too */
+typedef char stp_lag_like_port[sizeof(om_st.stp_lag) == sizeof(SP) + 2 &&
+	offsetof(struct st_stp_lag, tx_tc) == offsetof(struct st_stp_port, tx_tc) &&
+	offsetof(struct st_stp_port, tx_tc) == offsetof(struct st_stp_port, rx_bpdu) + 12 &&
+	STP_CNT_RX == 0 && STP_CNT_TX == 1 && STP_CNT_TCRX == 2 && STP_CNT_TCTX == 3 &&
+	STP_PF_OPEREDGE == 0x40 ? 1 : -1];
+
+uint8_t om_get_stp(uint8_t idx) __banked
 {
-	txt += idx * width;
-	while (width--)
-		write_char(*txt++);
+	(void)idx;
+	SS.bridge[0] = stp_prio;
+	SS.bridge[1] = 0;
+	memcpy(SS.bridge + 2, uip_ethaddr.addr, 6);
+	memcpy(SS.root, &root_bridge, sizeof(root_bridge));
+	SS.is_root = stp_root_port == 0xff;
+	SS.root_cost = root_bridge_cost;
+	SS.tc_count = stp_tc_count;
+	stp_i = stp_root_port;		/* stproot: none, the port's number, lag.L */
+	SS.root_port = stp_i == 0xff ? 0 : stp_i >= STP_LAG_BASE ? 10 + stp_i - STP_LAG_BASE
+		       : machine.log_to_phys_port[stp_i];
+	return OM_OK;
 }
 
-
-void stp_status(void) __banked
+/* entity stp_i (a port, or STP_LAG_BASE + L - 1) into state.stp.port/lag */
+static void stp_ent_state(void)
 {
-	if (!stp_enabled) {
-		print_string("STP off\n");
-		return;
-	}
-	print_string(stp_rstp ? "STP on, RSTP\n" : "STP on, STP\n");
-	print_string("bridge  ");
-	print_bridge_id(stp_prio, 0, uip_ethaddr.addr);
-	print_string("\nroot    ");
-	print_bridge_id(root_bridge.prio, root_bridge.ext, root_bridge.mac);
-	if (stp_root_port == 0xff) {
-		print_string(" (this switch)\n");
-	} else {
-		print_string(" port ");
-		print_ent(stp_root_port);
-		print_string(" cost ");
-		print_long(root_bridge_cost);
-		write_char('\n');
-	}
-	print_string("changes ");
-	print_short(stp_tc_count);
-	write_char('\n');
-	print_string("port state role edge tx age[s]\n");
-	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
-		if (!stp_ent_active(stp_i))
-			continue;
-		write_char(' ');
-		print_ent(stp_i);
-		print_string("  ");
-		print_field(stp_state_txt, stp_state_get(stp_i), 5);
-		write_char(' ');
-		print_field(stp_role_txt, stp_port_role(stp_i), 4);
-		write_char(' ');
-		print_field(stp_edge_txt, stp_pflags[stp_i] & STP_PF_OPEREDGE ? 1 : 0, 4);
-		write_char(' ');
-		print_byte((uint8_t)stp_cnt[STP_CNT_TX][stp_i]);
-		write_char(' ');
-		stp_scratch16 = stp_bpdu_age[stp_i] / STP_HZ;
-		itoa(stp_scratch16 > 255 ? 255 : (uint8_t)stp_scratch16);
-		write_char('\n');
-	}
+	memset((__xdata uint8_t *)&SP, 0, sizeof(SP));
+	if (!stp_ent_active(stp_i))
+		return;				/* in a LAG, or no LAG: off */
+	SP.state = stp_state_get(stp_i);
+	SP.role = stp_port_role(stp_i);
+	SP.edge = stp_pflags[stp_i] >> 6 & 1;	/* STP_PF_OPEREDGE; a test would take a bit of IRAM */
+	SP.bpdu_age_ms = (uint32_t)stp_bpdu_age[stp_i] * (1000 / STP_HZ);
+	for (stp_ss_i = 0; stp_ss_i < STP_CNT_N; stp_ss_i++)	/* rx_bpdu tx_bpdu rx_tc tx_tc: STP_CNT_* */
+		memcpy(&SP.rx_bpdu + stp_ss_i, &stp_cnt[stp_ss_i][stp_i], 4);
+}
+
+uint8_t om_get_stp_port(uint8_t idx) __banked
+{
+	stp_i = idx;
+	stp_ent_state();
+	return OM_OK;
+}
+
+uint8_t om_get_stp_lag(uint8_t idx) __banked
+{
+	stp_i = STP_LAG_BASE + idx;
+	stp_ent_state();
+	om_st.stp_lag.members = stp_lag_mask[idx];
+	return OM_OK;
 }
 
 

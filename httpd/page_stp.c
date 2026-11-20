@@ -165,36 +165,3 @@ void send_stp(void) __banked
 	char_to_html(']');
 	char_to_html('}');
 }
-
-
-void send_stp_counters(void) __banked
-{
-	uint8_t i, j;
-
-	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	str_code_to_html("{" JSONQUOTE("on") ":");
-	bool_to_json(stp_enabled);
-	str_code_to_html("," JSONQUOTE("hz") ":");
-	itoa_html(STP_HZ);
-	str_code_to_html("," JSONQUOTE("tc") ":\"");
-	byte_to_html(stp_tc_count >> 8);
-	byte_to_html(stp_tc_count);
-	str_code_to_html("\"," JSONQUOTE("ports") ":[");
-	for (i = 0; i < STP_ENTITIES; i++) {
-		j = stp_ent_id(i);
-		if (!j)
-			continue;
-		str_code_to_html("{" JSONQUOTE("p") ":");
-		itoa_html(j);
-		str_code_to_html("," JSONQUOTE("c") ":\"");
-		for (j = 0; j < STP_CNT_N; j++) {
-			pi_u32 = stp_cnt[j][i]; u32hex_html();
-		}
-		byte_to_html(stp_bpdu_age[i] >> 8);
-		byte_to_html(stp_bpdu_age[i]);
-		str_code_to_html("\"},");
-	}
-	slen -= 1;
-	char_to_html(']');
-	char_to_html('}');
-}

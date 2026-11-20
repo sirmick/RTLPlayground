@@ -264,6 +264,68 @@ uint8_t om_get_dns(uint8_t idx)
 	return OM_OK;
 }
 uint8_t om_get_loop(uint8_t idx) { om_st.loop.looped = 0x0003; om_st.loop.blocked = 0x0002; return OM_OK; }
+/* state.stp, state.lag, state.lacp.port (rtl837x_stp.c, rtl837x_lacp.c) */
+uint8_t om_get_stp(uint8_t idx)
+{
+	static const uint8_t b[8] = { 0x80, 0x00, 0x06, 0xeb, 0x00, 0xb5, 0x32, 0x5d };
+	memset(&om_st.stp, 0, sizeof(om_st.stp));
+	memcpy(om_st.stp.bridge, b, 8);
+	memcpy(om_st.stp.root, b, 8);
+	om_st.stp.root[0] = 0x10;
+	om_st.stp.root_port = 11;		/* lag.2 */
+	om_st.stp.root_cost = 20000;
+	om_st.stp.tc_count = 3;
+	return OM_OK;
+}
+uint8_t om_get_stp_port(uint8_t idx)
+{
+	memset(&om_st.stp_port, 0, sizeof(om_st.stp_port));
+	om_st.stp_port.state = idx == 1 ? 3 : 1;
+	om_st.stp_port.role = idx == 1 ? 1 : 3;
+	om_st.stp_port.rx_bpdu = 70000;
+	return OM_OK;
+}
+uint8_t om_get_stp_lag(uint8_t idx)
+{
+	memset(&om_st.stp_lag, 0, sizeof(om_st.stp_lag));
+	om_st.stp_lag.members = idx == 3 ? 0x0003 : 0;
+	return OM_OK;
+}
+uint8_t om_get_lag(uint8_t idx)
+{
+	static const uint8_t m[6] = { 0x02, 0x11, 0x22, 0x33, 0x44, 0x55 };
+	memset(&om_st.lag, 0, sizeof(om_st.lag));
+	if (idx == 0) {
+		om_st.lag.active = 0x0003;
+		om_st.lag.agg_valid = 1;
+		memcpy(om_st.lag.aggregator, m, 6);
+	}
+	return OM_OK;
+}
+uint8_t om_get_lacp_port(uint8_t idx)
+{
+	memset(&om_st.lacp_port, 0, sizeof(om_st.lacp_port));
+	om_st.lacp_port.lag = idx < 2;
+	om_st.lacp_port.actor = 0x3d;
+	om_st.lacp_port.rx_state = 4;
+	return OM_OK;
+}
+/* state.sfp (sfp.c) */
+uint8_t om_get_sfp(uint8_t idx)
+{
+	memset(&om_st.sfp, 0, sizeof(om_st.sfp));
+	if (idx)
+		return OM_OK;
+	om_st.sfp.present = om_st.sfp.ready = om_st.sfp.id_ok = om_st.sfp.ddm_ok = 1;
+	om_st.sfp.los = 2;
+	strcpy((char *)om_st.sfp.vendor, "RTLSIM");
+	om_st.sfp.rate_mbps = 10300;
+	om_st.sfp.ddm_temp = 0x1880;
+	om_st.sfp.ddm_vcc_v = 33000;
+	om_st.sfp.ddm_rx_power_mw = 5012;
+	om_st.sfp.ddm_status = 0x82;
+	return OM_OK;
+}
 /* state.sched (sched_health.c): the rows are test_sched.c's tasks' */
 uint8_t om_get_sched(uint8_t idx) { memset(&om_st.sched, 0, sizeof(om_st.sched)); om_st.sched.slots = 8; return OM_OK; }
 uint8_t om_get_sched_slot(uint8_t idx)
@@ -502,7 +564,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -738,6 +800,29 @@ static void kinds(void)
 	       "state.dns.lookup.ip 0.0.0.0\nok\n");
 	expect("get state.loop", "state.loop.looped 1-2\nstate.loop.blocked 2\nok\n");
 	expect("set state.mgmt.ip 10.0.0.1", "err state.mgmt.ip: read only\n");
+	{
+		const char *o = run("get state.stp"), *w = "state.stp.bridge 8.0.06:eb:00:b5:32:5d\n"
+			"state.stp.root 1.0.06:eb:00:b5:32:5d\nstate.stp.is_root off\nstate.stp.root_port lag.2\n"
+			"state.stp.root_cost 20000\nstate.stp.tc_count 3\nstate.stp.port.1.state block\n";
+		CHECK(!strncmp(o, w, t_strlen(w)) && strstr(o, "state.stp.lag.4.members 1-2\nok\n"),
+		      "get state.stp: the bridge, then its ports and LAGs");
+	}
+	{
+		const char *o = run("get state.sfp.1");
+		CHECK(strstr(o, "state.sfp.1.present on\nstate.sfp.1.los none\n") && strstr(o, "state.sfp.1.vendor RTLSIM\n") &&
+		      strstr(o, "state.sfp.1.rate_mbps 10300\n") && strstr(o, "state.sfp.1.ddm.temp 6272\nstate.sfp.1.ddm.vcc_v 3.3000\n") &&
+		      strstr(o, "state.sfp.1.ddm.rx_power_mw 0.5012\n") && strstr(o, "state.sfp.1.ddm.status rx_los,tx_disable\n"),
+		      "get state.sfp.1: the module, the raw words, Scaled in their units");
+	}
+	expect("get state.sfp.2.present", "state.sfp.2.present off\nok\n");
+	expect("get state.stp.port.2", "state.stp.port.2.state fwd\nstate.stp.port.2.role root\nstate.stp.port.2.edge off\n"
+	       "state.stp.port.2.bpdu_age_ms 0\nstate.stp.port.2.rx_bpdu 70000\nstate.stp.port.2.tx_bpdu 0\n"
+	       "state.stp.port.2.rx_tc 0\nstate.stp.port.2.tx_tc 0\nok\n");
+	expect("get state.stp.lag.4.role state.stp.lag.4.members", "state.stp.lag.4.role disabled\nstate.stp.lag.4.members 1-2\nok\n");
+	expect("get state.lag.1", "state.lag.1.active 1-2\nstate.lag.1.agg_valid on\nstate.lag.1.aggregator 02:11:22:33:44:55\nok\n");
+	expect("get state.lacp.port.1", "state.lacp.port.1.lag 1\n"
+	       "state.lacp.port.1.actor activity,aggregation,sync,collecting,distributing\nstate.lacp.port.1.partner none\n"
+	       "state.lacp.port.1.rx_state current\nstate.lacp.port.1.rx_pdus 0\nstate.lacp.port.1.partner_sys 00:00:00:00:00:00\nok\n");
 	expect("do sched.clear", "ok\n");
 	CHECK(sched_clears == 1, "do sched.clear: its handler, once");
 	{
@@ -880,7 +965,9 @@ static void kinds(void)
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
 		      strstr(o, "state.cfg.load.skipped 0\nstate.health.hw_timeouts 2\n") &&
-		      strstr(o, "state.con.tx_free 2047\nstate.mgmt.ip 192.168.2.3\n") &&
+		      strstr(o, "state.con.tx_free 2047\nstate.lag.1.active 1-2\n") &&
+		      strstr(o, "state.lacp.port.9.partner_sys 00:00:00:00:00:00\nstate.mgmt.ip 192.168.2.3\n") &&
+		      strstr(o, "state.stp.lag.4.members 1-2\nstate.ntp.synced on\n") &&
 		      strstr(o, "state.loop.blocked 2\nstate.sys.version ") &&
 		      strstr(o, "state.sys.reset.states.8 B_STEP\nstate.loader.present on\nstate.sched.passes ") &&
 		      strstr(o, "state.sched.task.j.max_us 13\nstate.tsys.bridge ") &&

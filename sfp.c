@@ -1,6 +1,7 @@
 
 #include <8051.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 #include "rtl837x_sfr.h"
@@ -13,6 +14,7 @@
 #include "phy.h"
 #include "boot.h"
 #include "sfp.h"
+#include "om_gen.h"
 #include "timer.h"
 
 extern __code const struct machine machine;
@@ -83,41 +85,54 @@ static __xdata uint8_t si, so;
 
 /* `sfp`'s lines for a present module, from the caches (E2 review): the
  * read's bytes and the DDM cache (refreshed every 2 s), no I2C */
-void sfp_print(uint8_t sfp) __banked
+/* state.sfp.S (schema/state_sfp.py): sfp.c's caches, never I2C */
+#define F	om_st.sfp
+static __code const char sfp_hex[] = "0123456789abcdef";
+static __xdata uint8_t * __xdata dp;
+typedef char sfp_ddm_words[offsetof(struct st_sfp, ddm_laser) == offsetof(struct st_sfp, ddm_temp) + 10 &&
+	E_SFPLOS_LOS == 1 ? 1 : -1];
+
+uint8_t om_get_sfp(uint8_t idx) __banked
 {
-	if (!sfp_ready[sfp]) {			/* not read (yet), or the read failed */
-		print_string(" - I2C read failed on this slot\n");
-		return;
+	memset((__xdata uint8_t *)&F, 0, sizeof(F));
+	if (idx >= machine.n_sfp)
+		return OM_OK;
+	si = idx << 2;			/* the slot's pin bits */
+	F.present = ~sfp_pins_last >> si & 1;	/* shifts: a test would take a bit of IRAM */
+	F.los = sfp_pins_last >> (si + 1) & 1;
+	if (machine.sfp_port[idx].pin_los == GPIO_NA)
+		F.los = E_SFPLOS_NONE;
+	F.ready = sfp_ready[idx];
+	F.id_ok = sfp_id_ok[idx];
+	F.ddm_ok = sfp_diag_ok[idx];
+	F.options = sfp_options[idx];
+	F.quirks = sfp_quirks[idx];
+	if (!F.present)
+		return OM_OK;
+	memcpy(F.vendor, sfp_module_vendor[idx], 17);
+	memcpy(F.part, sfp_module_model[idx], 17);
+	memcpy(F.serial, sfp_module_serial[idx], 17);
+	memcpy(F.rev, &sfp_id[idx][36], 4);		/* EEPROM 56..59 */
+	F.encoding = sfp_raw[idx][0];
+	F.rate_mbps = sfp_raw[idx][1] * 100;
+	if (!sfp_diag_ok[idx])
+		return OM_OK;
+	sp = sfp_diag[idx] + 224 - SFP_DDM_FIRST;	/* big endian words into little */
+	dp = (__xdata uint8_t *)&F.ddm_temp;		/* temp .. laser: 6 words */
+	for (si = 0; si < 12; si += 2) {
+		dp[si] = sp[si + 1];
+		dp[si + 1] = sp[si];
 	}
-	sp = sfp_raw[sfp];
-	print_string(" - Rate: "); print_byte(sp[1]);
-	print_string("  Encoding: "); print_byte(sp[0]);
-	write_char('\n');
-	so = sp[2];
-	sp = sfp_id[sfp];
-	// The Vendor-name, Vendor OUI, Vendor PN and Vendor rev ASCII fields (20..59)
-	for (si = 0; si < SFP_ID_LEN; si++) {
-		if ((si >= 16 && si < 20) || !sp[si])	// Skip Non-ASCII codes (36..39)
-			continue;
-		write_char(sp[si]);
+	F.ddm_status = sp[14];				/* 238 */
+	if (!(sfp_options[idx] & 0x10))			/* internal calibration */
+		return OM_OK;
+	sp = sfp_diag[idx];				/* 184..223 */
+	dp = (__xdata uint8_t *)F.ddm_cal;
+	for (si = 0; si < 40; si++) {
+		*dp++ = sfp_hex[sp[si] >> 4];
+		*dp++ = sfp_hex[sp[si] & 15];
 	}
-	print_string("\nOptions: "); print_byte(so); write_char('\n');
-	if (!(sfp_options[sfp] & 0x40))
-		return;
-	if (!sfp_diag_ok[sfp]) {
-		print_string("I2C read failed on this slot\n");
-		return;
-	}
-	sp = sfp_diag[sfp] + 224 - SFP_DDM_FIRST;	/* into sfp_buf: fixed addresses print shorter */
-	for (si = 0; si < 16; si++)
-		sfp_buf[si] = sp[si];
-	print_string("Temp: "); print_byte(sfp_buf[0]); print_byte(sfp_buf[1]); write_char('\n');
-	print_string("Vcc: "); print_byte(sfp_buf[2]); print_byte(sfp_buf[3]); write_char('\n');
-	print_string("TX Bias: "); print_byte(sfp_buf[4]); print_byte(sfp_buf[5]); write_char('\n');
-	print_string("TX Power: "); print_byte(sfp_buf[6]); print_byte(sfp_buf[7]); write_char('\n');
-	print_string("RX Power: "); print_byte(sfp_buf[8]); print_byte(sfp_buf[9]); write_char('\n');
-	print_string("Laser: "); print_byte(sfp_buf[10]); print_byte(sfp_buf[11]); write_char('\n');
-	print_string("State: "); print_byte(sfp_buf[14]); write_char('\n');
+	return OM_OK;
 }
 
 
