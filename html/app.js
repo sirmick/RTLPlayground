@@ -4407,26 +4407,34 @@ var l2Rows = [],
     l2SortDir = 1,
     l2Gen = 0;
 
-/* the MAC table: one get state.l2, streamed (P5-5); K the table index */
+/* the MAC table, K the table index: get state.l2.K- is a page of up to 25
+ * (OM_PAGE) entries at or after K; K = 0, then the last + 1, until a page is
+ * short. A console line waits a page, not the whole table */
 function l2Load() {
-    var gen = ++l2Gen;
-    return cli(["get state.l2"]).then(function(r) {
-        if (gen !== l2Gen) throw new Error("stale");
-        if (r.errs.length) throw new Error(r.errs[0]);
-        var o = (parseLines(r.out[0] || []).state || {}).l2 || {},
-            all = [];
-        for (var k in o) {
-            var e = o[k];
-            e.idx = +k;
-            e.vlan = +e.vlan;
-            e.lag = +e.lag;
-            e.stat = e.static === "on";
-            e.pport = e.port === "cpu" ? "CPU" : e.port;
-            e.where = e.lag ? "LAG" + e.lag : String(e.pport);
-            all.push(e);
-        }
-        return all;
-    });
+    var gen = ++l2Gen,
+        all = [];
+
+    function page(k) {
+        return cli(["get state.l2." + k + "-"]).then(function(r) {
+            if (gen !== l2Gen) throw new Error("stale");
+            if (r.errs.length) throw new Error(r.errs[0]);
+            var o = (parseLines(r.out[0] || []).state || {}).l2 || {},
+                n = 0;
+            for (var i in o) {
+                var e = o[i];
+                e.idx = +i;
+                e.vlan = +e.vlan;
+                e.lag = +e.lag;
+                e.stat = e.static === "on";
+                e.pport = e.port === "cpu" ? "CPU" : e.port;
+                e.where = e.lag ? "LAG" + e.lag : String(e.pport);
+                all.push(e);
+                n++;
+            }
+            return n < 25 ? all : page(e.idx + 1);
+        });
+    }
+    return page(0);
 }
 
 function l2Key(e) {
