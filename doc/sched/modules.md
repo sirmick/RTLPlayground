@@ -103,8 +103,12 @@ every later poll in the same step give up at once, and the scheduler
 clears it at the next step's start (`sched_m_step_start`). Without it, a
 page of polls with the bit held would wait out every one: /counters.json
 has 55 `STAT_GET`s, ~550 ms. Every later poll that gives up is still
-counted. Before the scheduler runs (the boot), it stays set after the
-first timeout. Forced in rtlsim (`tools/hw_timeouts.py`, rtlsim's `reg
+counted. Only steps get this cap: before the scheduler runs (`swdt_on`
+clear, the boot) every poll waits its own bound. Otherwise one early
+timeout would make every later boot poll give up on the execute bit's
+first busy read, and the table work after it would read stale data and
+lose writes. `tools/boot_stuck.py` shows it with rtlsim's `reg busy`:
+2733 table commands dropped without that check, 0 with it. Forced in rtlsim (`tools/hw_timeouts.py`, rtlsim's `reg
 hold`, `phy hold`, `flash wp`), each path's longest step is 9.5-16.6 ms.
 
 Not bounded: `SFR_EXEC_STATUS` under every register and SMI access (the
