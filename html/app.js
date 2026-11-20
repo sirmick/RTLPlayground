@@ -232,7 +232,7 @@ var LANG = {
         v_del_q: "Delete VLAN {n}?",
         v_del_d: "Ports keep their PVID until reassigned.",
         v_vid_err: "Enter a VLAN ID (1-4094)",
-        v_name_err: "Name must start with a letter (letters, digits, _)",
+        v_name_rule: "A name starts with a letter: up to 15 printable characters, no space, \" or \\",
         v_loaded: "Loaded VLAN {n}",
         v_notfound: "VLAN {n} not found (a new one can still be created)",
         v_nomember: "Select at least one member port (or delete the VLAN instead)",
@@ -584,7 +584,6 @@ var LANG = {
         v_del_q: "VLAN {n} を削除しますか?",
         v_del_d: "ポートの PVID は再割り当てされるまで維持されます。",
         v_vid_err: "VLAN ID (1〜4094) を入力してください",
-        v_name_err: "名前は英字で始めてください (英字、数字、_)",
         v_loaded: "VLAN {n} を読み込みました",
         v_notfound: "VLAN {n} は存在しません (新規作成は可能です)",
         v_nomember: "メンバーポートを 1 つ以上選択してください (または VLAN を削除してください)",
@@ -892,7 +891,6 @@ var LANG = {
         v_del_q: "删除 VLAN {n}?",
         v_del_d: "端口的 PVID 在重新分配前保持不变。",
         v_vid_err: "请输入 VLAN ID (1-4094)",
-        v_name_err: "名称必须以字母开头 (字母、数字、_)",
         v_loaded: "已读取 VLAN {n}",
         v_notfound: "VLAN {n} 不存在 (仍可新建)",
         v_nomember: "请至少选择一个成员端口 (或改为删除该 VLAN)",
@@ -1218,7 +1216,6 @@ var LANG = {
         v_del_q: "¿Eliminar VLAN {n}?",
         v_del_d: "Los puertos conservan su PVID hasta que se reasignen.",
         v_vid_err: "Introduce un ID de VLAN (1-4094)",
-        v_name_err: "El nombre debe empezar por una letra (letras, dígitos, _)",
         v_loaded: "VLAN {n} cargada",
         v_notfound: "VLAN {n} no encontrada (aún se puede crear una nueva)",
         v_nomember: "Selecciona al menos un puerto miembro (o elimina la VLAN)",
@@ -1578,7 +1575,6 @@ var LANG = {
         v_del_q: "Supprimer le VLAN {n}?",
         v_del_d: "Les ports conservent leur PVID tant qu'ils ne sont pas réassignés.",
         v_vid_err: "Entrez un identifiant VLAN (1-4094)",
-        v_name_err: "Le nom doit commencer par une lettre (lettre, chiffres, _)",
         v_loaded: "VLAN chargés {n}",
         v_notfound: "VLAN {n} non trouvé (un nouveau peut toutefois être créé)",
         v_nomember: "Selectionnez au moins un port membre (ou supprimez le VLAN)",
@@ -1919,7 +1915,6 @@ var LANG = {
         v_del_q: "VLAN {n} löschen?",
         v_del_d: "Die Ports behalten ihre PVID, bis sie neu zugewiesen wird.",
         v_vid_err: "VLAN-ID eingeben (1-4094)",
-        v_name_err: "Der Name muss mit einem Buchstaben beginnen (Buchstaben, Ziffern, _)",
         v_loaded: "VLAN {n} geladen",
         v_notfound: "VLAN {n} nicht gefunden (es kann neu angelegt werden)",
         v_nomember: "Mindestens einen Mitglieds-Port wählen (oder das VLAN stattdessen löschen)",
@@ -4322,8 +4317,8 @@ $("vlan_add").addEventListener("click", function() {
 });
 
 function validVlanName(n) {
-    if (n && !/^[a-zA-Z]\w*$/.test(n)) {
-        toast(t("v_name_err"), "err");
+    if (n && !/^[a-zA-Z][!#-[\]-~]{0,14}$/.test(n)) {	/* as om_check_vlan and Str(15) */
+        toast(t("v_name_rule"), "err");
         return false;
     }
     return true;
