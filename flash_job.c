@@ -3,7 +3,7 @@
  * segment, the config save, the factory reset. Each step's flash operation
  * waits for the flash in the common area (rtl837x_flash.c) before the step
  * returns, so no banked code runs while the flash is busy. FL_ERASE is the
- * one step over 20 ms (a sector, ~40 ms).
+ * one step of ~40 ms (a sector), inside the 50 ms step limit (decision 25).
  *
  * An upload segment starts in FL_PROG: httpd.c's upload_prog() parses the
  * staged segment into pages and programs them, asking for FL_ERASE at each

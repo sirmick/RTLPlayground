@@ -287,7 +287,7 @@ class Suite:
         mx = self.st_max_us(sim, "S_SL_SLOW")
         self.record(overruns=ov, state=st, sl_slow_us=round(mx, 1))
         self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"one overrun, of SL_SLOW (overruns {ov}, state {st})")
-        self.check(29500 <= mx < 31000, f"its length measured (slow's default 30 ms): {mx:.0f} us")
+        self.check(59500 <= mx < 61000, f"its length measured (slow's default 60 ms): {mx:.0f} us")
 
     def paste(self, sim, what):
         """500 characters + CR at the UART's rate; (bytes con took, sum ok, overruns)"""
@@ -378,9 +378,10 @@ class Suite:
         self.fine(sim)
         text = sim.uart_text()
         ok = text.count("flash: ok")
-        st_ok = [self.st_max_us(sim, s) < 20000 for s in self.S if s not in
-                 ("S_NONE", "S_COUNT", "S_SL_SLOW", "S_FL_ERASE", "S_CLI_RUN", "S_SL_HANG",
-                  "S_POSTER_STEP")]       # the poster's one loader_confirm(), a sector erase, at 15 s
+        # the step limit, 50 ms (decision 25): a sector erase (FL_ERASE, the
+        # poster's loader_confirm()) is inside it now
+        st_ok = [self.st_max_us(sim, s) < 50000 for s in self.S if s not in
+                 ("S_NONE", "S_COUNT", "S_SL_SLOW", "S_CLI_RUN", "S_SL_HANG")]
         gaps = {n: self.log(sim, "st_log_" + n) for n in ("sleep_a", "sleep_b")}
         crash = self.u(sim, "crash_rec", 2)
         rx_ov = self.u(sim, "con_rx_overruns")
@@ -390,7 +391,7 @@ class Suite:
                     stack_hw=hw, sleep_a_gap_min=gaps["sleep_a"]["gap_min"], sleep_b_gap_min=gaps["sleep_b"]["gap_min"])
         self.check(ok == flashes, f"every flash run verified ({ok} of {flashes})")
         self.check(self.u(sim, "st_jobs_done") == self.u(sim, "st_jobs_claimed"), "every claimed job ended")
-        self.check(all(st_ok), "no step over 20 ms but the sanctioned ones (SL_SLOW, FL_ERASE, CLI_RUN printing, the loader confirm)")
+        self.check(all(st_ok), "no step over 50 ms but the sanctioned ones (SL_SLOW, CLI_RUN printing)")
         self.check(gaps["sleep_a"]["gap_min"] * FINE_US >= 5000 and gaps["sleep_b"]["gap_min"] * FINE_US >= 37000,
                    "sleep_a/b never early across the whole soak (and both tick wraps)")
         self.check(crash != 0x5c4d and "Last reset" not in text, "no watchdog reset")

@@ -30,7 +30,8 @@ S6: a refused upload from a client that keeps to the window and, as Linux's
     after a zero window is lost (the client ignores it). The probe's ACK
     reopens the window: the upload ends with its answer, every byte staged,
     in far less than the 30 s abort.
-Each passes if no step but FL_ERASE took over 20 ms, and the flash holds what
+Each passes if no step took over 50 ms (the step limit, decision 25; a
+sector erase, ~40 ms, is inside it now), and the flash holds what
 it should. The upload's firmware time is printed. Needs a bench whose client
 honours the switch's window (the upload closes it after each segment).
 Exit status 1 if any fails.
@@ -41,7 +42,7 @@ CONFIG_START, CONFIG_LEN = 0x7f000, 0x1000	# layout.h, compact
 DEFAULT_CONFIG_START = 0x39000
 UPLOAD_START = 0x40000
 LDR_BOOTCNT = 0x3a000				# layout.h
-LIMIT_US = 20000
+LIMIT_US = 50000				# the step limit (decision 25)
 FINE_NS = 6144					# sched.h SCHED_FINE_NS
 
 
@@ -57,7 +58,7 @@ def health(out):
 
 
 def judge(name, steps):
-    long = {s: v for s, v in steps.items() if v[1] > LIMIT_US and s != "FL_ERASE"}
+    long = {s: v for s, v in steps.items() if v[1] > LIMIT_US}
     fl = " ".join(f"{s} {v[0]}x max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
     top = max(((v[1], s) for s, v in steps.items() if s != "FL_ERASE"), default=(0, "-"))
     hs = steps.get("HOUSE_SEC")

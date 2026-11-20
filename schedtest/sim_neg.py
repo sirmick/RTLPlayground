@@ -190,12 +190,12 @@ class Neg(Suite):
         ov, st = self.u(sim, "sched_overruns"), self.u(sim, "sched_overrun_state", 1)
         mx = self.st_max_us(sim, "S_SL_SLOW")
         h = self.say(sim, "health")
-        m = re.search(r"^SL_SLOW\t(\d+)\t(\d+)us$", h, re.M)
-        self.record(overruns=ov, state=st, sl_slow_us=round(mx, 1), health_us=m and int(m.group(2)))
+        m = re.search(r"^SL_SLOW\t(\d+)\t(\d+)ms$", h, re.M)	# over ~45 ms health prints ms
+        self.record(overruns=ov, state=st, sl_slow_us=round(mx, 1), health_ms=m and int(m.group(2)))
         self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"one overrun, of SL_SLOW (overruns {ov}, state {st})")
-        self.check(24500 <= mx < 26000, f"the step measured ~25 ms: {mx:.0f} us")
+        self.check(54500 <= mx < 56000, f"the step measured ~55 ms: {mx:.0f} us")
         self.check(re.search(r"^overruns 1 last SL_SLOW,", h, re.M), "health names it: overruns 1 last SL_SLOW")
-        self.check(m and m.group(1) == "1" and 24500 <= int(m.group(2)) < 26000, "and lists SL_SLOW once, ~25 ms",
+        self.check(m and m.group(1) == "1" and 54 <= int(m.group(2)) <= 56, "and lists SL_SLOW once, ~55 ms",
                    m and m.group(0))
 
     # ---- bad_flash ----

@@ -93,15 +93,15 @@ STEP(isr_ev, step)
 	return STEP_WAIT(S_ISR_EV_STEP, HW_CON_RX, SCHED_FOREVER);
 }
 
-/* slow: one step of st_slow_ms on request (default 30, an overrun;
- * the length rides into SL_SLOW in the slot's arg); hang: a step that never
- * returns (ST_NEG=hang), for the watchdog. ST_NEG=overrun runs slow (25 ms)
- * once by itself, 2 s after boot. */
+/* slow: one step of st_slow_ms on request (default 60, an overrun of the
+ * 50 ms limit, decision 25; the length rides into SL_SLOW in the slot's
+ * arg); hang: a step that never returns (ST_NEG=hang), for the watchdog.
+ * ST_NEG=overrun runs slow (55 ms) once by itself, 2 s after boot. */
 static __xdata uint16_t sl_t0, sl_c0, sl_n, sl_dt, sl_el;	/* up to 400 ms */
 #ifdef ST_NEG_OVERRUN
-__xdata uint16_t st_slow_ms = 25;		/* testing.md: a 25 ms step */
+__xdata uint16_t st_slow_ms = 55;		/* testing.md: a 55 ms step */
 #else
-__xdata uint16_t st_slow_ms = 30;
+__xdata uint16_t st_slow_ms = 60;
 #endif
 
 TASK(sl, fixed, once, first=idle)

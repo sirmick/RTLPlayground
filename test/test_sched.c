@@ -268,13 +268,13 @@ static void test_next_and_overrun(void)
 	CHECK(!strcmp(pass(), "aBaw"), "then B_ALT");
 
 	reset_all(10);
-	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 5;	/* 25 ms */
+	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 11;	/* 55 ms: over the 50 ms limit (decision 25) */
 	pass();
-	CHECK(sched_overruns == 1 && sched_overrun_state == S_B_STEP, "a 25 ms step is an overrun, its state named");
-	CHECK(sched_st_max[S_B_STEP] >= 5 * 813 && sched_st_max[S_B_STEP] < 6 * 813, "its length in fine units");
+	CHECK(sched_overruns == 1 && sched_overrun_state == S_B_STEP, "a 55 ms step is an overrun, its state named");
+	CHECK(sched_st_max[S_B_STEP] >= 11 * 813 && sched_st_max[S_B_STEP] < 12 * 813, "its length in fine units");
 	CHECK(sched_st_max[S_A_STEP] < SCHED_OVERRUN_FINE, "the others are not");
 	CHECK(sched_pass_max >= sched_st_max[S_B_STEP], "the pass is at least as long");
-	CHECK(sched_now == 15, "the tick is renewed after the step");
+	CHECK(sched_now == 21, "the tick is renewed after the step");
 
 	reset_all(0);
 	TH2 = 0x33; TL2 = 0x69;		/* just started: counting up from 0, below the reload */
@@ -509,7 +509,7 @@ static void test_health(void)
 {
 	printf("health tasks\n");
 	reset_all(100);
-	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 5;
+	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 11;	/* 55 ms: an overrun (decision 25) */
 	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = HW_LINK; act[S_W_STEP].b = SCHED_FOREVER;
 	pass();
 	out_reset();

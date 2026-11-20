@@ -193,7 +193,7 @@ STEP(cli, run)
 		st_jobs_req = 1;
 		task_wake(T_JOBBER);
 	} else if (word("slow")) {
-		st_slow_ms = number() ? num : 30;
+		st_slow_ms = number() ? num : 60;	/* an overrun of the 50 ms limit (decision 25) */
 		st_slow_req = 1;
 		task_wake(T_SL);
 	} else if (word("hang")) {
