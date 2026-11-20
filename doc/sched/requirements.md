@@ -10,18 +10,20 @@ Each goal with where it stands at 72cee59. "Sim" is rtlsim (chapter 13),
    **Met.** A 1000-entry `l2` runs as a cli job, a line a step: on the 8x
    1008 lines in 3.15 s over 1966 `CLI_MORE` steps, the longest 429 µs, the
    longest pass 2.0 ms, loop detection polling throughout (silicon.md, EB).
-2. **Bounded steps.** No step runs longer than 20 ms; one documented
-   exception, a sector erase (`FL_ERASE`: 40 ms in the sim, 35.5-41.6 ms on
-   the 8x, chapter 10). Target under 5 ms.
+2. **Bounded steps.** No step runs longer than 50 ms (decision 25; it was
+   20 ms with the sector erase as its exception: `FL_ERASE`, 40 ms in the
+   sim, 35.5-41.6 ms on the 8x, chapter 10, is now inside it). Target under
+   5 ms.
    **Met for the limit in every reference scenario:** in the sim no state's
    longest step is over 20 ms but `FL_ERASE` in any of the 17 old-vs-new
    scenarios, on both boards (evidence/e1e3-merge.txt; the last known long
    step, `/vlanlist.json`'s RX_STEP, went in E4: e4-polls-vlan-eee.txt).
    Every cli state is under 5 ms (`tools/cli_steps.py --web`, e1, e4).
    **Not met everywhere:**
-   - over 20 ms outside the scenarios: `/vlanlist.json` with 40 VLANs of
+   - over the 5 ms target, inside the 50 ms limit, left for the
+     object-model project (decision 25): `/vlanlist.json` with 40 VLANs of
      20-character names, 34 ms in one RX step (was 67-100 ms;
-     e4-polls-vlan-eee.txt: the reply's size bounds it; F1b owns it);
+     e4-polls-vlan-eee.txt), and a config POST's RX_STEP, 18.2 ms on the 8x;
    - over the 5 ms target: `FL_VERIFY` 14.2 ms and `FL_PROG` 8.1 ms
      (e3-flash-job.txt), a forced poll timeout's step 9.5-16.6 ms
      (modules.md), l2_big's RX_STEP 11.1 ms (es-loop-flags.txt), and on the

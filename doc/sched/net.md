@@ -26,8 +26,11 @@ one step. Three things changed:
 
 The callback copies each segment of the body into the stage, behind what
 the flash job (chapter 10) still has to write, and claims the job if it
-isn't running. uIP's receive window is the room left in the stage, at most
-an MSS (`UIP_CONF_RECEIVE_WINDOW` is `uip_rcv_wnd`, which httpd sets): the
+isn't running. uIP's receive window is the room left in the stage, all of
+it since F1b (58c1601). It was capped at an MSS, against which Linux sends
+half segments, one per round trip; now the stage, 4480 B, comes in one
+burst of three full segments and a short one, which the NIC's ~10 KiB RX
+ring holds (`UIP_CONF_RECEIVE_WINDOW` is `uip_rcv_wnd`, which httpd sets): the
 client sends only what fits, and the window's right edge (ACK + window)
 never moves left, so nothing it has sent inside the window is lost. The
 job takes what has come; at its `FL_DONE` it goes back to `FL_PROG` if more
@@ -74,7 +77,10 @@ the answer when the part has ended.
   main's 3.14 s / 4.27 s (e3-flash-job.txt). On the 8x (curl, an install
   image): 16.2 s, against fork main's 14.9 s (silicon.md, EB): the sim's
   paced links don't show the real per-segment round trips. Whether to
-  advertise more than one MSS when the stage has room is F1b's (O9).
+  advertise more than one MSS when the stage has room was O9: done in F1b
+  (above). In the sim the upload is bound by the flash job (~65 ms a 4480 B
+  stage), so it is unchanged (5.12 s against 5.15 s); on the 8x, where each
+  round trip costs more, F2 measures it.
 
 ### 2. `/cmd` (web commands)
 

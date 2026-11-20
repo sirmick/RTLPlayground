@@ -24,7 +24,7 @@ if (swdt_on && !--swdt_cnt) {
   `sched.mk`); `tools/isr_frame.py` reads the real count from the `.asm` at
   every build and fails it if they differ.
 - `swdt_kick()` at each pass's start sets `swdt_cnt = 1000`: **5 s**
-  (`SWDT_TICKS`). It must be far above the step limit (20 ms) and the erase
+  (`SWDT_TICKS`). It must be far above the step limit (50 ms, decision 25) and the erase
   (40 ms); the watchdog catches hangs, not slow steps. It counts from the
   pass's kick, not the step's start, so a step that hangs fires it 4995-5000
   ms after it began (b5-neg-tests.txt).

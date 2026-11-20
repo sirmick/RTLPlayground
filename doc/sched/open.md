@@ -14,7 +14,7 @@ one says so; the earlier one is kept as it was decided, marked.
 | 4 | **16-bit event mask**; events from ISR bits, sampled hardware state, and task posts. *Superseded by 23* | - |
 | 5 | Time given in **ms** (rounded up to 5 ms ticks), stored as an absolute 16-bit tick | - |
 | 6 | **Round robin over a generated run sequence**; frequency (appearances in the sequence) instead of priority classes | - |
-| 7 | Step limit **20 ms** (target 5 ms); a flash erase (~40 ms) the documented exception | - |
+| 7 | Step limit **20 ms** (target 5 ms); a flash erase (~40 ms) the documented exception. *Superseded by decision 25: 50 ms* | - |
 | 8 | Shared globals stay global; modules coordinate; no step holds a shared buffer across steps (the one-connection exception: console.md, net.md) | - |
 | 9 | TX ring big enough for one line; long prints chunk per line; per-module context carries the cursor. *The TX ring part superseded by 21* | - |
 | 10 | **One cli task** serving console and web, one command at a time | - |
@@ -32,6 +32,7 @@ one says so; the earlier one is kept as it was decided, marked.
 | 22 | A **step returns the state it wants next**: `return S_X;`, `return STEP_STAY;`, `return STEP_END;` (0), `return STEP_WAIT(s, ev, ms)` / `STEP_SLEEP` / `STEP_ARG` (expressions). The dispatcher stores it; helpers can't choose the state (`task_next`, `task_end` are gone). A step that can fall off its end fails the build (SDCC warning 59 as an error for the step sources). Michael, 2026-11-19; E5, core.md | 18's macros, which set the state through `task_next()` |
 | 23 | **Hardware-only 8-bit event mask** (`HW_RX`, `HW_LINK`, `HW_CON_RX`, `HW_CON_TX`; bit 7 `EV_FOREVER`, the scheduler's own); one task waking another is `task_wake(T_X)` (a job: its claimed slot), which makes the slot due now; the woken step re-checks why, a woken periodic task that it is due. `EV_LINE`, `EV_WEBCMD` became cli's wakes, `EV_UPLOAD_DONE` net's; `EV_CMD_DONE`, `EV_UPLOAD`, `EV_CFG`, `EV_LINKCHG` had no reader and are gone. A link-change wake (from `link_read`, with a due-check in the woken stp/lacp/loop) is the pattern for a future consumer, not built (QA e5-linkchg). Michael, 2026-11-19; E5, events.md | 4 |
 | 24 | Tasks and steps are **declared inline**: `TASK(name, fixed\|job, high\|medium\|once [, count=N] [, first=step])` and `STEP(task, step)` (the function `task_step`, state `S_TASK_STEP`). A sweep preprocesses each step source with the build's flags (`#ifdef`'d steps are right) and writes the `.def` files into the build directory; the generator runs on them with all its checks. `sequence.def` stays for an explicit sequence (only the host test has one). Michael, 2026-11-19; E5, generator.md | the hand-written `tasks.def` and schedtest's `.def` files |
+| 25 | **Step limit 50 ms, target 5 ms** (supersedes decision 7's 20 ms). `FL_ERASE` (~40 ms) is now inside the limit, not an exception; `SCHED_OVERRUN_FINE` counts a step of 50 ms or more. The parsing and formatting steps (the config POST's RX_STEP, 18.2 ms on the 8x; `/vlanlist.json` with 40 named VLANs, 34 ms) are left for the object-model project. Michael, 2026-11-20 |
 
 ## Open
 
@@ -41,7 +42,7 @@ one says so; the earlier one is kept as it was decided, marked.
 | O5 | The NIC RX ring's real capacity under a burst (sets how often `rx` must run) | not measured on silicon; rtlsim models 10 KiB. A burst test on the 8x (F2) |
 | O6 | Push branches, and when | Michael says, each time |
 | O8 | Hand-written dispatch asm (load r0-r2 from `step_addr`, `lcall __sdcc_banked_call`) instead of SDCC's, which keeps r5-r7 pushed for the whole step | would win back 3 B of stack per step; not needed while the headroom is 60-70 B (memory.md); not done |
-| O9 | Advertise more than one MSS of receive window when the stage has room? An upload on the 8x took 16.2 s against fork main's 14.9 s; decision 20 allows it | F1b measures per-segment timing first |
+| O9 | Advertise more than one MSS of receive window when the stage has room? An upload on the 8x took 16.2 s against fork main's 14.9 s; decision 20 allows it | done in F1b (58c1601): the window is the stage's free space; the sim is flash-bound (5.12 s, unchanged), the 8x is F2's to measure |
 
 ## Closed questions
 
