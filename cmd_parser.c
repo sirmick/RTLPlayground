@@ -1431,6 +1431,7 @@ void cmd_tokenize(void) __banked
 	}
 }
 
+#ifdef DEBUG_OBJ
 // Print GPIO status
 void print_gpio_status(void) {
 	for (uint8_t idx = 0; idx < 2; idx++) {
@@ -1457,6 +1458,7 @@ void print_gpio_status(void) {
 		write_char('\n');
 	}
 }
+#endif
 
 // Identify command
 void cmd_parser(void) __banked
@@ -1524,9 +1526,9 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "sds")) {
 			print_reg(RTL837X_REG_SDS_MODES);
 			write_char('\n');
+#ifdef DEBUG_OBJ
 		} else if (cmd_compare(0, "gpio")) {
 			print_gpio_status();
-#ifdef DEBUG_OBJ
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
