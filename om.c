@@ -2750,6 +2750,7 @@ uint8_t om_cmd(void) __banked
 	return 1;
 }
 
+#ifndef SCHEDTEST	/* schedtest has no line editor (cmd_editor.c): no completion */
 /*
  * Tab completion (DESIGN.md 13): con_line's last word, at the cursor, against
  * the verbs, the tables' paths and load's words (not a value after set: the
@@ -2985,6 +2986,7 @@ bel:
 	write_char('\a');
 	return 1;
 }
+#endif
 
 void om_init(void) __banked
 {
