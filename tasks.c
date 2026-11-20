@@ -203,8 +203,6 @@ STEP(cli, next)
 		cli_web_drop();
 		return S_CLI_PROMPT;
 	}
-	if (con_tx_room() < CLI_ROOM)		/* the reply's console mirror */
-		return STEP_WAIT(S_CLI_NEXT, HW_CON_TX, SCHED_FOREVER);
 	if (cli_web_full())
 		return S_CLI_NEXT;
 	WEBCMD_CAPTURE_ON();
@@ -224,12 +222,12 @@ STEP(cli, more)
 		if (!cli_job)
 			return S_CLI_PROMPT;
 	}
-	if (con_tx_room() < CON_TX_LINE)	/* the console (or its mirror of the reply) */
-		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
-	if (cli_src == CLI_WEB && !cli_dropped) {
+	if (cli_src == CLI_WEB && !cli_dropped) {	/* the reply: outbuf, not the console */
 		if (cli_web_full())
 			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
+	} else if (con_tx_room() < CON_TX_LINE) {
+		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
 	}
 	cli_job_more();
 	if (cli_src == CLI_WEB && !cli_dropped)
