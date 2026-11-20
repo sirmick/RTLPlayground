@@ -56,12 +56,16 @@ def main():
     print("the real schema, other boards")
     sw = rc.Schema(board=rc.Board("SWGT024_V2_0_UNMANAGED"))
     b = rc.txt2bin(sw, ["set port.1.isolate 1,6", "port.6.mtu 9000"])
+    # vlan's reset and VLAN 1 (its members against an entry's 0), as the firmware saves the defaults
+    def vdef(members):
+        return bytes([9, 0, 0, 0, 9, 1, 0, 1, 2, 2]) + struct.pack("<H", members)
     # front 1 is logical 4, front 6 logical 3: bits 4 and 3
-    check(b[8:] == bytes([1, 1, 0, 1, 11, 2, 0x18, 0]) + bytes([1, 6, 0, 1, 5, 2]) + struct.pack("<H", 9000),
-          "SWGT024: front-panel numbers to logical bits, the index as typed", b[8:].hex())
-    check(rc.bin2txt(sw, b) == ["port.1.isolate 1,6", "port.6.mtu 9000"], "and back")
+    check(b[8:] == bytes([1, 1, 0, 1, 11, 2, 0x18, 0]) + bytes([1, 6, 0, 1, 5, 2]) + struct.pack("<H", 9000) +
+          vdef(0x1f8), "SWGT024: front-panel numbers to logical bits, the index as typed", b[8:].hex())
+    check(rc.bin2txt(sw, b) == ["port.1.isolate 1,6", "port.6.mtu 9000", "vlan.1.members 1-6"], "and back",
+          rc.bin2txt(sw, b))
     b8 = rc.txt2bin(rc.Schema(), [])
-    check(b8 == b"\0RC1" + bytes(4), "the defaults: a header and no records")
+    check(b8[8:] == vdef(0x1ff), "the defaults: a header and VLAN 1's records", b8.hex())
     for bad, why in (("port.10.mtu 100", "no such port"), ("port.1.mtu 63", "64-16383"),
                      ("port.9.eee on", "not on this port"), ("port.1.nope 1", "no such path"),
                      ('port.1.name a"b', "printable")):
@@ -168,9 +172,21 @@ def p41_schema(board=None):
     import shutil
     import tempfile
     d = tempfile.mkdtemp()
-    for f in ("port", "sys", "mgmt", "web", "ntp", "dns", "syslog"):
+    objs = ("port", "sys", "mgmt", "web", "ntp", "dns", "syslog")
+    for f in objs:
         shutil.copy(os.path.join(HERE, "..", "schema", f + ".py"), d)
-    shutil.copy(os.path.join(HERE, "..", "schema", "registry.txt"), d)
+    # their registry lines only: an object moved since (vlan, P4-2) has IDs but no file here
+    ids, reg = set(), []
+    for ln in open(os.path.join(HERE, "..", "schema", "registry.txt")):
+        w = ln.split()
+        if len(w) >= 3 and w[0] == "obj":
+            if w[2].split(".")[0] not in objs:
+                continue
+            ids.add(w[1])
+        elif len(w) >= 3 and w[0] == "field" and w[1].split(".")[0] not in ids:
+            continue
+        reg.append(ln)
+    open(os.path.join(d, "registry.txt"), "w").write("".join(reg))
     sch = rc.Schema([d], board)
     shutil.rmtree(d)
     return sch

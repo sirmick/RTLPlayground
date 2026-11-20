@@ -48,6 +48,16 @@ uint8_t om_apply_mgmt(uint8_t idx) __banked
 	return OM_OK;
 }
 
+uint8_t om_check_mgmt(uint8_t idx) __banked
+{
+	(void)idx;
+	if (!om_vlan_known(cfg_cand.mgmt.vlan)) {
+		om_fail(OM_E_MGMT_VLAN);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
+
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx) __banked
 {
 	(void)idx;

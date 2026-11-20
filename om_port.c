@@ -90,6 +90,10 @@ uint8_t om_check_port(uint8_t idx) __banked
 {
 	l = idx;
 	memcpy(&r, &cfg_cand.port[l], sizeof(r));
+	if (!om_vlan_known(r.pvid)) {
+		om_fail(OM_E_PVID);
+		return OM_ERR;
+	}
 	if (machine.is_sfp[l])
 		return OM_OK;
 	if (r.duplex != E_DUPLEX_AUTO && r.speed != E_SPEED_10M && r.speed != E_SPEED_100M) {

@@ -127,6 +127,7 @@ static int applied[OM_PORTS], checks, fail_check_on = -1, ct_calls, gets;
 static struct cfg_port applied_old[OM_PORTS];
 
 static int fail_apply_on = -1;
+static int vlan_checks;		/* the pvid and mgmt.vlan checks: the vlan tests' own */
 static struct cfg_port applied_new[OM_PORTS];
 
 uint8_t om_apply_port(uint8_t idx)
@@ -144,6 +145,10 @@ uint8_t om_apply_port(uint8_t idx)
 uint8_t om_check_port(uint8_t idx)
 {
 	checks++;
+	if (vlan_checks && !om_vlan_known(cfg_cand.port[idx].pvid)) {	/* as om_port.c */
+		om_fail(OM_E_PVID);
+		return OM_ERR;
+	}
 	if (idx == fail_check_on) {
 		om_fail(OM_E_TEST);
 		return OM_ERR;
@@ -220,6 +225,25 @@ uint8_t om_apply_sys(uint8_t idx) { t_sysa++; return OM_OK; }
 uint8_t om_check_sys(uint8_t idx) { if (strchr(cfg_cand.sys.hostname, ' ')) { om_fail(OM_E_HOSTNAME_SPACE); return OM_ERR; } return OM_OK; }
 uint8_t om_derive_sys(uint8_t idx) { strcpy((char *)om_val, "RTLPlayground-0a0b0c"); return OM_OK; }
 uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
+uint8_t om_check_mgmt(uint8_t idx)	/* as om_svc.c */
+{
+	if (vlan_checks && !om_vlan_known(cfg_cand.mgmt.vlan)) {
+		om_fail(OM_E_MGMT_VLAN);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
+
+/* the VLAN table (rtl837x_port.c), under om_vlan.c: the calls, as text */
+#include "rtl837x_port.h"
+struct vlan_settings vlan_settings;
+static char vlan_ops[512];
+void vlan_create(void)
+{
+	sprintf(vlan_ops + strlen(vlan_ops), "+%u %03x/%03x ", vlan_settings.vlan, vlan_settings.members,
+		vlan_settings.tagged);
+}
+void vlan_delete(uint16_t vlan) { sprintf(vlan_ops + strlen(vlan_ops), "-%u ", vlan); }
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 {
 	t_renew++;
@@ -602,10 +626,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get lag.1", "err lag.1: dns mgmt ntp port.* sched sys syslog vlan.* web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nvlan.*\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -980,7 +1004,7 @@ static void kinds(void)
 	expect("del tvlan.10", "ok\n");
 	expect("diff", "- tvlan.10\n- tvlan.10.name ten\nok\n");
 	expect("set tvlan.30.name x", "ok\n");
-	expect("set tvlan.40.name y", "err tvlan.40.name: no free entry\n");
+	expect("set tvlan.40.name y", "err tvlan.40.name: table full\n");
 	expect("set tvlan.10.tagged 3", "ok\n");
 	CHECK(cfg_cand.tvlan[2].key == 10 && cfg_cand.tvlan[3].key == 30,
 	      "a key comes back to its slot in running; a new one takes a slot free in both");
@@ -1069,7 +1093,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns mgmt ntp port.* sched sys syslog vlan.* web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -1409,11 +1433,11 @@ static void binary(void)
 	expect("load", "err load: saved or default\n");
 	expect("save", "ok\n");
 	sec_read();
-	/* all defaults: tvlan's reset, and tvlan.1 (members 1-9 against an entry's 0) */
-	static const uint8_t empty[] = { 0, 'R', 'C', '1', 12, 0 };
-	CHECK(!memcmp(sec, empty, 6) && sec[20] == 0xff, "save of the defaults: the header and 12 B of records");
-	expect("get -s", "tvlan.1.members 1-9\nok\n");
-	expect("get state.cfg.save state.cfg.saved_bytes", "state.cfg.save done\nstate.cfg.saved_bytes 20\nok\n");
+	/* all defaults: vlan's and tvlan's reset, and their entry 1 (members 1-9 against an entry's 0) */
+	static const uint8_t empty[] = { 0, 'R', 'C', '1', 24, 0 };
+	CHECK(!memcmp(sec, empty, 6) && sec[32] == 0xff, "save of the defaults: the header and 24 B of records");
+	expect("get -s", "vlan.1.members 1-9\ntvlan.1.members 1-9\nok\n");
+	expect("get state.cfg.save state.cfg.saved_bytes", "state.cfg.save done\nstate.cfg.saved_bytes 32\nok\n");
 
 	expect("set port.3.mtu 9000", "ok\n");
 	expect("set port.5.name lab rack 2", "ok\n");
@@ -1530,7 +1554,7 @@ static void binary(void)
 		sec_write(r, sizeof r);
 		boot();
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
-		expect("get -d", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
+		expect("get -d", "port.3.mtu 9000\nvlan.1.members 1-9\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
 		expect("get -s", "port.3.mtu 9000\ntsys.ip 10.0.0.1\ntvlan.7.name sev\nport.3.tstorm.mcast.rate 500\nok\n");
 		dump("skip", 1);
 	}
@@ -2099,6 +2123,66 @@ static void completion(void)
 	expect("get tsys.led", "tsys.led off\nok\n");	/* the commands after it */
 }
 
+/* vlan.V (P4-2): om_vlan.c's table calls and checks, pvid and mgmt.vlan */
+static void vlans(void)
+{
+	char many[64];
+	int i;
+
+	printf("vlan\n");
+	om_init();
+	vlan_checks = 1;
+	vlan_ops[0] = 0;
+	expect("get vlan", "vlan.1.name \nvlan.1.members 1-9\nvlan.1.tagged none\nok\n");
+	expect("set vlan.10.members 1-3", "ok\n");
+	expect("set vlan.10.tagged 3", "ok\n");
+	expect("set vlan.10.name office", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(vlan_ops, "+10 007/004 "), "a new VLAN: created, its members and tagged ports");
+	expect("set vlan.10.tagged 4", "ok\n");
+	expect("apply", "err vlan.10: tagged ports must be members\n");
+	expect("discard", "ok\n");
+	expect("set vlan.10.name 9x", "ok\n");
+	expect("apply", "err vlan.10: a name starts with a letter and has no space\n");
+	expect("set vlan.10.name a b", "ok\n");
+	expect("apply", "err vlan.10: a name starts with a letter and has no space\n");
+	expect("discard", "ok\n");
+	expect("set port.1.pvid 20", "ok\n");
+	expect("apply", "err port.1: pvid: no such vlan\n");
+	expect("set vlan.20.members 1", "ok\n");
+	vlan_ops[0] = 0;
+	expect("apply", "ok\n");
+	CHECK(!strcmp(vlan_ops, "+20 001/000 "), "pvid 20 with VLAN 20 in the same apply");
+	expect("set mgmt.vlan 30", "ok\n");
+	expect("apply", "err mgmt: vlan: no such vlan\n");
+	expect("set mgmt.vlan 0", "ok\n");
+	expect("apply", "ok\n");
+	expect("del vlan.20", "ok\n");
+	expect("apply", "err port.1: pvid: no such vlan\n");
+	expect("set port.1.pvid 1", "ok\n");
+	vlan_ops[0] = 0;
+	expect("apply", "ok\n");
+	CHECK(!strcmp(vlan_ops, "-20 "), "a deleted VLAN leaves the table");
+	/* VLAN 10 out of its slot and back in another: never out of the table */
+	expect("set vlan.30.members 2", "ok\n");
+	expect("apply", "ok\n");
+	expect("del vlan.10", "ok\n");
+	expect("set vlan.40.name x", "ok\n");
+	expect("set vlan.10.members 5", "ok\n");
+	vlan_ops[0] = 0;
+	expect("apply", "ok\n");
+	CHECK(!strstr(vlan_ops, "-10"), "a VLAN in another slot isn't deleted");
+	CHECK(strstr(vlan_ops, "+10 010/000 ") != NULL, "it is written with its new members");
+	/* MAX_VLANS: the 65th refused at set */
+	for (i = 0; i < MAX_VLANS; i++) {
+		snprintf(many, sizeof many, "set vlan.%d.members 1", 100 + i);
+		run(many);
+	}
+	expect("set vlan.4000.members 1", "err vlan.4000.members: table full\n");
+	expect("discard", "ok\n");
+	vlan_checks = 0;
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -2111,6 +2195,7 @@ int main(int argc, char **argv)
 	kinds();
 	services();
 	completion();
+	vlans();
 	staging();
 	binary();
 	roundtrip();

@@ -1331,10 +1331,7 @@ void httpd_appcall(void)
 				goto do_send;
 			}
 			dbg_string("Not file entry\n");
-			if (!strcmp(q, "/vlan.json")) {
-				parse_short(q + 15);
-				send_vlan(short_parsed);
-			} else if (is_word(q, "/bandwidth.json")) {
+			if (is_word(q, "/bandwidth.json")) {
 				send_bandwidth();
 			} else if (is_word(q, "/storm.json")) {
 				send_storm();
@@ -1348,8 +1345,6 @@ void httpd_appcall(void)
 				send_lldp();
 			} else if (is_word(q, "/loop.json")) {
 				send_loop();
-			} else if (is_word(q, "/vlanlist.json")) {
-				send_vlanlist();
 			} else if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */
 				strtox(config_buf, "get -s");

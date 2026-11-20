@@ -103,6 +103,9 @@ extern __xdata uint8_t om_val[], om_fid;
 #define OM_ISOLATE_DEFAULT	((uint16_t)(0x200 | (((1 << (MACHINE_MAX_PORT + 1)) - 1) & \
 				~((1 << MACHINE_MIN_PORT) - 1))))
 
+/* Every user port: VLAN 1's default members */
+#define OM_PORTS_USER	(OM_ISOLATE_DEFAULT & ~0x200)
+
 /* a 10G-capable port (machine.n_10g: logical 3, and 8 with two) */
 #define OM_TEN_G(l)	(((l) == 3 && machine.n_10g) || ((l) == 8 && machine.n_10g == 2))
 
@@ -147,5 +150,8 @@ uint8_t om_save_end(void) __banked;	/* FL_SAVE: read it back, a step at a time: 
  * own string would be __code in its bank, which om.c can't read.
  */
 void om_fail(uint8_t msg) __banked;
+
+/* om_vlan.c: vid is 0, or a VLAN of the candidate (port.N.pvid, mgmt.vlan) */
+uint8_t om_vlan_known(uint16_t vid) __banked;
 
 #endif

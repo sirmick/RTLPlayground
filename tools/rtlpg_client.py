@@ -255,6 +255,8 @@ class Schema:
         t = f.typ
         if isinstance(d, str) and d == "OM_ISOLATE_DEFAULT":
             return struct.pack("<H", self.board.isolate_default())
+        if isinstance(d, str) and d == "OM_PORTS_USER":
+            return struct.pack("<H", self.board.isolate_default() & ~(1 << CPU))
         if t.code == "PMASK":
             return struct.pack("<H", int(d, 0) if isinstance(d, str) else d)
         if t.code == "PORT":

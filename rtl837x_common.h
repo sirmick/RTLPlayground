@@ -41,9 +41,6 @@
 // Size of the port name, including the terminating null byte
 #define PORT_NAME_SIZE 32
 
-// Size of the memory area dedicated to VLAN-names
-#define VLAN_NAMES_SIZE 1024
-
 // Size of the flash buffer used for writing to flash, must be a multiple of the flash page size (0x100)
 #define FLASH_BUF_SIZE 512
 

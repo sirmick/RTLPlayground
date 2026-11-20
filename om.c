@@ -1905,7 +1905,7 @@ static uint8_t key_reset(void)
 		cp += obx.size;
 		r_v = cp[0] | (uint16_t)cp[1] << 8;
 		if (!key_new()) {
-			fail("no free entry");
+			fail("table full");
 			return 0;
 		}
 		pend_pre();
@@ -1941,7 +1941,7 @@ static void om_set(uint8_t del)
 #if OM_USE_KEY
 	if (!cur_ok && !del && (r_fix & 1)) {
 		if (!key_new()) {
-			fail("no free entry");
+			fail("table full");
 			return;
 		}
 		first_inst();

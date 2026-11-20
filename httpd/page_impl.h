@@ -19,7 +19,6 @@ void char_to_html(char c);
 
 void itoa16_html(uint16_t v);
 
-void send_vlan(uint16_t vlan);
 void send_bandwidth(void);
 void send_storm(void);
 void l2_delete(uint16_t idx);
@@ -28,7 +27,6 @@ void send_lag(void);
 void send_stp(void) __banked;
 void send_lldp(void);
 void send_loop(void);
-void send_vlanlist(void);
 
 /*  Convert only the lower nibble to ascii HEX char.
     For convenience the upper nibble is masked out.

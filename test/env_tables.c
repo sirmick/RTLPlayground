@@ -76,8 +76,6 @@ uint16_t slen;
 uint16_t management_vlan = 1;
 uint16_t cont_len;
 uint32_t cont_addr;
-uint8_t  vlan_names[VLAN_NAMES_SIZE];
-uint16_t vlan_ptr;
 uint8_t  sfp_pins_last = 0xff;
 uint8_t  sfp_options[2];
 char     sfp_module_vendor[2][17];

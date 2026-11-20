@@ -21,32 +21,11 @@ extern __code const uint8_t * __code const hex;
 extern __code const uint16_t bit_mask[16];
 extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
-extern __xdata uint16_t vlan_ptr;
-extern __xdata uint8_t vlan_names[VLAN_NAMES_SIZE];
 extern __xdata struct machine_runtime machine_detected;
 
 __xdata	uint32_t l2_head;
 
 __xdata struct vlan_settings vlan_settings;
-
-/* The valid VLANs (E4): bit v of vlan_bits, kept by vlan_setup, vlan_create
- * and vlan_delete, the table's only writers; /vlanlist.json reads it
- * instead of the 4094 table entries. */
-__xdata uint8_t vlan_bits[VLAN_BITS_SIZE];
-static __xdata uint8_t vb_on;
-static __xdata uint16_t vb_v;
-
-/* vlan's bit to vb_on */
-static void vlan_bit_put(uint16_t vlan)
-{
-	__xdata uint8_t *p = &vlan_bits[vlan >> 3];
-	uint8_t m = 1 << (vlan & 7);
-
-	if (vb_on)
-		*p |= m;
-	else
-		*p &= ~m;
-}
 
 #ifndef RTLP_HOST_TEST	/* the host tests' register mock has its own (test/hw_mock.c) */
 /* reg until bit 0 of its low byte is clear (a table's execute, STAT_GET,
@@ -123,21 +102,6 @@ bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type)
 	return true;
 }
 
-vlan_ingress_mode_t port_ingress_filter_get(__xdata uint8_t port) __banked
-{
-	reg_read_m(RTL837x_REG_INGRESS);
-    if (port > 9) {
-        return VLAN_INVALID;
-    }
-
-	// Each port is represented by 2 bits in the ingress register, starting from bit 0 for port 0
-	const uint8_t sfr_index = 3 - (port / 4);
-    const uint8_t shift = (port % 4) << 1;
-	
-    return (vlan_ingress_mode_t)((sfr_data[sfr_index] >> shift) & 0x03);
-}
-
-
 /*
  * Define a Primary VLAN ID for a port 
 */
@@ -186,45 +150,9 @@ void vlan_delete(uint16_t vlan) __banked
 	if (!vlan || vlan >= 0xfff)
 		return;
 
-	vlan_name_remove(vlan);
 	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
 	wait_table_ready();	/* E4: the next command must not find it busy (rtlsim: dropped) */
-	vb_on = 0;
-	vlan_bit_put(vlan);
-}
-
-
-void vlan_name_remove(uint16_t vlan) __banked
-{
-	static __xdata uint16_t name_pos;
-	static __xdata uint16_t entry_start;
-	static __xdata uint16_t pos;
-	static __xdata uint16_t entry_len;
-	static __xdata uint16_t move_count;
-	static __xdata uint16_t j;
-
-	name_pos = vlan_name(vlan);
-	if (name_pos == 0xffff)
-		return;
-
-	entry_start = name_pos - 3;
-	pos = entry_start;
-
-	while (pos < vlan_ptr && vlan_names[pos] != ' ')
-		pos++;
-	if (pos >= vlan_ptr)
-		return;
-	pos++;
-
-	entry_len = pos - entry_start;
-	move_count = vlan_ptr - pos;
-
-	for (j = 0; j < move_count; j++)
-		vlan_names[entry_start + j] = vlan_names[pos + j];
-
-	vlan_ptr -= entry_len;
-	vlan_names[vlan_ptr] = 0;
 }
 
 
@@ -248,42 +176,6 @@ int8_t vlan_get(uint16_t vlan) __banked
 }
 
 
-__xdata uint16_t vlan_name(uint16_t vlan) __banked
-{
-	/* entries "<3 hex digits><name> ": a pointer from entry to entry (E4) */
-	__xdata uint8_t *p = vlan_names;
-	uint8_t a = hex[(vlan >> 8) & 0xf], b = hex[(vlan >> 4) & 0xf], c = hex[vlan & 0xf];
-
-	while (*p) {
-		if (p[0] == a && p[1] == b && p[2] == c)
-			return p - vlan_names + 3;
-		while (*p && *p++ != ' ')
-			;
-	}
-	return 0xffff;
-}
-
-
-/* The first valid VLAN from vlan on, from the bitmap; 4096 if none */
-uint16_t vlan_next(uint16_t vlan) __banked
-{
-	__xdata uint8_t *p = &vlan_bits[vlan >> 3];
-	uint8_t b = *p >> (vlan & 7);
-
-	while (!b) {
-		if (p == &vlan_bits[VLAN_BITS_SIZE - 1])
-			return 4096;
-		vlan = (vlan | 7) + 1;
-		b = *++p;
-	}
-	while (!(b & 1)) {
-		b >>= 1;
-		vlan++;
-	}
-	return vlan;
-}
-
-
 /*
  * Create a VLAN
  * The arguments are passed in global structure vlan_settings
@@ -300,10 +192,6 @@ void vlan_create(void) __banked
 	vlan_settings.members |= 0x0200; // Set 10th bit
 	vlan_settings.tagged |= 0x0200;
 
-	print_string("vlan: "); print_short(vlan_settings.vlan);
-	print_string(", members: "); print_short(vlan_settings.members);
-	print_string(", tagged: "); print_short(vlan_settings.tagged); write_char('\n');
-
 	uint16_t a = (~vlan_settings.members) ^ vlan_settings.tagged ^ vlan_settings.members;
 
 	// On RTL8372, port-bits 0-2 must be 0, although they are not members
@@ -317,10 +205,10 @@ void vlan_create(void) __banked
 	REG_WRITE(RTL837X_TBL_CTRL, vlan_settings.vlan >> 8, vlan_settings.vlan, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
 
 	wait_table_ready();
-	vb_on = 1;
-	vlan_bit_put(vlan_settings.vlan);
 }
 
+
+static __xdata uint16_t vb_v;
 
 /*
  * Configures a default VLAN 1 and enables 4k VLAN tables
@@ -331,11 +219,6 @@ void vlan_create(void) __banked
  */
 void vlan_setup(void) __banked
 {
-
-	// No VLAN names set up so far
-	vlan_ptr = 0;
-	vlan_names[0] = 0;
-	vlan_bits[0] = 0x02;	/* VLAN 1, enabled below; the others from the table */
 
 	// Initialize VLAN table for VLAN 1, by disabling that entry
 	REG_SET(RTL837x_TBL_DATA_IN_A, machine_detected.isRTL8373? 0x0007ffff : 0x0007e3f8);
@@ -388,13 +271,14 @@ void vlan_setup(void) __banked
 
 	wait_table_ready();
 
-	/* the bitmap from the table: entries a reset left valid stay listed */
+	/* every other VLAN out of the table: a reset can leave entries valid, and
+	 * the config (vlan.V) is what the table holds */
+	REG_WRITE(RTL837x_TBL_DATA_IN_A, 0, 0, 0, 0);
 	vb_v = 2;
 	do {
-		if (vlan_get(vb_v))	/* a stuck table: stop, the boot stays bounded (F1b) */
+		REG_WRITE(RTL837X_TBL_CTRL, vb_v >> 8, vb_v, TBL_VLAN, TBL_WRITE | TBL_EXECUTE);
+		if (wait_table_ready())	/* a stuck table: stop, the boot stays bounded (F1b) */
 			break;
-		vb_on = sfr_data[0] & 0x02;	/* bit 1: VLAN table entry valid */
-		vlan_bit_put(vb_v);
 	} while (++vb_v != 0xfff);
 
 #ifdef DEBUG
@@ -658,50 +542,6 @@ void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked
 	REG_WRITE(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2), 0, 0, 0, hash_bits);
 }
 
-void print_port_ingress_filter_mode(vlan_ingress_mode_t mode) __banked
-{
-	switch (mode) {
-	case VLAN_UNTAGGED:
-		print_string("Untag.");
-		break;
-	case VLAN_TAGGED:
-		print_string("Tagged");
-		break;
-	case VLAN_ALL:
-		print_string("Any");
-		break;
-	default:
-		print_string("!!err!!");
-	}
-}
-
-void print_vlan_ingress_port(uint8_t log_port) __banked
-{
-	print_phys_port(log_port);write_char('\t');
-	print_short(port_pvid_get(log_port));write_char('\t');
-	print_port_ingress_filter_mode(port_ingress_filter_get(log_port));write_char('\t');
-	port_ingress_vlan_filter_get(log_port) ? print_string("Enabled") : print_string("Disabled");
-	write_char('\n');
-}
-/*
- * Dumps the VLAN ingress configuration
- */
-void vlan_dump(void) __banked
-{
-	print_string("Ingress VLAN configuration:\n");
-	print_string("Port\tPVID\tType\tFiltering\n");
-	for (uint8_t port = MACHINE_MIN_PORT; port <= MACHINE_MAX_PORT; port++) {
-		print_vlan_ingress_port(port);
-	}
-	print_vlan_ingress_port(9);
-
-	write_char('\n');
-	print_string("Type - Which frame types are allowed: untagged, tagged or any\n");
-	print_string("Filtering - Whether packets not belonging to member VLANs on that port are dropped\n");
-	print_string("PVID - Assumed VLAN for untagged packets\n");
-}
-
-
 /** Set the ingress VLAN filtering */
 bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked
 {
@@ -714,16 +554,6 @@ bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked
 		reg_bit_clear(RTL837X_VLAN_PORT_IGR_FLTR, port);
 
 	return true;
-}
-
-/** Get the ingress VLAN filtering status */
-bool port_ingress_vlan_filter_get(uint8_t port) __banked
-{
-	if (!MACHINE_PORT_VALID(port) && port != CPU_LOGICAL_PORT) {
-		return false;
-	}
-
-	return reg_bit_test(RTL837X_VLAN_PORT_IGR_FLTR, port);
 }
 
 // C1 bit 0: static (no aging); age at C3[4:2] must be non-zero or the
