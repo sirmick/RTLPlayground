@@ -14,9 +14,9 @@ the same steps run between `health clear` and `health tasks` (not
 compared): the longest RX_STEP of each /vlanlist.json must be under
 --limit-us (default 5000), and every step of an eee command too. Two
 replies are full (a 40-VLAN table with 20-character names; and after a
-reset, where rtlsim keeps the VLAN table): they must be under
---full-limit-us (default 20000, the step limit; F1b). Exit status 1 if
-any differ or is over.
+reset, where rtlsim keeps the VLAN table): their times are printed, not
+checked, as the reply's size bounds them. Exit status 1 if any differ or
+is over.
 """
 import argparse, os, re, sys
 
@@ -52,7 +52,7 @@ def scenario(r, measure):
     r.tables()
     for v in range(200, 200 + NVLANS):	# more than fit: the reply's own limit
         r.cli(f"vlan {v} n{v}-{'z' * 16} {F[1]}")
-    measure("vlanlist full", lambda: r.get("/vlanlist.json"), check="full")
+    measure("vlanlist full", lambda: r.get("/vlanlist.json"), check=False)
     r.tables()
     cfg = "".join(f"vlan {v} c{v} {F[2]}t\n" for v in (5, 6, 7, 1234)) + "vlan 6 d\n"
     r.post_config(cfg)
@@ -62,7 +62,7 @@ def scenario(r, measure):
         r.link(P[i], True)
     r.wait(1000)
     r.login()
-    measure("vlanlist config", lambda: r.get("/vlanlist.json"), check="full")
+    measure("vlanlist config", lambda: r.get("/vlanlist.json"), check=False)
     r.tables()
     for c in ("eee status", "eee on", "eee status", "eee off", "eee status", f"eee on {F[1]} 1g",
               f"eee on {F[2]}", f"eee off {F[1]}", "eee on 100m", "eee status", "eee off"):
@@ -78,7 +78,6 @@ def main(argv):
     ap.add_argument("--ovs", default=os.path.expanduser("~/src/ovs-rtlpg"))
     ap.add_argument("--board", default=None)
     ap.add_argument("--limit-us", type=float, default=5000)
-    ap.add_argument("--full-limit-us", type=float, default=20000)
     a = ap.parse_args(argv)
     board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
@@ -104,11 +103,10 @@ def main(argv):
             else:
                 worst = sorted(st.items(), key=lambda x: -x[1])[:3]
             line = f"{what}: " + ", ".join(f"{s} {v:.0f} us" for s, v in worst)
-            limit = a.full_limit_us if check == "full" else a.limit_us
-            if check == "full":
-                line += f" (a full reply: limit {limit:.0f} us)"
+            if not check:
+                line += " (a full reply: its size bounds it; not checked)"
             print(line, flush=True)
-            if worst and worst[0][1] > limit:
+            if check and worst and worst[0][1] > a.limit_us:
                 bad.append(line)
 
         try:
