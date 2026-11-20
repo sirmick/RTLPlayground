@@ -118,20 +118,38 @@ row(r"isolate (\d+)((?: \d+)+)", lambda m, b, p: {f"port.{m[1]}.isolate": plist(
     [int(x) for x in m[2].split() if x != "0"], "0" in m[2].split())})
 row(r"ingress ([uta])", lambda m, b, p: {f"port.{n}.ingress": INGRESS[m[1]] for n in b.fronts()})
 row(r"ingress((?: \d+[uta])+)", lambda m, b, p: {f"port.{w[:-1]}.ingress": INGRESS[w[-1]] for w in m[1].split()})
-row(r"eee (on|off)", lambda m, b, p: {f"port.{n}.eee": m[1] for n in b.fronts() if not b.sfp[b.log_of(n)]})
-row(r"eee (on|off) (\d+)", lambda m, b, p: {f"port.{m[2]}.eee": m[1]})
+# eee on [N] [100m|1g|2g5]: the speed word is every speed up to it; none, every speed the
+# port has (eee_speeds' default, capped at apply)
+EEE_UPTO = {"100m": "100m", "1g": "100m,1g", "2g5": "100m,1g,2g5", None: "100m,1g,2g5,5g,10g"}
 
 
-def _bw_rate(s):
-    """bw's hex kbit/s: the register keeps 16 kbit steps."""
-    return str(int(s, 16) & ~15)
+def _eee(m, b, p):
+    ports = [m[2]] if m[2] else [n for n in b.fronts() if not b.sfp[b.log_of(n)]]
+    out = {f"port.{n}.eee": m[1] for n in ports}
+    if m[1] == "on":
+        out.update({f"port.{n}.eee_speeds": EEE_UPTO[m[3]] for n in ports})
+    return out
 
 
-row(r"bw in (\d) ([0-9a-fA-F]{1,8})", lambda m, b, p: {f"port.{m[1]}.bw_in_kbps": _bw_rate(m[2]),
-                                                        f"port.{m[1]}.bw_in_mode": "fc"})
+row(r"eee (on|off)(?: (\d+))?(?: (100m|1g|2g5))?", _eee)
+
+
+def _bw(m, path, mode=None):
+    """bw's hex kbit/s: the register keeps 16 kbit steps, so the value is
+    rounded down to one (a warning if it was off a step)."""
+    v = int(m[2], 16)
+    out = {f"port.{m[1]}.{path}": str(v & ~15)}
+    if mode:
+        out[f"port.{m[1]}.bw_in_mode"] = mode
+    if v & 15:
+        out[WARN] = "%d kbit/s rounded down to %d, a multiple of 16" % (v, v & ~15)
+    return out
+
+
+row(r"bw in (\d) ([0-9a-fA-F]{1,8})", lambda m, b, p: _bw(m, "bw_in_kbps", "fc"))
 row(r"bw in (\d) off", lambda m, b, p: {f"port.{m[1]}.bw_in_kbps": "0"})
 row(r"bw in (\d) (fc|drop)", lambda m, b, p: {f"port.{m[1]}.bw_in_mode": m[2]})
-row(r"bw out (\d) ([0-9a-fA-F]{1,8})", lambda m, b, p: {f"port.{m[1]}.bw_out_kbps": _bw_rate(m[2])})
+row(r"bw out (\d) ([0-9a-fA-F]{1,8})", lambda m, b, p: _bw(m, "bw_out_kbps"))
 row(r"bw out (\d) off", lambda m, b, p: {f"port.{m[1]}.bw_out_kbps": "0"})
 row(r"storm (\d) " + STORM_T + r" (\d+) (pps|kbps)",
     lambda m, b, p: {f"port.{m[1]}.storm.{m[2]}.rate": str(int(m[3])), f"port.{m[1]}.storm.{m[2]}.unit": m[4]}

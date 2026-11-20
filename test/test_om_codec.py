@@ -322,7 +322,8 @@ def convert():
             ("stp on", "P4-4"), ("stp prio 8", "P4-4"), ("stp port 3 cost 20000", "P4-4"),
             ("stp lag 1 edge on", "P4-4"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
     check(legacy == want, "the rest is legacy, in order, each with the node that migrates it", legacy)
-    check(bad == ["a typo here"] and not warn, "the typo is still reported", (bad, warn))
+    check(bad == ["a typo here"] and warn == ["bw in 3 1f4: 500 kbit/s rounded down to 496, a multiple of 16"],
+          "the typo is still reported; bw 1f4 rounded down, warned", (bad, warn))
     warn = []
     lines, legacy, bad = legacy_map.convert(b"mtu 2 10\nport 12 off\npvid 3 5000\nport 9 on\nport 9 name up\n"
                                             b"port 9 auto\nsfp 1 10g\nhostname ok\n", sch.board, warn, sch)
@@ -336,6 +337,13 @@ def convert():
     check(lines == ["port.9.speed 10g", "port.4.enabled off"] and len(legacy) == 1,
           "a legacy line's paths never reach the output",
           lines)
+    warn = []
+    lines, legacy, bad = legacy_map.convert(b"eee on 1g\neee on 3 100m\neee on 4\neee off 5 2g5\n", sch.board, warn, sch)
+    check(lines[:2] == ["port.1.eee on", "port.2.eee on"] and "port.1.eee_speeds 100m,1g" in lines and
+          "port.3.eee_speeds 100m" in lines and "port.4.eee_speeds 100m,1g,2g5,5g,10g" in lines and
+          "port.5.eee off" in lines and "port.5.eee_speeds 100m,1g" in lines and
+          not any(ln.startswith("port.9.eee") for ln in lines) and not legacy and not bad and not warn,
+          "eee on [N] [speed]: eee_speeds every speed up to it, none every speed; off leaves them", lines)
     b = rc.Board("SWGT024_V2_0_UNMANAGED")
     lines, legacy, bad = legacy_map.convert(b"port 1 on\neee on\nstp on\n", b, None, p41_schema(b))
     check(lines[:3] == ["port.1.enabled on", "port.1.speed auto", "port.1.duplex auto"] and

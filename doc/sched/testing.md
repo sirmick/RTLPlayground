@@ -123,7 +123,7 @@ F1 runs them all at once on the final branch (`evidence/f1-acceptance.txt`).
 | `curl_upload.py` | uploads from Linux curl to a simulated switch on an OVS bridge; needs sudo (E3) |
 | `hw_timeouts.py` | each bounded poll forced to time out (E4) |
 | `boot_stuck.py` | a boot-time timeout doesn't spoil the boot's table work (E4) |
-| `vlan_eee.py` | `/vlanlist.json` and `eee`, old image against new (E4) |
+| (`vlan_eee.py`) | retired in P4-6: its `vlan` and `eee` commands are gone; ovs-rtlpg tests/oldnew compares /vlanlist.json and eee by value (E4) |
 | `sfp_pull.py` | an SFP module pulled in the middle of its read (E2 review) |
 | `isr_frame.py`, `resource_gate.py` | in every build: the ISR push counts, the gate |
 

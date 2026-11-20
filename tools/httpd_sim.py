@@ -53,7 +53,6 @@ class Handler(SimpleHTTPRequestHandler):
 
     def api_handlers(self,query):
         return {
-            "/bandwidth.json": self._api_bandwidth,
             "/cmd_log": self._api_cmd_log,
             "/debug": self._api_debug,
             "/eee.json": self._api_eee,
@@ -61,7 +60,6 @@ class Handler(SimpleHTTPRequestHandler):
             "/isolation.json": self._api_isolation,
             "/lldp.json": self._api_lldp,
             "/mirror.json": self._api_mirror,
-            "/storm.json": self._api_storm,
             "/stp.json": self._api_stp,
             "/loop.json": self._api_loop,
             "/vlan.json": lambda: self._api_vlan(query),
@@ -368,18 +366,6 @@ class Handler(SimpleHTTPRequestHandler):
         # the servers only: DHCP's and the lookups are get state.dns (P5-3)
         return b"DNS servers 0.0.0.0 0.0.0.0"
 
-    def _api_storm(self):
-        global state
-        return [
-            {
-                "port": i,
-                "bcast":  {"enabled": (i==3), "unit":("kbit/s" if i != 3 else "pps"), "rate": ("0x000000" if i !=3 else "0x000037") },
-                "mcast":  {"enabled": (i==3), "unit":("kbit/s" if i != 3 else "pps"), "rate": ("0x000000" if i !=3 else "0x000047") },
-                "ucast":  {"enabled": (i==3), "unit":"pps", "rate": ("0x000000" if i !=3 else "0x000057") },
-                "umcast": {"enabled": (i==3), "unit":("kbit/s" if i != 3 else "pps"), "rate": ("0x000000" if i !=3 else "0x000031") }
-            }
-            for i in range(1, PORTS + 1)
-        ]
     def _api_stp(self):
         return {
             "rootPrio":"8000",
@@ -409,21 +395,6 @@ class Handler(SimpleHTTPRequestHandler):
             }
             for i in range(1, PORTS + 1)
         ]
-
-    def _api_bandwidth(self):
-        ports = []
-        for i in range(1, PORTS + 1):
-            ingress_limited = i % 2 == 1
-            egress_limited = i % 4 != 0
-            ports.append({
-                "port": i,
-                "iLimited": (ingress_limited),
-                "iAction": "fc" if ingress_limited else "drop",
-                "iBW": f"0x{0x100 if ingress_limited else 0xfffff:08x}",
-                "eLimited": (egress_limited),
-                "eBW": f"0x{0x1000 if egress_limited else 0xfffff:08x}",
-            })
-        return ports
 
     def _api_mirror(self):
         return {
