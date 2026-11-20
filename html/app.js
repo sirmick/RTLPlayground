@@ -2516,7 +2516,10 @@ function wShow(path, cand, run) {
 
 /* An edit into the candidate: "set path value", or "del" for an empty text */
 function stage(w) {
-    if (stgHold) return;	/* locked in apply's window; the reload puts it back */
+    if (stgBusy()) {	/* locked in apply's window (the keys aren't) */
+        w.edit = 0;
+        return omReload();
+    }
     var v = w.get(),
         why = omCheck(w.f, v);
     if (why) {
@@ -2596,16 +2599,22 @@ function stgDiscard() {
 var STG_WINDOW = 30,
     STG_LONG = 150;	/* confirmed from a new page: 2 min to log in there, and stgAsk asks above 30 s */
 
-/* Apply, then follow the switch's state.cfg until it has
- * an outcome: confirm while it is open (the switch's countdown is the
- * deadline, not this browser's clock), wait while it walks */
-/* in apply's window: say so (a second apply would end it early) */
+/* in apply's window: say so, and let the caller's reload show the
+ * candidate (blurred: a focused field keeps what it has). Every edit
+ * checks it: a second apply would end the window early */
 function stgBusy() {
-    if (stgHold) toast(t("stg_busy"), "err");
+    if (stgHold) {
+        toast(t("stg_busy"), "err");
+        document.activeElement.blur();
+    }
     return stgHold;
 }
 
+/* Apply, then follow the switch's state.cfg until it has
+ * an outcome: confirm while it is open (the switch's countdown is the
+ * deadline, not this browser's clock), wait while it walks */
 function stgApply(win, go, tab) {
+    if (stgBusy()) return Promise.resolve("busy");
     $("stgApply").disabled = true;
     stgHold = 2;		/* apply's reply may take long: 10 s */
     stgLock(1);
@@ -4182,14 +4191,13 @@ function vlanUndo(l) {
  * this batch out again (not anyone else's staging); a refused apply stays
  * staged, its rows marked */
 function vlanStage(l) {
-    if (stgBusy()) return Promise.resolve();
-    return cli(l).then(function(r) {
+    return (stgBusy() ? Promise.resolve() : cli(l).then(function(r) {
         if (r.errs.length) {
             toast(r.errs[0], "err");
             return vlanUndo(l);
         }
         return stgApply();
-    }).catch(function() {}).then(vlanRefresh).then(function() {
+    })).catch(function() {}).then(vlanRefresh).then(function() {
         if (VV) vlanLoad(VV);
     });
 }
@@ -4269,7 +4277,8 @@ function vlanApply() {
         m = {},
         tg = {},
         l = [];
-    if (!V || stgBusy()) return;
+    if (!V) return;
+    if (stgBusy()) return vlanLoad(V);	/* the candidate's, as before the edit */
     for (var p = 1; p <= S.n; p++) {
         var sv = segVal(p);
         if (sv) m[p] = 1;
@@ -4704,7 +4713,7 @@ function lagApply(g) {
             return $("lg" + g + "h" + f).checked
         }),
         own = pmParse((LC[g] || {}).members, S.n);
-    if (stgBusy()) return;
+    if (stgBusy()) return lagStage(g, [], {});	/* the card back to the candidate */
     for (var p = 1; p <= S.n; p++)
         if ($("lg" + g + "p" + p).checked) {
             if (LGM[p] && !own[p]) return toast(t("lag_other", {	/* apply's "one lag" */
@@ -4744,9 +4753,8 @@ function lagApply(g) {
  * g and the PVIDs old back (this batch only) */
 function lagStage(g, l, old) {
     var c = LC[g] || {};
-    if (stgBusy()) return;
     delete $("lgm" + g).closest(".card").dataset.dirty;
-    return cli(l).then(function(r) {
+    return (!l.length || stgBusy() ? Promise.resolve() : cli(l).then(function(r) {
         if (!r.errs.length) return stgApply();
         toast(r.errs[0], "err");
         var u = ["mode", "members", "hash"].map(function(f) {
@@ -4754,7 +4762,7 @@ function lagStage(g, l, old) {
         });
         for (var p in old) u.push("set port." + p + ".pvid " + old[p]);
         return cli(u);
-    }).catch(function() {}).then(lagLoad).catch(function() {});
+    })).catch(function() {}).then(lagLoad).catch(function() {});
 }
 var lagPoller = new Poller(function() {
     return lagLoad().catch(function() {})
@@ -5080,6 +5088,7 @@ function syUndo(ids) {
 function syApply(ids, win, go, tab) {
     var l = sySets(ids);
     if (!l || !l.length) return;
+    if (stgBusy()) return sysLoad();
     cli(l).then(function(r) {
         if (r.errs.length) return syUndo(ids).then(function() {
             throw new Error(r.errs[0]);
