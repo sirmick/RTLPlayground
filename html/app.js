@@ -256,14 +256,14 @@ var LANG = {
         m_note: "Both = mirror RX and TX of the port to the monitor port.",
         m_none: "Select at least one mirrored port",
         lag_hash: "Hash:",
-        lag_note: "A LAG needs at least one member to be saved in the startup config; applying an empty group clears it.",
+        lag_hash_none: "hash needs a field",
+        lag_pvid_moved: "LAG ports {p} take one PVID: {v}",
         lacp_heading: "LACP (802.3ad)",
         lag_mode: "Mode",
         lag_static: "Static",
         lacp_neg: "negotiating",
         lacp_agg: "aggregator",
         lacp_members: "active members",
-        lacp_hint: "LACP: select candidate ports and press Apply to start negotiation",
         lacp_actor: "Actor",
         lacp_partner: "Partner",
         lacp_rxstate: "RX state",
@@ -605,7 +605,6 @@ var LANG = {
         m_note: "両方 = ポートの RX と TX をモニタポートにミラーします。",
         m_none: "ミラー元ポートを 1 つ以上選択してください",
         lag_hash: "ハッシュ:",
-        lag_note: "起動設定に保存するには LAG に 1 つ以上のメンバーが必要です。メンバーなしで適用するとグループを解除します。",
         lag_clear_q: "LAG {n} を解除しますか?",
         lag_clear_d: "すべてのメンバーポートが通常動作に戻ります。",
         bw_title: "帯域制限",
@@ -913,14 +912,12 @@ var LANG = {
         m_note: "双向 = 将该端口的 RX 和 TX 都镜像到目的端口。",
         m_none: "请至少选择一个被镜像端口",
         lag_hash: "哈希:",
-        lag_note: "LAG 至少需要一个成员才能保存到启动配置；应用空组将清除该组。",
         lacp_heading: "LACP (802.3ad)",
         lag_mode: "模式",
         lag_static: "静态",
         lacp_neg: "协商中",
         lacp_agg: "聚合器",
         lacp_members: "活动成员",
-        lacp_hint: "LACP：选择候选端口并点击“应用”以开始协商",
         lacp_actor: "本端",
         lacp_partner: "对端",
         lacp_rxstate: "接收状态",
@@ -1237,7 +1234,6 @@ var LANG = {
         m_note: "Ambos = duplica RX y TX del puerto al puerto monitor.",
         m_none: "Selecciona al menos un puerto duplicado",
         lag_hash: "Hash:",
-        lag_note: "Un LAG necesita al menos un miembro para guardarse en la configuración de inicio; aplicar un grupo vacío lo borra.",
         lag_clear_q: "¿Borrar LAG {n}?",
         lag_clear_d: "Todos los puertos miembros vuelven a la operación normal.",
         bw_title: "Límites de ancho de banda",
@@ -1369,7 +1365,6 @@ var LANG = {
         lacp_neg: "negociando",
         lacp_agg: "agregador",
         lacp_members: "miembros activos",
-        lacp_hint: "LACP: elige los puertos candidatos y pulsa Aplicar para iniciar la negociación",
         lacp_actor: "Local",
         lacp_partner: "Remoto",
         lacp_rxstate: "Estado RX",
@@ -1596,7 +1591,6 @@ var LANG = {
         m_note: "RX&TX = duplique RX et TX du port vers le port de supervision.",
         m_none: "Selectionnez au moins un port à dupliquer",
         lag_hash: "Hachage:",
-        lag_note: "Un groupe d'agrégation de Lien (LAG) nécessite au moins un membre pour être sauvegardé dans la configuration de démarrage; Utiliser un groupe vide fait office de remise à zero.",
         lag_clear_q: "Effacer l'agrégation {n}?",
         lag_clear_d: "Tous les ports membres vont redevenir normaux.",
         bw_title: "Limitations de bande passante",
@@ -1937,7 +1931,6 @@ var LANG = {
         m_note: "Beide = RX und TX des Ports auf den Monitor-Port spiegeln.",
         m_none: "Mindestens einen zu spiegelnden Port wählen",
         lag_hash: "Hash:",
-        lag_note: "Eine LAG braucht mindestens ein Mitglied, um in der Startkonfiguration gespeichert zu werden; eine leere Gruppe zu übernehmen löscht sie.",
         lag_clear_q: "LAG {n} auflösen?",
         lag_clear_d: "Alle Mitglieds-Ports kehren in den Normalbetrieb zurück.",
         lacp_heading: "LACP (802.3ad)",
@@ -1946,7 +1939,6 @@ var LANG = {
         lacp_neg: "wird ausgehandelt",
         lacp_agg: "Aggregator",
         lacp_members: "aktive Mitglieder",
-        lacp_hint: "LACP: Ports auswählen und Übernehmen drücken, um die Aushandlung zu starten",
         lacp_actor: "Lokal",
         lacp_partner: "Partner",
         lacp_rxstate: "Empfangsstatus",
@@ -2530,7 +2522,22 @@ function stage(w) {
         toast(w.path + ": " + why, "err");
         return;
     }
-    cli([v === "" ? "del " + w.path : "set " + w.path + " " + v]).then(function(r) {
+    var pv = /^port\.(\d+)\.pvid$/.exec(w.path);	/* a LAG's members take one PVID (apply's check): all of them */
+    (pv ? cli(["get -c lag"]) : Promise.resolve(null)).then(function(r) {
+        var l = [w.path];
+        if (r) {
+            lagMembers(parseLines(r.out[0] || []).lag);
+            for (var p in LGM[pv[1]])
+                if (p !== pv[1]) l.push("port." + p + ".pvid");
+            if (l.length > 1) toast(t("lag_pvid_moved", {
+                p: pmText(LGM[pv[1]], S.n),
+                v: v || "-"
+            }), "ok");
+        }
+        return cli(l.map(function(x) {
+            return v === "" ? "del " + x : "set " + x + " " + v
+        }));
+    }).then(function(r) {
         w.edit = 0;
         w.el.classList.toggle("bad", !!r.errs.length);
         if (r.errs.length) toast(r.errs[0], "err");
@@ -2741,10 +2748,6 @@ var CONF_CMDS = [
     /^port\s+\d+\s+lldp\s+(permit|block)+$/,
     /^eee\s+(on|off)(\s+\d+)?(\s+(100m|1g|2g5))?$/,
     /^mirror(\s+\d+)(\s+\d+[tr]?)+$/, /^mirror\s+off$/,
-    /^lag\s+[1-4](\s+\d+)+$/, /^lag\s+[1-4]\s+d$/,
-    /^lag\s+[1-4]\s+lacp(\s+\d+)+$/,
-    /^lag\s+[1-4]\s+lacp\s+off$/,
-    /^laghash\s+[1-4](\s+\w+)+$/,
     /^isolate\s+\d+(\s+(off|\d+))+$/,
     /^stp\s+(on|off)$/, /^stp\s+(prio|hello|maxage|fwd|txhold)\s+\d+$/,
     /^stp\s+version\s+(rstp|stp)$/,
@@ -4052,8 +4055,9 @@ var VL = {},
 function vlanRefresh() {
     var tb = $("vtable").tBodies[0];
     tb.style = "cursor:pointer;"
-    return cli(["get -c vlan", "get -c port.*.pvid", "get -c mgmt.vlan", "get vlan"]).then(function(r) {
+    return cli(["get -c vlan", "get -c port.*.pvid", "get -c mgmt.vlan", "get vlan", "get -c lag"]).then(function(r) {
         VL = parseLines(r.out[0] || []).vlan || {};
+        lagMembers(parseLines(r.out[4] || []).lag);
         VR = parseLines(r.out[3] || []).vlan || {};
         var pv = parseLines(r.out[1] || []).port || {};
         VP = [];
@@ -4202,7 +4206,8 @@ function buildVlanEdit() {
             seg.appendChild(h("button", {
                 text: s,
                 "data-v": ix,
-                onclick: function() {
+                onclick: function() {	/* a LAG's members as one */
+                    for (var q in LGM[p] || {}) segSet(+q, ix);
                     segSet(p, ix)
                 }
             }));
@@ -4570,6 +4575,19 @@ tabHooks.mirror = {
 
 var HASHF = ["spa", "smac", "dmac", "sip", "dip", "sport", "dport"];
 
+/* the candidate's LAGs that aren't off (apply's check): LGM[p] the ports
+ * of p's LAG; a PVID or a VLAN membership moves them as one */
+var LGM = {};
+
+function lagMembers(o) {
+    LGM = {};
+    for (var g in o || {})
+        if (o[g].mode !== "off") {
+            var m = pmParse(o[g].members, S.n);
+            for (var p in m) LGM[p] = m;
+        }
+}
+
 function buildLag() {
     var w = $("lagwrap");
     if (w.children.length) return;
@@ -4579,11 +4597,9 @@ function buildLag() {
         var mr = h("div", { style: "display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px", class: "small" });
         mr.appendChild(h("span", { class: "mut", text: t("lag_mode") }));
         var ms = h("select", { class: "in", id: "lgm" + g });
+        ms.appendChild(h("option", { value: "off", text: t("c_offc") }));
         ms.appendChild(h("option", { value: "static", text: t("lag_static") }));
         ms.appendChild(h("option", { value: "lacp", text: "LACP" }));
-        ms.addEventListener("change", function() {
-            $("lgs" + g).textContent = ms.value === "lacp" ? t("lacp_hint") : ""
-        });
         mr.appendChild(ms);
         card.appendChild(mr);
         card.appendChild(h("p", { class: "small mono", id: "lgs" + g, style: "margin-bottom:10px" }));
@@ -4613,68 +4629,101 @@ function buildLag() {
         w.appendChild(card);
     })(g);
 }
-var lacpCfg = [0, 0, 0, 0, 0];
+
+/* lag.L (P4-3): LC the candidate's, a card staged while it differs from
+ * running; state.lag.L and state.lacp.port.N below */
+var LC = {};
 
 function lagLoad() {
-    return getJSON("/lag.json").then(function(s) {
-        s.lags.forEach(function(l) {
-            var g = l.lagNum + 1;
-            if ($("lgm" + g).closest(".card").dataset.dirty) return;
-            for (var p = 1; p <= S.n; p++)
-                $("lg" + g + "p" + p).checked = l.members.includes(p);
-            $("lgm" + g).value = l.type;
-            $("lgs" + g).textContent = l.type == "lacp" ? "LACP: " + t("lacp_agg") + " " + (l.valid ? l.aggregator : "(" + t("lacp_neg") + ")") + ", " + t("lacp_members") + " " + l.active_members.join(" ") : "";
-            lacpCfg[g] = l.type=="lacp";
-            var hash = parseInt(l.hash, 16);
-            HASHF.forEach(function(f, i) {
-                $("lg" + g + "h" + f).checked = !!((hash >> i) & 1)
+    return cli(["get -c lag", "get lag", "get state.lag", "get state.lacp.port"]).then(function(r) {
+        LC = parseLines(r.out[0] || []).lag || {};
+        lagMembers(LC);
+        var run = parseLines(r.out[1] || []).lag || {},
+            st = parseLines((r.out[2] || []).concat(r.out[3] || [])).state || {},
+            sl = st.lag || {},
+            lp = (st.lacp || {}).port || {};
+        for (var g = 1; g <= 4; g++) {
+            var c = LC[g] || {},
+                u = run[g] || {},
+                x = sl[g] || {},
+                card = $("lgm" + g).closest(".card");
+            card.classList.toggle("stg", c.mode !== u.mode || c.members !== u.members || c.hash !== u.hash);
+            $("lgs" + g).textContent = c.mode === "lacp" ? "LACP: " + t("lacp_agg") + " " + (x.agg_valid === "on" ? x.aggregator : "(" + t("lacp_neg") + ")") +
+                ", " + t("lacp_members") + " " + x.active : c.mode === "static" ? t("lacp_members") + " " + x.active : "";
+            if (card.dataset.dirty) continue;
+            var m = pmParse(c.members, S.n),
+                hs = (c.hash || "").split(",");
+            $("lgm" + g).value = c.mode;
+            for (var p = 1; p <= S.n; p++) $("lg" + g + "p" + p).checked = !!m[p];
+            HASHF.forEach(function(f) {
+                $("lg" + g + "h" + f).checked = hs.indexOf(f) >= 0
             });
-        });
-
+        }
         var tb = $("lacptbl").tBodies[0];
         tb.innerHTML = "";
-        s.ports.forEach(function(p) {
-            if (p.lag === 255) return;
+        Object.keys(lp).forEach(function(p) {
+            var q = lp[p];
+            if (q.lag === "0") return;
             var tr = tb.insertRow();
-            [p.p, p.lag + 1, p.a, p.pt, p.rs, parseInt(p.rx, 16), p.psys].forEach(function(v) {
+            [p, q.lag, q.actor, q.partner, q.rx_state, q.rx_pdus, q.partner_sys].forEach(function(v) {
                 tr.insertCell().textContent = v
             });
         });
     });
 }
 
+/* card g as set lines, its members' PVIDs made one (the lowest member's,
+ * said in a toast) as apply's check wants; no members clears it */
 function lagApply(g) {
-    var lacp = $("lgm" + g).value === "lacp",
-        cmd = "lag " + g + (lacp ? " lacp" : ""),
-        n = 0,
-        pre = [];
-    delete $("lgm" + g).closest(".card").dataset.dirty;
-    for (var p = 1; p <= S.n; p++)
-        if ($("lg" + g + "p" + p).checked) {
-            cmd += " " + p;
-            n++;
-        }
-    if (!lacp && lacpCfg[g]) pre.push("lag " + g + " lacp off");
-    if (lacp && !n) cmd = "lag " + g + " lacp off";
-    if (!n && !lacp) {
-        confirmModal(t("lag_clear_q", {
-            n: g
-        }), t("lag_clear_d"), function() {
-            postCmds(pre.concat(["lag " + g + " d"])).then(lagLoad).catch(function() {console.error("ERROR LOADING LAG")});
+    var mode = $("lgm" + g).value,
+        m = {},
+        hs = HASHF.filter(function(f) {
+            return $("lg" + g + "h" + f).checked
         });
-        return;
-    }
-    var hcmd = "laghash " + g,
-        nh = 0;
-    HASHF.forEach(function(f) {
-        if ($("lg" + g + "h" + f).checked) {
-            hcmd += " " + f;
-            nh++;
-        }
+    for (var p = 1; p <= S.n; p++)
+        if ($("lg" + g + "p" + p).checked) m[p] = 1;
+    if (!Object.keys(m).length) return confirmModal(t("lag_clear_q", {
+        n: g
+    }), t("lag_clear_d"), function() {
+        lagStage(g, ["del lag." + g], {});
     });
-    var cmds = pre.concat([cmd]);
-    if (nh) cmds.push(hcmd);
-    postCmds(cmds).then(lagLoad).catch(function() {});
+    if (!hs.length) return toast(t("lag_hash_none"), "err");
+    cli(["get -c port.*.pvid"]).then(function(r) {
+        var pv = parseLines(r.out[0] || []).port || {},
+            l = ["set lag." + g + ".mode " + mode, "set lag." + g + ".members " + pmText(m, S.n), "set lag." + g + ".hash " + hs.join(",")],
+            old = {},
+            mv = {},
+            v;
+        for (var p in m) {
+            if (v === undefined) v = pv[p].pvid;
+            else if (mode !== "off" && pv[p].pvid !== v) {
+                l.push("set port." + p + ".pvid " + v);
+                old[p] = pv[p].pvid;
+                mv[p] = 1;
+            }
+        }
+        if (Object.keys(mv).length) toast(t("lag_pvid_moved", {
+            p: pmText(mv, S.n),
+            v: v
+        }), "ok");
+        lagStage(g, l, old);
+    }).catch(function() {});
+}
+
+/* lines into the candidate, then the bar's Apply; a refused set puts LAG
+ * g and the PVIDs old back (this batch only) */
+function lagStage(g, l, old) {
+    var c = LC[g] || {};
+    delete $("lgm" + g).closest(".card").dataset.dirty;
+    return cli(l).then(function(r) {
+        if (!r.errs.length) return stgApply();
+        toast(r.errs[0], "err");
+        var u = ["mode", "members", "hash"].map(function(f) {
+            return "set lag." + g + "." + f + " " + c[f]
+        });
+        for (var p in old) u.push("set port." + p + ".pvid " + old[p]);
+        return cli(u);
+    }).catch(function() {}).then(lagLoad).catch(function() {});
 }
 var lagPoller = new Poller(function() {
     return lagLoad().catch(function() {})
