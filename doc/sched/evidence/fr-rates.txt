@@ -99,3 +99,20 @@ Findings, open
 3. Load is -0/+1 point (1% steps); the waking ISR counts as asleep.
 4. ovs-rtlpg's long_steps needed the header change: done by the orchestrator
    (dff814d). Before it, the check would have been skipped silently.
+
+Review savings (reviewer3's nits), b12a35b + 71644f7
+---------------------------------------------------
+- sched_idle sums into a register local against sched_fine_per_tick << 1
+  (sl_unit gone, -2 B xdata): -2 B; sched_init leaves sl_part/sl_pct to
+  XSEG's clear (crtxclear linked on both boards; the host test needs no
+  hook: no earlier test's sleep takes time): -25 B. Tried and not taken:
+  roll()'s clamp as `if` (+3 B), a single-subtract compare in idle (+5 B).
+- roll()'s comment: its t is 2 B of the shared overlay; memory.md says so.
+- Now: xdata XSEG ends 0x5133 (+64 B vs 53ee574: 2 x 29 + 6), banked code
+  +273 B (sched_bank +248, sched_health +25), IRAM 90/8/3 unchanged.
+  Banks free 8x 209 / 617 / 51 = 877 B, SWGT024 183 / 615 / 35 = 833 B.
+- Verified on a clean worktree of 71644f7 (logs /tmp/fr/v-71644f7): gate x2,
+  schedtest x4, quick, stp, schedtest-sim, oldnew 17/17 x2, sched_rates x2
+  (21.7/21.8, 21.9/22.0; l2 94/93 %), flash_job_steps x2 (FL_ERASE 58/59),
+  sched_tour, console_bugs, webcmd_abort, lldp_overrun, sfp_pull,
+  hw_timeouts x2; vlan_eee, cli_steps clean.
