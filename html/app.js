@@ -2118,6 +2118,7 @@ var S = {
     ports: [],
     n: 0,
     sfpSlot: [],
+    pollN: 0,
     info: {},
     sys: {},
     loader: {},
@@ -3012,7 +3013,11 @@ function byPort(a) {
 
 /* The port strip's poll (DESIGN 14.4) on state.port, and the config it
  * shows (portsCfg: at start and after a staging reload); S.ports keeps the
- * old shape: link "DOWN" or the speed's text, txG..rxB decimal */
+ * old shape: link "DOWN" or the speed's text, txG..rxB decimal. A web
+ * reply costs its bytes (the console mirrors it, ~0.09 ms a byte), so the
+ * poll asks only what the open view shows: link and speed always, the good
+ * counters on the dashboard and stats, the bad ones there too (every 4th
+ * poll on the dashboard); a field not asked keeps its last value */
 var LSPEED = {
     "10m": "10M",
     "100m": "100M",
@@ -3044,8 +3049,11 @@ omReloaders.push(function() {
 
 function pollStatus() {
     return (S.pcfg ? Promise.resolve() : portsCfg()).then(function() {
-        return gets(["state.port.link", "state.port.speed", "state.port.duplex", "state.port.tx_good",
-            "state.port.rx_good", "state.port.tx_bad", "state.port.rx_bad", "state.sfp.present"]);
+        var f = ["state.port.link", "state.port.speed", "state.sfp.present"],
+            ct = curTab === "dash" || curTab === "stats";
+        if (ct) f.push("state.port.tx_good", "state.port.rx_good");
+        if (curTab === "stats" || ct && !(S.pollN++ & 3)) f.push("state.port.tx_bad", "state.port.rx_bad");
+        return gets(f);
     }).then(function(o) {
         var c = S.pcfg.port || {},
             m = (S.pcfg.state || {}).port || {},
@@ -3057,17 +3065,18 @@ function pollStatus() {
             return a - b
         }).forEach(function(n) {
             var x = st[n] || {},
+                q = (S.ports || [])[n - 1] || {},
                 sp = m[n] && m[n].media === "sfp";
             s.push({
                 port: +n,
                 name: c[n].name,
                 isSFP: sp,
                 cspeed: c[n].speed,
-                link: x.link !== "up" ? "DOWN" : (LSPEED[x.speed] || "?") + (x.duplex === "half" ? "-HD" : ""),
-                txG: x.tx_good || "0",
-                rxG: x.rx_good || "0",
-                txB: x.tx_bad || "0",
-                rxB: x.rx_bad || "0"
+                link: x.link !== "up" ? "DOWN" : LSPEED[x.speed] || "?",
+                txG: x.tx_good || q.txG || "0",
+                rxG: x.rx_good || q.rxG || "0",
+                txB: x.tx_bad || q.txB || "0",
+                rxB: x.rx_bad || q.rxB || "0"
             });
         });
         var first = !S.n;
@@ -3086,6 +3095,7 @@ function pollStatus() {
             p.enabled = p.isSFP ? (sfp[S.sfpSlot[p.port - 1]] || {}).present === "on" : c[p.port].enabled === "on";
         });
         if (first) buildStrip();
+        if (!(o.state && o.state.port && "1" in o.state.port && "tx_good" in o.state.port["1"])) return updateStrip(), hkStatus();
         if (S.prev) {
             var dt = (now - S.prevT) / 1000;
             if (dt > 0.2) s.forEach(function(p, i) {
@@ -3099,9 +3109,13 @@ function pollStatus() {
         S.prev = s;
         S.prevT = now;
         updateStrip();
-        var hk = tabHooks[curTab];
-        if (hk && hk.status) hk.status();
+        hkStatus();
     });
+}
+
+function hkStatus() {
+    var hk = tabHooks[curTab];
+    if (hk && hk.status) hk.status();
 }
 var statusPoller = new Poller(pollStatus, 2500);
 statusPoller.start();
@@ -3253,7 +3267,8 @@ function portRows(p) {
         [t("c_type"), p.isSFP ? "SFP" : "RJ45"]
     ];
     if (p.name) rows.push([t("c_name"), p.name]);
-    rows.push([t("p_state"), !p.enabled ? t("p_disabled") : (p.link != "DOWN" ? t("p_up") + " " + p.link : t("c_down"))]);
+    rows.push([t("p_state"), !p.enabled ? t("p_disabled") : (p.link != "DOWN" ? t("p_up") + " " + p.link +
+        (p.duplex === "half" ? " " + t("c_half") : "") : t("c_down"))]);
     rows.push([t("st_txg"), BigInt(p.txG) + " " + t("p_pkts")]);
     rows.push([t("st_txb"), BigInt(p.txB) + " " + t("p_pkts")]);
     rows.push([t("st_rxg"), BigInt(p.rxG) + " " + t("p_pkts")]);
@@ -3297,8 +3312,14 @@ function detailTable(p) {
 
 /* the port detail's table; an SFP port's from its cage's state.sfp.S */
 function detailShow(i, first) {
-    var p = S.ports[i];
-    (p.isSFP ? stObj("state.sfp." + S.sfpSlot[i]) : Promise.resolve()).then(function(o) {
+    var p = S.ports[i],
+        n = "state.port." + (i + 1) + ".";
+    gets([n + "tx_good", n + "rx_good", n + "tx_bad", n + "rx_bad"].concat(p.isSFP ? [] : [n + "duplex"])).then(function(o) {	/* duplex: copper only */
+        var x = o.state.port[i + 1];
+        p.txG = x.tx_good, p.rxG = x.rx_good, p.txB = x.tx_bad, p.rxB = x.rx_bad;
+        p.duplex = x.duplex;
+        return p.isSFP ? stObj("state.sfp." + S.sfpSlot[i]) : null;
+    }).then(function(o) {
         p.sfp = o;
         if (first) return modal(t("c_port") + " " + (i + 1), detailTable(p));
         var b = $("mbody");
@@ -4419,6 +4440,7 @@ function l2Key(e) {
 }
 
 function l2Fetch() {
+    if (stgHold) return Promise.resolve();	/* in an apply window: the table as it was, not a 3 s cut */
     $("l2count").textContent = t("l2_loading");
     return l2Load().then(function(all) {
         l2Rows = all;
