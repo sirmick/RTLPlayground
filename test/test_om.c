@@ -2177,6 +2177,7 @@ static void vlans(void)
 	 * its defaults, a default entry at its own default */
 	om_init();
 	expect("get -d vlan", "ok\n");
+	expect("get -d vlan.1", "ok\n");	/* an untouched default entry: nothing (review2's SHOULD 1) */
 	expect("del vlan.1", "ok\n");
 	expect("set vlan.20.name", "ok\n");
 	expect("set vlan.30.members 2", "ok\n");
