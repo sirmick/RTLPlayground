@@ -311,9 +311,12 @@ def load_schema(dirs, skip=(), js=False):
                 p = os.path.join(d, fn)
                 exec(compile(open(p).read(), p, "exec"), dict(DSL, PORTS="ports"))
     objs = SCHEMA["objs"]
-    # the config objects in apply order (DESIGN 6.21; a child at its parent's), stable,
-    # in the slots config objects had: the state objects stay where the files put them
-    cfg = iter(sorted((o for o in objs if not o.state), key=lambda o: (o.parent or o).order))
+    # the config objects in apply order (DESIGN 6.21; a child at its parent's, after the
+    # objects of that order: a child in a file sorting before its parent's still applies
+    # after it), stable, in the slots config objects had: the state objects stay where the
+    # files put them
+    cfg = iter(sorted((o for o in objs if not o.state),
+                      key=lambda o: ((o.parent or o).order, o.parent is not None)))
     objs[:] = [o if o.state else next(cfg) for o in objs]
     seen = set()
     for o in objs:

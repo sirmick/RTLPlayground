@@ -358,6 +358,23 @@ rc, out, b, h = help_gen('obj("s", tip="' + "x" * 61 + '")\ncfg("a", Bool, True)
 check(rc == 0 and "warning: s's tip is 61 chars, over 60" in out, "a tip over 60 chars: a warning", out)
 rc, out, b, h = help_gen('obj("s", tip=\'say "hi"\')\ncfg("a", Bool, True)\n', 3582)
 check(rc != 0 and "printable text without" in out, "a tip with a quote fails", out)
+print("apply order: by order=, a child at its parent's, after that order's objects")
+d = tempfile.mkdtemp()
+with open(os.path.join(d, "a.py"), "w") as f:
+    f.write('''obj("p", count=4, order=5)
+cfg("a", Bool, True)
+obj("c", parent="p", count=2)
+cfg("a", Bool, True)
+obj("q", order=5)
+cfg("a", Bool, True)
+obj("z", order=1)
+cfg("a", Bool, True)
+''')
+sys.path.insert(0, os.path.join(HERE, "..", "tools"))
+import om_gen  # noqa: E402
+om_gen.SCHEMA.update({"objs": [], "enums": {}, "msgs": {}, "consts": {}, "cur": None, "dir": None})
+names = [o.regname for o in om_gen.load_schema([d])]
+check(names == ["z", "p", "q", "p.c"], "z (1), p and q (5), then p's child", str(names))
 
 print("\n%s" % ("TEST_OM_GEN PASSED" if not fails else "%d FAILED" % fails))
 sys.exit(1 if fails else 0)
