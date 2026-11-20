@@ -254,6 +254,8 @@ def const(name, value):
     max= may name it (the name in C, its value here and in schema.js)."""
     if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name) or not isinstance(value, int) or value < 1:
         raise SystemExit("const %s: an upper-case name and a number of at least 1" % name)
+    if re.match(r"(OM|O|E)_", name):
+        raise SystemExit("const %s: OM_, O_ and E_ are om_gen.h's own names" % name)
     if SCHEMA["consts"].get(name, value) != value:
         raise SystemExit("const %s declared twice with different values" % name)
     SCHEMA["consts"][name] = value
