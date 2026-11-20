@@ -56,6 +56,7 @@ extern __xdata struct uip_eth_addr uip_ethaddr;
 // Support up to 32_bits.
 #if OM_DBG
 __xdata uint8_t hexvalue[4] = { 0 };
+__xdata uint8_t atoi_results_u8;
 #endif
 
 
@@ -64,7 +65,6 @@ __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 
 __xdata	char save_cmd;
 
-__xdata uint8_t ip[4];
 __xdata uint8_t mac_parse_result[6];
 
 // These variables combined create a Fixed-capacity vector/bounded buffer.
@@ -84,16 +84,6 @@ static void cmd_save(void);
 
 // Error set by commands
 __xdata uint8_t err_status;
-
-__xdata uint16_t atoi_results_short;
-__xdata uint8_t atoi_results_u8;
-
-inline uint8_t isnumber(uint8_t l)
-{
-	// return (l >= '0' && l <= '9');
-	l -= '0';
-	return (l <= ('9'-'0'));
-}
 
 #if OM_DBG	/* the raw pokes' parsers (OM_DBG=0: release) */
 inline uint8_t ishexnumber(uint8_t l)
@@ -233,8 +223,6 @@ uint8_t atoi_hex(uint8_t idx)
 
 // Returns 0 or the number of digits taken into account for conversion.
 // Stops at any non-digit '0'-'9' char or more than 3 bytes.
-#endif
-
 uint8_t atoi_byte(uint8_t idx)
 {
 	uint8_t cnt = 0;
@@ -255,138 +243,8 @@ uint8_t atoi_byte(uint8_t idx)
 	atoi_results_u8 = num;
 	return cnt;
 }
+#endif
 
-
-// Returns 0 or the number of digits taken into account for conversion.
-// Stops at any non-digit '0'-'9' char or bytes is more then 5.
-uint8_t atoi_short(uint8_t idx)
-{
-	uint8_t cnt = 0;
-	atoi_results_short = 0;
-
-	uint8_t *ptr = &cmd_buffer[idx];
-
-	while (1) {
-		uint8_t val = *ptr++ - '0';
-		if (val > 9)
-			break;
-		if (atoi_results_short > 6553 || (atoi_results_short == 6553 && val > 5) || cnt >= 5)
-			return 0;
-		atoi_results_short = (atoi_results_short * 10) + val;
-		cnt++;
-	}
-
-	return cnt;
-}
-
-/* Parse, validate and translate phys_to_log_port physical port argument.
- * The CPU-port, i.e. port 0, is not a valid argument.
- * returns 0 when on parser error or invalid value.
- * returns non-zero number of characters consumed.
- * Store the value in atoi_results_u8.
- */
-uint8_t cmd_parse_port(uint8_t idx) {
-	uint8_t port = cmd_buffer[idx] - '0' - 1;
-	if (port > 8)
-		return 0;
-
-	port = machine.phys_to_log_port[port];
-	if (!MACHINE_PORT_VALID(port))
-		return 0;
-
-	atoi_results_u8 = port;
-	return 1;
-}
-
-
-// Same as cmd_parse_port() but additionally check for trailing SPACE or NUL.
-// returns 0 when on parser error or invalid value or no SPACE or no NUL.
-// returns non-zero number of characters consumed including the SPACE.
-uint8_t cmd_parse_port_separator(uint8_t idx) {
-	uint8_t ret = cmd_parse_port(idx);
-	if (ret != 0) {
-		idx += ret;
-		uint8_t c = cmd_buffer[idx];
-		if (c == ' ') {
-			ret++;
-		} else if (c != NUL)
-			ret = 0;
-	}
-	return ret;
-}
-
-// Same as cmd_parse_port_separator() but additionally allow CPU-port.
-// returns 0 when on parser error or invalid value or no SPACE or no NUL.
-// returns number of characters consumed including the SPACE.
-uint8_t cmd_parse_port_cpu_separator(uint8_t idx) {
-	uint8_t ret = cmd_parse_port(idx);
-
-	if (ret == 0 && cmd_buffer[idx] == '0') {
-		ret = 1;
-		atoi_results_u8 = CPU_LOGICAL_PORT;
-	}
-
-	if (ret != 0) {
-		idx += ret;
-		uint8_t c = cmd_buffer[idx];
-		if (c == ' ') {
-			ret++;
-		} else if (c != NUL)
-			ret = 0;
-	}
-	return ret;
-}
-
-
-// check if the cmd_buffer[idx] is a SPACE.
-__bit cmd_is_space(uint8_t idx) {
-	return cmd_buffer[idx] == ' ';
-}
-
-// check if the cmd_buffer[idx] is a SPACE or NUL.
-__bit cmd_is_space_or_nul(uint8_t idx) {
-	uint8_t c = cmd_buffer[idx];
-	return c == ' ' || c == NUL;
-}
-
-// Parse an IPv4 address
-// returns 0 when on parse error or invalid value or it don't ends with SPACE or NUL.
-// returns non-zero number of characters consumed including the SPACE.
-uint8_t parse_ip(uint8_t idx)
-{
-	uint8_t b = 0;
-	uint8_t ret;
-	uint8_t idx_start = idx;
-
-	while(1) {
-		ret = atoi_byte(idx);
-		if (ret == 0)
-			goto err;
-
-		idx += ret;
-		ip[b++] = atoi_results_u8;
-
-		ret = cmd_buffer[idx];
-		if (b == 4) {
-			if (ret == ' ') {
-				idx++;
-				break;
-			}
-			if (ret == NUL)
-				break;
-			goto err;
-		}
-		idx++;
-
-		if (ret != '.')
-			goto err;
-	}
-	return idx - idx_start;
-
-err:
-	print_string("Error in IP format\n");
-	return 0;
-}
 
 // Prints an IPv4 address.
 void print_ip(__xdata uint8_t * ptr) __banked
