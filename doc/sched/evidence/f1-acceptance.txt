@@ -313,3 +313,20 @@ What was tested:
 - A step at the full 50 ms limit would lose ~320 B of a fast paste.
 - Today the only step past 22 ms is the one-time erase about 17 s after
   power-on. The next longest is 12.2 ms (RX_STEP), inside the ring's reach.
+
+Recheck on ca29f41 (F1b's window fix 2ea3815), 2026-11-20, sim2:
+- Build: a fresh worktree with no toolchain (/tmp/sim2-ca29f41). The first
+  build built its own SDCC and then the 8x image, then the SWGT024's, with no
+  race (ca29f41's point; at 5f2b60e the sched.mk step had failed that way).
+- Old vs new, 17 scenarios with --checks --known: 17/17 on both boards, two
+  runs identical; the unmatched expect lines are as at b53c3c1.
+- Every new-only check passes. The upload scenarios against b53c3c1:
+  - upload 8.704 s for 213 segments, 40.86 ms a segment (8x; was 8.706 s);
+    8.716 s (SWGT024; was 8.717 s);
+  - stp_upload 8.848 s (8x; was 8.847 s); 8.832 s (SWGT024; unchanged);
+  - hello during the upload 1.971-2.038 s (8x; was 2.037 max) and
+    1.966-2.036 s (SWGT024; was 1.967 min);
+  - the flash after the upload (app, slot, staged, config): identical.
+- Gate PASS: IRAM as the baseline, stack 146 B, common 163 B (SWGT024: 164 B).
+  The bank placement moved: 8x bank 1 now 80 B free (was 526), SWGT024 bank 2
+  63 B (was 511).
