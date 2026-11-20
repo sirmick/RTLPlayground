@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "rtl837x_common.h"
 #include "rtl837x_regs.h"
+#include "rtl837x_sfr.h"
 #include "rtl837x_lacp.h"
 #include "om_gen.h"
 #include "cmd_parser.h"
@@ -448,6 +449,8 @@ void lacp_init(void) __banked
 		lacp_lag_ports[l] = 0;
 		lacp_agg_valid[l] = 0;
 		lacp_members_last[l] = 0;
+		port_lag_members_set(l, 0);	/* lag.L's defaults: what a reset may have left goes */
+		REG_WRITE(RTL837X_TRK_HASH_CTRL_BASE + (l << 2), 0, 0, 0, LAG_HASH_DEFAULT);
 	}
 	lacpEnabled = 0;
 }
@@ -499,14 +502,6 @@ void lacp_lag_set(uint8_t lag, __xdata uint16_t ports) __banked
 		lacp_engine_off();
 
 	lacp_mux_update();
-}
-
-
-void lacp_off(void) __banked
-{
-	for (uint8_t l = 0; l < LACP_NUM_LAGS; l++)
-		if (lacp_lag_ports[l])
-			lacp_lag_set(l, 0);
 }
 
 

@@ -15,7 +15,6 @@
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_stp.h"
-#include "rtl837x_lacp.h"
 #include "rtl837x_igmp.h"
 #include "rtl837x_bandwidth.h"
 #include "rtl837x_lldp.h"
@@ -516,124 +515,6 @@ void parse_mac_cmd(void)
 	write_char('\n');
 	print_string("Save the startup config to keep it across reboots\n");
 }
-
-void parse_lag(void)
-{
-	__xdata uint8_t group;
-	__xdata uint16_t members = 0;
-
-	if (cmd_compare(1, "show")) {
-		print_string("LAG status:\n");
-		for (uint8_t i = 0; i < 4; i++) {
-			write_char(' '); write_char('1' + i);
-			members = port_lag_members_get(i);
-			if (!members) {
-				print_string(" disabled\n");
-				continue;
-			}
-			print_string(" member ports: ");
-			for (uint8_t j = 0; j < 10; j++) {
-				if (members & 1) {
-					print_phys_port(j);
-					write_char(' ');
-				}
-				members >>= 1;
-			}
-			print_string(" (hash: 0x"); 
-			reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (i << 2));
-			print_byte(sfr_data[3]);
-			print_string(")\n");
-		}
-		return;
-	}
-
-	if (cmd_words_len < 3)
-		goto err;
-
-	// Parse group, expect only one number 0-9;
-	if (atoi_byte(cmd_words_b[1]) != 1)
-		goto err;
-
-	group = atoi_results_u8 - 1;
-	if (group > 3)
-		goto err;
-
-	if (cmd_compare(2, "d")) {
-		lacp_lag_set(group, 0);
-		port_lag_members_set(group, 0);
-		return;
-	}
-
-	uint8_t w = 2;
-	__xdata uint8_t lacp_mode = 0;
-	if (cmd_words_len > 2 && cmd_compare(2, "lacp")) {
-		lacp_mode = 1;
-		w = 3;
-		if (cmd_words_len > 3 && cmd_compare(3, "off")) {
-			lacp_lag_set(group, 0);
-			return;
-		}
-	}
-	while (w < cmd_words_len) {
-		// Parse port.
-		if (cmd_parse_port_separator(cmd_words_b[w++]) == 0)
-			goto err;
-
-		members |= ((uint16_t)1) << atoi_results_u8;
-	}
-	if (lacp_mode) {
-		lacp_lag_set(group, members);
-	} else {
-		lacp_lag_set(group, 0);
-		port_lag_members_set(group, members);
-	}
-	return;
-err:
-	cmd_error("lag (show | <1-4> (d | [lacp] <port>...))\n");
-}
-
-
-void parse_lag_hash(void)
-{
-	// Parse group, expect only one number 0-9.
-	if (cmd_words_len < 3 || atoi_byte(cmd_words_b[1]) != 1)
-		goto err;
-
-	uint8_t group = atoi_results_u8 - 1;
-	if (group > 3)
-		goto err;
-
-	uint8_t hash = 0;
-	uint8_t w = 2;
-	while (w < cmd_words_len) {
-		if (cmd_compare(w, "spa"))
-			hash |= LAG_HASH_SOURCE_PORT_NUMBER;
-		else if (cmd_compare(w, "smac"))
-			hash |= LAG_HASH_L2_SMAC;
-		else if (cmd_compare(w, "dmac"))
-			hash |= LAG_HASH_L2_DMAC;
-		else if (cmd_compare(w, "sip"))
-			hash |= LAG_HASH_L3_SIP;
-		else if (cmd_compare(w, "dip"))
-			hash |= LAG_HASH_L3_DIP;
-		else if (cmd_compare(w, "sport"))
-			hash |= LAG_HASH_L4_SPORT;
-		else if (cmd_compare(w, "dport"))
-			hash |= LAG_HASH_L4_DPORT;
-		else {
-			print_string("Error: invalid hash type:");
-			print_string_x(&cmd_buffer[cmd_words_b[w]]);
-			write_char('\n');
-			goto err;
-		}
-		w++;
-	}
-	port_lag_hash_set(group, hash);
-	return;
-err:
-	cmd_error("laghash <1-4> [smac|dmac|sip|dip|sport|dport]\n");
-}
-
 
 void parse_mirror(void)
 {
@@ -1361,17 +1242,8 @@ void cmd_parser(void) __banked
 			}
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
-		} else if (cmd_compare(0, "lacp")) {
-			if (cmd_compare(1, "off"))	/* the state: get state.lag state.lacp */
-				lacp_off();
-			else
-				cmd_error("lacp off; a group starts LACP with: lag <1-4> lacp <port>...\n");
 		} else if (cmd_compare(0, "mirror")) {
 			parse_mirror();
-		} else if (cmd_compare(0, "lag")) {
-			parse_lag();
-		} else if (cmd_compare(0, "laghash")) {
-			parse_lag_hash();
 		} else if (cmd_compare(0, "sds")) {
 			print_reg(RTL837X_REG_SDS_MODES);
 			write_char('\n');

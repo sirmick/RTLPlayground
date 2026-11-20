@@ -44,3 +44,7 @@ obj 9 vlan
 field 9.1 vlan.name Str(15)
 field 9.2 vlan.members PMASK
 field 9.3 vlan.tagged PMASK
+obj 10 lag
+field 10.1 lag.mode Enum(lagmode)
+field 10.2 lag.members PMASK
+field 10.3 lag.hash Flags(laghash)

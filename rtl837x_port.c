@@ -103,9 +103,9 @@ bool port_ingress_filter(__xdata uint8_t port, __xdata vlan_ingress_mode_t type)
 }
 
 /*
- * Define a Primary VLAN ID for a port 
-*/
-static void port_pvid_write(uint8_t port, __xdata uint16_t pvid)
+ * Define a Primary VLAN ID for a port (a LAG's members have one: om_lag.c)
+ */
+void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked
 {
 	// r4e1c:00001001 R4e1c-000017d0 r6738:00000000 R6738-00000000 (no filtering)
 	uint16_t reg = RTL837x_PVID_BASE_REG + ((port >> 1) << 2);
@@ -116,21 +116,6 @@ static void port_pvid_write(uint8_t port, __xdata uint16_t pvid)
 	} else {
 		REG_WRITE(reg, sfr_data[0], sfr_data[1], (sfr_data[2] & 0xf0) | (pvid >> 8), pvid);
 	}
-}
-
-void port_pvid_set(uint8_t port, __xdata uint16_t pvid) __banked
-{
-	uint8_t lag = port_lag_of(port);
-
-	if (lag == PORT_LAG_NONE) {
-		port_pvid_write(port, pvid);
-		return;
-	}
-
-	uint16_t members = port_lag_members_get(lag);
-	for (uint8_t i = 0; i < 10; i++)
-		if ((members >> i) & 1)
-			port_pvid_write(i, pvid);
 }
 
 uint16_t port_pvid_get(uint8_t port) __banked
@@ -510,41 +495,12 @@ uint8_t port_lag_of(uint8_t port) __banked
 
 
 /*
- * Configure LAGs
- * Sets the members via port bitmask of a given Link Aggregation Group
- * The groups have numbers 0-3
- * The bitmask represents up to 10 ports
- * If currently no LAG has algorithm used, a default is applied
+ * A Link Aggregation Group's members (groups 0-3): bit n logical port n.
+ * Its hash is lag.L.hash's (om_lag.c).
  */
 void port_lag_members_set(__xdata uint8_t lag, __xdata uint16_t members) __banked
 {
-	print_string("port_lag_members_set, lag: "); print_byte(lag); print_string(", members: "); print_short(members);
-	write_char('\n');
-	if (lag > 3) {
-		print_string("Link aggregation group out of range\n");
-		return;
-	}
-	reg_read_m(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2));
-	if (!(sfr_data[0] | sfr_data[1] | sfr_data[2])
-	    && (sfr_data[3] == LAG_HASH_RESET || sfr_data[3] == 0))
-		REG_SET(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2), LAG_HASH_DEFAULT);
 	REG_WRITE(RTL837X_TRK_MBR_CTRL_BASE + (lag << 2), 0, 0, members >> 8, members & 0xff);
-}
-
-
-/*
- * Configures the hash algorithm used for a LAG
- * lag is the Group to configure and hash is a bitmask
- */
-void port_lag_hash_set(__xdata uint8_t lag, __xdata uint8_t hash_bits) __banked
-{
-	print_string("port_lag_hash_set, lag: "); print_byte(lag); print_string(", hash: "); print_byte(hash_bits);
-	write_char('\n');
-	if (lag > 3) {
-		print_string("Link aggregation group out of range\n");
-		return;
-	}
-	REG_WRITE(RTL837X_TRK_HASH_CTRL_BASE + (lag << 2), 0, 0, 0, hash_bits);
 }
 
 /** Set the ingress VLAN filtering */

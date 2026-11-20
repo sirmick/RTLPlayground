@@ -154,13 +154,12 @@ static void t_flush(void)
 
 static void t_lag(void)
 {
-	printf("[test] trunk membership and its hash seed\n");
+	printf("[test] trunk membership; the hash is left alone (lag.L.hash: om_lag.c)\n");
 	hw_reset();
 	port_lag_members_set(1, 0x0180);
 	CHECK(port_lag_members_get(1) == 0x0180, "members read back");
 	CHECK(port_lag_of(7) == 1 && port_lag_of(8) == 1, "both ports belong to group 2");
 	CHECK(port_lag_of(0) == PORT_LAG_NONE, "a port outside is in no group");
-	CHECK((hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 4) & 0xff) == LAG_HASH_DEFAULT, "an unset hash gets the default");
 	hw_reg_set(RTL837X_TRK_HASH_CTRL_BASE + 8, 0x06);
 	port_lag_members_set(2, 0x0060);
 	CHECK((hw_reg_get(RTL837X_TRK_HASH_CTRL_BASE + 8) & 0xff) == 0x06, "a hash already set is kept");

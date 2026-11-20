@@ -293,7 +293,6 @@ void send_eee(void) { }
 static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
-void send_lag(void) { }
 void send_stp(void) { }
 void send_lldp(void) {}
 void send_loop(void) { }
