@@ -122,6 +122,94 @@ static void test_edit_keys(void) {
     CHECK(t_strcmp((char *)con_line, "ad") == 0, "acb, then b and c deleted: ad");
 }
 
+extern __xdata uint8_t cursor;
+extern char out_buf[];
+extern size_t out_len;
+
+/* the line as Enter leaves it, after keys */
+static int line_is(const char *keys, const char *want) {
+    env_reset();
+    feed(keys);
+    feed("\r");
+    return con_line_ready && t_strcmp((char *)con_line, want) == 0;
+}
+
+static void test_more_keys(void) {
+    char big[CMD_BUF_SIZE + 10];
+    printf("[test] mid-line insert, the limit, CR/LF, ESC and CSI forms, BS at 0\n");
+    CHECK(line_is("ac\033[Db", "abc"), "a key inserted mid-line");
+    CHECK(line_is("abc\033[D\033[D\033[Dx", "xabc"), "and at the start");
+
+    env_reset();
+    t_memset(big, 'a', sizeof(big));
+    feed_n(big, CMD_BUF_SIZE - 1);
+    CHECK(cmd_line_len == CMD_BUF_SIZE - 1, "127 characters fill the line");
+    feed("\033[Dz");
+    CHECK(cmd_line_len == CMD_BUF_SIZE - 1 && con_line[CMD_BUF_SIZE - 3] == 'a',
+          "a full line drops a key mid-line too");
+    feed("\r");
+    CHECK(con_line_ready && t_strlen((char *)con_line) == CMD_BUF_SIZE - 1, "Enter: the 127");
+
+    env_reset();
+    feed("a\r");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, "a"), "CR ends a line");
+    env_reset();
+    feed("b\n");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, "b"), "LF ends a line");
+    env_reset();
+    feed("c\r\n");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, "c"), "CRLF: the line");
+    con_line_ready = 0;
+    feed("");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, ""), "then its LF an empty line (as before)");
+
+    env_reset();
+    feed("ab");
+    feed("\033");
+    feed("[");
+    CHECK(cmd_line_len == 2 && cursor == 2, "an ESC [ split across steps: nothing yet");
+    feed("D");
+    feed("x\r");
+    CHECK(!t_strcmp((char *)con_line, "axb"), "its final byte, a step later: left");
+
+    CHECK(line_is("ab\033[1;5Dx", "axb"), "ESC [ 1 ; 5 D (Ctrl-left): left, no \"5D\" typed");
+    CHECK(line_is("ab\033[15~x", "abx"), "ESC [ 1 5 ~ (F5): dropped, no '~' typed");
+    CHECK(line_is("ab\033[D\033[Ex", "axb"), "ESC [ E: dropped, not DEL");
+    CHECK(line_is("ab\033[D\033[3~x", "ax"), "ESC [ 3 ~: DEL");
+    CHECK(line_is("a\033xy", "axy"), "Alt-x (ESC x): x, and y not eaten");
+    CHECK(line_is("a\033\033[Dx", "xa"), "ESC ESC [ D: the second ESC starts it");
+
+    env_reset();
+    feed("\b\177\b");
+    CHECK(cmd_line_len == 0 && cursor == 0 && out_len == 0, "BS at 0: nothing, nothing printed");
+    feed("a\r");
+    CHECK(!t_strcmp((char *)con_line, "a"), "and the line types on");
+
+    env_reset();
+    feed("ab\033[D\033[B");
+    CHECK(cmd_line_len == 2 && cursor == 1, "Down when not recalling: nothing");
+}
+
+static void test_recall_tab_pending(void) {
+    static const char h[] = "get port\n";
+    printf("[test] Tab during recall; keys while a line is pending\n");
+    env_reset();
+    memcpy(cmd_history, h, sizeof(h) - 1);
+    cmd_history_ptr = sizeof(h) - 1;
+    feed("ab\033[A\t");
+    CHECK(cmd_line_len == 8 && !strncmp((char *)con_line, "get port", 8), "Tab on a recalled line leaves it");
+    feed("\033[B");
+    CHECK(cmd_line_len == 2 && !strncmp((char *)con_line, "ab", 2), "and Down still returns to the typed line");
+
+    env_reset();
+    feed("first\r");
+    feed("x\033[D\033[A\ty\r");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, "first"), "keys, ESC sequences and Tab wait while a line is pending");
+    con_line_ready = 0;
+    feed("");
+    CHECK(con_line_ready && !t_strcmp((char *)con_line, "yx"), "then they edit the next line: x, left, Tab, y");
+}
+
 int main(void) {
     printf("== cmd_editor host tests ==\n");
     test_basic_line();
@@ -131,6 +219,8 @@ int main(void) {
     test_pending_line_kept();
     test_recall();
     test_edit_keys();
+    test_more_keys();
+    test_recall_tab_pending();
     printf("\n%d checks, %d failed\n", tests_run, tests_failed);
     return tests_failed ? 1 : 0;
 }

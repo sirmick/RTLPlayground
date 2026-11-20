@@ -16,13 +16,15 @@ static __xdata uint8_t cur_len;
 static __xdata uint8_t h_on, h_at;	/* recalling: the entry shown starts at h_at */
 __xdata uint8_t con_tab;		/* om_tab()'s: 1 the Tab before completed nothing; OM_TAB_MORE its walk goes on */
 static __xdata uint8_t c, i;
+static __xdata uint8_t esc_st, esc_p;	/* 1 after ESC, 2 in ESC [; its first parameter byte, 0xff: more */
 
 /* cmd_parser.c's cmd_save(): entries end in '\n', the next one goes at
  * cmd_history_ptr; CMD_HISTORY_SIZE is 256, so the 8-bit indexes wrap */
 extern __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
 extern __xdata uint8_t cmd_history_ptr;
 
-/* the keys, as the escape sequences decode: ESC [ A, B, C, D and ESC [ 3 ~ */
+/* the keys, as the escape sequences decode: ESC [ A, B, C, D and ESC [ 3 ~
+ * (K_UP + 0..3: the final byte - 'A') */
 #define K_UP	0x80
 #define K_DOWN	0x81
 #define K_RIGHT	0x82
@@ -37,6 +39,7 @@ void cmd_editor_init(void) __banked
 	con_line_ready = 0;
 	h_on = 0;
 	con_tab = 0;
+	esc_st = 0;
 }
 
 /* the line from the cursor on, and a space over a deleted character; the
@@ -82,7 +85,7 @@ static void recall(void)		/* the entry at h_at */
  * identifying new characters typed or up to 4-byte escape sequences in the
  * console RX ring con_rx_buf[CON_RX_SIZE] (con_ring.h), which the serial ISR
  * fills; con_rx_tail is the editor's read position (8 bits: it wraps by
- * itself). An escape sequence not complete yet waits for the next step.
+ * itself).
  * Upon detecting new characters or escape sequences, the con_line and the
  * representation of the command line in the terminal are updated.
  * To debug, the easist is to interpose a tty-interceptor between the physical
@@ -102,25 +105,38 @@ void cmd_edit(void) __banked
 		}
 		if (con_rx_tail == con_rx_head)
 			return;
-		c = con_rx_buf[con_rx_tail];
-		i = 1;
-		if (c == '\033') {
-			if ((uint8_t)(con_rx_head - con_rx_tail) < 3)
-				return;
-			c = con_rx_buf[(uint8_t)(con_rx_tail + 2)] - 'A';
-			i = 3;
-			if ((uint8_t)(c + 'A' - '0') < 10) {	/* ESC [ n ~ */
-				if ((uint8_t)(con_rx_head - con_rx_tail) < 4)
-					return;
-				i = 4;
-				c = c == (uint8_t)('3' - 'A') ? K_DEL - K_UP : 0xff;
+		c = con_rx_buf[con_rx_tail++];
+		/* ESC [, parameter bytes, a final byte (0x40-0x7e): a byte a pass,
+		 * so a sequence split across steps waits for nothing. Only A-D
+		 * (any parameters: Ctrl-arrows too) and 3~ are keys; ESC and
+		 * anything but '[' is the byte as typed (Alt-x: x) */
+		if (esc_st == 1) {
+			esc_st = 0;
+			if (c == '[') {
+				esc_st = 2;
+				continue;
 			}
-			if (con_rx_buf[(uint8_t)(con_rx_tail + 1)] != '[' || c > K_DEL - K_UP)
-				c = 0;		/* unknown: dropped */
-			else
-				c += K_UP;
+		} else if (esc_st == 2) {
+			if (c >= 0x20 && c < 0x40) {	/* parameter, intermediate */
+				esc_p = esc_p ? 0xff : c;
+				continue;
+			}
+			esc_st = 0;
+			if (c >= 0x40 && c <= 0x7e) {
+				if (c >= 'A' && c <= 'D')
+					c += K_UP - 'A';
+				else if (c == '~' && esc_p == '3')
+					c = K_DEL;
+				else
+					c = 0;		/* another key's: dropped */
+			}
 		}
-		con_rx_tail += i;
+		if (c == '\033') {
+			esc_st = 1;
+			esc_p = 0;
+			con_tab = 0;
+			continue;
+		}
 		if (c == '\t') {		/* 0, 1: OM_TAB_NEW, + 1 the next lists */
 			con_tab += OM_TAB_NEW;
 			continue;
