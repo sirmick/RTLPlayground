@@ -74,10 +74,18 @@ void cmd_finish(void)
 static int applied[OM_PORTS], checks, fail_check_on = -1, ct_calls, gets;
 static struct cfg_port applied_old[OM_PORTS];
 
+static int fail_apply_on = -1;
+static struct cfg_port applied_new[OM_PORTS];
+
 uint8_t om_apply_port(uint8_t idx)
 {
 	applied[idx]++;
 	applied_old[idx] = cfg_roll.port[idx];
+	applied_new[idx] = cfg_run.port[idx];
+	if (idx == fail_apply_on) {
+		fail_apply_on = -1;	/* once: the rollback's own apply works */
+		return OM_ERR;
+	}
 	return OM_OK;
 }
 
@@ -173,6 +181,78 @@ uint8_t om_get_tsys(uint8_t idx)
 	return OM_OK;
 }
 
+/* om_job.c's cfg job, as the scheduler would run it: apply, window, undo */
+static int job_on, job_st, job_steps, job_wakes;
+
+uint8_t om_job_start(void)
+{
+	if (job_on)
+		return 0;
+	job_on = 1;
+	job_st = 0;
+	return 1;
+}
+
+void om_job_wake(void) { job_wakes++; }
+
+static void job_step(void)
+{
+	uint8_t r;
+	if (!job_on)
+		return;
+	job_steps++;
+	switch (job_st) {
+	case 0:			/* CFG_APPLY */
+		r = om_apply_next();
+		if (r == OM_A_MORE)
+			return;
+		if (r == OM_A_FAIL) {
+			om_undo();
+			job_st = 2;
+			return;
+		}
+		if (!om_confirm_s) {
+			om_settle(r);
+			job_on = 0;
+			return;
+		}
+		om_apply_st = E_CFGAPPLY_CONFIRM;
+		job_st = 1;
+		return;
+	case 1:			/* CFG_WINDOW */
+		if (om_confirmed) {
+			om_settle(OM_A_DONE);
+			job_on = 0;
+		} else if (!om_confirm_s && !cli_job) {
+			om_undo();
+			job_st = 2;
+		}
+		return;
+	default:		/* CFG_UNDO */
+		r = om_apply_next();
+		if (r == OM_A_MORE)
+			return;
+		om_settle(r);
+		job_on = 0;
+	}
+}
+
+static void job_run(void)	/* the job to its end, or into its window */
+{
+	while (job_on && !(job_st == 1 && !om_confirmed && om_confirm_s))
+		job_step();
+}
+
+static void seconds(int n)	/* the window's clock */
+{
+	while (n-- && job_on && job_st == 1) {
+		if (om_confirm_s)
+			om_confirm_s--;
+		job_step();
+	}
+	job_run();
+}
+
 /* ---- driving it ---------------------------------------------------------- */
 
 static const char *run(const char *line)
@@ -183,9 +263,19 @@ static const char *run(const char *line)
 	tokenize();
 	om_cmd();
 	while (cli_job) {
+		job_step();		/* the cfg job and the cli take turns */
 		if (!om_line())
 			cli_job = 0;
 	}
+	job_run();
+	out_buf[out_len] = 0;
+	return out_buf;
+}
+
+static const char *prompt(void)
+{
+	out_reset();
+	om_prompt();
 	out_buf[out_len] = 0;
 	return out_buf;
 }
@@ -239,7 +329,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: port.* tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "port.*\nstate.port.*\nstate.cfg\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -568,9 +658,108 @@ static void kinds(void)
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
 		const char *o = run("get state");
-		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.tsys.bridge ") &&
+		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") && strstr(o, "state.cfg.confirm_s 0\nstate.tsys.bridge ") &&
 		      status_ok(o) && !strcmp(o + t_strlen(o) - 3, "ok\n"), "get state: the whole state tree");
 	}
+}
+
+/* staging: the apply job, the confirm window, the rollback, state.cfg */
+static void staging(void)
+{
+	static struct cfg before, mid;
+	om_init();
+	memset(applied, 0, sizeof applied);
+
+	printf("staging\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nok\n");
+	CHECK(!t_strcmp(prompt(), ""), "the prompt: nothing to add");
+	expect("set port.3.mtu 1500", "ok\n");
+	expect("set port.3.pvid 7", "ok\n");
+	expect("set tlag.2.mode lacp", "ok\n");
+	CHECK(!t_strcmp(prompt(), "*"), "the prompt: * with unapplied changes");
+	expect("get state.cfg.pending", "state.cfg.pending 2\nok\n");	/* port.3 and tlag.2 */
+	job_steps = 0;
+	expect("apply", "ok\n");
+	CHECK(applied[2] == 1 && cfg_run.port[2].mtu == 1500 && applied_old[2].mtu == 16383,
+	      "apply: the job applies port 3, the old value in the rollback copy");
+	CHECK(job_steps == 3, "apply: a step for each changed instance (port.3, tlag.2), and the last");
+	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nok\n");
+	memset(applied, 0, sizeof applied);
+	job_steps = 0;
+	expect("apply", "ok\n");
+	CHECK(!applied[2] && job_steps == 1, "an empty diff: apply calls no handler");
+
+	printf("confirm window\n");
+	memcpy(&before, &cfg_run, sizeof before);
+	expect("set port.3.mtu 9000", "ok\n");
+	expect("set port.5.name lab", "ok\n");
+	expect("apply 5", "ok\n");
+	memcpy(&mid, &cfg_run, sizeof mid);
+	CHECK(cfg_run.port[2].mtu == 9000 && om_apply_st == E_CFGAPPLY_CONFIRM, "apply 5: applied, the window open");
+	CHECK(!t_strcmp(prompt(), "[confirm 5] "), "the prompt: [confirm 5]");
+	expect("get state.cfg.apply state.cfg.confirm_s", "state.cfg.apply confirm\nstate.cfg.confirm_s 5\nok\n");
+	expect("apply", "err apply: confirm first\n");
+	expect("set port.6.mtu 100", "ok\n");
+	CHECK(!t_strcmp(prompt(), "[confirm 5] *"), "set in a window: the candidate moves on");
+	seconds(3);
+	CHECK(!t_strcmp(prompt(), "[confirm 2] *"), "the window counts down");
+	memset(applied, 0, sizeof applied);
+	out_reset();
+	seconds(2);
+	out_buf[out_len] = 0;
+	CHECK(!memcmp(&cfg_run, &before, sizeof before) && !memcmp(&cfg_cand, &before, sizeof before) &&
+	      !memcmp(&cfg_roll, &before, sizeof before), "unconfirmed: running, candidate and rollback exactly as before");
+	CHECK(applied[2] == 1 && applied[4] == 1 && applied_old[2].mtu == 9000 && applied_new[2].mtu == 1500,
+	      "the rollback re-applies what changed, with the window's values as the old ones");
+	CHECK(!t_strcmp(out_buf, "event state.cfg.apply rolled_back\n"), "the rollback says so on the console");
+	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	CHECK(!t_strcmp(prompt(), ""), "after the rollback: nothing pending");
+
+	expect("set port.3.mtu 9000", "ok\n");
+	expect("apply 60", "ok\n");
+	job_wakes = 0;
+	expect("confirm", "ok\n");
+	CHECK(job_wakes == 1, "confirm wakes the job");
+	job_run();
+	CHECK(cfg_run.port[2].mtu == 9000 && om_apply_st == E_CFGAPPLY_DONE &&
+	      !memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "confirmed: kept");
+	expect("confirm", "err confirm: no window\n");
+	expect("apply 0", "err apply: 1-3600 seconds\n");
+	expect("apply 3601", "err apply: 1-3600 seconds\n");
+	expect("apply x", "err apply: 1-3600 seconds\n");
+
+	printf("a handler fails\n");
+	memcpy(&before, &cfg_run, sizeof before);
+	expect("set port.2.mtu 2000", "ok\n");
+	expect("set port.5.mtu 5000", "ok\n");
+	expect("set port.7.mtu 7000", "ok\n");
+	memcpy(&mid, &cfg_cand, sizeof mid);
+	memset(applied, 0, sizeof applied);
+	fail_apply_on = 4;
+	expect("apply", "err port.5: failed, rolled back\n");
+	CHECK(!memcmp(&cfg_run, &before, sizeof before) && !memcmp(&cfg_roll, &before, sizeof before),
+	      "a handler failed: running back as it was");
+	CHECK(!memcmp(&cfg_cand, &mid, sizeof mid), "the candidate keeps the edits");
+	CHECK(applied[1] == 2 && applied[4] == 2 && applied[6] == 1,
+	      "the walk stops at the failure; the rollback puts back every changed port");
+	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	expect("discard", "ok\n");
+
+	printf("busy\n");
+	expect("set port.2.mtu 2000", "ok\n");
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "apply");
+	tokenize();
+	out_reset();
+	om_cmd();		/* the walk starts; nobody steps it yet */
+	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "get port.2.mtu");
+	tokenize();
+	om_cmd();
+	out_buf[out_len] = 0;
+	CHECK(!t_strcmp(out_buf, "err: applying\n"), "while the walk runs, the verbs wait");
+	cli_job = 0;
+	job_run();
+	expect("get port.2.mtu", "port.2.mtu 2000\nok\n");
 }
 
 /* random valid values, set as text and read back: text and bytes agree */
@@ -894,6 +1083,7 @@ int main(void)
 {
 	cases();
 	kinds();
+	staging();
 	roundtrip();
 	roundtrip_kinds();
 	fuzz();

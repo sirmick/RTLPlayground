@@ -492,7 +492,9 @@ void print_byte(uint8_t a)
 
 void print_cmd_prompt(void)
 {
-	print_string_no_syslog("\n> ");
+	write_char_no_syslog('\n');
+	om_prompt();		/* "[confirm N] " in a window, "*" with unapplied changes */
+	print_string_no_syslog("> ");
 }
 
 /*

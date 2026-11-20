@@ -93,8 +93,24 @@ extern __xdata uint8_t om_val[], om_fid;
 /* a 10G-capable port (machine.n_10g: logical 3, and 8 with two) */
 #define OM_TEN_G(l)	(((l) == 3 && machine.n_10g) || ((l) == 8 && machine.n_10g == 2))
 
+/*
+ * Staging (DESIGN.md 5.2-5.3): apply runs as the cfg job (om_job.c), an
+ * instance a step; apply N then holds a confirm window of N seconds, and its
+ * end without confirm rolls back. om_apply_st is state.cfg.apply (E_CFGAPPLY_*).
+ */
+#define OM_A_MORE	0
+#define OM_A_DONE	1
+#define OM_A_FAIL	2
+extern __xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
+uint8_t om_apply_next(void) __banked;	/* the next changed instance: OM_A_* */
+void om_undo(void) __banked;		/* running back to the rollback copy; walk again */
+void om_settle(uint8_t r) __banked;	/* the walk is over (r: its last result) */
+void om_prompt(void) __banked;		/* "[confirm N] " and "*" before "> " */
+uint8_t om_job_start(void) __banked;	/* om_job.c: the cfg job; 0 if no slot */
+void om_job_wake(void) __banked;		/* om_job.c: confirm came */
+
 void om_init(void) __banked;		/* defaults into every copy */
-void om_cmd(void) __banked;		/* get set del diff apply discard do */
+void om_cmd(void) __banked;		/* get set del diff apply confirm discard do */
 uint8_t om_line(void) __banked;		/* the cli job's next line; 0 when done */
 void om_boot_apply(void) __banked;	/* after the boot config: apply it */
 /*

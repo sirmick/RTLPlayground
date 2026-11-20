@@ -39,6 +39,16 @@ uint8_t flash_job_start(void) __banked
 	return 0;
 }
 
+/* The object model's cfg job (om_job.c) isn't linked either: apply is busy. */
+uint8_t om_job_start(void) __banked
+{
+	return 0;
+}
+
+void om_job_wake(void) __banked
+{
+}
+
 /* ---- the log ---- */
 
 static __xdata uint8_t li, lp;

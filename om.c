@@ -41,7 +41,8 @@ extern __code const char * __code const om_msg[];
 #define ROLL	((__xdata uint8_t *)&cfg_roll)
 
 /* the command */
-static __xdata uint8_t c_pw;		/* the path's word; 0: apply's checks */
+static __xdata uint8_t c_pw;		/* the path's word */
+static __xdata uint8_t c_inst;		/* an err names the instance, not the word (apply) */
 static __xdata uint8_t c_cand;		/* get -c: from the candidate */
 /* a resolved path */
 static __xdata uint8_t r_o;		/* object */
@@ -86,6 +87,18 @@ static __code const uint8_t tsize[] = {	/* by type; strings: their length + 1 */
 };
 
 /* ---- small helpers ---------------------------------------------------- */
+
+/* whole copies: a call each is smaller code than a memcpy */
+static void cand_from_run(void)
+{
+	memcpy(&cfg_cand, &cfg_run, sizeof(cfg_cand));
+}
+
+static void roll_from_run(void)
+{
+	memcpy(&cfg_roll, &cfg_run, sizeof(cfg_roll));
+}
+
 
 static void sel_obj(uint8_t n)
 {
@@ -249,10 +262,10 @@ static void print_path_word(void)	/* the command's path, as typed */
 static void err_head(void)		/* "err <path>: " */
 {
 	print_string("err ");
-	if (c_pw)
-		print_path_word();
-	else			/* apply's checks: the instance */
+	if (c_inst)		/* apply's checks and handlers: the instance */
 		emit_obj();
+	else
+		print_path_word();
 	print_string(": ");
 }
 
@@ -272,6 +285,12 @@ static void fail(__code const char *why)	/* "err <path>: why"; why in this bank 
 void om_fail(uint8_t msg) __banked
 {
 	fail(om_msg[msg]);
+}
+
+static void err_line(__code const char *s)	/* a whole err line */
+{
+	print_string(s);
+	err_status = ERR_INVALID_ARGUMENT;
 }
 
 static void ok(void)
@@ -1301,21 +1320,183 @@ static void next_instance(void)
 		job_inst();
 }
 
-/* apply: the instance, if it changed; 1 if it did */
-static uint8_t apply_inst(void)
+/* ---- apply: the cfg job (om_job.c) or boot, an instance a step ---------- */
+
+/*
+ * apply copies running to the rollback copy and the candidate to running,
+ * then calls the apply handler of each instance where running differs from
+ * the rollback copy (what the hardware has). A rollback swaps the two and
+ * walks again. The walk has its own cursor (a_o, a_e) and takes the element
+ * index straight: no get can run meanwhile (om_cmd() refuses while om_busy).
+ */
+__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
+static uint8_t check_all(void);
+static __xdata uint8_t a_o, a_e, a_n, a_fo, a_fe, a_timeout;
+
+static void cv_of_e(void)		/* cur_e's indices, for its path in a message */
 {
-	vp = inst(RUN);
-	if (!memcmp(vp, inst(CAND), obx.size))
-		return 0;
-	memcpy(inst(ROLL), vp, obx.size);
-	memcpy(vp, inst(CAND), obx.size);
-	if (obx.apply != 0xff)
-		call(obx.apply);
-	return 1;
+	ce = cur_e;
+#if OM_USE_IX2
+	cv1 = cur_e % obx.n[1];
+	ce = cur_e / obx.n[1];
+#endif
+	cv = ce;
+	if (obx.k[0] == IX_PORT)
+		cv = machine.log_to_phys_port[ce];
+#if OM_USE_KEY
+	if (obx.k[0] == IX_KEY) {
+		ks = ce;
+		cv = key_at(RUN);
+		if (!cv)
+			cv = key_at(ROLL);	/* a deleted entry */
+	}
+#endif
+}
+
+static void walk_start(void)
+{
+	a_o = 0;
+	a_e = 0;
+}
+
+static void apply_begin(void)		/* the candidate to running; the walk from the top */
+{
+	if (memcmp(&cfg_run, &cfg_cand, sizeof(cfg_run)))
+		om_dirty = 1;
+	roll_from_run();
+	memcpy(&cfg_run, &cfg_cand, sizeof(cfg_run));
+	om_apply_st = E_CFGAPPLY_RUNNING;
+	walk_start();
+}
+
+/* from (a_o, a_e): the next config element where running differs from
+ * a_other (the rollback copy, or the candidate), as obx and cur_e; 0 at the end */
+static __xdata uint8_t * __xdata a_other;
+
+static uint8_t walk_next(void)
+{
+	for (; a_o < OM_N_OBJ; a_o++, a_e = 0) {
+		sel_obj(a_o);
+		if (obx.flags & OM_STATE)
+			continue;
+		a_n = obx.n[0] * obx.n[1];
+		while (a_e < a_n) {
+			cur_e = a_e++;
+			if (memcmp(inst(RUN), inst(a_other), obx.size))
+				return 1;
+		}
+	}
+	return 0;
+}
+
+/* the next instance that changed: apply it. OM_A_MORE, OM_A_DONE, OM_A_FAIL */
+uint8_t om_apply_next(void) __banked
+{
+	a_other = ROLL;
+	if (!walk_next())
+		return OM_A_DONE;
+	if (obx.apply == 0xff)
+		return OM_A_MORE;
+	c_inst = 1;			/* a handler's err names the instance */
+	cv_of_e();
+	if (call(obx.apply) != OM_OK) {
+		a_fo = a_o;
+		a_fe = cur_e;
+		return OM_A_FAIL;
+	}
+	return OM_A_MORE;
+}
+
+/* a failure or the window's end: running back to the rollback copy; the walk re-applies */
+void om_undo(void) __banked
+{
+	a_timeout = om_apply_st == E_CFGAPPLY_CONFIRM;
+	om_apply_st = E_CFGAPPLY_UNDO;
+	/* swap running and the rollback copy, through the candidate: at a failure
+	 * it is running anyway, and after a window it becomes running again */
+	cand_from_run();
+	memcpy(&cfg_run, &cfg_roll, sizeof(cfg_run));
+	memcpy(&cfg_roll, &cfg_cand, sizeof(cfg_roll));
+	walk_start();
+}
+
+/* the job's end: r the last walk's result */
+void om_settle(uint8_t r) __banked
+{
+	if (om_apply_st == E_CFGAPPLY_UNDO) {
+		om_apply_st = r == OM_A_DONE ? E_CFGAPPLY_ROLLED_BACK : E_CFGAPPLY_FAILED;
+		if (a_timeout) {		/* nobody waits for this one */
+			cand_from_run();
+			print_string("event state.cfg.apply rolled_back\n");
+		}
+	} else {
+		om_apply_st = E_CFGAPPLY_DONE;
+	}
+	om_confirm_s = 0;
+	roll_from_run();
+}
+
+static uint8_t om_busy(void)		/* the cfg job is walking */
+{
+	if (om_apply_st == E_CFGAPPLY_RUNNING)	/* ifs: a || returned costs a bit */
+		return 1;
+	if (om_apply_st == E_CFGAPPLY_UNDO)
+		return 1;
+	return 0;
+}
+
+/* apply [seconds]: check the candidate, then hand it to the cfg job */
+static void apply_cmd(void)
+{
+	c_pw = 0;
+	v16 = 0;
+	if (cmd_words_len > 1) {
+		p = cmd_buffer + cmd_words_b[1];
+		if (!parse_dec() || num[2] | num[3] || !at_end() ||
+		    !(v16 = num[0] | (uint16_t)num[1] << 8) || v16 > 3600) {
+			fail("1-3600 seconds");
+			return;
+		}
+	}
+	if (om_apply_st == E_CFGAPPLY_CONFIRM) {
+		fail("confirm first");
+		return;
+	}
+	if (!check_all())
+		return;
+	om_confirm_s = v16;
+	if (!om_job_start()) {
+		err_line("err apply: busy\n");
+		return;
+	}
+	apply_begin();
+	om_confirmed = 0;
+	job_start(J_APPLY);		/* the cli waits for the walk, then says how it went */
+}
+
+/* the cli's wait for the walk: 1 while it runs; then ok, or err with the instance */
+static uint8_t apply_wait(void)
+{
+	if (om_busy())
+		return 1;
+	if (om_apply_st == E_CFGAPPLY_ROLLED_BACK || om_apply_st == E_CFGAPPLY_FAILED) {
+		sel_obj(a_fo);
+		cur_e = a_fe;
+		cv_of_e();
+		c_inst = 1;
+		fail(om_apply_st == E_CFGAPPLY_FAILED ? "failed, and its rollback" : "failed, rolled back");
+		j_hit = 3;
+	}
+	return 0;
 }
 
 uint8_t om_line(void) __banked
 {
+	if (j_mode == J_APPLY) {
+		if (apply_wait())
+			return 1;
+		goto done;
+	}
 	if (j_new) {
 		j_new = 0;
 		j_o = 0;
@@ -1327,13 +1508,6 @@ uint8_t om_line(void) __banked
 			j_o++;
 			if (!next_obj())
 				goto done;
-			continue;
-		}
-		if (j_mode == J_APPLY) {
-			w = apply_inst();
-			next_instance();
-			if (w)
-				return 1;	/* an instance a step */
 			continue;
 		}
 		if (next_field()) {
@@ -1400,8 +1574,7 @@ static uint8_t target(uint8_t del)
 {
 	c_pw = 1;
 	if (cmd_words_len < 2) {
-		print_string("err: a path\n");
-		err_status = ERR_INVALID_ARGUMENT;
+		err_line("err: a path\n");
 		return 0;
 	}
 	path_start();
@@ -1570,7 +1743,7 @@ static void om_do(void)
 /* every instance's check, on the candidate */
 static uint8_t check_all(void)
 {
-	c_pw = 0;
+	c_inst = 1;
 #if OM_USE_KEY
 	j_copies = 3;		/* entries deleted in the candidate too: a check may refuse it */
 #endif
@@ -1589,6 +1762,11 @@ static uint8_t check_all(void)
 
 void om_cmd(void) __banked
 {
+	if (om_busy()) {			/* the walk shares the engine's cursor */
+		err_line("err: applying\n");
+		return;
+	}
+	c_inst = 0;
 	p = cmd_buffer + cmd_words_b[0];
 	if (seg_is("get")) {
 		om_get();
@@ -1601,10 +1779,17 @@ void om_cmd(void) __banked
 	} else if (seg_is("diff")) {
 		job_start(J_DIFF);
 	} else if (seg_is("apply")) {
-		if (check_all())
-			job_start(J_APPLY);
+		apply_cmd();
+	} else if (seg_is("confirm")) {
+		if (om_apply_st != E_CFGAPPLY_CONFIRM) {
+			err_line("err confirm: no window\n");
+			return;
+		}
+		om_confirmed = 1;
+		om_job_wake();
+		ok();
 	} else if (seg_is("discard")) {
-		memcpy(&cfg_cand, &cfg_run, sizeof(cfg_cand));
+		cand_from_run();
 		ok();
 	}
 }
@@ -1626,8 +1811,10 @@ void om_init(void) __banked
 		}
 #endif
 	}
-	memcpy(&cfg_cand, &cfg_run, sizeof(cfg_run));
-	memcpy(&cfg_roll, &cfg_run, sizeof(cfg_run));
+	cand_from_run();
+	roll_from_run();
+	om_apply_st = E_CFGAPPLY_IDLE;
+	om_dirty = 0;
 }
 
 /* after the boot config's set lines: check and apply them, at once */
@@ -1635,11 +1822,45 @@ void om_boot_apply(void) __banked
 {
 	if (!check_all()) {
 		print_string("Boot config not applied\n");
-		memcpy(&cfg_cand, &cfg_run, sizeof(cfg_cand));
+		cand_from_run();
 		return;
 	}
-	job_start(J_APPLY);
-	j_quiet = 1;
-	cmd_finish();
-	j_quiet = 0;
+	apply_begin();
+	while ((v8 = om_apply_next()) != OM_A_DONE) {
+		if (v8 == OM_A_FAIL) {
+			if (om_apply_st == E_CFGAPPLY_UNDO)
+				break;
+			om_undo();
+		}
+	}
+	om_settle(v8);
+	om_apply_st = E_CFGAPPLY_IDLE;
+}
+
+/* state.cfg (schema/state_cfg.py) */
+uint8_t om_get_cfg(uint8_t idx) __banked
+{
+	om_st.cfg.pending = 0;
+	walk_start();			/* the instances where the candidate differs */
+	a_other = CAND;
+	while (walk_next())
+		om_st.cfg.pending++;
+	sel_obj(j_o);			/* the get job's object: state.cfg */
+	cur_e = 0;
+	om_st.cfg.dirty = om_dirty;
+	om_st.cfg.apply = om_apply_st;
+	om_st.cfg.confirm_s = om_confirm_s;
+	return OM_OK;
+}
+
+/* the prompt: "[confirm N] " in a window, "*" while the candidate differs */
+void om_prompt(void) __banked
+{
+	if (om_apply_st == E_CFGAPPLY_CONFIRM) {
+		print_string("[confirm ");
+		itoa_short(om_confirm_s);
+		print_string("] ");
+	}
+	if (memcmp(&cfg_cand, &cfg_run, sizeof(cfg_run)))
+		write_char('*');
 }

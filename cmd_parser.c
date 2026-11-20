@@ -1679,7 +1679,7 @@ void cmd_parser(void) __banked
 	if (cmd_words_len >= 1) {
 		if (cmd_compare(0, "get") || cmd_compare(0, "set") || cmd_compare(0, "del")
 		    || cmd_compare(0, "diff") || cmd_compare(0, "apply") || cmd_compare(0, "discard")
-		    || cmd_compare(0, "do")) {
+		    || cmd_compare(0, "do") || cmd_compare(0, "confirm")) {
 			om_cmd();
 		} else if (cmd_compare(0, "reset")) {
 			print_string("\nRESET\n\n");
