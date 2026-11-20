@@ -93,11 +93,11 @@ uint8_t om_check_port(uint8_t idx) __banked
 	if (machine.is_sfp[l])
 		return OM_OK;
 	if (r.duplex != E_DUPLEX_AUTO && r.speed != E_SPEED_10M && r.speed != E_SPEED_100M) {
-		om_fail("duplex full or half needs speed 10m or 100m");
+		om_fail(OM_E_DUPLEX);
 		return OM_ERR;
 	}
 	if ((r.speed == E_SPEED_5G || r.speed == E_SPEED_10G) && !OM_TEN_G(l)) {
-		om_fail("speed 5g and 10g only on a 10G port");
+		om_fail(OM_E_SPEED_10G);
 		return OM_ERR;
 	}
 	return OM_OK;

@@ -3,7 +3,7 @@
 #include "rtl837x_common.h"
 #include "rtl837x_sfr.h"
 #include "rtl837x_cabletest.h"
-#include "om.h"
+#include "om_gen.h"
 #include "rtl837x_phy.h"
 #include "phy.h"
 #include "machine.h"
@@ -111,18 +111,18 @@ static void cabletest_event(void)
 uint8_t cabletest_run(void) __banked
 {
 	if (ct_state) {
-		om_fail("a cable test is running");
+		om_fail(OM_E_CT_RUNNING);
 		return OM_ERR;
 	}
 	if (!machine_detected.isRTL8373 && (phy_settings.port < 4 || phy_settings.port > 7)) {
-		om_fail("no cable test on this PHY");
+		om_fail(OM_E_CT_PHY);
 		return OM_ERR;
 	}
 
 	// A test started on a port that is off never ends and blocks the PHY until reset.
 	phy_read(phy_settings.port, PHY_MMD31, PHY_POWER);
 	if (SFR_DATA_U16 & PHY_POWER_OFF) {
-		om_fail("the port is off");
+		om_fail(OM_E_CT_OFF);
 		return OM_ERR;
 	}
 

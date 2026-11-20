@@ -20,6 +20,11 @@ cfg("isolate", PortMask(cpu=True), "OM_ISOLATE_DEFAULT",
     tip="Ports this port may send to")
 action("cabletest", "om_do_port_cabletest", when="copper",
        tip="Time-domain reflectometry on the four pairs")
+message("duplex", "duplex full or half needs speed 10m or 100m")
+message("speed_10g", "speed 5g and 10g only on a 10G port")
+message("ct_running", "a cable test is running")
+message("ct_phy", "no cable test on this PHY")
+message("ct_off", "the port is off")
 
 state("port", count=PORTS, get="om_get_port")
 st("link", Enum("link", "down up"))

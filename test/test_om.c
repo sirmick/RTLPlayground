@@ -85,7 +85,7 @@ uint8_t om_check_port(uint8_t idx)
 {
 	checks++;
 	if (idx == fail_check_on) {
-		om_fail("test check failed");
+		om_fail(OM_E_TEST);
 		return OM_ERR;
 	}
 	return OM_OK;
@@ -123,7 +123,7 @@ uint8_t om_apply_tsys(uint8_t idx) { t_sys++; return OM_OK; }
 uint8_t om_check_tsys(uint8_t idx)
 {
 	if (cfg_cand.tsys.offset == 13) {
-		om_fail("test check failed");
+		om_fail(OM_E_TEST);
 		return OM_ERR;
 	}
 	return OM_OK;

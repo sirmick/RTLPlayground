@@ -7,9 +7,8 @@
 OM_GEN = $(BUILDDIR)/om
 OM_SCHEMA = $(wildcard schema/*.py) schema/registry.txt
 CC_FLAGS += -I$(OM_GEN)
-OM_SRCS = om.c om_port.c om_gen.c om_fail.c
+OM_SRCS = om.c om_port.c om_gen.c
 SRCS += $(OM_SRCS)
-RESIDENT_SRCS += om_fail.c	# a handler's message is in the handler's bank
 $(shell mkdir -p $(OM_GEN))
 
 $(OM_GEN)/gen.stamp: $(OM_SCHEMA) tools/om_gen.py

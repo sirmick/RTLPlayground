@@ -57,7 +57,7 @@ class Type:
         return self.code
 
 
-SCHEMA = {"objs": [], "enums": {}, "cur": None, "dir": None}
+SCHEMA = {"objs": [], "enums": {}, "msgs": {}, "cur": None, "dir": None}
 
 
 def _words(name, words):
@@ -230,9 +230,20 @@ def default_entry(key, **values):
     o.entries.append((key, values))
 
 
+def message(name, text):
+    """A handler's error message: om_fail(OM_E_<NAME>) prints "err <path>: text"."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+        raise SystemExit("bad message name %r" % name)
+    if not re.fullmatch(r"[ -~]+", text) or '"' in text or "\\" in text:
+        raise SystemExit("message %s: printable text without \" or \\" % name)
+    if SCHEMA["msgs"].get(name, text) != text:
+        raise SystemExit("message %s declared twice with different text" % name)
+    SCHEMA["msgs"][name] = text
+
+
 DSL = {k: v for k, v in globals().items() if k in (
     "Enum Flags U8 U16 U32 I16 U64 Bool Str Secret PortMask Scaled IPv4 Mask4 MAC Port TZ BridgeId "
-    "obj state cfg st action default_entry".split())}
+    "obj state cfg st action default_entry message".split())}
 
 
 def load_schema(dirs):
@@ -548,6 +559,8 @@ def gen(objs, outdir):
     for e in ename:
         for i, w in enumerate(enums[e]):
             H("#define E_%s_%s %d" % (e.upper(), w.upper(), i))
+    for i, m in enumerate(SCHEMA["msgs"]):
+        H("#define OM_E_%s %d" % (m.upper(), i))
     H("")
     for o in objs:
         H("struct %s {" % o.cname)
@@ -606,6 +619,7 @@ def gen(objs, outdir):
     pool = Pool()
     strs = [("e", e, "\0".join(enums[e]) + "\0") for e in ename]
     strs += [("o", o.cname, o.pattern) for o in objs]
+    strs += [("m", m, t) for m, t in SCHEMA["msgs"].items()]
     strs += [("f", (o.cname, f.cname), f.name) for o in objs for f in o.fields]
     at = {}
     for kind, key, s in sorted(strs, key=lambda x: -len(x[2])):
@@ -613,6 +627,9 @@ def gen(objs, outdir):
     C("static __code const char om_str[] =\n\t%s;" % pool.c())
     C("__code const char * __code const om_enum[] = { %s };" %
       ", ".join("om_str + %d" % at[("e", e)] for e in ename) if ename else "")
+    C("__code const char * __code const om_msg[] = { %s };" %
+      ", ".join("om_str + %d" % at[("m", m)] for m in SCHEMA["msgs"]) if SCHEMA["msgs"] else
+      "__code const char * __code const om_msg[] = { om_str };")
     C("")
     lims = []
 

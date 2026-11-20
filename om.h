@@ -96,10 +96,11 @@ void om_init(void) __banked;		/* defaults into every copy */
 void om_cmd(void) __banked;		/* get set del diff apply discard do */
 uint8_t om_line(void) __banked;		/* the cli job's next line; 0 when done */
 void om_boot_apply(void) __banked;	/* after the boot config: apply it */
-/* for handlers: "err <the command's path>: why", err_status set; in the
- * common area (om_fail.c), so why may be in the caller's bank */
-void om_fail(__code const char *why);
-void om_err_head(void) __banked;
-void om_err_end(void) __banked;
+/*
+ * for handlers: "err <the command's path>: <message>", err_status set. The
+ * message is an ID (OM_E_*, from the schema's message() lines): a handler's
+ * own string would be __code in its bank, which om.c can't read.
+ */
+void om_fail(uint8_t msg) __banked;
 
 #endif

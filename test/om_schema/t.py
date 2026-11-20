@@ -15,6 +15,7 @@ cfg("led", Enum("tled", "on ports_off off"), {"rtl8372": "on", "rtl8373": "off"}
 cfg("hash", Flags("thash", "spa smac dmac sip dip sport dport"), "smac,dmac")
 cfg("lp", Flags("tlp", "10h 10f 100h 100f 1000h 1000f 2g5 5g 10g"), "none")
 action("rnd", "om_do_tsys_rnd")
+message("test", "test check failed")
 
 obj("tvlan", keyed=U16(1, 4094), max=4, apply="om_apply_tvlan")
 cfg("name", Str(15), "")

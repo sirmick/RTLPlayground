@@ -79,7 +79,7 @@ OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
 $(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s om_schema -o $(BUILDDIR)/om_t > /dev/null
 $(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
-OM_T_SRCS = test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_fail.c $(BUILDDIR)/om_t/om_gen.c
+OM_T_SRCS = test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om_t/om_gen.c
 $(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d

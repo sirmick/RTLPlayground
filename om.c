@@ -34,6 +34,7 @@ extern __xdata uint8_t cmd_words_len;
 extern __xdata uint8_t cmd_words_b[];
 extern __code const char * __code const om_enum[];
 extern __code const struct om_lim om_lim[];
+extern __code const char * __code const om_msg[];
 
 #define RUN	((__xdata uint8_t *)&cfg_run)
 #define CAND	((__xdata uint8_t *)&cfg_cand)
@@ -259,15 +260,16 @@ static void err_end(void)
 	err_status = ERR_INVALID_ARGUMENT;
 }
 
-/* om_fail() (om_fail.c, in the common area: the message may be in any bank) */
-void om_err_head(void) __banked
+static void fail(__code const char *why)	/* "err <path>: why"; why in this bank */
 {
 	err_head();
+	print_string(why);
+	err_end();
 }
 
-void om_err_end(void) __banked
+void om_fail(uint8_t msg) __banked
 {
-	err_end();
+	fail(om_msg[msg]);
 }
 
 static void ok(void)
@@ -645,7 +647,7 @@ static uint8_t parse_value(void)
 #endif
 		for (k = 0; (v8 = take()); k++) {
 			if (k >= fdx.arg || v8 < 0x20 || v8 > 0x7e || v8 == '"' || v8 == '\\') {
-				om_fail("printable text without \" or \\, at most its length");
+				fail("printable text without \" or \\, at most its length");
 				return 0;
 			}
 			om_val[k] = v8;
@@ -656,7 +658,7 @@ static uint8_t parse_value(void)
 		pm = 0;
 		while (1) {
 			if (!pmask_item()) {
-				om_fail("ports like 1-4,9 (none, all, cpu)");
+				fail("ports like 1-4,9 (none, all, cpu)");
 				return 0;
 			}
 			if (ch() != ',')
@@ -690,7 +692,7 @@ static uint8_t parse_value(void)
 		}
 		break;
 bad_ip:
-		om_fail(ft == T_MASK4 ? "a.b.c.d, contiguous" : "a.b.c.d");
+		fail(ft == T_MASK4 ? "a.b.c.d, contiguous" : "a.b.c.d");
 		return 0;
 #endif
 #if OM_USE_MAC
@@ -717,7 +719,7 @@ bad_ip:
 #endif
 #if OM_USE_MAC || OM_USE_BRID
 bad_mac:
-		om_fail(ft == T_BRID ? "0-15.aa:bb:cc:dd:ee:ff" :
+		fail(ft == T_BRID ? "0-15.aa:bb:cc:dd:ee:ff" :
 			fdx.arg ? "aa:bb:cc:dd:ee:ff or auto" : "aa:bb:cc:dd:ee:ff");
 		return 0;
 #endif
@@ -751,7 +753,7 @@ bad_mac:
 			break;
 		}
 		if (!byte_dec() || (om_val[0] = log_of(num[0])) == 0xff) {
-			om_fail(fdx.arg ? "a port, or none" : "a port");
+			fail(fdx.arg ? "a port, or none" : "a port");
 			return 0;
 		}
 		break;
@@ -815,12 +817,12 @@ bad_signed:		/* "lo..hi" */
 			om_val[i] = num[i];
 		break;
 	default:
-		om_fail("read only");
+		fail("read only");
 		return 0;
 	}
 end:
 	if (!at_end() || (ch() == ' ' && p[1])) {
-		om_fail("one value");
+		fail("one value");
 		return 0;
 	}
 	return 1;
@@ -1228,7 +1230,7 @@ static uint8_t next_obj(void)
 				return 1;
 			}
 			if (r_fix & 1) {
-				om_fail("no such entry");
+				fail("no such entry");
 				goto fail;
 			}
 			j_hit = 2;		/* no entries: nothing to print */
@@ -1237,7 +1239,7 @@ static uint8_t next_obj(void)
 			return 0;
 		if (j_hit != 2) {
 			if (j_hit)
-				om_fail("not on this port");
+				fail("not on this port");
 			else
 				path_err();
 			goto fail;
@@ -1385,7 +1387,7 @@ static uint8_t target(uint8_t del)
 	return 0;
 found:
 	if (obx.flags & OM_STATE) {
-		om_fail("read only");
+		fail("read only");
 		return 0;
 	}
 #if OM_USE_KEY
@@ -1429,7 +1431,7 @@ static void om_set(uint8_t del)
 	if (!target(del))
 		return;
 	if (cur_f != 0xff && ft == T_ACT) {
-		om_fail(del ? "an action" : "an action: do it");
+		fail(del ? "an action" : "an action: do it");
 		return;
 	}
 	if (!del) {
@@ -1441,14 +1443,14 @@ static void om_set(uint8_t del)
 #if OM_USE_KEY
 	if (!cur_ok && !del && (r_fix & 1)) {
 		if (!key_new()) {
-			om_fail("no free entry");
+			fail("no free entry");
 			return;
 		}
 		first_inst();
 	}
 #endif
 	if (!cur_ok) {
-		om_fail("no such entry");
+		fail("no such entry");
 		return;
 	}
 	k = fsize();
@@ -1469,7 +1471,7 @@ static void om_set(uint8_t del)
 		v8 = 1;
 	}
 	if (!v8) {
-		om_fail("not on this port");
+		fail("not on this port");
 		return;
 	}
 	ok();
@@ -1480,13 +1482,13 @@ static void om_do(void)
 	if (!target(0))
 		return;
 	if (ft != T_ACT) {
-		om_fail("not an action");
+		fail("not an action");
 		return;
 	}
 	for (first_inst(); cur_ok; next_inst()) {
 		if (!om_when()) {
 			if (r_fix & 1) {
-				om_fail("not on this port");
+				fail("not on this port");
 				return;
 			}
 			continue;

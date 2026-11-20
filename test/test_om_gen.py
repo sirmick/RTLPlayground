@@ -73,6 +73,8 @@ for name, schema, want in [
     ("mac default", 'obj("s")\ncfg("a", MAC(), "auto")\n', "is not a MAC"),
     ("tz default", 'obj("s")\ncfg("a", TZ(), "+05:20")\n', "is not +hh:mm"),
     ("port default", 'obj("s")\ncfg("a", Port(none=True), "3")\n', "can only be none"),
+    ("message twice", 'obj("s")\nmessage("m", "a")\nmessage("m", "b")\n', "declared twice with different text"),
+    ("message quote", 'obj("s")\nmessage("m", "say \\"hi\\"")\n', "printable text without"),
     ("i16 default", 'obj("s")\ncfg("a", I16(-5, 5), -6)\n', "outside -5-5"),
 ]:
     rc, out, _ = gen(schema, register=True)
