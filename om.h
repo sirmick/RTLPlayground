@@ -118,6 +118,7 @@ extern __xdata uint8_t om_val[], om_fid;
 #define OM_A_DONE	1
 #define OM_A_FAIL	2
 extern __xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
+extern __xdata uint8_t om_full;	/* the boot's apply: what the hardware has is unknown */
 extern __xdata uint8_t om_cut;		/* the get or diff's next line says a rollback cut it */
 uint8_t om_apply_next(void) __banked;	/* the next changed instance: OM_A_* */
 void om_undo(void) __banked;		/* running back to the rollback copy; walk again */

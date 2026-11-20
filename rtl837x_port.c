@@ -351,8 +351,13 @@ void port_l2mc_set(uint8_t mac_last, __xdata uint16_t vid, __xdata uint16_t pmas
  */
 void port_l2_setup(void) __banked
 {
-
-	port_l2_forget();
+	// A soft reset keeps the L2 table, its static entries too (a management
+	// entry for another MAC or VLAN): the boot flushes both kinds, the CPU's
+	// with them (L2_TBL_FLUSH_MODE FLUSH_TYPE, bit 2). Later flushes
+	// (port_l2_forget) take only the dynamic ones.
+	REG_SET(RTL837x_L2_TBL_FLUSH_CNF, 0x4);
+	REG_SET(RTL837x_L2_TBL_FLUSH_CTRL, L2_TBL_FLUSH_EXEC | PMASK_CPU | (machine_detected.isRTL8373 ? PMASK_9 : PMASK_6));
+	l2_flush_wait();
 
 	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
 		// Limit the number of automatically learned MAC-Entries per port to 0x1040

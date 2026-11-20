@@ -1513,7 +1513,7 @@ static void next_instance(void)
  * walks again. The walk has its own cursor (a_o, a_e) and takes the element
  * index straight: no get can run meanwhile (om_cmd() refuses while om_busy).
  */
-__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut;
+__xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut, om_full;
 static __xdata uint8_t l_saved;		/* the candidate is the saved config, as loaded */
 static uint8_t check_all(void);
 static void check_start(void);
@@ -1581,7 +1581,7 @@ static uint8_t walk_next(void)
 			if (!a_left--)
 				return 2;
 			cur_e = a_e++;
-			if (memcmp(inst(RUN), inst(a_other), obx.size))
+			if (memcmp(inst(RUN), inst(a_other), obx.size) || (om_full && obx.k[0] != IX_KEY))
 				return 1;
 		}
 	}
@@ -3258,14 +3258,20 @@ void om_boot_apply(void) __banked
 		om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
 		goto not_applied;			/* the candidate what was refused (diff) */
 	}
+	/* A soft reset keeps the chip and the PHYs as they were: every instance
+	 * but keyed entries (vlan_setup clears those) is applied whole, at its
+	 * default too, so the defaults are what the chip has after a boot */
+	om_full = 1;
 	apply_begin();
 	while ((v8 = om_apply_next()) != OM_A_DONE) {
 		if (v8 == OM_A_FAIL) {
+			om_full = 0;
 			if (om_apply_st == E_CFGAPPLY_UNDO)
 				break;
 			om_undo();
 		}
 	}
+	om_full = 0;
 	om_settle(v8);
 	while (x_step());
 	if (om_apply_st == E_CFGAPPLY_DONE) {
