@@ -8,7 +8,6 @@ The following endpoints are supported:
  * /bandwidth.json
  * /counters.json?port=<PORTNUM>
  * /eee.json
- * /information.json
  * /isolation.json
  * /l2.json
  * /lag.json
@@ -133,42 +132,11 @@ Array of ports EEE configuration and status
 | `active` | Whether EEE is enabled on the port (only for non-SPF links)
 
 ## information
-```json
-{
-    "ip_address":"192.168.10.247",
-    "ip_gateway":"192.168.10.1",
-    "ip_netmask":"255.255.255.0",
-    "syslog_server":"0.0.0.0:514",
-    "session_timeout":3600,
-    "ip_source":"static",
-    "mac_address":"01:02:03:04:05:06",
-    "hostname":"RTLPlayground-124737",
-    "sw_ver":"v0.1.0-af3957e",
-    "build_date":"2026-11-05 13:29:46",
-    "hw_ver":"Hi-Source HI-k0801WS",
-    "pcb_ver": "PCB_K0801W_V2_0",
-    "chip_temp":"47.3 C",
-    "flash_size":"2 MB",
-    "sfp_slot_0":"SOD-10GT-I"
-}
-```
-| Property | Description
-|----------|------------
-| `ip_address` | Management IP of the switch
-| `ip_gateway` | Management IP default gateway
-| `ip_netmask` | Management IP netmask
-| `syslog_server` | IP and port of syslog server if configured, (`0.0.0.0:514` by default)
-| `session_timeout` | In seconds before the HTTP session times out
-| `ip_source` | `static` or `dhcp`
-| `mac_address` | MAC address of the CPU-port of the switch
-| `hostname` | Configured hostname
-| `sw_ver` | Firmware build version
-| `build_date` | Firmware build date
-| `hw_ver` | Hardware description
-| `pcb_ver` | The PCB configuration used to build the firmware
-| `chip_temp` | Temperature of the chipset
-| `flash_size` | Size of the firmware flash
-| `sfp_slot_0` | Descriptor of the module in the first SFP slot
+
+Gone (the object model, P5-1): `POST /cli` with `get state.sys` (version,
+build date, machine, PCB, chip, ports, image size, uptime, MAC, temperature,
+flash size, PoE, button), `get state.sys.reset` (the last reset and its
+cause) and `get state.loader`. The config it echoed is read with `get`.
 
 
 ## isolation

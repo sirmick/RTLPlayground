@@ -30,7 +30,6 @@
 #include "dns.h"
 #include "ntp.h"
 #include "uip/uip.h"
-#include "version.h"
 
 #include "machine.h"
 #include "rtl837x_leds.h"
@@ -38,7 +37,6 @@
 #include "phy.h"
 #include "con_ring.h"
 #include "sched.h"
-#include "flash_job.h"
 #include "om.h"
 
 
@@ -1011,32 +1009,6 @@ err:
 }
 
 
-static void print_temperature(uint16_t reg)
-{
-	int16_t v;
-
-	reg_read(reg);
-	v = SFR_DATA_U16;
-	if (v < 0) {
-		write_char('-');
-		v = -v;
-	}
-	itoa(v >> 7);
-	write_char('.');
-	itoa(((v & 0x7f) * 10) >> 7);
-	print_string(" C\n");
-}
-
-
-void parse_temp(void)
-{
-	print_string("\nChip temperature: ");
-	print_temperature(RTL837X_TM_RESULT);
-	print_string("At power-on:      ");
-	print_temperature(RTL837X_TM_RESULT_POWERON);
-}
-
-
 void parse_sdsget(void)
 {
 	__xdata uint8_t sds_id, page, reg, hex_size;
@@ -1243,22 +1215,6 @@ void parse_physet(void)
 err:
 	cmd_error("physet <phy-id> <dev-id> <hex:reg> <hex:val>\n");
 	return;
-}
-
-
-void parse_rnd(void)
-{
-	// In order to get a new random numner, this bit has to be set each time!
-	reg_bit_set(RTL837X_RLDP_RLPP, RLDP_RND_EN);
-	reg_read_m(RTL837X_RAND_NUM1);
-	print_byte(sfr_data[2]);
-	print_byte(sfr_data[3]);
-	reg_read_m(RTL837X_RAND_NUM0);
-	print_byte(sfr_data[0]);
-	print_byte(sfr_data[1]);
-	print_byte(sfr_data[2]);
-	print_byte(sfr_data[3]);
-	write_char('\n');
 }
 
 
@@ -1646,18 +1602,6 @@ void print_gpio_status(void) {
 	}
 }
 
-// Show software version
-void print_sw_version(void) __banked {
-	print_string("Software version: " VERSION_SW);
-	print_string("\nBuild date: " BUILD_DATE);
-	print_string("\nCompiler: SDCC " STR(__SDCC_VERSION_MAJOR) "." STR(__SDCC_VERSION_MINOR) "." STR(__SDCC_VERSION_PATCH) " #" STR(__SDCC_REVISION));
-	print_string("\nToolchain: " SDCC_TOOLCHAIN);
-	print_string("\nHardware: ");
-	print_string(machine.machine_name);
-	write_char('\n');
-}
-
-
 // Identify command
 void cmd_parser(void) __banked
 {
@@ -1681,14 +1625,6 @@ void cmd_parser(void) __banked
 		    || cmd_compare(0, "diff") || cmd_compare(0, "apply") || cmd_compare(0, "discard")
 		    || cmd_compare(0, "do") || cmd_compare(0, "confirm")) {
 			om_cmd();
-		} else if (cmd_compare(0, "reset")) {
-			print_string("\nRESET\n\n");
-			reset_chip();
-		} else if (cmd_compare(0, "factory-reset")) {
-			print_string("\nFACTORY RESET\n\n");
-			fl_req = FL_FACTORY;	/* the flash job writes it and resets */
-			if (!flash_job_start())
-				print_string("Flash busy, not reset\n");
 		} else if (cmd_compare(0, "sfp")) {
 			parse_sfp();
 		} else if (cmd_compare(0, "flash")) {
@@ -1853,18 +1789,12 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
-		} else if (cmd_compare(0, "rnd")) {
-			parse_rnd();
 		} else if (cmd_compare(0, "passwd")) {
 			parse_passwd();
 		} else if (cmd_compare(0, "bw")) {
 			parse_bw();
-		} else if (cmd_compare(0, "temp")) {
-			parse_temp();
 		} else if (cmd_compare(0, "storm")) {
 			parse_storm();
-		} else if (cmd_compare(0, "version")) {
-			print_sw_version();
 		} else if (cmd_compare(0, "history")) {
 			hist_p = (cmd_history_ptr + 1) & CMD_HISTORY_MASK;
 			hist_begun = 0;

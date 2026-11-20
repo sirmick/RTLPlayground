@@ -21,6 +21,7 @@ __xdata struct crash_rec crash_last;
 __xdata uint8_t crash_prior;
 __xdata uint8_t crash_cause;
 __xdata uint8_t crash_pc_sp;
+__xdata uint8_t crash_pending;
 volatile __xdata uint16_t swdt_cnt;
 __xdata uint8_t swdt_on;
 

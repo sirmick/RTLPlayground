@@ -167,8 +167,28 @@ def login(host, port, timeout, password):
     return match.group(1)
 
 
+# /information.json's keys (firmware before the object model) for the
+# state.sys paths (the object model's POST /cli `get state.sys`)
+INFO_KEYS = {"sw_ver": "version", "build_date": "build_date", "hw_ver": "machine",
+             "pcb_ver": "pcb", "flash_size": "flash.size", "chip_temp": "temp_c",
+             "hostname": "hostname"}
+
+
 def fetch_info(host, port, timeout, cookie):
+    """The switch's state.sys as a dict ("version", "machine", ...): from
+    POST /cli on the object model's firmware, else from /information.json."""
+    info = {}
     try:
+        status, _, _, body = http_request(
+            host, port, timeout, "POST", "/cli", body=b"get state.sys",
+            cookie=cookie, content_type="text/plain")
+        if status == 200:
+            for line in body.decode("utf-8", "replace").splitlines():
+                path, _, value = line.partition(" ")
+                if path.startswith("state.sys."):
+                    info[path[len("state.sys."):]] = value
+        if info:
+            return info
         status, _, _, body = http_request(
             host, port, timeout, "GET", "/information.json", cookie=cookie)
     except Failure:
@@ -176,17 +196,18 @@ def fetch_info(host, port, timeout, cookie):
     if status != 200:
         return None
     try:
-        return json.loads(body.decode("utf-8", "replace"))
+        old = json.loads(body.decode("utf-8", "replace"))
     except ValueError:
         return None
+    return {INFO_KEYS[k]: str(v) for k, v in old.items() if k in INFO_KEYS}
 
 
 def describe(info):
     if not info:
         return "unknown version"
-    return (f"{info.get('sw_ver', '?')} "
+    return (f"{info.get('version', '?')} "
             f"(built {info.get('build_date', '?')}, "
-            f"hardware {info.get('hw_ver', '?')})")
+            f"hardware {info.get('machine', '?')})")
 
 
 def fetch_status(host, port, timeout, cookie):
@@ -361,7 +382,7 @@ def probe(host, port, timeout):
     """Return the HTTP status, or None when the switch is not answering."""
     try:
         status, _, _, _ = http_request(
-            host, port, timeout, "GET", "/information.json")
+            host, port, timeout, "GET", "/login.html")
         return status
     except Failure:
         return None
@@ -374,7 +395,7 @@ def wait_for_switch(host, port, timeout, wait_timeout, password, before,
     require_down is set when the switch closed the upload connection without
     a verdict: then only an observed reboot proves that the image was taken.
     Returns (info, cookie) from the fresh login after the reboot; both are None
-    when that login or the /information.json read failed.
+    when that login or the state.sys read failed.
     """
     start = time.monotonic()
     seen_down = False
@@ -406,7 +427,7 @@ def wait_for_switch(host, port, timeout, wait_timeout, password, before,
                 pass
             if after:
                 print(f"Now running {describe(after)}", file=sys.stderr)
-                if before and (after.get("sw_ver") == before.get("sw_ver")
+                if before and (after.get("version") == before.get("version")
                                and after.get("build_date")
                                == before.get("build_date")):
                     print("Note: the switch reports the same version; this "
@@ -472,13 +493,13 @@ def check_switch(args, target):
     cookie = login(host, port, args.timeout, password)
     info = fetch_info(host, port, args.timeout, cookie)
     if not info:
-        raise Failure("could not read /information.json", 4)
+        raise Failure("could not read the switch's state.sys", 4)
 
     name = info.get("hostname") or host
     print(f"Switch: {name} at {host}:{port}")
     print(f"Version: {describe(info)}")
-    print(f"Flash: {info.get('flash_size', '?')}, "
-          f"chip temperature: {info.get('chip_temp', '?')}")
+    print(f"Flash: {info.get('flash.size', '?')}, "
+          f"chip temperature: {info.get('temp_c', '?')}")
     return (0 if print_health(host, port, args.timeout, password, cookie,
                               "Health") else 4)
 
@@ -517,16 +538,16 @@ def run(args):
     if before:
         print(f"Currently running {describe(before)}", file=sys.stderr)
         # Prefer the PCB name; firmware older than pcb_ver reports only
-        # hw_ver, and the check then runs against that rather than being
-        # skipped.
-        board = before.get("pcb_ver") or before.get("hw_ver")
+        # hw_ver (machine), and the check then runs against that rather
+        # than being skipped.
+        board = before.get("pcb") or before.get("machine")
         if not args.force and not image_matches_pcb(image, board):
             raise Failure(
                 f"the image does not contain the switch's board name "
                 f"({board}); it was probably built for another "
                 "board. Use --force to upload it anyway.", 1)
     else:
-        print("Could not read /information.json; skipping the PCB check",
+        print("Could not read the switch's state.sys; skipping the PCB check",
               file=sys.stderr)
 
     accepted, verdict = upload(

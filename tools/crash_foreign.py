@@ -9,8 +9,8 @@ C1: schedtest is reset with ^R ^R, which leaves a valid record at 0xbfe0.
     That record is put in the firmware's xdata, and the firmware chip-reset
     (xdata kept, as on silicon after a web update): its boot prints no
     "Last reset:" and keeps nothing (crash_last).
-C2: the firmware's own record (^R ^R on it) is still printed at the next
-    boot, and kept.
+C2: the firmware's own record (^R ^R on it) is kept at the next boot:
+    get state.sys.reset.cause says ctrl_r (P5-1: the boot prints no line).
 Exit status 1 if either fails (C1 is expected to fail before E0: the boot
 decoded the foreign record with its own slot and state names).
 """
@@ -66,11 +66,14 @@ def main(argv):
             fails.append("C1")
 
         own = ctrl_r(s)
-        out = boot(s)
+        boot(s)
         kept = s.peek("x:_crash_last", 2)
-        line = next((l for l in out.splitlines() if "Last reset:" in l), "")
-        ok = line.startswith("Last reset: ^R ^R in ") and (kept[0] | kept[1] << 8) == CRASH_MAGIC
-        print(f"C2 the firmware's own record: {'printed: PASS' if ok else 'FAIL'} {line}")
+        s.uart_read()
+        s.uart_write("get state.sys.reset.cause\r")
+        s.run_until_uart(PROMPT, max_ms=3000)
+        line = next((l for l in s.uart_text().splitlines() if l.startswith("state.sys.reset.cause")), "")
+        ok = line == "state.sys.reset.cause ctrl_r" and (kept[0] | kept[1] << 8) == CRASH_MAGIC
+        print(f"C2 the firmware's own record: {'kept: PASS' if ok else 'FAIL'} {line}")
         if not ok:
             fails.append("C2")
     print("crash_foreign: " + ("FAIL " + " ".join(fails) if fails else "PASS"))

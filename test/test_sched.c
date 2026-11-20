@@ -16,6 +16,7 @@
 #include "con_ring.h"
 #include "crash.h"
 #include "build_id.h"
+#include "om_gen.h"
 
 static int tests_run, tests_failed;
 #define CHECK(cond, msg) do { \
@@ -440,8 +441,13 @@ static void test_rings(void)
 
 static void fake_isr_timer2(void) { ticks++; SWDT_ISR(5); }
 
+union om_st om_st;
+#define R	om_st.sys_reset
+
 static void test_crash(void)
 {
+	size_t n;
+
 	printf("watchdog and crash record\n");
 	memset((void *)&crash_rec, 0xa5, sizeof(crash_rec));	/* power-on garbage */
 	out_reset();
@@ -477,11 +483,20 @@ static void test_crash(void)
 
 	out_reset();
 	crash_boot();
-	CHECK(strstr(out, "Last reset: watchdog in w/W_STEP after 5000 ms, PC 0x1234 bank 2, states") != NULL, "boot prints it");
+	CHECK(out_len == 0 && crash_last.magic == CRASH_MAGIC, "boot keeps it, printing nothing (state.sys.reset shows it)");
 	CHECK(crash_rec.magic != CRASH_MAGIC && crash_prior == 1, "and consumes it; one recorded reset before this boot");
+	om_get_sys_reset(0);
+	CHECK(R.cause == CRASH_SWDT && !strcmp(R.slot, "w") && !strcmp(R.state, "W_STEP") &&
+	      R.step_ms == 5000 && R.pc == 0x1234 && R.bank == 2,
+	      "state.sys.reset: the record kept, as get prints it");
+	n = strlen(R.states);
+	CHECK(n > 14 && !strcmp(R.states + n - 13, "B_STEP W_STEP") && R.states[0] != ' ',
+	      "state.sys.reset.states: eight, oldest first");
 	out_reset();
 	crash_boot();
 	CHECK(out_len == 0, "a second boot prints nothing");
+	om_get_sys_reset(0);
+	CHECK(R.cause == E_RCAUSE_POWER && !R.slot[0] && !R.states[0], "no record: cause power, the rest empty");
 
 	crash_prior = 1;
 	if (!setjmp(reset_jmp))
@@ -503,6 +518,19 @@ static void test_crash(void)
 	CHECK(out_len == 0 && crash_prior == 0 && crash_last.magic != CRASH_MAGIC,
 	      "a record from another image: ignored, nothing printed or kept");
 	CHECK(crash_rec.magic != CRASH_MAGIC, "and dropped");
+
+	/* an update's record: the image it boots isn't the one that wrote it */
+	if (!setjmp(reset_jmp))
+		crash_reset(CRASH_UPDATE);
+	crash_rec.image_hi ^= 0x0100;
+	crash_rec.sum = crash_sum();
+	out_reset();
+	crash_boot();
+	CHECK(crash_last.magic == CRASH_MAGIC && crash_last.cause == CRASH_UPDATE && crash_last.slot == 0xff,
+	      "an update's record from another image: kept, without its slot and states");
+	om_get_sys_reset(0);
+	CHECK(R.cause == E_RCAUSE_UPDATE && !strcmp(R.slot, "-") && !strcmp(R.state, "-") && R.pc == 0 &&
+	      !strcmp(R.states, "- - - - - - - -"), "state.sys.reset: cause update, slot and states none");
 }
 
 static void test_health(void)

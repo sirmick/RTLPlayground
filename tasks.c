@@ -28,6 +28,7 @@
 #include "timer.h"
 #include "sched.h"
 #include "con_ring.h"
+#include "crash.h"
 
 #define SEC_TICKS	200	/* 1 s */
 #define SFP_TICKS	10	/* the SFP pins every 50 ms */
@@ -119,6 +120,8 @@ STEP(con, edit)
 static __xdata uint8_t cli_src, cli_web_more;
 static __xdata uint8_t cli_gen;		/* the web command this run serves (webcmd_gen) */
 static __xdata uint8_t cli_dropped;	/* its connection ended: no reply, no more lines */
+static __xdata uint16_t cli_reset_by;	/* do sys.reset over the web: the latest tick for it */
+#define CLI_RESET_TICKS	(3000 / SCHED_TICK_MS)
 
 TASK(cli, fixed, once, first=idle)
 STEP(cli, idle)
@@ -241,12 +244,24 @@ STEP(cli, more)
 
 STEP(cli, prompt)
 {
-	if (fl_kind >= FL_FACTORY)		/* factory-reset: no prompt, the job resets */
+	if (fl_kind >= FL_FACTORY)		/* do sys.factory_reset: its job first */
 		return STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
-		if (!cli_dropped && cli_web_live())
+		if (!cli_dropped && cli_web_live()) {
 			httpd_webcmd_end();	/* httpd sends the reply on a poll */
+			cli_dropped = 1;	/* done with it: a reset's wait comes back here */
+			cli_reset_by = sched_now + CLI_RESET_TICKS;
+		}
+		/* do sys.reset: httpd resets once the reply's connection closes;
+		 * this, if it never does (a client that leaves it half open) */
+		if (crash_pending) {
+			if ((int16_t)(sched_now - cli_reset_by) < 0)
+				return STEP_SLEEP(S_CLI_PROMPT, 100);
+			reset_chip(crash_pending);
+		}
 	} else {
+		if (crash_pending)		/* do sys.reset, sys.factory_reset: after the ok */
+			reset_chip(crash_pending);
 		print_cmd_prompt();
 		con_line_ready = 0;		/* con reads on: type-ahead echoes after the prompt */
 	}

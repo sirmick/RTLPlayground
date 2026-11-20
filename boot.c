@@ -18,6 +18,7 @@
 #include "loader/layout.h"
 #include "update_apply.h"
 #include "flash_job.h"
+#include "crash.h"
 
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
@@ -820,6 +821,6 @@ void loader_convert(void) __banked
 	cnv_erase(UPDATE_PROGRESS);
 	print_string("Converted to the loader, resetting now\n");
 	delay(200);
-	reset_chip();
+	reset_chip(CRASH_UPDATE);
 }
 #endif

@@ -501,7 +501,7 @@ def element_init(o, which=None, entry=None):
             d = entry[1][f.cname]
             check_value(o, f, d)
         v.append(c_value(o, f, d))
-    return "{ %s }" % ", ".join(v)
+    return "{ %s }" % (", ".join(v) or "0")   # actions only: the struct's `none`
 
 
 class Pool:

@@ -1,6 +1,6 @@
 /*
- * sched_health.c - `health tasks`, `health clear`, and the boot-time line of
- * the crash record. Banked: it reads state_name/slot_name directly, so
+ * sched_health.c - `health tasks`, `health clear`, the crash record at boot
+ * and as state.sys.reset. Banked: it reads state_name/slot_name directly, so
  * place_banks.py puts it in the bank with sched_gen_names.c.
  */
 #include <8051.h>
@@ -10,13 +10,10 @@
 #include "con_ring.h"
 #include "crash.h"
 #include "build_id.h"
+#include "om_gen.h"
 
 static __xdata uint8_t i, ps;
 static __xdata uint16_t u, lo;
-
-static __code const char * __code const cause_name[] = {
-	"?", "watchdog", "^R ^R", "reset command"
-};
 
 /* A 32-bit count kept as two halves, in hex. */
 static void print_halves(void)		/* u = high, then lo */
@@ -50,11 +47,16 @@ static void print_slot(void)		/* slot ps */
 	print_string(ps < SCHED_SLOTS ? slot_name[ps] : "-");
 }
 
+#ifdef SCHEDTEST	/* its sim checks (schedtest/sim_neg.py) read the record as a line */
+static __code const char * __code const cause_name[] = {
+	"?", "watchdog", "^R ^R", "reset command", "update", "web", "button", "factory"
+};
+
 /* crash_last as one line:
  * watchdog in stp/STP_SECOND after 5000 ms, PC 0x1234 bank 2, states ... */
 static void crash_print(void)
 {
-	print_string(cause_name[crash_last.cause <= CRASH_RESET_CMD ? crash_last.cause : 0]);
+	print_string(cause_name[crash_last.cause <= CRASH_FACTORY ? crash_last.cause : 0]);
 	print_string(" in ");
 	ps = crash_last.slot;
 	print_slot();
@@ -79,6 +81,7 @@ static void crash_print(void)
 	}
 	write_char('\n');
 }
+#endif
 
 /* health tasks, a line per call (the cli's health job, E1): the header,
  * each slot, the states' header, each state, then the totals. */
@@ -158,10 +161,12 @@ uint8_t sched_health_line(void) __banked
 			print_short(hw_timeout_reg);
 		}
 		write_char('\n');
+#ifdef SCHEDTEST
 		if (crash_last.magic == CRASH_MAGIC) {
 			print_string("last reset: ");
 			crash_print();
 		}
+#endif
 		return 0;
 	}
 	hl++;
@@ -185,9 +190,10 @@ void sched_health_clear(void) __banked
 }
 
 /* At boot: a record whose magic and sum hold, written by this image, is
- * printed once, kept for health, and consumed. A power-on finds garbage and
+ * kept for state.sys.reset, and consumed. A power-on finds garbage and
  * ignores it; a record another image left (a web update keeps xdata) is
- * dropped unread: its slots and states aren't this image's. */
+ * dropped unread: its slots and states aren't this image's. An update's is
+ * the exception: kept, without them (slot none, states "-"). */
 void crash_boot(void) __banked
 {
 	crash_last.magic = 0;
@@ -195,13 +201,65 @@ void crash_boot(void) __banked
 	if (crash_rec.magic != CRASH_MAGIC || crash_rec.sum != crash_sum())
 		return;
 	if (crash_rec.image_lo != CRASH_IMAGE_LO || crash_rec.image_hi != CRASH_IMAGE_HI) {
-		crash_rec.magic = 0;
-		return;
+		if (crash_rec.cause != CRASH_UPDATE) {
+			crash_rec.magic = 0;
+			return;
+		}
+		crash_rec.slot = 0xff;		/* consumed below: the sum no longer matters */
+		crash_rec.state = 0;
+		crash_rec.pc = 0;
+		memset((__xdata uint8_t *)crash_rec.ring, 0, 8);
 	}
 	for (i = 0; i < sizeof(struct crash_rec); i++)
 		((__xdata uint8_t *)&crash_last)[i] = ((__xdata uint8_t *)&crash_rec)[i];
 	crash_prior = crash_rec.resets < 0xff ? crash_rec.resets + 1 : 0xff;
 	crash_rec.magic = 0;
+#ifdef SCHEDTEST
 	print_string("Last reset: ");
 	crash_print();
+#endif
 }
+
+/* state.sys.reset (schema/state_sys.py): the record crash_boot kept; none,
+ * cause power. The names are copied here, beside their tables. */
+#define R	om_st.sys_reset
+static __xdata char * __xdata dp;
+
+static void put(__code const char *s)
+{
+	while (*s)
+		*dp++ = *s++;
+	*dp = 0;
+}
+
+uint8_t om_get_sys_reset(uint8_t idx) __banked
+{
+	(void)idx;
+	memset((__xdata uint8_t *)&R, 0, sizeof(R));
+	if (crash_last.magic != CRASH_MAGIC)
+		return OM_OK;
+	R.cause = crash_last.cause;
+	ps = crash_last.slot;
+	dp = R.slot;
+	put(ps < SCHED_SLOTS ? slot_name[ps] : "-");
+	ps = crash_last.state;
+	dp = R.state;
+	put(ps < S_COUNT ? state_name[ps] : "?");
+	u = crash_last.tick - crash_last.step_tick;
+	R.step_ms = u < 13107 ? u * SCHED_TICK_MS : 65535;
+	R.pc = crash_last.pc;
+	R.bank = crash_last.bank;
+	dp = R.states;
+	for (i = 0; i < 8; i++) {		/* oldest first */
+		if (i)
+			put(" ");
+		ps = crash_last.ring[(crash_last.ring_idx + i) & 7];
+		put(ps < S_COUNT ? state_name[ps] : "?");
+	}
+	return OM_OK;
+}
+
+/* rcause's words are crash.h's causes (SDCC's _Static_assert only warns) */
+typedef char rcause_is_cause[E_RCAUSE_WATCHDOG == CRASH_SWDT && E_RCAUSE_CTRL_R == CRASH_CTRL_R &&
+	E_RCAUSE_CMD == CRASH_RESET_CMD && E_RCAUSE_UPDATE == CRASH_UPDATE && E_RCAUSE_WEB == CRASH_WEB &&
+	E_RCAUSE_BUTTON == CRASH_BUTTON && E_RCAUSE_FACTORY == CRASH_FACTORY ? 1 : -1];

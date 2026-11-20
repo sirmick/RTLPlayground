@@ -10,6 +10,7 @@
 #include "rtl837x_flash.h"
 #include "rtl837x_regs.h"
 #include "update_apply.h"
+#include "crash.h"
 #include "loader/layout.h"
 
 extern __xdata uint32_t flash_size;
@@ -95,7 +96,7 @@ void check_and_flash_update_image(void)
 			boot_copy();
 			print_string(", resetting now\n");
 			delay(200);
-			reset_chip();
+			reset_chip(CRASH_UPDATE);
 		}
 		print_string("Checksum incorrect, please upload the image again\n");
 		print_string("Erasing bad uploaded flash image");

@@ -18,6 +18,7 @@
 #include "loader/layout.h"
 #include "flash_job.h"
 #include "sched.h"
+#include "crash.h"
 
 #define FL_CHUNK	512	/* bytes a config/factory FL_PROG step programs: ~9 ms */
 
@@ -117,9 +118,13 @@ STEP(fl, done)
 	}
 	if (fl_kind >= FL_FACTORY) {
 		print_string("Written default config to flash\n");
-		if (fl_kind == FL_FACTORY_BTN)
+		if (fl_kind == FL_FACTORY_BTN) {
 			print_string("Now resetting...\n");
-		reset_chip();
+			reset_chip(CRASH_BUTTON);
+		}
+		crash_pending = CRASH_FACTORY;	/* do sys.factory_reset: cli resets, after its reply */
+		fl_kind = 0;
+		return STEP_END;
 	}
 	fl_kind = 0;
 	fl_finished = 1;

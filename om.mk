@@ -10,7 +10,7 @@ OM_GEN = $(BUILDDIR)/om
 OM_DIRS = schema $(if $(OM_SIM),test/om_sim)
 OM_SCHEMA = $(foreach d,$(OM_DIRS),$(wildcard $(d)/*.py) $(d)/registry.txt)
 CC_FLAGS += -I$(OM_GEN)
-OM_SRCS = om.c om_port.c om_gen.c
+OM_SRCS = om.c om_port.c om_sys.c om_gen.c
 SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 
