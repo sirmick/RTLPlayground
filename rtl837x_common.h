@@ -153,10 +153,12 @@ void reg_read_m(uint16_t reg_addr);
 #define HW_TO_FLASH_WEL	0xff01		/* hw_timeout_reg: the flash never set WEL */
 extern __xdata uint16_t hw_timeouts, hw_timeout_reg;
 extern __xdata uint8_t hw_stuck;	/* this step had a timeout: later polls give up at once */
+extern __xdata uint8_t hw_end;
+extern volatile __xdata uint32_t ticks;
 void hw_start(uint8_t n);
 uint8_t hw_expired(void);
 void hw_timeout(uint16_t reg);
-uint8_t hw_poll(uint16_t reg);	/* bit 0 of reg's low byte clear: 0; 1 if it timed out */
+uint8_t hw_poll(uint16_t reg) __banked;	/* bit 0 of reg's low byte clear: 0; 1 if it timed out */
 void reg_write(uint16_t reg_addr);
 void reg_write_m(uint16_t reg_addr);
 void sds_read(uint8_t sds_id, uint8_t page, uint8_t reg);

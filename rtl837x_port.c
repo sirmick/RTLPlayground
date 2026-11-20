@@ -48,6 +48,26 @@ static void vlan_bit_put(uint16_t vlan)
 		*p &= ~m;
 }
 
+#ifndef RTLP_HOST_TEST	/* the host tests' register mock has its own (test/hw_mock.c) */
+/* reg until bit 0 of its low byte is clear (a table's execute, STAT_GET,
+ * I2C): 0; still set after HW_POLL_TICKS: counted, 1. reg_read() inline:
+ * a leaf, reg stays in registers. */
+uint8_t hw_poll(uint16_t reg) __banked
+{
+	hw_start(HW_POLL_TICKS);
+	do {
+		SFR_REG_ADDR_U16 = reg;
+		SFR_EXEC_GO = SFR_EXEC_READ_REG;
+		do {
+		} while (SFR_EXEC_STATUS != 0);
+		if (!(SFR_DATA_0 & 0x01))
+			return 0;
+	} while (!hw_stuck && (int8_t)(*(volatile __xdata uint8_t *)&ticks - hw_end) <= 0);
+	hw_timeout(reg);
+	return 1;
+}
+#endif
+
 // Wait for the TABLE ready (bounded, E4)
 static void wait_table_ready(void)
 {
