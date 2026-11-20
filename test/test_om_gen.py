@@ -156,6 +156,13 @@ grown = (NEST.replace("max=32", "max=64").replace("count=4", "count=8")
          .replace('"bcast mcast"', '"bcast mcast ucast umcast"'))
 rc, out, reg4 = gen(grown, registry=nreg, out=True)
 check(rc == 0 and reg4 == nreg, "more VLANs, LAGs or storm types: no new ID, nothing renumbers", out)
+
+# a path's walk takes one tree's objects of its first letter (om.c obj_first()): at most 12
+LETTER = "".join('obj("s%s")\ncfg("a", Bool, True)\n' % c for c in "abcdefghijklm")
+rc, out, _ = gen(LETTER.replace('obj("sm")\ncfg("a", Bool, True)\n', ""), register=True, out=True)
+check(rc == 0, "12 config objects starting with 's': built", out)
+rc, out, _ = gen(LETTER, register=True, out=True)
+check(rc != 0 and "13 config objects start with 's', over the 12" in out, "13: the build fails", out)
 rc, out, _ = gen(NEST.replace('cfg("rate"', 'cfg("unit", Bool, False)\ncfg("rate"'), registry=nreg)
 check(rc != 0 and "port.storm.unit has no ID" in out, "a nested object's new field needs an ID", out)
 

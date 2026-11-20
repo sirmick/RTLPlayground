@@ -692,6 +692,21 @@ static void cases(void)
 {
 	om_init();
 
+	{	/* om_gen's chains: each tree and first letter's objects, in table order */
+		int bad = 0;
+		for (int t = 0; t < 2; t++)
+			for (int c = 0; c < 26; c++) {
+				int o = om_fc[t * 26 + c];
+				for (int i = 0; i < OM_N_OBJ; i++)
+					if (!!(om_obj[i].flags & OM_STATE) == t && om_obj[i].name[0] == 'a' + c) {
+						bad += o != i;
+						o = o < OM_N_OBJ ? om_nx[o] : 0xff;
+					}
+				bad += o != 0xff;
+			}
+		CHECK(!bad, "the chains (om_fc, om_nx) are a linear scan's objects, in its order");
+	}
+
 	printf("get\n");
 	expect("get port.3.mtu", "port.3.mtu 16383\nok\n");
 	expect("get port.9.eee", "err port.9.eee: not on this port\n");
