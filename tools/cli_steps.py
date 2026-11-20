@@ -2,7 +2,8 @@
 """
 cli_steps.py - each console command's longest step, in rtlsim (E1): the
 CLI tour of ovs-rtlpg's old-vs-new scenarios, and the dumps E1 chunks, each
-between `health clear` and `health tasks`, on one firmware image.
+between `do sched.clear` and `get state.sched` (health clear and health tasks
+before P5-2), on one firmware image.
 
   tools/cli_steps.py BOOT_IMAGE [--ovs DIR] [--board FILE] [--limit-us N] [--macs N] [--web]
 
@@ -15,6 +16,18 @@ import argparse, os, re, struct, sys
 
 FINE = re.compile(r"^([A-Z][A-Z0-9_]*)\t(\d+)\t(\S+)$", re.M)
 
+
+
+def health_text(cli):
+    """get state.sched.state and state.health as health tasks' text (P5-2
+    deleted it): "STATE\\truns\\tNus" lines, "hw timeouts N last 0xREG"."""
+    o = cli("get state.sched.state state.health") or ""
+    v = dict(re.findall(r"^(state\.\S+) (\S+)$", o, re.M))
+    out = ["%s\t%s\t%sus" % (m[1], x, v.get("state.sched.state.%s.max_us" % m[1], "0"))
+           for p, x in v.items() for m in [re.fullmatch(r"state\.sched\.state\.(\w+)\.runs", p)] if m]
+    reg = int(v.get("state.health.hw_timeout_reg", "0"))
+    out.append("hw timeouts %s" % v.get("state.health.hw_timeouts", "?") + (" last 0x%04x" % reg if reg else ""))
+    return "\n".join(out) + "\n"
 
 def us(mx):
     if mx.endswith("us"):
@@ -47,7 +60,7 @@ def main(argv):
     for i in (1, 2):
         r.link(P[i], True)
     r.wait(1000)
-    setup = ["stp on", f"vlan 10 office {F[1]} {F[2]}t", f"vlan 20 lab {F[2]}", "lacp show"]
+    setup = ["stp on", f"vlan 10 office {F[1]} {F[2]}t", f"vlan 20 lab {F[2]}", "get state.lag"]
     for c in setup:
         r.cli(c)
     if a.macs:
@@ -58,21 +71,20 @@ def main(argv):
             if n % 32 == 31:
                 b.advance(b.now + 20000)
         r.wait(2000)
-    cmds = list(CLI_TOUR) + [f"port {F[1]}", f"port {F[2]}", "stp status", "health tasks", "history"]
+    cmds = list(CLI_TOUR) + [f"port {F[1]}", f"port {F[2]}", "get state.stp", "get state.sched", "get state.l2"]
     if a.only:
         cmds = a.only
     worst = {}
     bad = []
     for c in cmds:
         for how in (["cli", "web"] if a.web else ["cli"]):
-            r.cli("health clear")
+            r.cli("do sched.clear")
             if how == "cli":
                 r.cli(c, slot=60000)
             else:
                 r.login() if not r.cookie else None
                 r.post_cmd(c, slot=60000)
-            r.cli("health tasks")
-            text = r.results[max(k for k in r.results if k.endswith("cli health tasks"))]
+            text = health_text(lambda l: (r.cli(l), r.results[max(k for k in r.results if k.endswith("cli " + l))])[1])
             over = [(st, mx) for st, runs, mx in FINE.findall(text) if us(mx) > a.limit_us]
             line = f"{how} {c!r}: " + (", ".join(f"{st} {mx}" for st, mx in over) or "-")
             print(line, flush=True)

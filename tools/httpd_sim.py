@@ -17,9 +17,7 @@ PORT = 8081
 PASSWORD = "1234"
 VERBOSE = False
 PORTS = 6
-N_COUNTERS = 52
 VLAN_MAX_ID = 4094
-L2_MAX_TRANSFER = 5
 
 ROOT = Path.cwd().resolve()
 
@@ -27,21 +25,6 @@ machine_config = {
     "phys_to_log_port": [ 4, 5, 6, 7, 3, 8 ],
     "is_sfp": [0, 0, 0, 0, 0, 0, 1]
 }
-l2_entries = [
-    { "mac": "00:01:2f:00:00:01", "vlan":"001", "type":'l', "port":7, "idx":0x10 },
-    { "mac": "00:06:78:00:00:02", "vlan":"001", "type":'l', "port":7, "idx":0x20 },
-    { "mac": "00:01:2e:00:00:03", "vlan":"001", "type":'s', "port":7, "idx":0x30 },
-    { "mac": "60:7d:09:00:00:04", "vlan":"001", "type":'l', "port":7, "idx":0x40 },
-    { "mac": "1c:2a:a3:00:00:05", "vlan":"001", "type":'l', "port":7, "idx":0x50 },
-    { "mac": "1c:2a:a3:00:00:06", "vlan":"001", "type":'s', "port":7, "idx":0x60 },
-    { "mac": "02:e0:4c:00:00:07", "vlan":"001", "type":'l', "port":7, "idx":0x70 },
-    { "mac": "00:e0:4c:00:00:08", "vlan":"001", "type":'l', "port":4, "idx":0x80 },
-    { "mac": "1c:2a:a3:00:00:09", "vlan":"001", "type":'l', "port":9, "idx":0x90 },  # CPU-Port
-    { "mac": "3c:8c:f8:00:00:0a", "vlan":"001", "type":'l', "port":7, "idx":0xa0 },
-    { "mac": "00:01:2e:00:00:0b", "vlan":"001", "type":'l', "port":7, "idx":0xb0 },
-    { "mac": "00:01:2f:00:01:01", "vlan":"001", "type":'l', "port":7, "idx":0xc0 }
-]
-
 state = {
     "lldp_enabled": False,
     "loop_enabled": False,
@@ -61,11 +44,6 @@ state = {
 }
 
 
-tx_g = [0] * PORTS
-rx_g = [0] * PORTS
-tx_b = [0] * PORTS
-rx_b = [0] * PORTS
-last_called = int(time.time())
 started = int(time.time())
 
 sessions = set()
@@ -83,17 +61,13 @@ class Handler(SimpleHTTPRequestHandler):
         return {
             "/bandwidth.json": self._api_bandwidth,
             "/cmd_log": self._api_cmd_log,
-            "/counters.json": self._api_counters,
             "/debug": self._api_debug,
             "/eee.json": self._api_eee,
             "/information.json": self._api_information,
             "/isolation.json": self._api_isolation,
-            "/l2.json": lambda: self._api_l2(query),
             "/lldp.json": self._api_lldp,
             "/lag.json": self._api_lag,
             "/mirror.json": self._api_mirror,
-            "/ports.json": self._api_ports,
-            "/traffic.json": self._api_traffic,
             "/storm.json": self._api_storm,
             "/stp.json": self._api_stp,
             "/loop.json": self._api_loop,
@@ -166,7 +140,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(
                 result,
                 headers=(("Cache-Control", "no-cache"),)
-                if path in ("/status.json", "/counters.json")
+                if path == "/status.json"
                 else (),
             )
 
@@ -439,77 +413,6 @@ class Handler(SimpleHTTPRequestHandler):
             ]
         }
 
-    def _api_ports(self):
-        global last_called, machine_config
-        now = max(int(time.time()), last_called + 1)
-        elapsed = now - last_called
-        ports = []
-
-        for i in range(1, PORTS + 1):
-            n = i - 1
-            item = {
-                "port": i,
-                "name": "",
-                "isSFP": machine_config["is_sfp"][i] == 1,
-                "enabled": int(i % 4 != 0),
-                "mtu": f"0x{16383 if i % 2 else 1522:04x}",
-            }
-
-            if machine_config["is_sfp"][i]:
-                item.update({
-                    "sfp_vendor": "OEM",
-                    "sfp_model": "10G-SFP+",
-                    "sfp_serial": "12345678",
-                    "sfp_options": "0x68",
-                    "sfp_temp": f"0x{0x28fb + secrets.randbelow(100):04x}",
-                    "sfp_vcc": f"0x{0x7eda + secrets.randbelow(100):04x}",
-                    "sfp_txbias": f"0x{0x0d24 + secrets.randbelow(100):04x}",
-                    "sfp_txpower": f"0x{0x14bd + secrets.randbelow(100):04x}",
-                    "sfp_rxpower": "0x0000",
-                    "sfp_laser": "0x0000",
-                })
-            else:
-                if i == 1:
-                    item["adv"] = [ "2.5G" ]
-                elif i == 2:
-                    item["adv"] = [ "10M-HD", "10M-FD" ]
-                else:
-                    item["adv"] = [ "100M-HD" ]
-
-            ports.append(item)
-
-        last_called = now
-        return ports
-
-    def _api_traffic(self):
-        global last_called, machine_config
-        now = max(int(time.time()), last_called + 1)
-        elapsed = now - last_called
-        ports = []
-
-        for i in range(1, PORTS + 1):
-            n = i - 1
-            if i % 2:
-                rate = 2_400_000_000 if i == 1 else 950_000_000
-                tx_g[n] += rate * elapsed
-                rx_g[n] += rate * elapsed
-                tx_b[n] += rate * elapsed // 10_000_000
-                rx_b[n] += rate * elapsed // 10_000_000
-            item = {
-                "port": i,
-                "name": "",
-                "link": ("10G" if i == 1 else "100M-HD") if i % 2 else "DOWN",
-                "macs": "0x01",
-                "txG": f"0x{tx_g[n]:016x}",
-                "txB": f"0x{tx_b[n]:016x}",
-                "rxG": f"0x{rx_g[n]:016x}",
-                "rxB": f"0x{rx_b[n]:016x}",
-            }
-            ports.append(item)
-
-        last_called = now
-        return ports
-
     def _api_eee(self):
         global state, machine_config
         return [
@@ -597,9 +500,6 @@ class Handler(SimpleHTTPRequestHandler):
             ],
         }
 
-    def _api_counters(self):
-        return [f"0x{0x1234 + i:016x}" for i in range(N_COUNTERS)]
-
     def _api_vlanlist(self):
         global state
         vlan_list = []
@@ -639,24 +539,6 @@ class Handler(SimpleHTTPRequestHandler):
 
         members = member_mask | (untagged_mask << 10)
         return f"0x{members:08x}"
-
-    def _api_l2(self,query):
-        idx = self._int_param(query, "idx")
-        entries = sorted(l2_entries, key=lambda entry: entry["idx"])
-        start = next(
-            (n for n, entry in enumerate(entries) if entry["idx"] >= idx),
-            len(entries),
-        )
-        result = []
-        for entry in entries[start:start + L2_MAX_TRANSFER]:
-            result.append({
-                "mac": entry["mac"],
-                "vlan": entry["vlan"],
-                "type": "l" if entry.get("type") == "l" else "s",
-                "port": entry["port"],
-                "idx": f"{entry['idx']:04x}",
-            })
-        return result
 
     def _api_cmd_log(self):
         global state
@@ -701,7 +583,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 # Parse the provided .c or .h file to attempt to make the simulator act more like that configuration
 def loadMachineConfig(filename):
-    global machine_config, PORTS, phys_to_log_port, tx_g, rx_g, tx_b, rx_b
+    global machine_config, PORTS, phys_to_log_port
     c_file=filename[:-1] +'c'
     c_content = ""
     with open(c_file, 'r') as file:
@@ -752,10 +634,6 @@ def loadMachineConfig(filename):
     if "max_port" in machine_config and "min_port" in machine_config:
         PORTS = int(machine_config["max_port"]) - int(machine_config["min_port"])
 
-    tx_g = [0] * PORTS
-    rx_g = [0] * PORTS
-    tx_b = [0] * PORTS
-    rx_b = [0] * PORTS
 
     vprint("------------")
     vprint(machine_config)

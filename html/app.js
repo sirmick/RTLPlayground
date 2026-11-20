@@ -105,7 +105,6 @@ var LANG = {
         p_txfault: "TX fault",
         p_txdis: "TX disabled",
         p_rxlos: "RX LOS",
-        p_adv: "Advertising",
         pt_title: "Port configuration",
         f_port_duplex: "Duplex",
         f_port_ingress_filter: "Filter",
@@ -498,7 +497,6 @@ var LANG = {
         p_txfault: "TX 障害",
         p_txdis: "TX 無効",
         p_rxlos: "RX 信号ロス",
-        p_adv: "アドバタイズ",
         pt_title: "ポート設定",
         pt_conn: "学習済みデバイス",
         pt_speed: "速度",
@@ -783,7 +781,6 @@ var LANG = {
         p_txfault: "TX 故障",
         p_txdis: "TX 禁用",
         p_rxlos: "RX 信号丢失",
-        p_adv: "通告能力",
         pt_title: "端口配置",
         pt_conn: "已学习设备",
         pt_speed: "速率",
@@ -1134,7 +1131,6 @@ var LANG = {
         p_txfault: "Fallo TX",
         p_txdis: "TX deshabilitado",
         p_rxlos: "Pérdida RX (LOS)",
-        p_adv: "Anunciado",
         pt_title: "Configuración de puerto",
         pt_conn: "Dispositivos aprendidos",
         pt_speed: "Velocidad",
@@ -1491,7 +1487,6 @@ var LANG = {
         p_txfault: "TX erreur",
         p_txdis: "TX désactivé",
         p_rxlos: "RX pertes de signaux",
-        p_adv: "Capacités",
         pt_title: "Configuration du port",
         pt_conn: "Appareils appris",
         pt_speed: "Vitesse",
@@ -1810,7 +1805,6 @@ var LANG = {
         p_txfault: "TX-Fehler",
         p_txdis: "TX deaktiviert",
         p_rxlos: "RX LOS",
-        p_adv: "Angeboten",
         pt_title: "Port-Konfiguration",
         pt_conn: "Gelernte Geräte",
         pt_speed: "Geschwindigkeit",
@@ -2124,6 +2118,7 @@ var S = {
     ports: [],
     n: 0,
     sfpSlot: [],
+    pollN: 0,
     info: {},
     sys: {},
     loader: {},
@@ -3016,17 +3011,77 @@ function byPort(a) {
     })
 }
 
+/* The port strip's poll (DESIGN 14.4) on state.port, and the config it
+ * shows (portsCfg: at start and after a staging reload); S.ports keeps the
+ * old shape: link "DOWN" or the speed's text, txG..rxB decimal. A web
+ * reply costs its bytes (the console mirrors it, ~0.09 ms a byte), so the
+ * poll asks only what the open view shows: link and speed always, the good
+ * counters on the dashboard and stats, the bad ones there too (every 4th
+ * poll on the dashboard); a field not asked keeps its last value */
+var LSPEED = {
+    "10m": "10M",
+    "100m": "100M",
+    "500m": "500M",
+    "1g": "1000M",
+    "2g5": "2.5G",
+    "5g": "5G",
+    "10g": "10G"
+};
+
+function gets(paths) {	/* get paths (state.port.link: every port's), as few lines as fit, into one object */
+    return cli(getLines(paths)).then(function(r) {
+        var o = {};
+        r.out.forEach(function(l) {
+            parseLines(l, o)
+        });
+        return o;
+    });
+}
+
+function portsCfg() {
+    return gets(["port.name", "port.enabled", "port.speed", "state.port.media"]).then(function(o) {
+        S.pcfg = o;
+    });
+}
+omReloaders.push(function() {
+    portsCfg().catch(function() {})
+});
+
 function pollStatus() {
-    return Promise.all([
-        getJSON("/ports.json"),
-        getJSON("/traffic.json")
-    ]).then(function([s,t]) {
-        byPort(s);
-        byPort(t);
-        s = s.map((item,i) => ({ ...item, ...t[i]}));
+    return (S.pcfg ? Promise.resolve() : portsCfg()).then(function() {
+        var f = ["state.port.link", "state.port.speed", "state.sfp.present"],
+            ct = curTab === "dash" || curTab === "stats";
+        if (ct) f.push("state.port.tx_good", "state.port.rx_good");
+        if (curTab === "stats" || ct && !(S.pollN++ & 3)) f.push("state.port.tx_bad", "state.port.rx_bad");
+        return gets(f);
+    }).then(function(o) {
+        var c = S.pcfg.port || {},
+            m = (S.pcfg.state || {}).port || {},
+            st = (o.state || {}).port || {},
+            sfp = (o.state || {}).sfp || {},
+            s = [],
+            now = Date.now();
+        Object.keys(c).sort(function(a, b) {
+            return a - b
+        }).forEach(function(n) {
+            var x = st[n] || {},
+                q = (S.ports || [])[n - 1] || {},
+                sp = m[n] && m[n].media === "sfp";
+            s.push({
+                port: +n,
+                name: c[n].name,
+                isSFP: sp,
+                cspeed: c[n].speed,
+                link: x.link !== "up" ? "DOWN" : LSPEED[x.speed] || "?",
+                txG: x.tx_good || q.txG || "0",
+                rxG: x.rx_good || q.rxG || "0",
+                txB: x.tx_bad || q.txB || "0",
+                rxB: x.rx_bad || q.rxB || "0"
+            });
+        });
+        var first = !S.n;
         S.ports = s;
-        var now = Date.now();
-        if (!S.n) {
+        if (first) {
             S.n = s.length;
             var slot = 0;
             s.forEach(function(p) {
@@ -3035,8 +3090,12 @@ function pollStatus() {
                     S.sfpSlot[p.port - 1] = slot;
                 }
             });
-            buildStrip();
         }
+        s.forEach(function(p) {	/* an SFP port is on with a module in its cage */
+            p.enabled = p.isSFP ? (sfp[S.sfpSlot[p.port - 1]] || {}).present === "on" : c[p.port].enabled === "on";
+        });
+        if (first) buildStrip();
+        if (!(o.state && o.state.port && "1" in o.state.port && "tx_good" in o.state.port["1"])) return updateStrip(), hkStatus();
         if (S.prev) {
             var dt = (now - S.prevT) / 1000;
             if (dt > 0.2) s.forEach(function(p, i) {
@@ -3050,9 +3109,13 @@ function pollStatus() {
         S.prev = s;
         S.prevT = now;
         updateStrip();
-        var hk = tabHooks[curTab];
-        if (hk && hk.status) hk.status();
+        hkStatus();
     });
+}
+
+function hkStatus() {
+    var hk = tabHooks[curTab];
+    if (hk && hk.status) hk.status();
 }
 var statusPoller = new Poller(pollStatus, 2500);
 statusPoller.start();
@@ -3204,7 +3267,8 @@ function portRows(p) {
         [t("c_type"), p.isSFP ? "SFP" : "RJ45"]
     ];
     if (p.name) rows.push([t("c_name"), p.name]);
-    rows.push([t("p_state"), !p.enabled ? t("p_disabled") : (p.link != "DOWN" ? t("p_up") + " " + p.link : t("c_down"))]);
+    rows.push([t("p_state"), !p.enabled ? t("p_disabled") : (p.link != "DOWN" ? t("p_up") + " " + p.link +
+        (p.duplex === "half" ? " " + t("c_half") : "") : t("c_down"))]);
     rows.push([t("st_txg"), BigInt(p.txG) + " " + t("p_pkts")]);
     rows.push([t("st_txb"), BigInt(p.txB) + " " + t("p_pkts")]);
     rows.push([t("st_rxg"), BigInt(p.rxG) + " " + t("p_pkts")]);
@@ -3232,8 +3296,8 @@ function portRows(p) {
                 ("pin=" + losPin + " mod=" + losMod + " !") : t((losMod != null ? losMod : losPin) ? "c_yes" : "c_no");
             rows.push([t("p_rxlos"), v]);
         }
-    } else if (p.adv) {
-        rows.push([t("p_adv"), p.adv.join(", ").replaceAll("-HD"," " + t("c_half")).replaceAll("-FD"," " + t("c_full")) || "-"]);
+    } else if (p.cspeed) {
+        rows.push([t("pt_speed"), p.cspeed === "auto" ? t("c_auto") : p.cspeed]);	/* the config's, not the PHY's */
     }
     return rows;
 }
@@ -3248,8 +3312,14 @@ function detailTable(p) {
 
 /* the port detail's table; an SFP port's from its cage's state.sfp.S */
 function detailShow(i, first) {
-    var p = S.ports[i];
-    (p.isSFP ? stObj("state.sfp." + S.sfpSlot[i]) : Promise.resolve()).then(function(o) {
+    var p = S.ports[i],
+        n = "state.port." + (i + 1) + ".";
+    gets([n + "tx_good", n + "rx_good", n + "tx_bad", n + "rx_bad"].concat(p.isSFP ? [] : [n + "duplex"])).then(function(o) {	/* duplex: copper only */
+        var x = o.state.port[i + 1];
+        p.txG = x.tx_good, p.rxG = x.rx_good, p.txB = x.tx_bad, p.rxB = x.rx_bad;
+        p.duplex = x.duplex;
+        return p.isSFP ? stObj("state.sfp." + S.sfpSlot[i]) : null;
+    }).then(function(o) {
         p.sfp = o;
         if (first) return modal(t("c_port") + " " + (i + 1), detailTable(p));
         var b = $("mbody");
@@ -3832,64 +3902,18 @@ tabHooks.stp = {
     }
 };
 
-var MIB = [
-    "Interface in Octets", 8, "", 0, "Interface out Octets", 8, "", 0,
-    "Interface in Unicast Pkts", 8, "", 0, "Interface in Multicast Pkts", 8, "", 0,
-    "Interface in Broadcast Pkts", 8, "", 0, "Interface out Unicast Pkts", 8, "", 0,
-    "Interface out Multicast Pkts", 8, "", 0, "Interface out Broadcast Pkts", 8, "", 0,
-    "Interface out discards", 4, "802.1d Tp Port in discards", 4,
-    "802.3 Single collision frames", 4, "802.3 Multi collision frames", 4,
-    "802.3 Deferred transmissions", 4, "802.3 Late collisions", 4,
-    "802.3 Excessive collisions", 4, "802.3 Symbol errors", 4,
-    "802.3 Control in unknown opcodes", 4, "802.3 In Pause frames", 4,
-    "802.3 Out Pause frames", 4, "Ether drop events", 4,
-    "TX Ether Broadcast Pkts", 4, "TX Ether Multicast Pkts", 4,
-    "TX Ether CRC Align errors", 4, "RX Ether CRC Align errors", 4,
-    "TX Ether Undersized Pkts", 4, "RX Ether Undersized Pkts", 4,
-    "TX Ether Oversized Pkts", 4, "RX Ether Oversized Pkts", 4,
-    "TX Ether Fragments", 4, "RX Ether fragments", 4,
-    "TX Ether Jabbers", 4, "RX Ether Jabbers", 4,
-    "TX Ether Collisions", 4, "TX Ether Pkts 64 Octets", 4, "RX Ether Pkts 64 Octets", 4,
-    "TX Ether 65-127 Octets", 4, "RX Ether 65-127 Octets", 4,
-    "TX Ether Pkts 128-255 Octets", 4, "RX Ether Pkts 128-255 Octets", 4,
-    "TX Ether Pkts 256-511 Octets", 4, "RX Ether Pkts 256-511 Octets", 4,
-    "TX Ether Pkts 512-1023 Octets", 4, "RX Ether Pkts 512-1023 Octets", 4,
-    "TX Ether Pkts 1024-1518 Octets", 4, "RX Ether Pkts 1024-1518 Octets", 4,
-    "", 4, "RX Ether Undersized Drop Pkts", 4,
-    "TX Ether Pkts >1518 Octets", 4, "RX Ether Pkts >1518 Octets", 4,
-    "TX Ether Pkts too large", 4, "RX Ether Pkts too large", 4,
-    "TX Ether Flexible Octets Set 1", 4, "RX Ether Flexible Octets Set 1", 4,
-    "TX Ether Flexible Octets CRC Set 1", 4, "RX Ether Flexible Octets CRC Set 1", 4,
-    "TX Ether Flexible Octets Set 0", 4, "RX Ether Flexible Octets Set 0", 4,
-    "TX Ether Flexible Octets CRC Set 0", 4, "RX Ether Flexible Octets CRC Set 0", 4,
-    "Length Field Errors", 4, "False Carriers", 4, "Undersized Octets", 4, "Framing Errors", 4,
-    "", 4, "RX MAC Discards", 4, "RX MAC IPG Short Drop", 4, "", 4,
-    "802.1d TP Learned Entry Discards", 4,
-    "Egress Queue 7 Dropped Pkts", 4, "Egress Queue 6 Dropped Pkts", 4,
-    "Egress Queue 5 Dropped Pkts", 4, "Egress Queue 4 Dropped Pkts", 4,
-    "Egress Queue 3 Dropped Pkts", 4, "Egress Queue 2 Dropped Pkts", 4,
-    "Egress Queue 1 Dropped Pkts", 4, "Egress Queue 0 Dropped Pkts", 4,
-    "Egress Queue 7 Out Pkts", 4, "Egress Queue 6 Out Pkts", 4,
-    "Egress Queue 5 Out Pkts", 4, "Egress Queue 4 Out Pkts", 4,
-    "Egress Queue 3 Out Pkts", 4, "Egress Queue 2 Out Pkts", 4,
-    "Egress Queue 1 Out Pkts", 4, "Egress Queue 0 Out Pkts", 4,
-    "TX Good Counter", 8, "", 0, "RX Good Counter", 8, "", 0,
-    "RX Error Counter", 4, "TX Error Counter", 4,
-    "TX Good Counter PHY", 8, "", 0, "RX Good Counter PHY", 8, "", 0,
-    "RX Error Counter PHY", 4, "TX Error Counter PHY", 4,
-];
-/* counters.json returns 64-bit hex words; two 32-bit counters share one word */
-function decodeCounters(s) {
+/* state.port.N.mib.K (P5-5) into [name, value] rows: schema.js names each
+ * index one 64-bit counter, or [high, low] two 32-bit ones sharing it */
+function mibRows(v) {
     var out = [];
-    for (var i = 0; i < MIB.length; i += 4) {
-        if (MIB[i] === "" && MIB[i + 1] === 8) continue;
-        var w = BigInt(s[i / 4] || "0x0");
-        if (MIB[i + 1] === 8) out.push([MIB[i], w]);
+    SCHEMA["state.port.mib"].n.forEach(function(nm, k) {
+        var w = BigInt(v[k] || 0);
+        if (typeof nm === "string") out.push([nm, w]);
         else {
-            if (MIB[i] !== "") out.push([MIB[i], w >> 32n]);
-            if (MIB[i + 2] !== "") out.push([MIB[i + 2], w & 4294967295n]);
+            if (nm[0]) out.push([nm[0], w >> 32n]);
+            if (nm[1]) out.push([nm[1], w & 4294967295n]);
         }
-    }
+    });
     return out;
 }
 var ctrPoll = null;
@@ -3915,8 +3939,8 @@ function showCounters(i) {
     body.appendChild(wrap);
 
     function load() {
-        return getJSON("/counters.json?port=" + (i + 1)).then(function(s) {
-            var rows = decodeCounters(s);
+        return cli(["get state.port." + (i + 1) + ".mib"]).then(function(r) {
+            var rows = mibRows(((((parseLines(r.out[0] || []).state || {}).port || {})[i + 1] || {}).mib) || {});
             var tb = h("table", {
                 class: "t"
             });
@@ -4383,37 +4407,34 @@ var l2Rows = [],
     l2SortDir = 1,
     l2Gen = 0;
 
+/* the MAC table, K the table index: get state.l2.K- is a page of up to 25
+ * (OM_PAGE) entries at or after K; K = 0, then the last + 1, until a page is
+ * short. A console line waits a page, not the whole table */
 function l2Load() {
-    var seen = {},
-        all = [],
-        idx = 0,
-        guard = 0,
-        gen = ++l2Gen;
+    var gen = ++l2Gen,
+        all = [];
 
-    function step() {
-        return getJSON("/l2.json?idx=" + idx).then(function(s) {
+    function page(k) {
+        return cli(["get state.l2." + k + "-"]).then(function(r) {
             if (gen !== l2Gen) throw new Error("stale");
-            if (!s.length) return all;
-            var wrapped = false;
-            s.forEach(function(e) {
-                e.idx = parseInt(e.idx, 16);
-                if (seen[e.idx]) {
-                    wrapped = true;
-                    return;
-                }
-                seen[e.idx] = 1;
-                e.vlan = parseInt(e.vlan, 16);
-                e.stat = e.type === "s";
-                e.pport = e.port === 0 ? "CPU" : e.port;
+            if (r.errs.length) throw new Error(r.errs[0]);
+            var o = (parseLines(r.out[0] || []).state || {}).l2 || {},
+                n = 0;
+            for (var i in o) {
+                var e = o[i];
+                e.idx = +i;
+                e.vlan = +e.vlan;
+                e.lag = +e.lag;
+                e.stat = e.static === "on";
+                e.pport = e.port === "cpu" ? "CPU" : e.port;
                 e.where = e.lag ? "LAG" + e.lag : String(e.pport);
                 all.push(e);
-            });
-            if (wrapped || ++guard > 140) return all;
-            idx = s[s.length - 1].idx + 1;
-            return step();
+                n++;
+            }
+            return n < 25 ? all : page(e.idx + 1);
         });
     }
-    return step();
+    return page(0);
 }
 
 function l2Key(e) {
@@ -4427,6 +4448,7 @@ function l2Key(e) {
 }
 
 function l2Fetch() {
+    if (stgHold) return Promise.resolve();	/* in an apply window: the table as it was, not a 3 s cut */
     $("l2count").textContent = t("l2_loading");
     return l2Load().then(function(all) {
         l2Rows = all;

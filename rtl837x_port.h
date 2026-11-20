@@ -45,7 +45,6 @@ struct vlan_settings {
 extern __xdata struct vlan_settings vlan_settings;
 
 uint8_t port_l2_forget(void) __banked;
-void port_l2_learned(void) __banked;
 uint16_t port_link_mask(void) __banked;
 int8_t vlan_get(uint16_t vlan) __banked;
 #define VLAN_BITS_SIZE	512	/* a bit per VLAN ID */

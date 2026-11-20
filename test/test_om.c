@@ -329,6 +329,40 @@ uint8_t om_get_sfp(uint8_t idx)
 	om_st.sfp.ddm_status = 0x82;
 	return OM_OK;
 }
+/* state.l2 (om_port.c): a table of three, found from om_key as the chip's search */
+static uint16_t l2_ix[40] = { 0x010, 0x020, 0x8f0 };
+static int l2_n = 3, l2_calls, l2_change_at;
+uint8_t om_get_l2(uint8_t idx)
+{
+	l2_calls++;
+	if (l2_calls == l2_change_at) {	/* the chip learns 0x005 (below the cursor), ages out 0x8f0 (ahead) */
+		memmove(l2_ix + 1, l2_ix, 2 * sizeof(l2_ix[0]));
+		l2_ix[0] = 0x005;
+		l2_n = 3;
+	}
+	for (int i = 0; i < l2_n; i++) {
+		if (l2_ix[i] >= om_key) {
+			om_key = l2_ix[i];
+			memset(&om_st.l2, 0, sizeof(om_st.l2));
+			om_st.l2.mac[0] = 2;
+			om_st.l2.mac[5] = i;
+			om_st.l2.vlan = 1;
+			om_st.l2.port = i == 1 ? CPU_LOGICAL_PORT : 4;
+			om_st.l2.static_ = i == 1;
+			return OM_OK;
+		}
+	}
+	return OM_ERR;			/* wrapped */
+}
+/* state.port.N.mib.K (om_port.c): the word says which port and index it was read for */
+static int mib_calls;
+uint8_t om_get_port_mib(uint8_t idx)
+{
+	uint64_t v = (uint64_t)idx << 32 | om_ix1;
+	mib_calls++;
+	memcpy(om_st.port_mib.v, &v, 8);
+	return OM_OK;
+}
 /* state.sched (sched_health.c): the rows are test_sched.c's tasks' */
 uint8_t om_get_sched(uint8_t idx) { memset(&om_st.sched, 0, sizeof(om_st.sched)); om_st.sched.slots = 8; return OM_OK; }
 uint8_t om_get_sched_slot(uint8_t idx)
@@ -571,7 +605,7 @@ static void cases(void)
 	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -663,6 +697,76 @@ static void cases(void)
 	CHECK(gets == 9, "get state.port: the getter once per port");
 	expect("get state.port.9.cabletest", "err state.port.9.cabletest: not on this port\n");
 	expect("get state.port.9.media", "state.port.9.media sfp\nok\n");
+
+	printf("streamed: state.l2\n");
+	l2_calls = 0;
+	expect("get state.l2.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:01\n"
+	       "state.l2.2288.mac 02:00:00:00:00:02\nok\n");
+	CHECK(l2_calls == 4, "a search an entry, and the one that wraps");
+	expect("get state.l2.32", "state.l2.32.mac 02:00:00:00:00:01\nstate.l2.32.vlan 1\nstate.l2.32.port cpu\n"
+	       "state.l2.32.lag 0\nstate.l2.32.static on\nok\n");
+	expect("get state.l2.16.port", "state.l2.16.port 5\nok\n");
+	expect("get state.l2.33", "err state.l2.33: no such entry\n");
+	expect("get state.l2.4096", "err state.l2.4096: 0-4095\n");
+	l2_n = 0;
+	expect("get state.l2", "ok\n");
+	l2_n = 3;
+	/* the table changes between two steps of a walk: the new entry below
+	 * the cursor isn't listed, the lost one ahead isn't either, the walk
+	 * ends and lists no index twice */
+	l2_calls = 0;
+	l2_change_at = 2;
+	expect("get state.l2.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:02\nok\n");
+	CHECK(l2_calls == 3, "and searched once an entry, then the wrap");
+	l2_change_at = 0;
+	memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0 }, 3 * sizeof(l2_ix[0]));
+
+	printf("streamed: a page, get state.l2.K-\n");
+	expect("get state.l2.0-.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:01\n"
+	       "state.l2.2288.mac 02:00:00:00:00:02\nok\n");
+	expect("get state.l2.17-.vlan", "state.l2.32.vlan 1\nstate.l2.2288.vlan 1\nok\n");
+	expect("get state.l2.16-.vlan", "state.l2.16.vlan 1\nstate.l2.32.vlan 1\nstate.l2.2288.vlan 1\nok\n");
+	expect("get state.l2.2289-", "ok\n");
+	expect("get state.l2.4096-", "err state.l2.4096-: 0-4095\n");
+	expect("get port.3-.mtu", "err port.3-.mtu: no such port\n");
+	{
+		static char all[4096], pages[4096];
+		int n = 0, from = 0, k;
+		for (k = 0; k < 40; k++)
+			l2_ix[k] = 0x100 + 3 * k;
+		l2_n = 40;
+		snprintf(all, sizeof all, "%s", run("get state.l2.vlan"));
+		pages[0] = 0;
+		for (k = 0; k < 4; k++) {
+			char q[32];
+			const char *o, *l;
+			snprintf(q, sizeof q, "get state.l2.%d-.vlan", from);
+			o = run(q);
+			n = 0;
+			for (l = o; (l = strstr(l, "state.l2.")); l++, n++)
+				from = atoi(l + 9) + 1;
+			strncat(pages, o, t_strlen(o) - 3);	/* its "ok\n" aside */
+			if (n < OM_PAGE)
+				break;
+		}
+		strcat(pages, "ok\n");
+		CHECK(k == 1 && n == 15, "40 entries: a page of 25, then a short one of 15");
+		CHECK(!strcmp(pages, all), "the pages, one after the other, are the whole stream");
+		l2_n = 3;
+		memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0 }, 3 * sizeof(l2_ix[0]));
+	}
+
+	printf("two levels from 0: state.port.N.mib.K\n");
+	mib_calls = 0;
+	expect("get state.port.3.mib.17", "state.port.3.mib.17 8589934609\nok\n");	/* logical 2, 17 */
+	expect("get state.port.mib.54", "state.port.1.mib.54 54\nstate.port.2.mib.54 4294967350\n"
+	       "state.port.3.mib.54 8589934646\nstate.port.4.mib.54 12884901942\nstate.port.5.mib.54 17179869238\n"
+	       "state.port.6.mib.54 21474836534\nstate.port.7.mib.54 25769803830\nstate.port.8.mib.54 30064771126\n"
+	       "state.port.9.mib.54 34359738422\nok\n");
+	expect("get state.port.3.mib.55", "err state.port.3.mib.55: 0-54\n");
+	mib_calls = 0;
+	run("get state.port.1.mib");
+	CHECK(mib_calls == 55, "get state.port.1.mib: the getter once an index");
 
 	printf("do\n");
 	expect("do port.2.cabletest", "ok\n");
@@ -972,7 +1076,9 @@ static void kinds(void)
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
 		      strstr(o, "state.cfg.load.skipped 0\nstate.health.hw_timeouts 2\n") &&
-		      strstr(o, "state.con.tx_free 2047\nstate.lag.1.active 1-2\n") &&
+		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
+		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
+		      strstr(o, "state.port.9.mib.54 34359738422\nstate.sfp.1.present on\n") &&
 		      strstr(o, "state.lacp.port.9.partner_sys 00:00:00:00:00:00\nstate.mgmt.ip 192.168.2.3\n") &&
 		      strstr(o, "state.stp.lag.4.members 1-2\nstate.ntp.synced on\n") &&
 		      strstr(o, "state.loop.blocked 2\nstate.sys.version ") &&

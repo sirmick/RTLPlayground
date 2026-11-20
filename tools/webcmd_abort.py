@@ -21,12 +21,12 @@ W2: a /cmd ("set sys.hostname aborted", apply) and the client's RST in the same 
     frames a step, so the RST is handled before cli's next step.
 W3: a /cmd ("set sys.hostname tail3", apply, "get mgmt.ip") followed, in a segment of its own in the
     same instant, by a CRLF; W4: the same with a second request pipelined
-    behind it (GET /ports.json): the posted command runs exactly (hostname
+    behind it (GET /favicon.ico): the posted command runs exactly (hostname
     set, the reply its output, no parse error) and the extra data is
     dropped, as today's code drops data while the reply is sent.
-W5: a web /cmd "l2\nhostname oldbody" over 300 learned MACs, its connection
+W5: a web /cmd "get state.l2\nhostname oldbody" over 300 learned MACs, its connection
     reset mid-dump, and at once a new /cmd "set sys.hostname w5", apply, "get mgmt.ip": the new one
-    gets its own reply (mgmt.ip's, no l2 lines), the hostname is w5, and the old
+    gets its own reply (mgmt.ip's, no state.l2 lines), the hostname is w5, and the old
     body's second line never runs (E1: the run checks its command's
     generation at every step).
 W6: STP off, "stp bpdu filter" (the BPDU entries CPU-only), VLAN 4000
@@ -240,7 +240,7 @@ def main(argv):
 
         # W3, W4
         for name, extra in (("W3", b"\r\n"),
-                            ("W4", b"GET /ports.json HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n")):
+                            ("W4", b"GET /favicon.ico HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n")):
             want = f"tail{name[1]}"
             k.b.pending()
             c = k.open()
@@ -295,7 +295,7 @@ def main(argv):
         k.run(2000000)
         k.b.pending()
         c1 = k.open()
-        k.send(c1, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"l2\nset sys.hostname oldbody\napply"))
+        k.send(c1, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"get state.l2\nset sys.hostname oldbody\napply"))
         k.run(5000000, lambda: k.b.take_uart().count("\n") > 100)	# mid-dump, the TX ring full
         until_step(r, "_cli_more")		# a line printed: cli waits ~4 ms for room for the next
         c1.tcp(0x04)
@@ -308,7 +308,7 @@ def main(argv):
         got = hostname()
         ok = (c2.resp.startswith(b"HTTP/1.1 200") and b"mgmt.ip " in body and b"02:00:00:10" not in body
               and got == "w5")
-        print(f"W5 a new /cmd after one reset mid-l2: hostname {got!r}, reply {body[:60]!r}: {'PASS' if ok else 'FAIL'}")
+        print(f"W5 a new /cmd after one reset mid-get state.l2: hostname {got!r}, reply {body[:60]!r}: {'PASS' if ok else 'FAIL'}")
         if not ok:
             print(f"   reply: {c2.resp[:200]!r}")
             fails.append("W5")

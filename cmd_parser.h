@@ -16,7 +16,6 @@ void cmd_parser(void) __banked;
 void execute_config(void) __banked;
 
 /* Dumps as jobs (E1): cli_job set by the command, a line per cli_job_more() */
-#define CLI_JOB_L2	2
 #define CLI_JOB_OM	4	/* om.c: get, diff */
 #define CLI_JOB_STPFDB	6
 #define CLI_JOB_OMAPPLY	7	/* om.c: apply, a port a step */
@@ -30,7 +29,6 @@ void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after i
 void cmd_finish(void) __banked;		/* the job to its end, at once */
 void exec_begin(__xdata uint8_t *p) __banked;	/* several commands, from p */
 uint8_t exec_line(void) __banked;	/* the next one; 0 when done (err_status) */
-uint8_t port_l2_line(void) __banked;	/* rtl837x_port.c: the l2 job */
 uint8_t stp_fdb_line(void) __banked;	/* rtl837x_stp.c: stp off's BPDU entries, a VLAN walk */
 void print_ip(__xdata uint8_t *ptr) __banked;
 void print_mac(__xdata uint8_t *ptr) __banked;

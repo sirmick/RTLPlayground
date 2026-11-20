@@ -34,6 +34,7 @@ def main(argv):
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
     sys.path.insert(0, os.path.join(a.ovs, "tests"))
     from oldnew import Run
+    from cli_steps import health_text
 
     fails = []
 
@@ -62,8 +63,9 @@ def main(argv):
             r.boot(slot=60000)
             r.wait(3000)
             r.cli("version")		# the first reply after this boot is link lines only
-            r.cli("health tasks", slot=10000)
-            m = re.search(r"hw timeouts (\d+)(?: last 0x([0-9a-f]{4}))?", r.results[max(r.results)])
+            text = health_text(lambda l: (r.cli(l, slot=10000),	# P5-2 deleted health tasks
+                                          r.results[max(k for k in r.results if k.endswith("cli " + l))])[1])
+            m = re.search(r"hw timeouts (\d+)(?: last 0x([0-9a-f]{4}))?", text)
             r.login()
             r.get("/vlanlist.json")
             vl = r.results[max(r.results)]

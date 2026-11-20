@@ -55,7 +55,7 @@ step chooses the state (decision 22).
 | `SFP_CONFIG` | `sds_config()` for the rate | `SFP_DDM` (a DDM module), else `SFP_POLL` |
 | `SFP_DDM` | one of 4 transactions into the slot's diagnostics cache (0x51 bytes 184..239), every 40 polls (2 s) | `SFP_POLL` |
 
-`/ports.json`, `/information.json` and the cli's `sfp` read the caches
+`get state.sfp` and `/information.json` read the caches
 (`sfp_id`, `sfp_diag`, `sfp_raw`), never I2C: before, a page with a DDM
 module did up to 13 transactions in one rx step. A cache not yet filled
 gives what a failed read gave (an empty field); a module's text is there

@@ -8,13 +8,13 @@ in rtlsim, on one firmware image, through ovs-rtlpg's old-vs-new bench.
 A module into cage 1; the run stops when the identity cache is complete
 (sfp_id_ok[0] = 1, after SFP_READ's fourth transaction) and the module
 is pulled there, so a later transaction of the read fails. Then:
-/information.json and `sfp` must show no module (no vendor, no PN), the
+get state.sfp.1 must show no module (no vendor, no PN; P5-4: /information.json
+and `sfp` are gone), the
 console must say the read failed, and the slot's caches must be clear;
 a module put back is read again and shown. Exit status 1 if any fails.
 """
 import argparse, os, re, sys
 
-UPTIME = re.compile(r'"uptime":"?[^,}]*"?')
 
 
 def main(argv):
@@ -49,8 +49,11 @@ def main(argv):
             return 0
         r.boot()
         r.login()
-        r.get("/information.json")
-        empty = r.results[max(r.results)]
+        def got():
+            """the last get state.sfp.1's reply (not a console result after it)"""
+            r.cli("get state.sfp.1")
+            return r.results[max(k for k in r.results if k.endswith("cli get state.sfp.1"))]
+        empty = got()
         eeprom = _sfp("10g")
         vendor = eeprom[20:36].decode(errors="replace").strip()
         r.sfp(1, eeprom)
@@ -60,27 +63,21 @@ def main(argv):
         b.sfp(1, None)			# out, before the read's next transaction
         r.t = b.now
         r.wait(1000)
-        r.get("/information.json")
-        info = r.results[max(r.results)]
-        r.cli("sfp")
-        out = r.results[max(r.results)]
+        info = out = got()
         r._now()
         con = "".join(v for k, v in r.results.items() if k.endswith("console"))
         check("I2C read failed" in con, "the console says the read failed")
-        check(vendor not in info, f"/information.json shows no {vendor!r}")
-        same = UPTIME.sub("", info) == UPTIME.sub("", empty)
-        check(same, "/information.json as before the module (but its uptime)")
+        check(vendor not in info, f"get state.sfp.1 shows no {vendor!r}")
+        same = info == empty
+        check(same, "get state.sfp.1 as before the module")
         if not same:
             print("  before: " + empty + "\n  after:  " + info)
-        check(vendor not in out and "empty" in out, "`sfp`: the slot empty")
+        check("state.sfp.1.present off" in out, "the cage empty")
         flags = [b.sim.peek(loc(s), 1)[0] for s in ("_sfp_ready", "_sfp_id_ok", "_sfp_diag_ok")]
         check(flags == [0, 0, 0], f"slot 0's ready/id_ok/diag_ok clear: {flags}")
         r.sfp(1, eeprom)		# back in: read again
         r.wait(3000)
-        r.get("/information.json")
-        check(vendor in r.results[max(r.results)], "back in: /information.json shows it again")
-        r.cli("sfp")
-        check(vendor in r.results[max(r.results)], "back in: `sfp` shows it")
+        check(vendor in got(), "back in: get state.sfp.1 shows it")
     finally:
         b.close()
     print(f"sfp_pull: {len(fails)} failed")
