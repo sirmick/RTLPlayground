@@ -95,6 +95,7 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices */
 #define J_LOAD	5	/* a load, 256 B of records a step */
 #define J_APPLY	6	/* J_SAVE on: the job runs to its end (CLI_JOB_OMAPPLY) */
 #define J_COPY	7	/* discard: the queued copy */
+#define J_CHECK	8	/* apply's checks, CHECK_N instances a step; then J_APPLY */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
 static __xdata uint8_t kd;		/* a default entry */
@@ -1514,6 +1515,8 @@ static void next_instance(void)
 __xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty, om_cut;
 static __xdata uint8_t l_saved;		/* the candidate is the saved config, as loaded */
 static uint8_t check_all(void);
+static void check_start(void);
+static uint8_t check_step(void);
 static __xdata uint8_t a_o, a_e, a_n, a_fo, a_fe, a_timeout;
 
 static void cv_of_e(void)		/* cur_e's indices, for its path in a message */
@@ -1678,16 +1681,21 @@ static void apply_cmd(void)
 	}
 	if (in_window())
 		return;
-	if (!check_all())
-		return;
 	om_confirm_s = v16;
+	check_start();
+	job_start(J_CHECK);		/* the checks, then the walk: the cli waits, then says how it went */
+}
+
+static void apply_go(void)		/* the checks passed: hand the candidate to the cfg job */
+{
 	if (!om_job_start()) {
 		err_line("err apply: busy\n");
+		j_hit = 3;
 		return;
 	}
 	apply_begin();
 	om_confirmed = 0;
-	job_start(J_APPLY);		/* the cli waits for the walk, then says how it went */
+	j_mode = J_APPLY;
 }
 
 /* the cli's wait for the walk: 1 while it runs; then ok, or err with the instance */
@@ -1723,6 +1731,19 @@ uint8_t om_line(void) __banked
 		if (x_step())
 			return 1;
 		goto done;
+	}
+	if (j_mode == J_CHECK) {
+		v8 = check_step();
+		if (v8 == 1)
+			return 1;
+		if (v8) {
+			j_hit = 3;		/* refused: the check said why */
+			goto done;
+		}
+		apply_go();
+		if (j_hit == 3)
+			goto done;
+		return 1;
 	}
 	if (j_mode >= J_SAVED) {
 		if (bin_line())
@@ -2071,23 +2092,49 @@ static void om_do(void)
 	ok();
 }
 
-/* every instance's check, on the candidate */
-static uint8_t check_all(void)
+/* every instance's check, on the candidate: CHECK_N instances a step from
+ * (r_o, its cursor). 1: more; 0: all passed; 2: one refused (err printed) */
+#define CHECK_N	8
+static __xdata uint8_t c_go;		/* r_o's instances are being walked */
+
+static void check_start(void)
+{
+	r_o = 0;
+	c_go = 0;
+}
+
+static uint8_t check_step(void)
 {
 	c_inst = 1;
 #if OM_USE_KEY
 	j_copies = 3;		/* entries deleted in the candidate too: a check may refuse it */
 #endif
 	r_fix = 0;
-	for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
+	a_left = CHECK_N;
+	for (; r_o < OM_N_OBJ; r_o++, c_go = 0) {
 		sel_obj(r_o);
 		if ((obx.flags & OM_STATE) || obx.check == 0xff)
 			continue;
-		for (first_inst(); cur_ok; next_inst()) {
+		if (!c_go) {
+			first_inst();
+			c_go = 1;
+		}
+		for (; cur_ok; next_inst()) {
+			if (!a_left--)
+				return 1;
 			if (call(obx.check) != OM_OK)
-				return 0;
+				return 2;
 		}
 	}
+	return 0;
+}
+
+static uint8_t check_all(void)		/* at boot: at once */
+{
+	check_start();
+	while ((v8 = check_step()) == 1);
+	if (v8)
+		return 0;
 	return 1;
 }
 

@@ -1222,7 +1222,9 @@ static void staging(void)
 	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "apply");
 	tokenize();
 	out_reset();
-	om_cmd();		/* the walk starts; nobody steps it yet */
+	om_cmd();		/* the checks, a cli step at a time, then the walk starts; nobody steps it yet */
+	while (cli_job && !job_on)
+		om_line();
 	snprintf((char *)cmd_buffer, CMD_BUF_SIZE, "get port.2.mtu");
 	tokenize();
 	om_cmd();
