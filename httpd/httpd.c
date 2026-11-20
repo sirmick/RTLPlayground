@@ -651,8 +651,7 @@ uint8_t upload_prog(void) __banked
 		uptr += write_len;
 		write_len = 0;
 		up_r = 0;
-		up_state = TSTATE_NONE;
-		uip_rcv_wnd = UIP_TCP_MSS;
+		up_state = TSTATE_NONE;	/* the window as it is: it may not shrink (F1b) */
 		if (!verify_crc)
 			return UP_DONE;
 		/* the read-back: of an install image its application, else of
@@ -702,19 +701,21 @@ uint8_t upload_done(void) __banked
 		upload_settings.bptr = 0;
 		upload_settings.plen = 0;
 	}
-	/* The window back to an MSS, also when a config save or the boot
+	/* The window: the empty stage, also when a config save or the boot
 	 * count's erase ends (no upload then, or one between its segments
-	 * with its stage empty): harmless, there is one connection and its
-	 * stage has that room. */
-	uip_rcv_wnd = UIP_TCP_MSS;
+	 * with its stage empty). Harmless: there is one connection and its
+	 * stage has that room, and no window before it was larger. */
+	uip_rcv_wnd = UP_STAGE_LEN;
 	return 0;
 }
 
 /* The stage, config_buf, from st_len on: the job starts if it has ended, or
- * takes it when it gets there. The window is the room left (at most an
- * MSS), so what the client may send always fits: nothing in flight is
- * dropped, and uIP's window never moves left (net.md item 1). 0 if the job
- * can't start. */
+ * takes it when it gets there. The window is the room left, so what the
+ * client may send always fits: nothing in flight is dropped, and uIP's
+ * window never moves left (net.md item 1). It isn't capped at an MSS any
+ * more (F1b): with an MSS, Linux sends half segments, one per round trip.
+ * The stage (<= CONFIG_UPLOAD_BUF) is well under the NIC's 10 KiB RX ring,
+ * so all of it may be in flight at once. 0 if the job can't start. */
 static uint8_t upload_go(void)
 {
 	upload_settings.plen = st_len;
@@ -728,9 +729,7 @@ static uint8_t upload_go(void)
 	up_active = 1;
 	timer_set(&postbody_timer, UPLOAD_TIMEOUT);
 	uip_rcv_wnd = st_len < UP_STAGE_LEN ? UP_STAGE_LEN - st_len : 0;
-	if (uip_rcv_wnd >= UIP_TCP_MSS)
-		uip_rcv_wnd = UIP_TCP_MSS;
-	else
+	if (uip_rcv_wnd < UIP_TCP_MSS)
 		up_short = 1;
 	uip_conn->appstate.tstate = TSTATE_UPLOAD;
 	return 1;
