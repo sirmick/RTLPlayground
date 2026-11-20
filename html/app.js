@@ -3106,7 +3106,12 @@ function pollStatus() {
                 };
             });
         }
-        S.prev = s;
+        S.prev = s.map(function(p) {	/* a copy: the open detail writes newer counters into S.ports */
+            return {
+                txG: p.txG,
+                rxG: p.rxG
+            };
+        });
         S.prevT = now;
         updateStrip();
         hkStatus();
@@ -4431,7 +4436,7 @@ function l2Load() {
                 all.push(e);
                 n++;
             }
-            return n < 25 ? all : page(e.idx + 1);
+            return n < 25 || e.idx >= 4095 ? all : page(e.idx + 1);	/* 4095: the table's last index */
         });
     }
     return page(0);
