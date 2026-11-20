@@ -9,7 +9,10 @@
 #include "rtl837x_common.h"
 #include "cmd_parser.h"
 #include "sched.h"
-#ifndef SCHED_SWEEP	/* the sweep runs before om_gen.h (it takes the scheduler's rows) */
+/* The sweep runs before om_gen.h exists (om_gen takes the scheduler's rows):
+ * it needs the markers alone. So no TASK/STEP here may sit inside #if OM_USE_*
+ * (swept, it would be seen as the compiler doesn't). */
+#ifndef SCHED_SWEEP
 #include "om_gen.h"
 #endif
 
