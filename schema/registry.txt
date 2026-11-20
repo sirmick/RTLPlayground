@@ -20,3 +20,6 @@ obj 4 syslog
 field 4.1 syslog.enabled BOOL
 field 4.2 syslog.server IPV4
 field 4.3 syslog.port U16
+obj 5 dns
+field 5.1 dns.server1 IPV4
+field 5.2 dns.server2 IPV4
