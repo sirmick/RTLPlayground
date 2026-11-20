@@ -1,0 +1,47 @@
+FL: the l2 dump that never ends (U11), branch fix/l2-walk off feat/sched 53ee574
+==============================================================================
+
+Commits: ad48e0f (tools/l2_walk.py), 6f0956f (the fix), and the book commit.
+
+Silicon (F3 soak): a console `l2` printed the same 7 entries for ~7 min; the
+1000 injected MACs aged out during the dump, the entry found first among them.
+port_l2_line() ended only when the search returned l2_first again.
+
+The fix: the walk also ends when the search returns an index below the one
+asked for (it wrapped). l2_first's test stays: l2 output is otherwise the same.
+
+The sim test
+------------
+rtlsim's control mode doesn't age or delete L2 entries (nic inject learns,
+"no ageing"; no table write from the control socket). So the deletion is made
+where the firmware sees it: tools/l2_walk.py pokes l2_first (static; its
+address from rtl837x_port.sym + the .map's _l2_head) to an index the table
+doesn't hold, after 3 entries are printed. Same as the entry found first
+being gone: the search never returns it. 21 entries (20 hosts + the host's).
+
+  tools/l2_walk.py <boot image> --board ~/src/ovs-rtlpg/boards/<board>.json
+
+                 53ee574 (old)                         6f0956f (new)
+  8x   plain     PASS                                   PASS
+       deleted   FAIL: 928 lines in 3 s, no prompt      PASS: 21 printed, prompt back
+  SWGT plain     PASS                                   PASS
+       deleted   FAIL: 928 lines in 3 s, no prompt      PASS: 21 printed, prompt back
+
+Old vs new, from ~/src/ovs-rtlpg (feat/sched-sim 8183cf6)
+-----------------------------------------------------------
+  python3 tests/oldnew/oldnew.py --old <b635486 -boot> --new <6f0956f -boot> \
+      --new-payload <6f0956f application> --board boards/<board>.json --checks \
+      --known tests/oldnew/known-failures --expect doc/sched/evidence/e4-oldnew.expect
+  8x: 17 of 17 match. SWGT024: 17 of 17 match. (Unmatched expect lines only:
+  8x 5, 6, 10, 13; SWGT 5, 10, 11, 12, 13.)
+
+Gate and host tests
+-------------------
+  tools/docker-make.sh MACHINE=<M> LAYOUT=compact LOADER=1; tools/docker-make.sh gate MACHINE=<M> LAYOUT=compact
+  PASS both boards. Internal RAM data 90 / overlay 8 / bits 3 (baseline), common
+  area ends 0x3edd (163 B left), as at 53ee574.
+  Banks free, 53ee574 -> 6f0956f: 8x 80/513/557 = 1150 -> 80/542/499 = 1121 B;
+  SWGT024 545/63/498 = 1106 -> 59/528/490 = 1077 B (-29 B each; 2 B xdata, l2_found).
+  make -C test quick: PASS. make -C test/stp: PASS.
+
+Logs: /tmp/fl/ (volatile).
