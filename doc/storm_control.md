@@ -1,4 +1,7 @@
 # Storm Control
+
+> On feat/om storm control keeps the old `storm` command until P4-6, which moves it to
+> `port.N.storm.<type>.rate` and `.unit` (doc/cli.md).
 Storm control limits the rate at which a port admits broadcast, multicast,
 unknown unicast and unknown multicast frames. Frames of a type above its limit
 are dropped at ingress, so a loop or a misbehaving host cannot flood the rest

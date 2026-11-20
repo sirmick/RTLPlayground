@@ -1,5 +1,9 @@
 # Spanning Tree (STP / RSTP)
 
+> On feat/om STP keeps the old `stp` commands until P4-4, which moves them to
+> `stp.*`, `stp.port.N.*` and `stp.lag.L.*` (doc/cli.md). The state is on the model
+> already: `get state.stp`, `state.stp.port.N`, `state.stp.lag.L`.
+
 The switch can take part in a spanning tree (IEEE 802.1D / 802.1w) so that
 redundant links between bridges are blocked instead of forming a loop. The
 implementation elects a root bridge from the BPDUs it receives, picks the
@@ -60,8 +64,8 @@ spanning tree can span *through* this device.
 
 The port's acceptable-frame-type filter treats the two actions differently.
 BPDUs are untagged, so a port set to admit tagged frames only
-(`ingress <port>t`) drops a forwarded BPDU before it reaches the CPU, while a
-trapped one passes. Both were measured on a SWTGW218AS with `ingress 3t`:
+(`port.N.ingress tagged`) drops a forwarded BPDU before it reaches the CPU, while a
+trapped one passes. Both were measured on a SWTGW218AS with port 3 set to tagged only:
 LACPDUs, delivered by forward, stopped arriving on port 3, and BPDUs sent into
 the same port, delivered by trap, kept arriving. A port that admits tagged
 frames only therefore takes part in STP.

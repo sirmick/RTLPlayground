@@ -1,5 +1,9 @@
 # LACP (Link Aggregation Control Protocol, IEEE 802.3ad)
 
+> On feat/om the LAGs keep the old `lag`, `laghash` and `lacp` commands until P4-3,
+> which moves them to `lag.L.mode`, `lag.L.members` and `lag.L.hash` (doc/cli.md).
+> Their state is on the model already: `state.lag.L`, `state.lacp.port.N`.
+
 A static link aggregation group works only if both ends are configured for the
 same links, and nothing checks that they are. LACP lets the two ends agree on
 which links reach the same partner, aggregates only those, and takes a link out
@@ -107,8 +111,9 @@ Each group on the LAG page has a Static/LACP mode next to its member ports;
 for an LACP group it shows the elected aggregator and the active members. Below
 the groups a table has one row per LACP port with its group, actor and partner
 state, receive state, LACPDU count and partner system. The page reads
-`/lacp.json` every three seconds while it is open. The member checkboxes of a
-static group come from the hardware registers in `/lag.json`.
+`state.lag` and `state.lacp.port` over `POST /cli` every three seconds while it
+is open. The member checkboxes of a static group come from the hardware
+registers in `/lag.json` (until P4-3).
 
 ## A test with a Linux 802.3ad bond
 
