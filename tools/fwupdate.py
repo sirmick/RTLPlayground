@@ -15,16 +15,23 @@ size, header and CRC16 are valid; checking them here avoids an upload just
 to be rejected.
 
 Firmware before the object model keeps its config as command text, which
-the new firmware doesn't read (DESIGN.md 15.2).  Updating such a switch,
-the tool reads its saved config (GET /config), converts it
-(tools/legacy_map.py, against the schema of this tree) and prints the
-plan; --dry-run stops there.  A line it can't translate, or one of an
-object not on the object model yet (legacy), would be lost: it refuses
-unless --drop-legacy.  After the reboot the new firmware runs on its
-built-in config, so the tool looks for it at HOST, then at the schema's
-default address (--boot-host), sets the converted lines, applies them
-(the switch moves back to its address), saves, and compares get -s with
-the plan.
+the new firmware doesn't read: it boots its factory default (DESIGN.md
+15.2).  This tool is the only way such a switch keeps its config, in this
+order:
+  1. before the upload, read the saved config (GET /config) and convert it
+     (tools/legacy_map.py, against the schema of this tree); print the
+     plan.  --dry-run stops here.  A line it can't translate, or one of an
+     object not on the object model yet (legacy), would be lost: it
+     refuses unless --drop-legacy.  No readable config (GET /config fails,
+     or the sector is blank): it refuses unless --boot-defaults, and the
+     switch then keeps the factory default;
+  2. upload the image;
+  3. find the new firmware: at HOST, then at the factory default's
+     mgmt.ip (config.txt), then the schema's (or --boot-host);
+  4. set the converted lines, apply them (the switch moves back to its
+     address), save, and compare get -s with the plan.
+If the update stops after 2, the old config is gone from the new
+firmware's view: the plan printed in 1 is what to set by hand.
 
 Usage:
     fwupdate.py [options] IMAGE [HOST]
@@ -41,7 +48,8 @@ Exit status:
     2  login failed
     3  the switch rejected the upload
     4  transfer, reboot or health read failed
-    5  the config can't be carried over (refused, or a line not taken)
+    5  the config can't be carried over (refused before the upload, or a
+       line not taken after it)
 """
 
 import argparse
@@ -518,12 +526,22 @@ class Plan:
         self.warn = []
         self.lines, self.legacy, self.bad = legacy_map.convert(
             text, self.sch.board, self.warn, self.sch)
-        self.boot_ip = self.builtin("mgmt.ip")
-        self.boot_password = self.builtin("web.password")
+        self.empty = not (self.lines or self.legacy or self.bad)
+        # where the new firmware comes back: its factory default
+        # (config.txt, DESIGN.md 15.1), else the schema's built-ins
+        cfg = self.rc.Config(self.sch)
+        try:
+            for ln in open(os.path.join(HERE, "..", "config.txt")):
+                cfg.line(ln)
+        except (OSError, self.rc.Bad) as error:
+            print(f"warning: config.txt: {error}", file=sys.stderr)
+        self.boot_ips = list(dict.fromkeys([self.value(cfg, "mgmt.ip"),
+                                            self.value(self.rc.Config(self.sch), "mgmt.ip")]))
+        self.boot_password = self.value(cfg, "web.password")
 
-    def builtin(self, path):
+    def value(self, cfg, path):
         o, ix, f = self.sch.resolve(path)
-        return self.sch.fmt(o, f, self.sch.default(o, f))
+        return self.sch.fmt(o, f, cfg.v[(o.regname, ix)][f.name])
 
     def saved(self):
         """What get -s will print once the lines are saved."""
@@ -544,19 +562,28 @@ class Plan:
             print(f"  untranslated: {line}")
         for line in self.warn:
             print(f"  warning: {line}")
-        print(f"After the reboot: the built-in config, at {self.boot_ip} "
-              "until the lines are applied", flush=True)
+        print("After the reboot: the factory default config, at "
+              f"{' or '.join(self.boot_ips)} until the lines are applied",
+              flush=True)
 
 
 def read_plan(args, host, port, cookie):
-    status, _, _, body = http_request(
-        host, port, args.timeout, "GET", "/config", cookie=cookie)
-    if status != 200:
-        raise Failure(f"GET /config returned HTTP {status}", 4)
+    """The plan; and why the config isn't readable, or None."""
+    why = None
     try:
-        return Plan(args, body)
+        status, _, _, body = http_request(
+            host, port, args.timeout, "GET", "/config", cookie=cookie)
+        if status != 200:
+            why, body = f"GET /config returned HTTP {status}", b""
+    except Failure as error:
+        why, body = str(error), b""
+    try:
+        plan = Plan(args, body)
     except OSError as error:
         raise Failure(f"the schema or the board: {error}", 1)
+    if why is None and plan.empty:
+        why = "the saved config is blank"
+    return plan, why
 
 
 def state(args, host, port, cookie, what, busy):
@@ -668,10 +695,14 @@ def parse_args(argv):
     parser.add_argument("--drop-legacy", action="store_true",
                         help="update even if config lines would be lost "
                              "(legacy or untranslated: listed)")
+    parser.add_argument("--boot-defaults", action="store_true",
+                        help="update even if the switch has no readable "
+                             "config: it boots the factory default")
     parser.add_argument("--boot-host",
                         help="where the new firmware answers after the "
-                             "reboot, on its built-in config (default: "
-                             "HOST, then the schema's mgmt.ip)")
+                             "reboot, on its factory default (default: "
+                             "HOST, then config.txt's mgmt.ip, then the "
+                             "schema's)")
     parser.add_argument("--machine",
                         help="the board, machine/<M>.c (default: from the "
                              "image's name)")
@@ -754,13 +785,32 @@ def run(args):
         print("Could not read the switch's state.sys; skipping the PCB check",
               file=sys.stderr)
 
-    # old firmware: its command text, converted (DESIGN.md 15.2)
-    plan = None
+    # old firmware: its command text, converted (DESIGN.md 15.2), read
+    # before the upload: the new firmware doesn't read it
+    plan, back = None, []
     if not (before or {}).get("om"):
-        plan = read_plan(args, host, port, cookie)
-        plan.show()
-        if args.dry_run:
-            return 0
+        print("Step 1/4: reading and converting the saved config",
+              file=sys.stderr)
+        plan, why = read_plan(args, host, port, cookie)
+        back = plan.boot_ips
+        if why:
+            print(f"No readable config: {why}; the switch will boot its "
+                  f"factory default, at {' or '.join(plan.boot_ips)}",
+                  flush=True)
+            if args.dry_run:
+                return 0
+            if not args.boot_defaults:
+                raise Failure("no config to carry over; --boot-defaults to "
+                              "update all the same", 5)
+            plan = None
+        else:
+            plan.show()
+            if args.dry_run:
+                return 0
+    elif args.dry_run:
+        print("The switch runs the object model: its config stays as it is")
+        return 0
+    if plan:
         if plan.lost() and not args.drop_legacy:
             raise Failure(
                 f"{plan.lost()} config lines would be lost (listed above); "
@@ -771,10 +821,9 @@ def run(args):
         if args.no_wait:
             raise Failure("the config is set after the reboot; remove "
                           "--no-wait", 1)
-    elif args.dry_run:
-        print("The switch runs the object model: its config stays as it is")
-        return 0
 
+    if plan:
+        print("Step 2/4: uploading", file=sys.stderr)
     accepted, verdict = upload(
         host, port, args.timeout, cookie, image, args.image)
 
@@ -792,13 +841,17 @@ def run(args):
     also = []
     if args.boot_host:
         also.append(parse_target(args.boot_host, args.port))
-    elif plan:
-        also.append((plan.boot_ip, 80))
+    else:
+        also += [(ip, 80) for ip in back]
+    if plan:
+        print("Step 3/4: waiting for the new firmware", file=sys.stderr)
     _, cookie, at = wait_for_switch(
         host, port, args.timeout, args.wait_timeout, password, before,
         require_down=accepted is None, also=also,
-        passwords=[plan.boot_password] if plan else [])
+        passwords=[plan.boot_password] if plan else ["1234"] if back else [])
     if plan:
+        print("Step 4/4: setting, applying and saving the config",
+              file=sys.stderr)
         carry_over(args, plan, host, port, password, at, cookie)
         cookie = None
     if args.health:

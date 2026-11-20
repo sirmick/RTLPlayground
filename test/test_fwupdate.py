@@ -61,7 +61,7 @@ class Fake:
     """The switch: old firmware with `text` saved, password `pw`."""
 
     def __init__(self, text, pw="secret9", refuse=()):
-        self.text, self.pw, self.refuse = text, pw, refuse
+        self.text, self.pw, self.refuse = text, pw, refuse	# text None: GET /config fails
         self.om, self.at, self.uploads = False, "old", 0
         self.cand, self.run, self.saved = [], [], []
         self.log = []
@@ -143,7 +143,7 @@ class Fake:
                     self.reply(200, b"login")
                 elif self.path == "/information.json" and not fake.om:
                     self.reply(200, ('{"sw_ver":"v-old","hw_ver":"8x","pcb_ver":"%s"}' % PCB).encode())
-                elif self.path == "/config" and not fake.om:
+                elif self.path == "/config" and not fake.om and fake.text is not None:
                     self.reply(200, fake.text.encode())
                 elif self.path == "/status.json":
                     self.reply(200, b"[]")
@@ -219,7 +219,7 @@ def main():
     st, out, err = run(f, img, "--dry-run")
     check(st == 0 and f.uploads == 0 and not f.om, "nothing uploaded", err)
     check("Config: 7 path lines, 0 legacy, 0 untranslated, 0 warnings" in out
-          and "  set mgmt.ip 127.0.0.1" in out and "at 192.168.2.2 until" in out, "the plan, and where it comes back", out)
+          and "  set mgmt.ip 127.0.0.1" in out and "at 192.168.10.247 or 192.168.2.2 until" in out, "the plan, and where it comes back", out)
     f.close()
 
     print("legacy lines: refused, then --drop-legacy")
@@ -236,6 +236,9 @@ def main():
           "the path lines set, applied and saved; get -s compared", (f.saved, err))
     check(f.log.index("apply") < f.log.index("save") and f.at == "old" and f.pw == "secret9",
           "back at its address with its password after the apply", f.log)
+    steps = [err.find("Step %d/4" % n) for n in range(1, 5)]
+    check(-1 not in steps and steps == sorted(steps) and err.find("Uploading") > steps[1],
+          "read and convert, upload, wait, set: in that order", err)
     f.close()
 
     print("the switch refuses a line")
@@ -250,6 +253,17 @@ def main():
     st, out, err = run(f, img, "--no-wait")
     check(st == 1 and f.uploads == 0 and "--no-wait" in err, "refused before the upload", err)
     f.close()
+
+    print("no readable config: refused, then --boot-defaults")
+    for text, why in (("", "the saved config is blank"), (None, "GET /config returned HTTP 404")):
+        f = Fake(text)
+        st, out, err = run(f, img)
+        check(st == 5 and f.uploads == 0 and why in out and "boot its factory default, at 192.168.10.247" in out,
+              "%s: refused before the upload (5)" % why, out + err)
+        st, out, err = run(f, img, "--boot-defaults")
+        check(st == 0 and f.uploads == 1 and not [ln for ln in f.log if ln.split()[0] in ("set", "apply", "save")],
+              "%s: --boot-defaults updates, sets nothing" % why, (f.log, err))
+        f.close()
 
     print("a switch on the object model already: its config stays")
     f = Fake("")
