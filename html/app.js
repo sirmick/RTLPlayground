@@ -2509,6 +2509,10 @@ function widget(path, f, nports) {
     w.el = el;
     w.inp = inp;
     W[path] = w;
+    if (stgHold) {		/* built in apply's window: locked as the rest */
+        el.classList.add("lock");
+        if (inp) inp.disabled = true;
+    }
     return el;
 }
 
@@ -2623,9 +2627,11 @@ function stgApply() {
 }
 
 /* no edits while apply's window is open, so a change still pending after
- * it means apply never got there */
+ * it means apply never got there (.lock stops the pointer, not the keys:
+ * stage() refuses those); unlocked, the reload shows every field again */
 function stgLock(on) {
     for (var k in W) {
+        if (!on) W[k].edit = 0;
         W[k].el.classList.toggle("lock", !!on);
         if (W[k].inp) W[k].inp.disabled = !!on || W[k].el.classList.contains("na");
     }
