@@ -394,11 +394,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _parse_ntp(self, pieces):
         global state
-        return b"NTP off, server pool.ntp.org, address 0.0.0.0, interval 60 min, timezone +00:00, dst off\nTime not synchronised"
+        # the settings line only: the time is get state.ntp (P5-3)
+        return b"NTP off, server pool.ntp.org, address 0.0.0.0, interval 60 min, timezone +00:00, dst off"
 
     def _parse_dns(self,pieces):
         global state
-        return b"DNS servers 0.0.0.0 0.0.0.0, from DHCP 0.0.0.0"
+        # the servers only: DHCP's and the lookups are get state.dns (P5-3)
+        return b"DNS servers 0.0.0.0 0.0.0.0"
 
     def _api_storm(self):
         global state

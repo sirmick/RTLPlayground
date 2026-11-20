@@ -427,6 +427,10 @@ void dhcp_callback(uint16_t lport) __banked
 
 /* state.mgmt (schema/state_mgmt.py): the address in use, and DHCP's */
 #define M	om_st.mgmt
+/* state.mgmt.dhcp.state's words are the DHCP_* states (a negative size if not) */
+typedef char dhcpst_is_state[E_DHCPST_OFF == DHCP_OFF && E_DHCPST_START == DHCP_START &&
+			     E_DHCPST_DISCOVER == DHCP_DISCOVER_SENT && E_DHCPST_REQUEST == DHCP_REQUEST_SENT &&
+			     E_DHCPST_LEASING == DHCP_LEASING ? 1 : -1];
 
 uint8_t om_get_mgmt(uint8_t idx) __banked
 {
