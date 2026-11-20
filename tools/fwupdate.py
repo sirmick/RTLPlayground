@@ -98,6 +98,10 @@ class Failure(Exception):
         self.status = status
 
 
+class Applying(Failure):
+    """The switch kept refusing with "err: applying" (post_cli)."""
+
+
 def _crc_table():
     """Reflected CRC-16 table for poly 0xA001 (the switch's crc16_bank1)."""
     table = []
@@ -231,11 +235,9 @@ def fetch_info(host, port, timeout, cookie):
     POST /cli on the object model's firmware, else from /information.json."""
     info = {}
     try:
-        status, _, _, body = http_request(
-            host, port, timeout, "POST", "/cli", body=b"get state.sys sys.hostname",
-            cookie=cookie, content_type="text/plain")
+        status, text = post_cli(host, port, timeout, cookie, ["get state.sys sys.hostname"])
         if status == 200:
-            for line in body.decode("utf-8", "replace").splitlines():
+            for line in text.splitlines():
                 path, _, value = line.partition(" ")
                 if path.startswith("state.sys."):
                     info[path[len("state.sys."):]] = value
@@ -246,6 +248,8 @@ def fetch_info(host, port, timeout, cookie):
             return info
         status, _, _, body = http_request(
             host, port, timeout, "GET", "/information.json", cookie=cookie)
+    except Applying:
+        raise
     except Failure:
         return None
     if status != 200:
@@ -521,14 +525,33 @@ def wait_for_switch(host, port, timeout, wait_timeout, password, before,
 
 # ---- the config across the update (DESIGN.md 15.2) ---------------------------
 
+APPLYING_TRIES = 20	# 0.5 s apart: "err: applying" while an apply job runs (as bench_check.py)
+
+
+def post_cli(host, port, timeout, cookie, lines):
+    """POST /cli: (HTTP status, the reply's text). While an apply job runs
+    (apply's walk, a confirm's copies, a rollback) the engine refuses every
+    line with "err: applying"; that reply is sent again, 0.5 s apart, for
+    ~10 s. rtlsim ends the job before the next request; silicon doesn't."""
+    for _ in range(APPLYING_TRIES):
+        status, _, _, body = http_request(
+            host, port, timeout, "POST", "/cli", body="\n".join(lines).encode(),
+            cookie=cookie, content_type="text/plain")
+        text = body.decode("utf-8", "replace")
+        if status != 200 or not text.startswith("err: applying"):
+            return status, text
+        time.sleep(0.5)
+    raise Applying(f"{host}:{port} still answers \"err: applying\" after {APPLYING_TRIES // 2} s: "
+                   "its apply job (state.cfg.apply running or undo, or the copies a confirm "
+                   "queues) hasn't ended", 5)
+
+
 def cli(host, port, timeout, cookie, lines):
-    """POST /cli: the reply's text."""
-    status, _, _, body = http_request(
-        host, port, timeout, "POST", "/cli", body="\n".join(lines).encode(),
-        cookie=cookie, content_type="text/plain")
+    """POST /cli: the reply's text (post_cli)."""
+    status, text = post_cli(host, port, timeout, cookie, lines)
     if status != 200:
         raise Failure(f"POST /cli returned HTTP {status}", 4)
-    return body.decode("utf-8", "replace")
+    return text
 
 
 def machine_of(args):

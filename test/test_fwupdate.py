@@ -73,6 +73,7 @@ class Fake:
         self.impostor = None	# a role: another switch (om, OTHER, 1234) there, while the real one isn't
         self.gone, self.back = False, "boot"	# never back after the upload; else the role it is back at
         self.late = 0		# requests the real one leaves unanswered after the upload
+        self.applying, self.busy, self.refused = 0, 0, 0	# /cli refused this many times after apply, confirm
         self.imp_log = []
         self.cand, self.run, self.saved = [], [], []
         self.log = []
@@ -121,6 +122,9 @@ class Fake:
                     self.at = "nowhere"
                 if self.pw_after:
                     self.pw = self.pw_after
+                self.busy = self.applying	# the apply job runs on: silicon refuses what comes next
+            elif ln == "confirm":
+                self.busy = self.applying
             elif ln == "save":
                 if not self.save_fail:
                     self.saved = list(self.run)
@@ -199,6 +203,10 @@ class Fake:
                     ok = b.decode() == "pwd=" + fake.pw
                     self.reply(302, headers=[("Location", "/index.html" if ok else "/login.html")] +
                                ([("Set-Cookie", "session=abc")] if ok else []))
+                elif self.path == "/cli" and fake.om and fake.busy:
+                    fake.busy -= 1
+                    fake.refused += 1
+                    self.reply(200, b"err: applying\n")
                 elif self.path == "/cli" and fake.om:
                     self.reply(200, fake.cli(b.decode().split("\n")).encode())
                 elif self.path == "/upload":
@@ -474,6 +482,37 @@ def main():
     st, out, err = run(f, None, "--plan", PLAN + "x")
     check(st == 1 and "not a plan fwupdate wrote" in err, "refused: a file fwupdate didn't write", err)
     f.close()
+
+    print("an apply job still running: err: applying, sent again (P8 bench)")
+    f = Fake("")
+    f.om, f.at, f.pw, f.applying = True, "boot", "1234", 3
+    st, out, err = run(f, None, "--plan", PLAN)
+    check(st == 0 and f.refused == 6 and f.log.count("confirm") == 1 and "save" in f.log
+          and "Saved: get -s is the plan (5 lines)" in err,
+          "refused 3 times after apply and after confirm: each request sent again, then saved", (f.refused, f.log, err))
+    f.close()
+    f = Fake("")
+    f.om, f.at, f.pw, f.applying = True, "boot", "1234", 25
+    st, out, err = run(f, None, "--plan", PLAN)
+    check(st == 5 and f.refused == fwupdate.APPLYING_TRIES and "save" not in f.log
+          and 'still answers "err: applying" after 10 s' in err and "state.cfg.apply" in err,
+          "refused past ~10 s: fails (5), naming the apply job's state", (f.refused, err))
+    f.close()
+
+    class R:
+        status = 200
+    replies = [b"err: applying\n", b"err: applying\n", b"ok\n"]
+    sw = rc.Switch("x")
+    sw.cookie = "c"
+    sw._req = lambda *a: (R, replies.pop(0))
+    rc.time.sleep = lambda s: None
+    check(sw.cli(["get state.cfg.apply"]) == "ok\n" and not replies, "rtlpg_client cli: err: applying twice, then ok")
+    sw._req = lambda *a: (R, b"err: applying\n")
+    try:
+        sw.cli(["confirm"])
+        check(False, "rtlpg_client cli: refused past ~10 s")
+    except rc.Bad as e:
+        check("state.cfg.apply" in str(e), "rtlpg_client cli: refused past ~10 s, the state named (%s)" % e)
 
     print("a switch on the object model already: its config stays")
     f = Fake("")
