@@ -433,7 +433,7 @@ static void job_step(void)
 		}
 		if (!om_confirm_s) {
 			om_settle(r);
-			job_on = 0;
+			job_st = 3;
 			return;
 		}
 		om_apply_st = E_CFGAPPLY_CONFIRM;
@@ -442,7 +442,7 @@ static void job_step(void)
 	case 1:			/* CFG_WINDOW: due a second at a time (seconds()), then 100 ms */
 		if (om_confirmed) {
 			om_settle(OM_A_DONE);
-			job_on = 0;
+			job_st = 3;
 			return;
 		}
 		if (om_confirm_s) {
@@ -462,12 +462,16 @@ static void job_step(void)
 		om_undo();
 		job_st = 2;
 		return;
-	default:		/* CFG_UNDO */
+	case 2:			/* CFG_UNDO */
 		r = om_apply_next();
 		if (r == OM_A_MORE)
 			return;
 		om_settle(r);
-		job_on = 0;
+		job_st = 3;
+		return;
+	default:		/* CFG_SETTLE */
+		if (!om_copy())
+			job_on = 0;
 	}
 }
 
@@ -994,13 +998,35 @@ static void staging(void)
 	expect("apply", "ok\n");
 	CHECK(applied[2] == 1 && cfg_run.port[2].mtu == 1500 && applied_old[2].mtu == 16383,
 	      "apply: the job applies port 3, the old value in the rollback copy");
-	CHECK(job_steps == 3, "apply: a step for each changed instance (port.3, tlag.2), and the last");
+	/* P3I: the copies a chunk a step (2 before the walk, 1 after), the walk WALK_N
+	 * instances a step; a step for each changed instance (port.3, tlag.2) */
+	int chunks = (sizeof(struct cfg) + 511) / 512;
+	CHECK(job_steps >= 3 * chunks + 2 && job_steps <= 3 * chunks + 2 + 1 + OM_N_OBJ,
+	      "apply: the copies, the walk and the settle, each in bounded steps");
 	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
 	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
 	memset(applied, 0, sizeof applied);
 	job_steps = 0;
 	expect("apply", "ok\n");
-	CHECK(!applied[2] && job_steps == 1, "an empty diff: apply calls no handler");
+	CHECK(!applied[2] && job_steps >= 3 * chunks, "an empty diff: apply calls no handler");
+
+	/* P3I: the pending count is kept, not compared: back to running's value is 0 again */
+	expect("set port.3.mtu 9000", "ok\n");
+	expect("set port.4.mtu 9000", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 2\nok\n");
+	expect("set port.3.mtu 1500", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 1\nok\n");
+	expect("del port.4", "ok\n");
+	CHECK(!t_strcmp(prompt(), ""), "set back to running's values: nothing pending, no *");
+	expect("set port.*.mtu 2000", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 9\nok\n");
+	expect("discard", "ok\n");
+	CHECK(!t_strcmp(prompt(), "") && !memcmp(&cfg_cand, &cfg_run, sizeof cfg_run), "discard: the copy, nothing pending");
+	expect("set tvlan.30.name x", "ok\n");
+	expect("del tvlan.1", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 2\nok\n");
+	expect("del tvlan", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 0\nok\n");
 
 	printf("confirm window\n");
 	memcpy(&before, &cfg_run, sizeof before);
@@ -1329,6 +1355,7 @@ static void binary(void)
 	expect("set port.3.mtu 1500", "ok\n");
 	expect("apply", "ok\n");
 	expect("load saved", "ok\n");
+	expect("get state.cfg.pending", "state.cfg.pending 1\nok\n");	/* port.3: counted again after the load */
 	expect("apply", "ok\n");
 	expect("get state.cfg.dirty", "state.cfg.dirty off\nok\n");
 	expect("load default", "err load: blank\n");
