@@ -14,9 +14,10 @@ S1: a firmware upload whose CRC is wrong (the payload with its last byte
     flipped), so it is written, read back and refused, without a reset:
     the answer is "checksum failed" and the staged image is the payload's
     bytes (the flipped one too).
-S2: a config save (POST /config): 200, the text in the config sector.
-S3: `factory-reset` on the console: the default config sector copied to the
-    config sector, then the reset.
+S2: a config save (set, apply, save by POST /cli): 200, binary records in
+    the config sector ("\\0RC1", length, CRC, the hostname in them; P3B).
+S3: `do sys.factory_reset` on the console: the default config sector (binary
+    records too) copied to the config sector, then the reset.
 S4: after a new boot, the payload uploaded as it is: written, read back and
     accepted ("Checksum OK"); the per-state maxima read from xdata then,
     before the client's ACK of the answer lets the switch reset.
@@ -42,7 +43,10 @@ it should. The upload's firmware time is printed. Needs a bench whose client
 honours the switch's window (the upload closes it after each segment).
 Exit status 1 if any fails.
 """
-import argparse, os, re, sys
+import argparse, os, re, struct, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rtlpg_client  # noqa: E402  the codec's crc16
 
 CONFIG_START, CONFIG_LEN = 0x7f000, 0x1000	# layout.h, compact
 DEFAULT_CONFIG_START = 0x39000
@@ -334,16 +338,19 @@ def main(argv):
         # FIN: S1's connection holds it in LAST_ACK for a while
         r.b.advance(r.b.now + 20 * 1000000)
         ask(HEALTH_CLEAR)
-        text = "set sys.hostname flashjob\napply\nvlan 10 " + " ".join(f"{f}" for f in r.F[1:3]) + "\n"
-        body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
-                f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
-        req = (b"POST /config HTTP/1.1\r\nCookie: session=" + r.cookie +
-               f"\r\nContent-Type: multipart/form-data; boundary={bnd}\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
+        # P3B: the saved config is binary records ("\0RC1", length, CRC),
+        # written by save over POST /cli
+        body = b"set sys.hostname flashjob\napply\nsave\n"
+        req = (b"POST /cli HTTP/1.1\r\nCookie: session=" + r.cookie +
+               f"\r\nContent-Type: text/plain;charset=UTF-8\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body)
         resp = r.host.http(req, r.b.now + 10 * 1000000)
-        saved = r.b.flash(CONFIG_START, len(text) + 1)
-        ok = isinstance(resp, bytes) and resp.startswith(b"HTTP/1.1 200") and saved == text.encode() + b"\0"
+        r.b.advance(r.b.now + 2 * 1000000)		# the flash job's last page and the read-back
+        sec = r.b.flash(CONFIG_START, CONFIG_LEN)
+        n, c = struct.unpack("<HH", sec[4:8])
+        good = sec[:4] == b"\0RC1" and n <= CONFIG_LEN - 8 and rtlpg_client.crc16(sec[8:8 + n]) == c
+        ok = isinstance(resp, bytes) and resp.startswith(b"HTTP/1.1 200") and good and b"flashjob" in sec[8:8 + n]
         print(f"   S2 answer {resp.split(b'\r\n')[0] if isinstance(resp, bytes) else resp!r}; config sector "
-              f"{'= the text' if saved == text.encode() + b'\0' else repr(saved[:40])}")
+              + (f"\\0RC1, {n} B of records, CRC 0x{c:04x} ok" if good else repr(sec[:16])))
         ok = judge("S2", health(ask(HEALTH))) and ok
         print(f"S2 config save: {'PASS' if ok else 'FAIL'}")
         if not ok:
@@ -352,15 +359,17 @@ def main(argv):
         # S3
         ask(HEALTH_CLEAR)
         r.b.pending()
-        r.b.sim.uart_write("factory-reset\r")
+        r.b.sim.uart_write("do sys.factory_reset\r")	# P5-1: factory-reset became the action
         r.b.sim.run_until_uart("Written default config to flash", 5000)
         steps = xsteps(r)
         r.b.sim.run(3000)
         default = r.b.flash(DEFAULT_CONFIG_START, CONFIG_LEN)
         cfg = r.b.flash(CONFIG_START, CONFIG_LEN)
         out = r.b.pending() + r.b.sim.uart_text()
-        ok = cfg == default
-        print(f"   S3 config sector {'= the default config sector' if ok else 'DIFFERS from the default'}")
+        n, c = struct.unpack("<HH", cfg[4:8])		# P3B: the default is binary records too
+        ok = cfg == default and cfg[:4] == b"\0RC1" and rtlpg_client.crc16(cfg[8:8 + n]) == c
+        print(f"   S3 config sector {'= the default config sector' if cfg == default else 'DIFFERS from the default'}, "
+              f"{'a valid' if ok else 'NO valid'} \\0RC1 header ({n} B of records)")
         ok = judge("S3", steps) and ok
         print(f"S3 factory reset: {'PASS' if ok else 'FAIL'}")
         if not ok:
