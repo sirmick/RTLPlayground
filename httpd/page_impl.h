@@ -14,15 +14,12 @@ void itoa_html(uint8_t v);
 
 void str_code_to_html(__code const char *s);
 void bool_to_json(char c);
-void json_add_array_string_item(__code const char *item);
 void json_add_array_uint_item(uint8_t x);
 void char_to_html(char c);
 
 void itoa16_html(uint16_t v);
 
 bool send_counters(uint8_t phys_port);
-void send_ports(void);
-void send_traffic(void);
 void send_vlan(uint16_t vlan);
 void send_bandwidth(void);
 void send_storm(void);

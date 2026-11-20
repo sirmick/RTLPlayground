@@ -13,10 +13,8 @@ The following endpoints are supported:
  * /lag.json
  * /lldp.json
  * /mirror.json
- * /ports.json
  * /stp.json
  * /storm.json
- * /traffic.json
  * /vlan.json?vid=<VLANID>
  * /vlanlist.json
 
@@ -265,24 +263,6 @@ Object representing static and LACP lags
 | `mirror_tx` | List of physical port numbers that the mirror will receive a copy of transmitted packets for
 
 
-## ports
-```json
-[
-    {"port":1,"name":"","isSFP":false,"enabled":true,"adv":["2.5G","1G","100M-FD","100M-HD","10M-HD","10M-FD"],"mtu":"0x3fff"},
-    {"port":2,"name":"","isSFP":false,"enabled":true,"adv":["2.5G","1G","100M-FD","100M-HD","10M-HD","10M-FD"],"mtu":"0x3fff"},
-    ...
-    {"port":9,"name":"","isSFP":true,"enabled":true,"mtu":"0x3fff"}
-]
-```
-| Property | Description
-|----------|------------
-| `port` | Physical port number
-| `name` | User entered name
-| `isSFP` | Is SFP port
-| `enabled` | Is port enabled/disabled in the firmware (an SFP port: a module is in the cage; the module itself: `get state.sfp`)
-| `adv` | List of advertised link modes
-| `mtu` | Maximum Transmission Unit
-
 ## stp
 ```json
 {
@@ -333,25 +313,6 @@ Object representing static and LACP lags
 | `db` | Designated bridge
 | `dp` | Designated port
 | `dc` | Designated cost
-
-## traffic
-```json
-[
-    {"port":1,"link":"1000M","txG":"0x6ce","txB":"0x0","rxG":"0x7f6","rxB":"0x0","macs":"0x1"},
-    {"port":2,"link":"DOWN","txG":"0x0","txB":"0x0","rxG":"0x0","rxB":"0x0","macs":"0x0"},
-    ...
-]
-```
-| Property | Description
-|----------|------------
-| `port` | Physical port number
-| `name` | User entered name
-| `link` | Current link mode
-| `txG` | Number of transmitted good frames
-| `txB` | Number of transmitted bad frames
-| `rxG` | Number of received good frames
-| `rxB` | Number of received bad frames
-| `macs` | Number of MAC addresses learned from this port
 
 ## vlan
 ```json

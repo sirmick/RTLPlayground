@@ -95,7 +95,7 @@ the request's ACK: one TCP frame more per `/cmd` (d3-oldnew.expect).
 
 ### 3. Pages that did slow I/O
 
-- `/ports.json` and `/information.json` read the SFP caches (chapter 9),
+- `get state.sfp` and `/information.json` read the SFP caches (chapter 9),
   not I2C: before, a page with a DDM module did up to 13 I2C transactions
   in one rx step.
 - `/vlanlist.json` walks a VLAN bitmap the VLAN code keeps, not 4094 table

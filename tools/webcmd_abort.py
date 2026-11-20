@@ -21,7 +21,7 @@ W2: a /cmd ("set sys.hostname aborted", apply) and the client's RST in the same 
     frames a step, so the RST is handled before cli's next step.
 W3: a /cmd ("set sys.hostname tail3", apply, "get mgmt.ip") followed, in a segment of its own in the
     same instant, by a CRLF; W4: the same with a second request pipelined
-    behind it (GET /ports.json): the posted command runs exactly (hostname
+    behind it (GET /favicon.ico): the posted command runs exactly (hostname
     set, the reply its output, no parse error) and the extra data is
     dropped, as today's code drops data while the reply is sent.
 W5: a web /cmd "l2\nhostname oldbody" over 300 learned MACs, its connection
@@ -240,7 +240,7 @@ def main(argv):
 
         # W3, W4
         for name, extra in (("W3", b"\r\n"),
-                            ("W4", b"GET /ports.json HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n")):
+                            ("W4", b"GET /favicon.ico HTTP/1.1\r\nCookie: session=" + r.cookie + b"\r\n\r\n")):
             want = f"tail{name[1]}"
             k.b.pending()
             c = k.open()

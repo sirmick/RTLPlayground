@@ -184,37 +184,13 @@ static void t_l2_page(void)
 	CHECK(balanced(), "every page is valid JSON");
 }
 
-static void t_status_macs(void)
-{
-	const char *p1, *end, *mac;
-
-	printf("[test] /status.json reports the MAC addresses learned on each port\n");
-	hw_reset(); out_reset();
-	hw_reg_set(RTL837X_L2_LRN_PORT_CONSTRT_CNT + (1 << 2), 0x21);
-	send_traffic();
-	p1 = strstr(body(), "\"port\":2,");
-	end = p1 ? strchr(p1, '}') : NULL;
-	mac = p1 ? strstr(p1, "\"macs\":\"0x21\"") : NULL;
-	CHECK(mac && mac < end, "port 1 shows its learned count");
-	CHECK(has("\"macs\":\"0x0\""), "a port without learned addresses shows 0");
-	CHECK(slen <= TCP_OUTBUF_SIZE, "fits the buffer");
-	CHECK(balanced(), "valid JSON");
-}
-
 static void t_status_counters(void)
 {
-	printf("[test] /status.json prints 64-bit packet counters in full\n");
+	printf("[test] /counters.json prints 64-bit packet counters in full\n");
 	hw_reset(); out_reset();
 	hw_counter_set(0, STAT_COUNTER_TX_PKTS, 0x100000005ULL);
-	hw_counter_set(0, STAT_COUNTER_RX_PKTS, 0x00000000000000ffULL);
-	hw_counter_set(1, STAT_COUNTER_TX_PKTS, 0x00000001ffffffffULL);
-	send_traffic();
-	CHECK(has("\"txG\":\"0x100000005\""), "a counter past 2^32 keeps the zeros of its low word");
-	CHECK(has("\"rxG\":\"0xff\""), "a small counter stays short");
-	CHECK(has("\"txG\":\"0x1ffffffff\""), "a low word of all ones");
-	out_reset();
 	send_counters(1);
-	CHECK(has("\"0x100000005\"") && has("\"0x0\""), "/counters.json prints them the same way");
+	CHECK(has("\"0x100000005\"") && has("\"0x0\""), "a counter past 2^32 keeps the zeros of its low word");
 	CHECK(slen <= TCP_OUTBUF_SIZE, "fits the buffer");
 	CHECK(balanced(), "valid JSON");
 }
@@ -227,7 +203,6 @@ int main(void)
 	t_l2();
 	t_l2_page();
 	t_status_counters();
-	t_status_macs();
 	printf("\n%d checks, %d failed\n", tests_run, tests_failed);
 	return tests_failed ? 1 : 0;
 }

@@ -61,11 +61,6 @@ state = {
 }
 
 
-tx_g = [0] * PORTS
-rx_g = [0] * PORTS
-tx_b = [0] * PORTS
-rx_b = [0] * PORTS
-last_called = int(time.time())
 started = int(time.time())
 
 sessions = set()
@@ -92,8 +87,6 @@ class Handler(SimpleHTTPRequestHandler):
             "/lldp.json": self._api_lldp,
             "/lag.json": self._api_lag,
             "/mirror.json": self._api_mirror,
-            "/ports.json": self._api_ports,
-            "/traffic.json": self._api_traffic,
             "/storm.json": self._api_storm,
             "/stp.json": self._api_stp,
             "/loop.json": self._api_loop,
@@ -439,64 +432,6 @@ class Handler(SimpleHTTPRequestHandler):
             ]
         }
 
-    def _api_ports(self):
-        global last_called, machine_config
-        now = max(int(time.time()), last_called + 1)
-        elapsed = now - last_called
-        ports = []
-
-        for i in range(1, PORTS + 1):
-            n = i - 1
-            item = {
-                "port": i,
-                "name": "",
-                "isSFP": machine_config["is_sfp"][i] == 1,
-                "enabled": int(i % 4 != 0),
-                "mtu": f"0x{16383 if i % 2 else 1522:04x}",
-            }
-
-            if not machine_config["is_sfp"][i]:
-                if i == 1:
-                    item["adv"] = [ "2.5G" ]
-                elif i == 2:
-                    item["adv"] = [ "10M-HD", "10M-FD" ]
-                else:
-                    item["adv"] = [ "100M-HD" ]
-
-            ports.append(item)
-
-        last_called = now
-        return ports
-
-    def _api_traffic(self):
-        global last_called, machine_config
-        now = max(int(time.time()), last_called + 1)
-        elapsed = now - last_called
-        ports = []
-
-        for i in range(1, PORTS + 1):
-            n = i - 1
-            if i % 2:
-                rate = 2_400_000_000 if i == 1 else 950_000_000
-                tx_g[n] += rate * elapsed
-                rx_g[n] += rate * elapsed
-                tx_b[n] += rate * elapsed // 10_000_000
-                rx_b[n] += rate * elapsed // 10_000_000
-            item = {
-                "port": i,
-                "name": "",
-                "link": ("10G" if i == 1 else "100M-HD") if i % 2 else "DOWN",
-                "macs": "0x01",
-                "txG": f"0x{tx_g[n]:016x}",
-                "txB": f"0x{tx_b[n]:016x}",
-                "rxG": f"0x{rx_g[n]:016x}",
-                "rxB": f"0x{rx_b[n]:016x}",
-            }
-            ports.append(item)
-
-        last_called = now
-        return ports
-
     def _api_eee(self):
         global state, machine_config
         return [
@@ -688,7 +623,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 # Parse the provided .c or .h file to attempt to make the simulator act more like that configuration
 def loadMachineConfig(filename):
-    global machine_config, PORTS, phys_to_log_port, tx_g, rx_g, tx_b, rx_b
+    global machine_config, PORTS, phys_to_log_port
     c_file=filename[:-1] +'c'
     c_content = ""
     with open(c_file, 'r') as file:
@@ -739,10 +674,6 @@ def loadMachineConfig(filename):
     if "max_port" in machine_config and "min_port" in machine_config:
         PORTS = int(machine_config["max_port"]) - int(machine_config["min_port"])
 
-    tx_g = [0] * PORTS
-    rx_g = [0] * PORTS
-    tx_b = [0] * PORTS
-    rx_b = [0] * PORTS
 
     vprint("------------")
     vprint(machine_config)

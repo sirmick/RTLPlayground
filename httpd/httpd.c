@@ -1327,11 +1327,7 @@ void httpd_appcall(void)
 				goto do_send;
 			}
 			dbg_string("Not file entry\n");
-			if (!strcmp(q, "/ports.json")) {
-				send_ports();
-			} else if (!strcmp(q, "/traffic.json")) {
-				send_traffic();
-			} else if (!strcmp(q, "/vlan.json")) {
+			if (!strcmp(q, "/vlan.json")) {
 				parse_short(q + 15);
 				send_vlan(short_parsed);
 			} else if (is_word(q, "/counters.json")) {
