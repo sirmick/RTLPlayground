@@ -3564,9 +3564,33 @@ static __xdata uint8_t b_fail, b_fo, b_fe;
 /* the refusing object (r_o) to its defaults in the candidate, its name
  * pattern ("stp.port.#") onto bs.reset while there is room; 0 if it is the
  * one reset last (it refuses at its defaults), or after OM_N_OBJ resets */
-static __xdata uint8_t b_last, b_n, b_k;
+static __xdata uint8_t b_last, b_n, b_k, b_msg;
+__xdata uint8_t om_booting, om_boot_ref;
+
+static void note(void)			/* cp's text onto bs.reset, a space before */
+{
+	if (b_n)
+		bs.reset[b_n++] = ' ';
+	for (; *cp && b_n < sizeof(bs.reset) - 1; cp++)
+		bs.reset[b_n++] = *cp;
+	bs.reset[b_n] = 0;
+}
+
+void om_boot_note(uint8_t msg) __banked
+{
+	if (msg == b_msg)		/* every port's pvid: once */
+		return;
+	b_msg = msg;
+	cp = (__code const uint8_t *)om_msg[msg];
+	note();
+}
+
 static uint8_t boot_reset(void)
 {
+	if (om_boot_ref != 0xff) {	/* the object the refused one names */
+		r_o = om_boot_ref;
+		om_boot_ref = 0xff;
+	}
 	if (r_o == b_last || ++b_k > OM_N_OBJ)
 		return 0;
 	b_last = d_o = r_o;
@@ -3574,11 +3598,8 @@ static uint8_t boot_reset(void)
 	d_e = 0;
 	d_base = CAND;
 	while (def_step());
-	if (b_n)
-		bs.reset[b_n++] = ' ';
-	for (cp = (__code const uint8_t *)obx.name; *cp && b_n < sizeof(bs.reset) - 1; cp++)
-		bs.reset[b_n++] = *cp;
-	bs.reset[b_n] = 0;
+	cp = (__code const uint8_t *)obx.name;
+	note();
 	return 1;
 }
 
@@ -3590,13 +3611,17 @@ void om_boot_apply(void) __banked
 {
 	b_last = 0xff;
 	b_n = b_k = 0;
+	b_msg = om_boot_ref = 0xff;
 	bs.reset[0] = 0;
+	om_booting = 1;
 	while (!check_all()) {
 		if (!boot_reset()) {
+			om_booting = 0;
 			om_apply_st = E_CFGAPPLY_ROLLED_BACK;	/* nothing applied: running is the defaults, */
 			goto not_applied;			/* the candidate what was refused (diff) */
 		}
 	}
+	om_booting = 0;
 	/* A soft reset keeps the chip and the PHYs as they were: every instance
 	 * but keyed entries (vlan_setup clears those) is applied whole, at its
 	 * default too, so the defaults are what the chip has after a boot */

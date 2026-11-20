@@ -150,6 +150,14 @@ uint8_t om_check_port(uint8_t idx)
 {
 	checks++;
 	if (vlan_checks && !om_vlan_known(cfg_cand.port[idx].pvid)) {	/* as om_port.c */
+		if (om_booting) {
+			cfg_cand.port[idx].pvid = 1;
+			om_boot_note(OM_E_PVID_ONE);
+			if (om_vlan_known(1))
+				return OM_OK;
+			om_boot_ref = O_CFG_VLAN;
+			return OM_ERR;
+		}
 		om_fail(OM_E_PVID);
 		return OM_ERR;
 	}
@@ -232,6 +240,11 @@ uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
 uint8_t om_check_mgmt(uint8_t idx)	/* as om_svc.c */
 {
 	if (vlan_checks && !om_vlan_known(cfg_cand.mgmt.vlan)) {
+		if (om_booting) {
+			cfg_cand.mgmt.vlan = 0;
+			om_boot_note(OM_E_MGMT_VLAN_ANY);
+			return OM_OK;
+		}
 		om_fail(OM_E_MGMT_VLAN);
 		return OM_ERR;
 	}
@@ -2326,37 +2339,48 @@ static void vlans(void)
 	}
 	expect("set vlan.4000.members 1", "err vlan.4000.members: table full\n");
 	expect("discard", "ok\n");
-	/* P4-4b with a keyed object: boot's refusals one object at a time, no loop */
+	/* P4-4b/c with a keyed object: vlan refused goes back to its defaults (VLAN 20 with
+	 * it); the references to it are fixed field by field (mgmt.vlan 0, port.N.pvid 1),
+	 * so mgmt, the port names and speeds all stay */
 	om_init();
 	expect("set vlan.20.members 1-2", "ok\n");
 	expect("set vlan.20.tagged 3", "ok\n");	/* vlan's own check refuses: tagged not a member */
-	expect("set port.1.pvid 20", "ok\n");	/* then port's: VLAN 20 went with vlan's defaults */
-	expect("set port.2.mtu 2000", "ok\n");
+	expect("set mgmt.ip 192.168.2.77", "ok\n");
+	expect("set mgmt.vlan 20", "ok\n");
+	expect("set port.1.pvid 20", "ok\n");
+	expect("set port.2.pvid 20", "ok\n");
+	expect("set port.1.name uplink", "ok\n");
+	expect("set port.2.speed 100m", "ok\n");
 	expect("set sys.hostname keep", "ok\n");
 	out_reset();
 	om_boot_apply();
 	out_buf[out_len] = 0;
-	CHECK(strstr(out_buf, "err vlan.20: tagged ports must be members\n") && strstr(out_buf, "err port.1: pvid: no such vlan\n")
-	      && !strstr(out_buf, "not applied"), "boot: vlan refused, then port: each said once");
-	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults vlan.# port.#\nok\n");
-	expect("get -d vlan port sys.hostname", "sys.hostname keep\nok\n");	/* both at defaults (VLAN 1 back), sys applied */
-	/* mgmt.vlan on a missing VLAN: mgmt resets, its ip with it (a check is per object) */
-	om_init();
-	expect("set mgmt.ip 192.168.2.77", "ok\n");
-	expect("set mgmt.vlan 30", "ok\n");
-	om_boot_apply();
-	expect("get state.cfg.boot_defaults mgmt.ip mgmt.vlan", "state.cfg.boot_defaults mgmt\nmgmt.ip 192.168.2.2\nmgmt.vlan 1\nok\n");
-	/* refused at its defaults: VLAN 1 deleted; mgmt.vlan 1 (and every port.N.pvid 1): mgmt,
-	 * first in apply order, refuses again after its reset: nothing applied, no loop */
+	CHECK(strstr(out_buf, "err vlan.20: tagged ports must be members\n") && !strstr(out_buf, "err mgmt")
+	      && !strstr(out_buf, "err port") && !strstr(out_buf, "not applied"), "boot: vlan refused, alone");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults vlan.# mgmt.vlan port.#.pvid\nok\n");
+	expect("get -d mgmt port sys vlan", "mgmt.ip 192.168.2.77\nmgmt.vlan 0\nport.1.name uplink\nport.2.speed 100m\n"
+	       "sys.hostname keep\nok\n");	/* the pvids 1, VLAN 1 back: defaults */
+	CHECK(cfg_run.mgmt.vlan == 0 && cfg_run.port[0].pvid == 1 && cfg_run.port[1].pvid == 1, "and running has them");
+	/* VLAN 1 deleted with the default pvids and mgmt.vlan 1: mgmt.vlan 0; a pvid 1 still
+	 * names nothing, so port names vlan, and vlan's reset brings VLAN 1 back */
 	om_init();
 	expect("del vlan.1", "ok\n");
-	expect("set port.2.mtu 2000", "ok\n");
+	expect("set vlan.5.members 1-2", "ok\n");
+	expect("set mgmt.ip 192.168.2.77", "ok\n");
+	expect("set port.3.mtu 2000", "ok\n");
 	out_reset();
 	om_boot_apply();
 	out_buf[out_len] = 0;
-	CHECK(strstr(out_buf, "Boot config not applied\n") && cfg_run.port[1].mtu == 16383,
-	      "an object refusing at its defaults: nothing applied, no loop");
-	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply rolled_back\nstate.cfg.boot_defaults mgmt\nok\n");
+	CHECK(!strstr(out_buf, "err ") && !strstr(out_buf, "not applied"), "boot: no refusal said");
+	expect("get state.cfg.apply state.cfg.boot_defaults mgmt.ip mgmt.vlan port.3.mtu vlan.1.members",
+	       "state.cfg.apply idle\nstate.cfg.boot_defaults mgmt.vlan port.#.pvid vlan.#\nmgmt.ip 192.168.2.77\n"
+	       "mgmt.vlan 0\nport.3.mtu 2000\nvlan.1.members 1-9\nok\n");
+	expect("set mgmt.vlan 30", "ok\n");	/* a live apply still refuses */
+	expect("apply", "err mgmt: vlan: no such vlan\n");
+	expect("discard", "ok\n");
+	expect("set port.1.pvid 30", "ok\n");
+	expect("apply", "err port.1: pvid: no such vlan\n");
+	expect("discard", "ok\n");
 	om_init();
 	om_boot_apply();		/* a clean boot: boot_defaults empty again */
 	vlan_checks = 0;
