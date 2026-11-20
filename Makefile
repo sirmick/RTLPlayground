@@ -324,6 +324,8 @@ $(HTML_MIN_LIST): FORCE
 # The web UI's schema (DESIGN 14.3), generated in the source tree from schema/
 # alone: the same for every board, so one copy serves every BUILDDIR. It goes
 # in front of app.js: one file, one gzip stream, no request of its own.
+# So it lists state.health and state.con even for a schedtest image, and
+# never state.sched (the build's rows); the build's words: none (om_gen.py).
 html/schema.js: $(wildcard schema/*.py) schema/registry.txt tools/om_gen.py
 	python3 tools/om_gen.py -s schema --js $@
 

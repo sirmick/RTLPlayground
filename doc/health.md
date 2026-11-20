@@ -13,8 +13,6 @@ are gone.
 | `state.sched.task.<task>.max_us` | the longest of a task's states |
 | `state.health` | hardware polls that gave up and the last one's register; the stack never used since the boot (`stack_headroom`, from the paint at boot) |
 | `state.con` | console RX overruns, RX bytes waiting, TX room |
-| `state.web` | open sessions; the TCP connection (state, timers, ports, peer) |
-| `state.web.session.<n>.idle_s` | seconds since each session's last request |
 | `state.sys.reset.*` | the last reset (doc/sched/watchdog.md) |
 
 `do sched.clear` zeroes the step statistics, the console's overruns and the
@@ -34,3 +32,5 @@ their rows (`--om`) from the same TASK/STEP lines that build the scheduler.
 
 Not shown, on purpose: the running slot, this pass's events and the
 watchdog's count, which are always the reader's own when read from a step.
+Not yet, for room: `state.web` (sessions, the TCP connection;
+schema/state_health.py), `state.sched.step_limit_ms` and `.tick_ms`.
