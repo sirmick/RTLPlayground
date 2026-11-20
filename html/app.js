@@ -3876,7 +3876,8 @@ $("stpcntd").addEventListener("toggle", function() {
     if (this.open) stpLoad()
 });
 /* loop.enabled (the box the candidate's, the line running's), the ports
- * from state.loop; with STP on it only reports */
+ * from state.loop; with STP on (stpCur.on: running's stp.enabled once
+ * P4-4's tab sets it) it only reports */
 function loopLoad() {
     return cli(["get -c loop.enabled", "get loop.enabled", "get state.loop"]).then(function(r) {
         var c = parseLines(r.out[0] || []).loop || {},
@@ -4582,11 +4583,25 @@ function mirrorLoad() {
                 b.classList.toggle("on", i === v)
             });
         }
+        mirrorGrey();
     });
 }
 
+/* the mirror port's row can't be a source: greyed */
+function mirrorGrey() {
+    for (var p = 1; p <= S.n; p++) {
+        var na = String(p) === $("mport").value;
+        $("mm" + p).classList.toggle("na", na);
+        $("mm" + p).querySelectorAll("button").forEach(function(b) {
+            b.disabled = na
+        });
+    }
+}
+$("mport").addEventListener("change", mirrorGrey);
+
 /* lines for mirror.*, MC's values as the undo */
 function mirrorSet(l) {
+    if (!MC.port) return mirrorLoad();	/* never loaded: no undo */
     omSet(l, ["enabled", "port", "rx", "tx"].map(function(f) {
         return "set mirror." + f + " " + MC[f]
     })).then(mirrorLoad);
