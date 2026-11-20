@@ -2759,12 +2759,9 @@ var CONF_CMDS = [
     /^ingress(\s+\d+[tua])+$/, /^ingress\s+[tua]$/,
     /^port\s+\d+\s+(10m|100m|1g|2g5|5g|10g|auto|on|off)(\s+(half|full))?$/,
     /^port\s+\d+\s+name(\s+\S+)?$/,
-    /^eee\s+(on|off)(\s+\d+)?(\s+(100m|1g|2g5))?$/,
     /^isolate\s+\d+(\s+(off|\d+))+$/,
     /^mtu\s+\d+\s+\d+$/,
     /^led\s+(on|off)(\s+ports)?$/,
-    /^bw\s+(in|out)\s+\d+\s+\S+$/,
-    /^storm\s+\d+\s+(bcast|mcast|ucast|umcast)\s+(off|\d+\s+(pps|kbps))$/,
 ];
 
 function isConfCmd(line) {
@@ -3487,7 +3484,9 @@ function stShow(o, obj, cols, ports) {
     ports.forEach(function(n) {
         cols.forEach(function(c) {
             var el = $(obj + "." + n + "." + c);
-            if (el) el.textContent = (o[n] || {})[c] || "-";
+            if (el) el.textContent = c.split(".").reduce(function(x, k) {	/* eee.active */
+                return (x || {})[k]
+            }, o[n]) || "-";
         });
     });
 }
@@ -3495,7 +3494,7 @@ function stShow(o, obj, cols, ports) {
 /* ---- The port tab, on port.N and state.port.N ------------------------- */
 
 var PT_CFG = ["name", "enabled", "speed", "duplex", "mtu", "pvid", "ingress", "ingress_filter", "lldp", "eee", "isolate"],
-    PT_ST = ["link", "speed", "duplex", "media", "ms_role", "macs", "eee_active"],
+    PT_ST = ["link", "speed", "duplex", "media", "ms_role", "macs", "eee.active"],
     ptPorts = [];
 
 /* running and candidate: the widgets (built once the ports are known) */
@@ -4836,167 +4835,145 @@ tabHooks.lldp = {
     enter: lldpLoad
 };
 
-function bwLoad() {
-    return getJSON("/bandwidth.json").then(function(s) {
-        var tb = $("btable").tBodies[0];
-        tb.innerHTML = "";
-        byPort(s).forEach(function(p) {
-            var n = p.port;
-            var iOn = p.iLimited, eOn = p.eLimited;
-            var iM = (parseInt(p.iBW) * 16 / 1000),
-                eM = (parseInt(p.eBW) * 16 / 1000);
-            var tr = tb.insertRow();
-            tr.insertCell().textContent = n;
-            var icb = h("input", { type: "checkbox", id: "bwi" + n });
-            icb.checked = iOn;
-            tr.insertCell().appendChild(icb);
-            var iin = h("input", {
-                class: "in sm",
-                id: "bwiv" + n,
-                type: "number",
-                min: "0.016",
-                max: "10000",
-                step: "any"
-            });
-            if (iOn) iin.value = +iM.toFixed(3);
-            tr.insertCell().appendChild(iin);
-            var msel = h("select", { class: "in", id: "bwm" + n }, [
-                h("option", { value: "fc", text: t("bw_fc") }),
-                h("option", { value: "drop", text: t("bw_drop") }),
-            ]);
-            msel.value = p.iAction;
-            tr.insertCell().appendChild(msel);
-            var ecb = h("input", { type: "checkbox", id: "bwe" + n });
-            ecb.checked = eOn;
-            tr.insertCell().appendChild(ecb);
-            var ein = h("input", {
-                class: "in sm",
-                id: "bwev" + n,
-                type: "number",
-                min: "0.016",
-                max: "10000",
-                step: "any"
-            });
-            if (eOn) ein.value = +eM.toFixed(3);
-            tr.insertCell().appendChild(ein);
-            tr.insertCell().appendChild(h("button", { class: "ctl", text: t("c_apply"),
-                onclick: function() {
-                    bwApply(n)
-                }
-            }));
+/* port.N's bw_* and storm.T (P4-6): BW the candidate's; a row is
+ * marked staged while it differs from running */
+var SC_TYPES = ["bcast", "mcast", "ucast", "umcast"],
+    BW = {};
+
+function bwBuild() {
+    var tb = $("btable").tBodies[0],
+        sb = $("sctable").tBodies[0];
+    if (tb.rows.length) return;
+    for (var n = 1; n <= S.n; n++)(function(n) {
+        var tr = tb.insertRow(),
+            sr = sb.insertRow();
+        [tr, sr].forEach(function(r) {
+            r.addEventListener("change", function() { r.dataset.dirty = "1" });
         });
+        tr.id = "bwr" + n;
+        sr.id = "scr" + n;
+        tr.insertCell().textContent = sr.insertCell().textContent = n;
+        tr.insertCell().appendChild(h("input", { type: "checkbox", id: "bwi" + n }));
+        tr.insertCell().appendChild(h("input", { class: "in sm", id: "bwiv" + n, type: "number", min: "0.016", max: "10000", step: "any" }));
+        tr.insertCell().appendChild(h("select", { class: "in", id: "bwm" + n }, [
+            h("option", { value: "fc", text: t("bw_fc") }),
+            h("option", { value: "drop", text: t("bw_drop") }),
+        ]));
+        tr.insertCell().appendChild(h("input", { type: "checkbox", id: "bwe" + n }));
+        tr.insertCell().appendChild(h("input", { class: "in sm", id: "bwev" + n, type: "number", min: "0.016", max: "10000", step: "any" }));
+        tr.insertCell().appendChild(h("button", { class: "ctl", text: t("c_apply"),
+            onclick: function() {
+                bwApply(n)
+            }
+        }));
+        SC_TYPES.forEach(function(ty) {
+            sr.insertCell().appendChild(h("span", { style: "display:flex;gap:4px" }, [
+                h("input", { class: "in sm", id: "scv" + ty + n, type: "number", min: "0", step: "1" }),
+                h("select", { class: "in", id: "scu" + ty + n }, [
+                    h("option", { value: "pps", text: "pps" }),
+                    h("option", { value: "kbps", text: "kbit/s" }),
+                ]),
+            ]));
+        });
+        sr.insertCell().appendChild(h("button", { class: "ctl", text: t("c_apply"),
+            onclick: function() {
+                scApply(n)
+            }
+        }));
+    })(n);
+}
+
+function bwLoad() {
+    var q = " port.*.bw_in_kbps port.*.bw_in_mode port.*.bw_out_kbps";
+    return cli(["get -c" + q, "get" + q, "get -c port.*.storm", "get port.*.storm"]).then(function(r) {
+        BW = parseLines(r.out[0].concat(r.out[2])).port || {};
+        var u = parseLines(r.out[1].concat(r.out[3])).port || {};
+        for (var n = 1; n <= S.n; n++) {
+            var p = BW[n] || {},
+                st = p.storm || {},
+                d = JSON.stringify(p) !== JSON.stringify(u[n]);
+            $("bwr" + n).classList.toggle("stg", d);
+            $("scr" + n).classList.toggle("stg", d);
+            if (!$("bwr" + n).dataset.dirty) {
+                $("bwi" + n).checked = +p.bw_in_kbps > 0;
+                $("bwiv" + n).value = +p.bw_in_kbps ? p.bw_in_kbps / 1000 : "";
+                $("bwm" + n).value = p.bw_in_mode;
+                $("bwe" + n).checked = +p.bw_out_kbps > 0;
+                $("bwev" + n).value = +p.bw_out_kbps ? p.bw_out_kbps / 1000 : "";
+            }
+            if (!$("scr" + n).dataset.dirty) SC_TYPES.forEach(function(ty) {
+                var x = st[ty] || {};
+                $("scv" + ty + n).value = +x.rate ? x.rate : "";
+                $("scu" + ty + n).value = x.unit;
+            });
+        }
     });
 }
-/* The bw command takes kbit/s and converts to 16-kbit register steps itself. */
-function bwHex(mbit) {
-    var kbit = Math.round(mbit * 1000);
-    if (kbit < 16 || kbit > 10000000) return null;
-    var x = kbit.toString(16);
-    return x.length % 2 ? "0" + x : x;
+
+/* Mbit/s as the kbit/s port.N.bw_* takes: a multiple of 16, 0 off; null
+ * out of range */
+function bwKbps(on, v) {
+    var k = Math.round(parseFloat(v) * 62.5) * 16;
+    return !on ? 0 : k >= 16 && k <= 10000000 ? k : null;
+}
+
+/* the fields of port n that differ from BW, as set lines (the old
+ * values the undo), then omSet; r the row, unmarked */
+function bwStage(n, f, r) {
+    var p = BW[n] || {},
+        l = [],
+        u = [];
+    for (var k in f) {
+        var o = k.split(".").reduce(function(x, y) {
+            return (x || {})[y]
+        }, p);
+        if (String(f[k]) === o) continue;
+        l.push("set port." + n + "." + k + " " + f[k]);
+        u.push("set port." + n + "." + k + " " + o);
+    }
+    if (l.length) omSet(l, u).then(bwLoad);
+    delete r.dataset.dirty;	/* after: stgBusy's blur is a change */
 }
 
 function bwApply(n) {
-    var cmds = [];
-    if ($("bwi" + n).checked) {
-        var ih = bwHex(parseFloat($("bwiv" + n).value));
-        if (!ih) {
-            toast(t("bw_in_err"), "err");
-            return;
-        }
-        cmds.push("bw in " + n + " " + ih);
-        cmds.push("bw in " + n + " " + $("bwm" + n).value);
-    } else cmds.push("bw in " + n + " off");
-    if ($("bwe" + n).checked) {
-        var eh = bwHex(parseFloat($("bwev" + n).value));
-        if (!eh) {
-            toast(t("bw_out_err"), "err");
-            return;
-        }
-        cmds.push("bw out " + n + " " + eh);
-    } else cmds.push("bw out " + n + " off");
-    postCmds(cmds).then(bwLoad).catch(function(){});
-}
-var SC_TYPES = ["bcast", "mcast", "ucast", "umcast"],
-    scSig = "";
-
-function scLoad() {
-    return getJSON("/storm.json").then(function(s) {
-        var tb = $("sctable").tBodies[0];
-        byPort(s);
-        var sig = s.map(function(p) {
-            return p.port
-        }).join();
-        if (sig !== scSig) {
-            scSig = sig;
-            tb.innerHTML = "";
-            s.forEach(function(p) {
-                var n = p.port,
-                    tr = tb.insertRow();
-                tr.id = "scr" + n;
-                tr.addEventListener("input", function() { tr.dataset.dirty = "1" });
-                tr.addEventListener("change", function() { tr.dataset.dirty = "1" });
-                tr.insertCell().textContent = n;
-                SC_TYPES.forEach(function(ty) {
-                    tr.insertCell().appendChild(h("span", { style: "display:flex;gap:4px" }, [
-                        h("input", { class: "in sm", id: "scv" + ty + n, type: "number", min: "1", step: "1" }),
-                        h("select", { class: "in", id: "scu" + ty + n }, [
-                            h("option", { value: "pps", text: "pps" }),
-                            h("option", { value: "kbps", text: "kbit/s" }),
-                        ]),
-                    ]));
-                });
-                tr.insertCell().appendChild(h("button", {
-                    class: "ctl",
-                    text: t("c_apply"),
-                    onclick: function() {
-                        scApply(n)
-                    }
-                }));
-            });
-        }
-        s.forEach(function(p) {
-            var n = p.port;
-            if ($("scr" + n).dataset.dirty) return;
-            SC_TYPES.forEach(function(v, k) {
-                var on = p[v]["enabled"],
-                    pps = p[v]["unit"] == "pps",
-                    raw = parseInt(p[v]["rate"]);
-                var inp = $("scv" + v + n),
-                    sel = $("scu" + v + n);
-                inp.value = on ? raw : "";
-                sel.value = on && !pps ? "kbps" : "pps";
-                inp.dataset.cur = on ? inp.value + " " + sel.value : "off";
-            });
-        });
-    });
+    var i = bwKbps($("bwi" + n).checked, $("bwiv" + n).value),
+        e = bwKbps($("bwe" + n).checked, $("bwev" + n).value);
+    if (i === null || e === null) return toast(t(i === null ? "bw_in_err" : "bw_out_err"), "err");
+    bwStage(n, {
+        bw_in_kbps: i,
+        bw_in_mode: $("bwm" + n).value,
+        bw_out_kbps: e
+    }, $("bwr" + n));
 }
 
 function scApply(n) {
-    var cmds = [];
+    var f = {};
     for (var k = 0; k < SC_TYPES.length; k++) {
         var ty = SC_TYPES[k],
-            inp = $("scv" + ty + n),
             u = $("scu" + ty + n).value,
-            v = inp.value.trim(),
-            want = "off";
-        if (v !== "" && v !== "0") {
-            var x = Number(v);
-            if (!Number.isInteger(x) || x < 1 || (u === "pps" && x > 1048575) || (u === "kbps" && x > 10000000)) {
-                toast(t("sc_err"), "err");
-                return;
-            }
-            want = x + " " + u;
-        }
-        if (want !== inp.dataset.cur) cmds.push("storm " + n + " " + ty + " " + want);
+            x = Number($("scv" + ty + n).value.trim());
+        if (!Number.isInteger(x) || x < 0 || x > (u === "pps" ? 1048575 : 10000000)) return toast(t("sc_err"), "err");
+        f["storm." + ty + ".rate"] = x;
+        f["storm." + ty + ".unit"] = u;
     }
-    delete $("scr" + n).dataset.dirty;
-    if (!cmds.length) return;
-    postCmds(cmds).then(scLoad).catch(function() {});
+    bwStage(n, f, $("scr" + n));
+}
+
+/* set lines into the candidate, then the bar's Apply; a refused set
+ * stages undo, this batch's old values */
+function omSet(l, undo) {
+    if (stgBusy()) return Promise.resolve();
+    return cli(l).then(function(r) {
+        if (!r.errs.length) return stgApply();
+        toast(r.errs[0], "err");
+        return cli(undo);
+    }).catch(function() {});
 }
 tabHooks.bw = {
     enter: function() {
         needPorts(function() {
-            bwLoad().then(scLoad).catch(function() {})
+            bwBuild();
+            bwLoad().catch(function() {})
         })
     }
 };
