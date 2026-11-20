@@ -71,7 +71,7 @@ def main(argv):
             if n % 32 == 31:
                 b.advance(b.now + 20000)
         r.wait(2000)
-    cmds = list(CLI_TOUR) + [f"port {F[1]}", f"port {F[2]}", "get state.stp", "get state.sched", "history"]
+    cmds = list(CLI_TOUR) + [f"port {F[1]}", f"port {F[2]}", "get state.stp", "get state.sched", "get state.l2"]
     if a.only:
         cmds = a.only
     worst = {}

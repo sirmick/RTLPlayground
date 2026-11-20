@@ -330,11 +330,16 @@ uint8_t om_get_sfp(uint8_t idx)
 	return OM_OK;
 }
 /* state.l2 (om_port.c): a table of three, found from om_key as the chip's search */
-static const uint16_t l2_ix[] = { 0x010, 0x020, 0x8f0 };
-static int l2_n = 3, l2_calls;
+static uint16_t l2_ix[4] = { 0x010, 0x020, 0x8f0 };
+static int l2_n = 3, l2_calls, l2_change_at;
 uint8_t om_get_l2(uint8_t idx)
 {
 	l2_calls++;
+	if (l2_calls == l2_change_at) {	/* the chip learns 0x005 (below the cursor), ages out 0x8f0 (ahead) */
+		memmove(l2_ix + 1, l2_ix, 2 * sizeof(l2_ix[0]));
+		l2_ix[0] = 0x005;
+		l2_n = 3;
+	}
 	for (int i = 0; i < l2_n; i++) {
 		if (l2_ix[i] >= om_key) {
 			om_key = l2_ix[i];
@@ -706,6 +711,15 @@ static void cases(void)
 	l2_n = 0;
 	expect("get state.l2", "ok\n");
 	l2_n = 3;
+	/* the table changes between two steps of a walk: the new entry below
+	 * the cursor isn't listed, the lost one ahead isn't either, the walk
+	 * ends and lists no index twice */
+	l2_calls = 0;
+	l2_change_at = 2;
+	expect("get state.l2.mac", "state.l2.16.mac 02:00:00:00:00:00\nstate.l2.32.mac 02:00:00:00:00:02\nok\n");
+	CHECK(l2_calls == 3, "and searched once an entry, then the wrap");
+	l2_change_at = 0;
+	memcpy(l2_ix, (uint16_t[]){ 0x010, 0x020, 0x8f0, 0 }, sizeof(l2_ix));
 
 	printf("two levels from 0: state.port.N.mib.K\n");
 	mib_calls = 0;

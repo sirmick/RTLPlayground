@@ -10,7 +10,7 @@ console, from a /cmd and from a config loaded at boot; /vlanlist.json and
 the VLAN table after each; `eee on|off`, all ports and one, and `eee
 status`, from the console and from a /cmd. Every reply, the console
 between them, and the tables must be the same on both. On the new image
-the same steps run between `health clear` and `health tasks` (not
+the same steps run between `do sched.clear` and get state.sched (not
 compared): the longest RX_STEP of each /vlanlist.json must be under
 --limit-us (default 5000), and every step of an eee command too. Two
 replies are full (a 40-VLAN table with 20-character names; and after a
@@ -34,8 +34,8 @@ def us(mx):
 
 
 def scenario(r, measure):
-    """The steps; measure(what, fn) runs fn, between health clear and
-    health tasks on the new image."""
+    """The steps; measure(what, fn) runs fn, between do sched.clear and
+    get state.sched on the new image."""
     F, P = r.F, r.P
     r.boot()
     for i in (1, 2):
@@ -83,6 +83,7 @@ def main(argv):
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
     sys.path.insert(0, os.path.join(a.ovs, "tests"))
     from oldnew import Run
+    from cli_steps import health_text
 
     runs, bad = {}, []
     for which, img in (("old", a.old), ("new", a.image)):
@@ -91,12 +92,11 @@ def main(argv):
 
         def measure(what, fn, check=True, r=r, which=which):
             if which == "new":
-                r.cli("health clear")
+                r.cli("do sched.clear")
             fn()
             if which != "new":
                 return
-            r.cli("health tasks")
-            text = r.results[max(k for k in r.results if k.endswith("cli health tasks"))]
+            text = health_text(lambda l: (r.cli(l), r.results[max(k for k in r.results if k.endswith("cli " + l))])[1])
             st = {s: us(mx) for s, runs_, mx in FINE.findall(text)}
             if what.startswith("vlanlist"):
                 worst = [("RX_STEP", st.get("RX_STEP", 0))]
@@ -118,7 +118,7 @@ def main(argv):
         # the harness's own health lines aside, in order
         for k in sorted(r.results):
             name = k.split(" ", 1)[1]
-            if "health" in name:
+            if "health" in name or "sched" in name:
                 continue
             seq.append((name, VERSION.sub("", r.results[k])))
         runs[which] = seq
