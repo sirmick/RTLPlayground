@@ -117,6 +117,9 @@ STEP(con, edit)
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
+/* a web reply's lines a step: until the step has run 3 ms (a line's getter
+ * may take ~3 ms more: under 5 ms) */
+#define CLI_WEB_FINE	(3000000UL / SCHED_FINE_NS)
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
 #define CLI_WEB_ROOM	640
@@ -177,12 +180,21 @@ static uint8_t cli_web_live(void)
 	return webcmd_gen == cli_gen;
 }
 
+/* the connection polled at once (net, fl_poll), not at the next tick's:
+ * httpd sends what cli has written */
+static void web_poll(void)
+{
+	fl_poll = 1;
+	task_wake(T_NET);
+}
+
 /* 1: no room in outbuf for the step, or httpd is sending it: wait */
 static uint8_t cli_web_full(void)
 {
 	if (!webcmd_wait && WEBCMD_ROOM(CLI_WEB_ROOM))
 		return 0;
 	webcmd_wait = 1;
+	web_poll();
 	task_sleep(CLI_WEB_WAIT);
 	return 1;
 }
@@ -226,12 +238,16 @@ STEP(cli, more)
 		if (cli_web_full())
 			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
-	} else if (con_tx_room() < CON_TX_LINE) {
-		return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
-	}
-	cli_job_more();
-	if (cli_src == CLI_WEB && !cli_dropped)
+		do				/* lines while outbuf has room, for CLI_WEB_FINE */
+			cli_job_more();
+		while (cli_job && !cli_job_sleep && WEBCMD_ROOM(CLI_WEB_ROOM)
+		       && sched_step_fine() < CLI_WEB_FINE);
 		WEBCMD_CAPTURE_OFF();
+	} else {				/* the console's: a line a step, the UART paces it */
+		if (con_tx_room() < CON_TX_LINE)
+			return STEP_WAIT(S_CLI_MORE, HW_CON_TX, SCHED_FOREVER);
+		cli_job_more();
+	}
 	if (cli_job_sleep) {			/* the eee job's PHY reset (E4) */
 		cli_job_sleep = 0;
 		return STEP_SLEEP(S_CLI_MORE, CLI_JOB_SLEEP_MS);
@@ -249,7 +265,8 @@ STEP(cli, prompt)
 		return STEP_SLEEP(S_CLI_PROMPT, 100);
 	if (cli_src == CLI_WEB) {
 		if (!cli_dropped && cli_web_live()) {
-			httpd_webcmd_end();	/* httpd sends the reply on a poll */
+			httpd_webcmd_end();	/* httpd sends the reply on a poll: now */
+			web_poll();
 			cli_dropped = 1;	/* done with it: a reset's wait comes back here */
 			cli_reset_by = sched_now + CLI_RESET_TICKS;
 		}

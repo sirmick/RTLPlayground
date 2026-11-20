@@ -132,6 +132,7 @@ void sched_clear_stats(void) __banked;
 /* measurement around each step and pass (sched_bank.c) */
 void sched_fine_read(void) __banked;	/* now, into sched_f_tick/sched_f_cnt */
 void sched_m_pass_start(void) __banked;
+uint16_t sched_step_fine(void) __banked;	/* the step so far, fine units (a step that budgets its time) */
 void sched_m_step_start(void) __banked;
 void sched_m_step_end(void) __banked;
 void sched_m_pass_end(void) __banked;
