@@ -226,12 +226,15 @@ class Neg(Suite):
         machine = os.path.basename(self.build).split("-compact")[0]
         target = os.path.join(os.path.dirname(self.build), f"{machine}{'-compact' if mk else ''}-schedtest-{variant}",
                               target)
-        # --twice runs both suites at once, and both would make this target
-        # in the same build directory: its html_min rule (rm -rf, then
-        # write) and html_min.list's .tmp race (a missing favicon.ico or
-        # .tmp, 11 of 40 makes from fresh). One make at a time.
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(os.path.join(os.path.dirname(os.path.dirname(target)), ".sim_neg.lock"), "w") as lk:
+        # --twice runs both suites at once, and their makes would race: in
+        # one build directory on html_min (rm -rf, then write) and
+        # html_min.list's .tmp (a missing favicon.ico or .tmp, 11 of 40
+        # makes from fresh), and in the source tree, whatever the variant,
+        # on html_data.c/.h, .layout and the version header. These are the
+        # suite's only makes (sim_tests.py runs none): one at a time, under
+        # one lock for the whole output directory.
+        os.makedirs(os.path.dirname(self.build), exist_ok=True)
+        with open(os.path.join(os.path.dirname(self.build), ".sim_neg.lock"), "w") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
             r = subprocess.run(["make", "-s", "SCHEDTEST=1", f"ST_NEG={variant}", f"MACHINE={machine}"]
                                + (["LAYOUT=compact"] if mk else []) + [target], capture_output=True, text=True)
