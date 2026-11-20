@@ -43,6 +43,7 @@ var LANG = {
         stg_save: "Save",
         stg_saved: "Saved",
         stg_applied: "Applied",
+        stg_busy: "Wait for the apply window to end",
         stg_rolled: "Not confirmed: the switch rolled the change back",
         stg_lost: "No answer from the switch",
         stg_unapplied: "Not applied: the change is still staged",
@@ -258,6 +259,7 @@ var LANG = {
         lag_hash: "Hash:",
         lag_hash_none: "hash needs a field",
         lag_pvid_moved: "LAG ports {p} take one PVID: {v}",
+        lag_other: "Port {p} is in another LAG: take it out there first",
         lacp_heading: "LACP (802.3ad)",
         lag_mode: "Mode",
         lag_static: "Static",
@@ -2597,6 +2599,12 @@ var STG_WINDOW = 30,
 /* Apply, then follow the switch's state.cfg until it has
  * an outcome: confirm while it is open (the switch's countdown is the
  * deadline, not this browser's clock), wait while it walks */
+/* in apply's window: say so (a second apply would end it early) */
+function stgBusy() {
+    if (stgHold) toast(t("stg_busy"), "err");
+    return stgHold;
+}
+
 function stgApply(win, go, tab) {
     $("stgApply").disabled = true;
     stgHold = 2;		/* apply's reply may take long: 10 s */
@@ -4174,6 +4182,7 @@ function vlanUndo(l) {
  * this batch out again (not anyone else's staging); a refused apply stays
  * staged, its rows marked */
 function vlanStage(l) {
+    if (stgBusy()) return Promise.resolve();
     return cli(l).then(function(r) {
         if (r.errs.length) {
             toast(r.errs[0], "err");
@@ -4260,7 +4269,7 @@ function vlanApply() {
         m = {},
         tg = {},
         l = [];
-    if (!V) return;
+    if (!V || stgBusy()) return;
     for (var p = 1; p <= S.n; p++) {
         var sv = segVal(p);
         if (sv) m[p] = 1;
@@ -4284,10 +4293,23 @@ function vlanApply() {
     }
     if (VL[V].name && VL[V].fresh) l.push("set vlan." + V + ".name " + VL[V].name);
     l.push("set vlan." + V + ".members " + pmText(m, S.n), "set vlan." + V + ".tagged " + pmText(tg, S.n));
-    for (p = 1; p <= S.n; p++) {
-        if (m[p] && !tg[p] && VP[p] != V) l.push("set port." + p + ".pvid " + V);
-        else if (!(m[p] && !tg[p]) && VP[p] == V) l.push("set port." + p + ".pvid 0");
+    var np = [],
+        mv = {};
+    for (p = 1; p <= S.n; p++) {	/* a LAG's members take its lowest member's, as lagApply */
+        np[p] = m[p] && !tg[p] ? V : VP[p] == V ? 0 : VP[p];
+        for (var q in LGM[p] || {}) {
+            if (+q < p && np[p] != np[q]) {
+                np[p] = np[q];
+                (mv[q] = mv[q] || {})[p] = 1;
+            }
+            break;
+        }
+        if (np[p] != VP[p]) l.push("set port." + p + ".pvid " + np[p]);
     }
+    for (q in mv) toast(t("lag_pvid_moved", {
+        p: pmText(mv[q], S.n),
+        v: np[q]
+    }), "ok");
     if ($("vmgmtpromote").checked && VMG != V) l.push("set mgmt.vlan " + V);
     vlanStage(l);
 }
@@ -4573,7 +4595,8 @@ tabHooks.mirror = {
     }
 };
 
-var HASHF = ["spa", "smac", "dmac", "sip", "dip", "sport", "dport"];
+var HASHF = ["spa", "smac", "dmac", "sip", "dip", "sport", "dport"],
+    NLAG = +SCHEMA.lag.i.slice(1);	/* "N4" */
 
 /* the candidate's LAGs that aren't off (apply's check): LGM[p] the ports
  * of p's LAG; a PVID or a VLAN membership moves them as one */
@@ -4591,7 +4614,7 @@ function lagMembers(o) {
 function buildLag() {
     var w = $("lagwrap");
     if (w.children.length) return;
-    for (var g = 1; g <= 4; g++)(function(g) {
+    for (var g = 1; g <= NLAG; g++)(function(g) {
         var card = h("div", { class: "card" });
         card.appendChild(h("h2", { text: "LAG " + g }));
         var mr = h("div", { style: "display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px", class: "small" });
@@ -4642,7 +4665,7 @@ function lagLoad() {
             st = parseLines((r.out[2] || []).concat(r.out[3] || [])).state || {},
             sl = st.lag || {},
             lp = (st.lacp || {}).port || {};
-        for (var g = 1; g <= 4; g++) {
+        for (var g = 1; g <= NLAG; g++) {
             var c = LC[g] || {},
                 u = run[g] || {},
                 x = sl[g] || {},
@@ -4679,9 +4702,16 @@ function lagApply(g) {
         m = {},
         hs = HASHF.filter(function(f) {
             return $("lg" + g + "h" + f).checked
-        });
+        }),
+        own = pmParse((LC[g] || {}).members, S.n);
+    if (stgBusy()) return;
     for (var p = 1; p <= S.n; p++)
-        if ($("lg" + g + "p" + p).checked) m[p] = 1;
+        if ($("lg" + g + "p" + p).checked) {
+            if (LGM[p] && !own[p]) return toast(t("lag_other", {	/* apply's "one lag" */
+                p: p
+            }), "err");
+            m[p] = 1;
+        }
     if (!Object.keys(m).length) return confirmModal(t("lag_clear_q", {
         n: g
     }), t("lag_clear_d"), function() {
@@ -4714,6 +4744,7 @@ function lagApply(g) {
  * g and the PVIDs old back (this batch only) */
 function lagStage(g, l, old) {
     var c = LC[g] || {};
+    if (stgBusy()) return;
     delete $("lgm" + g).closest(".card").dataset.dirty;
     return cli(l).then(function(r) {
         if (!r.errs.length) return stgApply();
