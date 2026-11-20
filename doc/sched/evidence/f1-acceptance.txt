@@ -241,3 +241,75 @@ Open
   board (per-build timing). They can come out of an F1 expect file.
 - F1b (sched7): when it reports, I'll rerun the quick part (old vs new with
   --checks --known, both boards) on its HEAD.
+
+=============================================================================
+Rerun on b53c3c1 (F1b)                                  2026-11-20, sim2
+=============================================================================
+
+What was tested:
+- NEW: feat/sched b53c3c1, with F1b:
+  - the upload window, 58c1601;
+  - the stuck-table boot bound;
+  - cli_web_live without its BSEG bit;
+  - decision 25: the step limit is 50 ms, the target 5 ms;
+  - items 2 and 4 backed out in d31f91c.
+- Built clean in /tmp/sim2-b53c3c1, both boards.
+- Harness: ovs-rtlpg feat/sched-sim 160fa9c, with the long-step check at
+  50 ms and FL_ERASE included. rtlsim is 999584e.
+- Outputs in /tmp/f1b.
+- Since 72cee59, the firmware changed in:
+    httpd.c, rtl837x_port.c, tasks.c, flash_job.c (a comment), sched.h
+    (SCHED_OVERRUN_FINE 20 -> 50 ms), rtl837x_common.h (a comment), schedtest.
+  sched.c is unchanged, so the soak was not rerun.
+
+  check                                 8x                     SWGT024
+  1 old vs new, 17 (e4-oldnew.expect,   17/17, two runs        17/17, two runs
+    --checks --known)                   identical              identical
+  2 new-only checks on NEW              all PASS               all PASS
+  3 500-char paste at a prompt          intact                 intact
+  4 gate                                PASS                   PASS
+  5 coverage vs old                     the same as F1         the same as F1
+  (b) RX ring across the 40 ms erase    218 B lost             207 B lost
+
+1. Old vs new:
+- No difference outside the expect file.
+- The expect lines that matched nothing are the same per-build timing lines
+  as at F1: 5, 6, 10 and 13 on the 8x; 5, 10, 11, 12 and 13 on the SWGT024.
+  They're explained in section 1 above.
+
+2. The new-only checks:
+- lacp gap: 1.020 s throughout, including during l2_big's `l2` and
+  /l2.json.
+- stp hello: 2.000 s, including through the upload.
+- long steps, the bound now 50 ms with FL_ERASE included: none over it.
+  - Longest step: RX_STEP 12.2 ms on both boards.
+  - FL_ERASE: 40.0 ms, one run per scenario (loader_confirm's erase).
+- known-failures (ovs-rtlpg 8183cf6): the same two fork-main lines, owners
+  E1 and E3. Nothing in NEW is KNOWN; no long-step line is needed.
+
+3. The paste:
+- At a prompt: the echo is the first 127 characters, the line runs, con rx
+  overruns 0, and the console answers after it. Both boards.
+
+4. The gate: PASS on both boards.
+- Internal RAM as the baseline: data 90, overlay 8, bits 3 B. DSEG none new.
+- Stack 146 B (at least 120); common area 163 B left.
+- Banks free: 8x 526 / 148 / 569 B, SWGT024 555 / 511 / 133 B.
+
+5. Coverage: the same lists as F1 on both boards.
+- 8x: old 368 of 528 functions ran, new 451 of 627. SWGT024: 362 / 445.
+- The same 11 replaced functions, and the same 94 new ones.
+
+(b) The 256 B console RX ring against a long step
+    (ovs-rtlpg tests/fw/con_ring_paste.py, 8183cf6):
+- Method: a paste at 115200 with no break (one byte every 87 us), then
+  health tasks' con rx overruns.
+- 4.5 s from the prompt, where the longest step is under 1 ms (CLI_RUN
+  0.69 ms): 51,724 bytes, 0 lost, on both boards.
+- 14-20 s after power-on, across loader_confirm's one FL_ERASE (39.97 ms):
+  68,965 bytes, 218 lost on the 8x and 207 on the SWGT024.
+- So the ring holds ~22 ms at 115200 (256 x 87 us). A step longer than that
+  loses what doesn't fit, about 11.5 B per ms beyond 22 ms.
+- A step at the full 50 ms limit would lose ~320 B of a fast paste.
+- Today the only step past 22 ms is the one-time erase about 17 s after
+  power-on. The next longest is 12.2 ms (RX_STEP), inside the ring's reach.

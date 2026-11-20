@@ -9,8 +9,10 @@ rtlsim holds a status bit busy (ovs-rtlpg feat/sched-sim 0514263: `reg
 hold`, `phy hold`, `flash wp`). For each poll: the hold, a command or page
 that polls it, `health tasks`. The command must finish (its prompt or
 reply), `hw timeouts` must count it with the poll's register, no step may
-be over --limit-us (default 20000, the step limit: a step waits out one
-timeout, 5-10 ms, at most), and after the release the same thing must work
+be over --limit-us (default 20000: stricter than the scheduler's 50 ms step
+limit, decision 25, on purpose: a step waits out one timeout, 5-10 ms, at
+most, so a step near 20 ms here means a poll waited more than once), and
+after the release the same thing must work
 without a timeout:
 
   table    reg 5cac (TBL_CTRL execute): `vlan 30`, /l2.json (a page of polls)
