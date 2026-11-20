@@ -117,7 +117,12 @@ extern __xdata uint8_t om_cap, om_txt[OM_TXT];
 void om_capture(char c) __banked;	/* write_char's, while om_cap */
 
 void om_init(void) __banked;		/* defaults into every copy */
-void om_cmd(void) __banked;		/* get set del diff apply confirm discard do */
+uint8_t om_cmd(void) __banked;		/* get set del diff apply confirm discard do save load: 0 if none */
+/* Tab on con_line: OM_TAB_NEW (+ 1: list), or OM_TAB_MORE: its next step.
+ * 0 completed, 1 nothing (BEL: the next Tab lists), OM_TAB_MORE: call again */
+#define OM_TAB_MORE	2
+#define OM_TAB_NEW	3
+uint8_t om_tab(uint8_t arg) __banked;
 uint8_t om_line(void) __banked;		/* the cli job's next line; 0 when done */
 void om_boot_apply(void) __banked;	/* after the boot config: apply it */
 uint8_t om_boot_load(uint8_t dflt) __banked;	/* the saved (or default) sector into the candidate: E_CFGFORMAT_* */

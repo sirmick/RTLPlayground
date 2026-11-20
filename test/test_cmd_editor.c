@@ -22,6 +22,9 @@ extern __xdata uint8_t cmd_line_len;
 extern __xdata uint8_t con_line[];       /* the editor's own line (D3) */
 extern __xdata uint8_t con_line_ready;   /* a complete line waits for cli */
 
+extern __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
+extern __xdata uint8_t cmd_history_ptr;
+
 static void test_basic_line(void) {
     printf("[test] basic line entry + Enter\n");
     env_reset();
@@ -81,6 +84,44 @@ static void test_pending_line_kept(void) {
           "then 'second' is read from the ring");
 }
 
+/* Up and Down over the recall ring (cmd_parser.c's cmd_save() layout:
+ * entries end in '\n', the next goes at cmd_history_ptr) */
+static void test_recall(void) {
+    static const char h[] = "vlan 199\nget port\n";
+    printf("[test] recall: up, up, down, down back to the typed line\n");
+    env_reset();
+    memcpy(cmd_history, h, sizeof(h) - 1);
+    cmd_history_ptr = sizeof(h) - 1;
+    feed("ab");
+    feed("\033[A");
+    CHECK(cmd_line_len == 8 && !strncmp((char *)con_line, "get port", 8), "up: the newest entry");
+    feed("\033[A");
+    CHECK(cmd_line_len == 8 && !strncmp((char *)con_line, "vlan 199", 8), "up: the one before");
+    feed("\033[A");
+    CHECK(cmd_line_len == 8 && !strncmp((char *)con_line, "vlan 199", 8), "up at the oldest: stays");
+    feed("\033[B");
+    CHECK(cmd_line_len == 8 && !strncmp((char *)con_line, "get port", 8), "down: the newer one");
+    feed("\033[B");
+    CHECK(cmd_line_len == 2 && !strncmp((char *)con_line, "ab", 2), "down past the newest: the typed line");
+    feed("\033[2~x\033[3~\n");
+    CHECK(t_strcmp((char *)con_line, "abx") == 0, "an unknown sequence is dropped, not typed");
+
+    /* the ring wrapped: an entry across its end */
+    env_reset();
+    memcpy(cmd_history + 250, "get sy", 6);
+    memcpy(cmd_history, "s\n", 2);
+    cmd_history_ptr = 2;
+    feed("\033[A\n");
+    CHECK(t_strcmp((char *)con_line, "get sys") == 0, "up: an entry across the ring's end");
+}
+
+static void test_edit_keys(void) {
+    printf("[test] left, insert, right, backspace, delete\n");
+    env_reset();
+    feed("ab\033[Dc\033[C\177d\033[D\033[D\033[3~\n");
+    CHECK(t_strcmp((char *)con_line, "ad") == 0, "acb, then b and c deleted: ad");
+}
+
 int main(void) {
     printf("== cmd_editor host tests ==\n");
     test_basic_line();
@@ -88,6 +129,8 @@ int main(void) {
     test_full_line_no_hang();
     test_full_line_no_overflow();
     test_pending_line_kept();
+    test_recall();
+    test_edit_keys();
     printf("\n%d checks, %d failed\n", tests_run, tests_failed);
     return tests_failed ? 1 : 0;
 }

@@ -87,7 +87,7 @@ __xdata uint8_t cmd_words_len;
 __xdata uint8_t cmd_words_b[N_WORDS];
 
 __xdata uint8_t cmd_history[CMD_HISTORY_SIZE];
-__xdata uint16_t cmd_history_ptr;
+__xdata uint8_t cmd_history_ptr;	/* 8 bits: CMD_HISTORY_SIZE is 256 */
 __xdata uint8_t cli_job;		/* a dump in progress (cli_job_more) */
 __xdata uint8_t cli_job_sleep;
 static void cmd_save(void);
@@ -1468,11 +1468,7 @@ void cmd_parser(void) __banked
 	print_byte(cmd_words_b[6]); write_char('\n');
 #endif
 	if (cmd_words_len >= 1) {
-		if (cmd_compare(0, "get") || cmd_compare(0, "set") || cmd_compare(0, "del")
-		    || cmd_compare(0, "diff") || cmd_compare(0, "apply") || cmd_compare(0, "discard")
-		    || cmd_compare(0, "do") || cmd_compare(0, "confirm")
-		    || cmd_compare(0, "save") || cmd_compare(0, "load")) {
-			om_cmd();
+		if (om_cmd()) {
 		} else if (cmd_compare(0, "sfp")) {
 			parse_sfp();
 		} else if (cmd_compare(0, "flash")) {
@@ -1589,9 +1585,10 @@ static void cmd_save(void)
 
 void clear_command_history(void) __banked
 {
-	for (cmd_history_ptr = 0; cmd_history_ptr < CMD_HISTORY_SIZE; cmd_history_ptr++)
-		cmd_history[cmd_history_ptr] = 0;
 	cmd_history_ptr = 0;
+	do
+		cmd_history[cmd_history_ptr] = 0;
+	while (++cmd_history_ptr);		/* 8 bits: all 256 */
 	return;
 }
 

@@ -16,6 +16,7 @@
 #include "machine.h"
 #include "cmd_parser.h"
 #include "om_gen.h"
+#include "cmd_editor.h"
 
 /* ---- the environment om.c links against ---------------------------------- */
 
@@ -110,6 +111,8 @@ static void tokenize(void)
 		white = cmd_buffer[i] == ' ';
 	}
 }
+
+void cmd_tokenize(void) { tokenize(); }
 
 void cmd_finish(void)
 {
@@ -1924,6 +1927,72 @@ static void services(void)
 	om_init();
 }
 
+/* ---- Tab completion (om_tab()), through the editor ------------------------ */
+
+/* keys typed into the editor, Tabs among them: the line they leave, and
+ * (out) what the output ends with (support.c's prompt is "> ") */
+static void tab(const char *keys, const char *line, const char *out)
+{
+	char msg[200];
+	size_t n, m;
+	env_reset();
+	feed(keys);
+	while (con_tab == OM_TAB_MORE)		/* the con task's next passes */
+		cmd_edit();
+	con_line[cmd_line_len] = 0;
+	snprintf(msg, sizeof msg, "tab \"%s\": \"%s\"", keys, line);
+	CHECK(!t_strcmp((char *)con_line, line), msg);
+	if (t_strcmp((char *)con_line, line))
+		printf("        got:  \"%s\"\n", con_line);
+	if (!out)
+		return;
+	n = t_strlen(out_buf);
+	m = t_strlen(out);
+	snprintf(msg, sizeof msg, "tab \"%s\": prints \"%s\"", keys, out);
+	CHECK(n >= m && !t_strcmp(out_buf + n - m, out), msg);
+	if (n < m || t_strcmp(out_buf + n - m, out))
+		printf("        got:  \"%s\"\n", out_buf);
+}
+
+static void completion(void)
+{
+	printf("tab completion\n");
+	om_init();
+	tab("g\t", "get ", "get ");
+	tab("s\t", "s", "s\a");
+	tab("s\t\t", "s", "\a\n set  save > s");
+	tab("get tsy\t", "get tsys.", "get tsys.");
+	tab("get tsys.h\t", "get tsys.h", "\a");		/* hash, hostname */
+	tab("get tsys.ho\t", "get tsys.hostname ", "get tsys.hostname ");
+	tab("get ts\t", "get ts", "\a");
+	tab("get ts\t\t", "get ts", "\n tsys. tstp. tstp.> get ts");	/* tstp, tstp.port: no dedup */
+	tab("get state.tsy\t", "get state.tsys.", NULL);
+	tab("get tlag.\t\t", "get tlag.", "\n 1. 2. 3. 4.> get tlag.");
+	tab("get tlag.3.\t", "get tlag.3.m", NULL);	/* the common part */
+	tab("get tlag.3.\t\t\t", "get tlag.3.m", "\n mode  members > get tlag.3.m");
+	tab("get tstp.port.\t\t", "get tstp.port.", "\n 1. 2. 3. 4. 5. 6. 7. 8. 9.> get tstp.port.");
+	tab("get port.2.tstorm.u\t\t", "get port.2.tstorm.u", "\n ucast. umcast.> get port.2.tstorm.u");
+	tab("get port.2.tstorm.b\t", "get port.2.tstorm.bcast.", NULL);
+	tab("get port.2.tstorm.bcast.\t\t", "get port.2.tstorm.bcast.", "\n rate  unit > get port.2.tstorm.bcast.");
+	tab("set tsys.led p\t", "set tsys.led p", "\a");	/* a value: not completed (P3D's cut) */
+	tab("set tsys.led \t\t", "set tsys.led ", "\a\n> set tsys.led ");
+	tab("load d\t", "load default ", NULL);
+	tab("do tsys.\t", "do tsys.rnd ", NULL);
+	tab("get tsys.r\t", "get tsys.r", "\a");		/* an action: only after do */
+	tab("apply \t", "apply ", "\a");
+	tab("get tsys.hostname\033[D\t", "get tsys.hostname", "\a");	/* not at the end */
+	tab("get tvlan.\t", "get tvlan.1.", NULL);	/* the keys there are: one */
+	expect("set tvlan.300.members 1", "ok\n");
+	tab("get tvlan.\t\t", "get tvlan.", "\n 1. 300.> get tvlan.");
+	tab("get tvlan.3\t", "get tvlan.300.", NULL);
+	expect("discard", "ok\n");
+	cli_job = CLI_JOB_OM;			/* a get streams: the engine is in use */
+	tab("get tsy\t", "get tsy", "\a");
+	cli_job = 0;
+	tab("get tsy\t", "get tsys.", NULL);
+	expect("get tsys.led", "tsys.led off\nok\n");	/* the commands after it */
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -1935,6 +2004,7 @@ int main(int argc, char **argv)
 	cases();
 	kinds();
 	services();
+	completion();
 	staging();
 	binary();
 	roundtrip();
