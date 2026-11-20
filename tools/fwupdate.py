@@ -211,7 +211,8 @@ def login(host, port, timeout, password):
 # state.sys paths (the object model's POST /cli `get state.sys`)
 INFO_KEYS = {"sw_ver": "version", "build_date": "build_date", "hw_ver": "machine",
              "pcb_ver": "pcb", "flash_size": "flash.size", "chip_temp": "temp_c",
-             "hostname": "hostname"}
+             "hostname": "hostname", "ip_address": "mgmt.ip", "ip_gateway": "mgmt.gateway",
+             "ip_netmask": "mgmt.netmask", "mac_address": "mac"}
 
 
 def fetch_info(host, port, timeout, cookie):
@@ -522,7 +523,7 @@ class Plan:
     """An old config, converted: lines (path lines), legacy ((line, node)),
     bad, warn; the new firmware's factory default address and password."""
 
-    def __init__(self, args, text, machine=None, lines=None):
+    def __init__(self, args, text, machine=None, lines=None, running=None):
         sys.path.insert(0, HERE)
         import legacy_map
         import rtlpg_client
@@ -552,13 +553,19 @@ class Plan:
             text, self.sch.board, self.warn, self.sch)
         self.empty = not (self.lines or self.legacy or self.bad)
         # a field the factory default sets and the old config didn't (no ip
-        # line: the old switch ran the built-in address) goes back to the
-        # built-in, so the switch stays where it was and get -s is the plan
+        # line: the old switch ran its built-in address) is pinned to what
+        # the old switch ran (its /information.json), else the built-in: the
+        # switch stays where it was, and get -s is config.txt + the plan
         have = {ln.split()[0] for ln in self.lines}
         built = self.rc.Config(self.sch)
         for path in dict.fromkeys(factory):
             if path not in have and not self.empty:
-                self.filled.append(f"{path} {self.value(built, path)}")
+                v = (running or {}).get(path) or self.value(built, path)
+                try:
+                    self.rc.Config(self.sch).line(f"{path} {v}")
+                except self.rc.Bad:
+                    v = self.value(built, path)
+                self.filled.append(f"{path} {v}")
         self.lines += self.filled
 
     def secret(self, path):
@@ -567,6 +574,14 @@ class Plan:
         except self.rc.Bad:
             return False
         return f is not None and f.typ.code == "SECRET"
+
+    def scrub(self, text):
+        """text with every Secret's value as *: for anything printed."""
+        for ln in self.lines:
+            path, _, v = ln.partition(" ")
+            if v and self.secret(path):
+                text = text.replace(v, "*")
+        return text
 
     def masked(self, line):
         """A line as shown or written: a Secret's value as *."""
@@ -630,7 +645,8 @@ class Plan:
               "warnings")
         for line in self.lines:
             line = self.masked(line)
-            note = "  (the factory default sets it; the old config didn't)" if line in self.filled else ""
+            note = ("  (the factory default sets it, the old config didn't: as the old switch ran)"
+                    if line in self.filled else "")
             print(f"  set {line}{note}" if not line.startswith("del ") else f"  {line}")
         for line, node in self.legacy:
             print(f"  legacy ({node}): {line}")
@@ -643,7 +659,7 @@ class Plan:
               flush=True)
 
 
-def read_plan(args, host, port, cookie):
+def read_plan(args, host, port, cookie, before=None):
     """The plan; and why the config isn't readable, or None."""
     why, body = None, b""
     try:
@@ -669,7 +685,7 @@ def read_plan(args, host, port, cookie):
     except Failure as error:
         why, body = str(error), b""
     try:
-        plan = Plan(args, body)
+        plan = Plan(args, body, running=before)
     except OSError as error:
         raise Failure(f"the schema or the board: {error}", 1)
     if why is None and plan.empty:
@@ -692,6 +708,19 @@ def state(args, host, port, cookie, what, busy):
 CONFIRM_S = 120		# apply's confirm window: a wrong address rolls back
 
 
+def arp_ip(mac):
+    """The address this host's neighbour table has for mac (Linux), or
+    None: where a switch in DHCP answers now, if it is on our segment."""
+    try:
+        for row in open("/proc/net/arp").read().splitlines()[1:]:
+            w = row.split()
+            if len(w) >= 4 and w[3].lower() == (mac or "").lower() and w[2] != "0x0":
+                return w[0]
+    except OSError:
+        pass
+    return None
+
+
 def carry_over(args, plan, host, port, password, at, cookie):
     """Step 4: set the plan's lines on the new firmware at `at`, apply them
     with a confirm window, find the switch at its address (HOST, or the
@@ -705,12 +734,12 @@ def carry_over(args, plan, host, port, password, at, cookie):
     errs = [ln for ln in out.splitlines() if ln.startswith("err")]
     if errs:
         cli(at[0], at[1], args.timeout, cookie, ["discard"])
-        raise Failure("the switch refused lines: " + "; ".join(errs[:5]), 5)
+        raise Failure(plan.scrub("the switch refused lines: " + "; ".join(errs[:5])), 5)
     print(f"Set {len(plan.lines)} lines; apply {CONFIRM_S} ...", file=sys.stderr)
     try:
         out = cli(at[0], at[1], min(args.timeout, 10), cookie, [f"apply {CONFIRM_S}"])
         if "err" in out:
-            raise Failure(f"apply: {out.strip()}", 5)
+            raise Failure(plan.scrub(f"apply: {out.strip()}"), 5)
     except Failure as error:
         if error.status == 5:
             raise
@@ -724,7 +753,8 @@ def carry_over(args, plan, host, port, password, at, cookie):
     cookie = None
     start = time.monotonic()
     while cookie is None:
-        for host, port in targets:
+        lease = None if ip else arp_ip(getattr(plan, "mac", None))	# DHCP: by the old MAC
+        for host, port in targets + ([(lease, port)] if lease and (lease, port) not in targets else []):
             for pw in dict.fromkeys([password, plan.boot_password]):
                 try:
                     cookie = login(host, port, min(args.timeout, 5), pw)
@@ -744,14 +774,14 @@ def carry_over(args, plan, host, port, password, at, cookie):
           file=sys.stderr)
     out = cli(host, port, args.timeout, cookie, ["confirm"])
     if not out.rstrip().endswith("ok"):
-        raise Failure(f"confirm: {out.strip()}", 5)
+        raise Failure(plan.scrub(f"confirm: {out.strip()}"), 5)
     st = state(args, host, port, cookie, "apply", ("running", "undo", "confirm"))
     if st not in ("idle", "done"):
         raise Failure(f"apply: state.cfg.apply {st}", 5)
     out = cli(host, port, args.timeout, cookie, ["save"])
     st = state(args, host, port, cookie, "save", ("erasing", "writing"))
     if not out.rstrip().endswith("ok") or st != "done":
-        raise Failure(f"save: {out.strip()} (state.cfg.save {st})", 5)
+        raise Failure(plan.scrub(f"save: {out.strip()} (state.cfg.save {st})"), 5)
     plan.saved_ok = True
     got = [ln for ln in cli(host, port, args.timeout, cookie, ["get -s"]).splitlines()
            if ln and ln != "ok"]
@@ -954,7 +984,8 @@ def run(args):
     if not (before or {}).get("om"):
         print("Step 1/4: reading and converting the saved config",
               file=sys.stderr)
-        plan, why = read_plan(args, host, port, cookie)
+        plan, why = read_plan(args, host, port, cookie, before)
+        plan.mac = (before or {}).get("mac")
         back = plan.boot_ips
         if why:
             print(f"No readable config: {why}; the switch will boot its "

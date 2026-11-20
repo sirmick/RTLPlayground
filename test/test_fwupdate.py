@@ -14,6 +14,7 @@ refuses. The flow on the real firmware is ~/rtlpg-bench/object-model/sim_upgrade
 import contextlib
 import http.server
 import io
+import json
 import os
 import re
 import sys
@@ -64,6 +65,7 @@ class Fake:
         self.text, self.pw, self.refuse = text, pw, refuse	# text None: GET /config fails
         self.om, self.at, self.uploads, self.lost = False, "old", 0, lost	# lost: unreachable after apply
         self.drops, self.texts = 0, None	# GET /config: connections dropped first; texts to answer in turn
+        self.info, self.save_fail, self.pw_after = {}, False, None	# more /information.json; save fails; pw after apply
         self.cand, self.run, self.saved = [], [], []
         self.log = []
         self.sch = rc.Schema(board=rc.Board(M))
@@ -91,7 +93,7 @@ class Fake:
                         "sys.hostname x"]
             elif w[0] in ("set", "del"):
                 if any(r in ln for r in self.refuse):
-                    out.append("err set: refused")
+                    out.append("err %s: refused" % ln)	# echoes the line, a password too
                     continue
                 self.cand.append(ln)
             elif ln == "discard":
@@ -106,12 +108,15 @@ class Fake:
                     self.at = "old"
                 if self.lost:
                     self.at = "nowhere"
+                if self.pw_after:
+                    self.pw = self.pw_after
             elif ln == "save":
-                self.saved = list(self.run)
+                if not self.save_fail:
+                    self.saved = list(self.run)
             elif ln == "get state.cfg.apply":
                 out.append("state.cfg.apply done")
             elif ln == "get state.cfg.save":
-                out.append("state.cfg.save done")
+                out.append("state.cfg.save " + ("failed" if self.save_fail else "done"))
             elif ln == "get -s":
                 out += rc.bin2txt(self.sch, rc.txt2bin(self.sch, self.saved), secrets=False)
             out.append("ok")
@@ -145,7 +150,8 @@ class Fake:
                 if self.path == "/login.html":
                     self.reply(200, b"login")
                 elif self.path == "/information.json" and not fake.om:
-                    self.reply(200, ('{"sw_ver":"v-old","hw_ver":"8x","pcb_ver":"%s"}' % PCB).encode())
+                    info = dict({"sw_ver": "v-old", "hw_ver": "8x", "pcb_ver": PCB}, **fake.info)
+                    self.reply(200, json.dumps(info).encode())
                 elif self.path == "/config" and not fake.om and fake.text is not None:
                     if fake.drops:
                         fake.drops -= 1
@@ -263,7 +269,7 @@ def main():
     print("the switch refuses a line")
     f = Fake(CLEAN, refuse=("port.3.mtu",))
     st, out, err = run(f, img)
-    check(st == 5 and "refused lines: err set: refused" in err and "discard" in f.log and "save" not in f.log,
+    check(st == 5 and "refused lines: err set port.3.mtu 9000: refused" in err and "discard" in f.log and "save" not in f.log,
           "discarded, not applied or saved (5)", err)
     f.close()
 
@@ -293,6 +299,40 @@ def main():
     check(st == 5 and "within the confirm window" in err and "confirm" not in f.log and "save" not in f.log
           and "nothing is saved" in err and "--plan %s 127.0.0.1" % PLAN in err,
           "exit 5, no confirm or save, and how to redo step 4", err)
+    f.close()
+
+    print("no ip line, the old switch on its own address: pinned to it")
+    f = Fake("hostname no-ip\n")
+    f.info = {"ip_address": "192.168.2.7", "ip_gateway": "192.168.2.1", "ip_netmask": "255.255.0.0"}
+    st, out, err = run(f, img)
+    check(st == 0 and "set mgmt.ip 192.168.2.7" in f.saved and "set mgmt.gateway 192.168.2.1" in f.saved
+          and "set mgmt.netmask 255.255.0.0" in f.saved and "as the old switch ran" in out,
+          "mgmt.* as the old switch's /information.json said", (f.saved, out))
+    f.close()
+
+    print("a Secret in a reply isn't printed")
+    f = Fake(CLEAN, refuse=("web.password",))
+    st, out, err = run(f, img)
+    check(st == 5 and "err set web.password *: refused" in err and "secret9" not in out + err,
+          "the switch's err line, the password as *", err)
+    f.close()
+
+    print("the save fails")
+    f = Fake(CLEAN)
+    f.save_fail = True
+    st, out, err = run(f, img)
+    check(st == 5 and "state.cfg.save failed" in err and "nothing is saved" in err and "--plan " + PLAN in err
+          and not f.saved, "exit 5: nothing saved, where it is, how to redo it", err)
+    f.close()
+
+    print("the login fails after the apply (another password)")
+    fwupdate.CONFIRM_S, keep = 1, fwupdate.CONFIRM_S
+    f = Fake(CLEAN)
+    f.pw_after = "other"
+    st, out, err = run(f, img)
+    fwupdate.CONFIRM_S = keep
+    check(st == 5 and "within the confirm window" in err and "confirm" not in f.log and not f.saved,
+          "exit 5, never confirmed: the window rolls it back", err)
     f.close()
 
     print("--no-wait can't carry a config")
