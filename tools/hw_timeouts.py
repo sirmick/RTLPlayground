@@ -18,6 +18,9 @@ without a timeout:
   flush    reg 53d4 (L2 flush): `l2 forget`
   i2c      reg 0418 (I2C_CTRL): an SFP module's read fails, said once
   wel      flash wp (WEL never set): a web config save
+  boot     reg 5cac held over a power cut: the boot must reach its prompt
+           within 2 s of a normal one (vlan_setup's 4093-entry table scan ends
+           at its first timeout; waiting out each would be 20-40 s)
   sds      phy 0.30.3f8 (RTL8224 SDS_INDACS_CMD), with a faked 8224 ID: the boot;
            only a board without 10G ports writes it (dotx_dx_1009n)
 
@@ -44,7 +47,7 @@ def main(argv):
     ap.add_argument("--ovs", default=os.path.expanduser("~/src/ovs-rtlpg"))
     ap.add_argument("--board", default=None)
     ap.add_argument("--limit-us", type=float, default=20000)
-    ap.add_argument("--cases", nargs="*", default=["table", "stat", "flush", "i2c", "wel"])
+    ap.add_argument("--cases", nargs="*", default=["table", "stat", "flush", "i2c", "wel", "boot"])
     a = ap.parse_args(argv)
     board = a.board or os.path.join(a.ovs, "boards", "keeplink_kp_9000_9xhpml_v1_2.json")
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
@@ -119,7 +122,9 @@ def main(argv):
     prompt = lambda x: x != "<timeout>"
     http = lambda x: isinstance(x, str) and "200 OK" in x
     try:
+        t0 = sim.time()[1]
         r.boot()
+        normal = sim.time()[1] - t0
         r.link(P[1], True)
         r.wait(1000)
         r.login()
@@ -174,6 +179,21 @@ def main(argv):
           case("wel", "ff01", "flash wp on", "flash wp off", save, lambda x: x != "<timeout>" and "HTTP" in x)
 
         # the 8224's SerDes writes are boot work: hold before a power cut
+        if "boot" in C:
+          r._now()
+          sim.cmd("reg hold 5cac 1")
+          r.powercut()
+          t0 = sim.time()[1]
+          r.boot(slot=60000)
+          took = sim.time()[1] - t0
+          boot = r.results[max(k for k in r.results if k.endswith(" boot"))]
+          check(boot != "<timeout>" and took < normal + 2e6,
+                f"boot: with the table stuck, the prompt after {took / 1e6:.2f} s (a normal boot {normal / 1e6:.2f} s)")
+          sim.cmd("reg release 5cac")
+          r.wait(1000)
+          r.cli("version")
+          n, reg, _ = health()
+          check(n is not None and n > 0, f"boot: hw timeouts {n}, last {reg}")
         if "sds" in C:
           r.cli("health clear")
           sim.cmd("reg hold 4 7000")		# CHIP_ID: an RTL8373N (byte 1 0x70): its 8224 SerDes setting

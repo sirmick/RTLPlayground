@@ -69,9 +69,9 @@ uint8_t hw_poll(uint16_t reg) __banked
 #endif
 
 // Wait for the TABLE ready (bounded, E4)
-static void wait_table_ready(void)
+static uint8_t wait_table_ready(void)	/* 1: it timed out */
 {
-	hw_poll(RTL837X_TBL_CTRL);
+	return hw_poll(RTL837X_TBL_CTRL);
 }
 
 /* An L2 flush's end: FLUSH_CTRL bits 16-23 clear; bounded (E4) */
@@ -239,7 +239,8 @@ int8_t vlan_get(uint16_t vlan) __banked
 
 	REG_WRITE(RTL837X_TBL_CTRL, vlan >> 8, vlan, TBL_VLAN, TBL_EXECUTE);
 
-	wait_table_ready();
+	if (wait_table_ready())		/* E4: the table didn't answer */
+		return -1;
 
 	reg_read_m(RTL837x_L2_DATA_OUT_A);
 
@@ -390,7 +391,8 @@ void vlan_setup(void) __banked
 	/* the bitmap from the table: entries a reset left valid stay listed */
 	vb_v = 2;
 	do {
-		vlan_get(vb_v);
+		if (vlan_get(vb_v))	/* a stuck table: stop, the boot stays bounded (F1b) */
+			break;
 		vb_on = sfr_data[0] & 0x02;	/* bit 1: VLAN table entry valid */
 		vlan_bit_put(vb_v);
 	} while (++vb_v != 0xfff);
