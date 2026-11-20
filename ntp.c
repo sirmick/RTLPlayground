@@ -247,13 +247,13 @@ uint8_t om_get_ntp(uint8_t idx) __banked
 	if (!ntp_state.synced)
 		return OM_OK;
 	N.synced = 1;
-	ntp_uptime();				/* ntp_now */
+	ntp_uptime();		/* its value is unused: it leaves the uptime in ntp_now */
 	N.last_sync_s = ntp_now - ntp_state.at;
 	N.time = ntp_state.utc + N.last_sync_s;
 	g_off = ntp_state.offset;
 	g_dst = ntp_state.dst;
 	if (g_dst) {				/* EU's rule is in UTC, the US's in local time */
-		ntp_split(g_dst == NTP_DST_US ? N.time + (int32_t)g_off * 60 : N.time);
+		ntp_split(g_dst == NTP_DST_US ? N.time + (int32_t)g_off * 60 : N.time);	/* sets ntp_mon.. */
 		g_dst = g_dst == NTP_DST_EU ? ntp_in_dst(3, 0, 1, 10, 0, 1) : ntp_in_dst(3, 2, 2, 11, 1, 1);
 	}
 	N.dst_active = g_dst;

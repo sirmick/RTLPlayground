@@ -41,6 +41,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_httpd_tx_compact \
         $(BUILDDIR)/test_tick_gate \
         $(BUILDDIR)/test_timer \
+        $(BUILDDIR)/test_ntp \
         $(BUILDDIR)/test_cpu_vlan_full \
         $(BUILDDIR)/test_cpu_vlan_restricted \
         $(BUILDDIR)/test_cpu_vlan_8372 \
@@ -118,6 +119,11 @@ $(BUILDDIR)/test_tick_gate: test_tick_gate.c support.c $(SRCROOT)/cmd_editor.c $
 # timer.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_timer: test_timer.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/timer.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
+	$(DEPEND)
+
+# state.ntp's getter, the real ntp.c (its statics: the DST rules, the date split)
+$(BUILDDIR)/test_ntp: test_ntp.c $(SRCROOT)/ntp.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) test_ntp.c -o $@ $(LDFLAGS)
 	$(DEPEND)
 
 # Exercise the production RX ring reader; only the hardware DMA edge is mocked.

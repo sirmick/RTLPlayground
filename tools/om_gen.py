@@ -221,6 +221,11 @@ def state(name, **kw):
     return _add(Obj(name, True, **kw))
 
 
+# The types om.c's parse_value() sets (OM_SET_ compiles the second row in)
+PARSED = set("BOOL ENUM STR SECRET PMASK U8 U16 U32 "
+             "IPV4 MASK4 MAC BRID FLAGS FLAGS16 PORT I16 TZ".split())
+
+
 def cfg(name, typ, default, when="always", tip="", derived=False, unit="", label=""):
     """derived: a Str whose empty value means "work it out" (the object's derive=
     handler gives it; get prints that). unit, label: for the web UI (schema.js):
@@ -228,6 +233,8 @@ def cfg(name, typ, default, when="always", tip="", derived=False, unit="", label
     f_<object>_<field>."""
     o = SCHEMA["cur"]
     assert not o.state, "cfg() in a state object"
+    if typ.code not in PARSED:
+        raise SystemExit("%s.%s: om.c has no parser for %s: a config field can't be one" % (o.regname, name, typ.code))
     if derived and (typ.code != "STR" or default != ""):
         raise SystemExit("%s.%s: only a Str with default \"\" can be derived" % (o.regname, name))
     o.fields.append(Field(name, typ, "cfg", default, when, tip, derived=derived, unit=unit, label=label))

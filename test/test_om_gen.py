@@ -176,6 +176,10 @@ print("output")
 rc, out, _ = gen(BASE, registry=reg, out=True)
 check(rc == 0, "generates", out)
 
+for t in ("U64", "Scaled(1)"):
+    rc, out, _ = gen('obj("s")\ncfg("x", %s, 0)\n' % t)
+    check(rc != 0 and "no parser" in out, "a config field of a type om.c doesn't parse (%s): fails the build" % t, out)
+
 print("a type only state has: printed, not parsed (OM_SET_)")
 d = tempfile.mkdtemp()
 with open(os.path.join(d, "a.py"), "w") as f:

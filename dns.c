@@ -202,6 +202,9 @@ void dns_show(void) __banked
 
 /* state.dns (schema/state_svc.py) */
 #define D	om_st.dns
+/* state.dns.lookup.status's words are the DNS_* states (a negative size if not) */
+typedef char dnsst_is_status[E_DNSST_NONE == DNS_IDLE && E_DNSST_PENDING == DNS_PENDING &&
+			     E_DNSST_DONE == DNS_DONE && E_DNSST_FAILED == DNS_FAILED ? 1 : -1];
 
 uint8_t om_get_dns(uint8_t idx) __banked
 {
