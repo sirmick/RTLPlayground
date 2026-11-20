@@ -1183,7 +1183,7 @@ static void kinds(void)
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.lag 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.load.skipped 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.cfg.load.skip_id 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
 		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
 		      strstr(o, "state.port.9.mib.54 34359738422\nstate.sfp.1.present on\n") &&
@@ -1204,7 +1204,7 @@ static void staging(void)
 	memset(applied, 0, sizeof applied);
 
 	printf("staging\n");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.load.skip_ix 0\nstate.cfg.load.skip_id 0\nstate.cfg.boot_defaults \nok\n");
 	CHECK(!t_strcmp(prompt(), ""), "the prompt: nothing to add");
 	expect("set port.3.mtu 1500", "ok\n");
 	expect("set port.3.pvid 7", "ok\n");
@@ -1221,7 +1221,7 @@ static void staging(void)
 	CHECK(job_steps >= 3 * chunks + 2 && job_steps <= 3 * chunks + 2 + 1 + OM_N_OBJ,
 	      "apply: the copies, the walk and the settle, each in bounded steps");
 	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.load.skip_ix 0\nstate.cfg.load.skip_id 0\nstate.cfg.boot_defaults \nok\n");
 	memset(applied, 0, sizeof applied);
 	job_steps = 0;
 	expect("apply", "ok\n");
@@ -1724,13 +1724,31 @@ static void binary(void)
 			201, 7, 0, 1,  1, 3, 's', 'e', 'v',	/* tvlan.7.name sev */
 			204, 4, 0, 1,  1, 4, 0, 0, 0, 0x7f,	/* tstp.port.4.cost: past 200000000 */
 			18, 1, 3, 1,  1, 4, 0xf4, 1, 0, 0,	/* port.3.storm.mcast.rate 500 */
+			18, 4, 9, 1,  1, 4, 1, 0, 0, 0,		/* port.9.storm.<a 5th type>: index 0x0904 */
+			18, 1, 10, 1,  1, 4, 1, 0, 0, 0,	/* port.10.storm.mcast: past the ports */
+			201, 8, 0, 0,  201, 9, 0, 0,  201, 10, 0, 0,	/* tvlan.8-10: the 4 slots full */
+			201, 11, 0, 1,  1, 1, 'x',		/* tvlan.11: past the slots */
 		};
 		sec_write(r, sizeof r);
 		boot();
-		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 9\nok\n");
-		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
-		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
+		/* the boot's load takes tvlan.1's slot too (running's, the candidate deleted it) */
+		expect("get state.cfg.format state.cfg.load.skipped state.cfg.load.skip_ix state.cfg.load.skip_id",
+		       "state.cfg.format ok\nstate.cfg.load.skipped 12\nstate.cfg.load.skip_ix 1\nstate.cfg.load.skip_id 250\nok\n");
+		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\ntvlan.8.name \ntvlan.9.name \n"
+		       "tvlan.10.name \nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
+		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\ntvlan.8.name \ntvlan.9.name \n"
+		       "tvlan.10.name \nport.3.mtu 9000\nport.3.storm.mcast.rate 500\nok\n");
+		/* index 0x0904 is skipped: before first_inst took step1()'s answer it was
+		 * copied to cfg_cand.port_storm[8][4], past struct cfg (ASan: global-buffer-overflow) */
 		dump("skip", 1);
+	}
+	{	/* the first skip named: a record past this build's storm types */
+		static const uint8_t r[] = { 1, 3, 0, 1,  5, 2, 0x28, 0x23,  18, 4, 9, 1,  1, 4, 1, 0, 0, 0 };
+		sec_write(r, sizeof r);
+		boot();
+		expect("get state.cfg.load", "state.cfg.load.skipped 1\nstate.cfg.load.skip_ix 2308\nstate.cfg.load.skip_id 18\nok\n");
+		expect("get -s", "port.3.mtu 9000\nok\n");
+		expect("get state.cfg.load.skip_id", "state.cfg.load.skip_id 18\nok\n");
 	}
 
 	printf("a saved config without vlan.1 and every slot taken: all of it at boot\n");

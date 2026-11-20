@@ -44,7 +44,7 @@ def main():
             skipped = []
             got = rc.bin2txt(sch, b, secrets=False, skipped=skipped)
             check(got == t, "skip: bin2txt prints what get -s printed", "\n".join(got))
-            check(len(skipped) == 9, "skip: and skips what the load skipped (9)", "\n".join(skipped))
+            check(len(skipped) == 12, "skip: and skips what get -s's load skipped (12: the 0x0904 storm, port 10, the 5th tvlan)", "\n".join(skipped))
             continue
         got = rc.bin2txt(sch, b)
         check(got == t, "%s: bin2txt is get -d (keyed: its dels and empty entries too)" % n, "\n".join(got))
