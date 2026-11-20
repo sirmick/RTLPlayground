@@ -1,20 +1,23 @@
 # 2. Hardware facts the design rests on
 
-All measured on a KeepLink 9XHPML (RTL8373) on the bench, 2026-11-18, with
-the probe build `scratch/irq-probe` unless marked otherwise. Details:
-`hw-research/README.md`; the SFR side is folded into `doc/sfr.md`
-(`doc/sfr-map`).
+Measured on a KeepLink 9XHPML (RTL8373N, W25Q16, 2 MiB) on the bench:
+first with the probe build `scratch/irq-probe` (2026-11-18; details in
+`hw-research/README.md`, the SFR side in `doc/sfr.md` on `doc/sfr-map`),
+then with the schedtest image and the scheduler firmware (phases C, DB, EB;
+silicon.md). Where the two disagree, the later run is the one given, and
+the earlier is noted.
 
 ## CPU and timers
 
 - DW8051 at **125 MHz**, 4 clocks per machine cycle. Measured: Timer 2's
   200 Hz tick ran 60.0279 s in 60.027 s of wall clock.
 - **Timer 2** is the 200 Hz tick (`isr_timer2`), auto-reload at clk/12.
-  Between ticks its count runs from 0x34ad to 0xffff: **a free 96 ns clock**.
-  `fine_now()` (ticks + TH2/TL2, overflow-corrected) costs ~6 µs.
+  Between ticks its count runs from the reload to 0xffff: **a free 96 ns
+  clock**. The scheduler reads it as fine units of 64 counts, 6.144 µs, 813
+  to a tick (core.md).
 - **Timer 0** is unused. **Timer 1** is the UART baud generator.
 - **The PTP clock** (48-bit seconds + ns) runs at real rate once started
-  (#879's sequence). Not needed by the scheduler; noted as a spare timebase.
+  (#879's sequence). Not used by the scheduler; a spare timebase.
 
 ## Interrupts
 
@@ -35,12 +38,20 @@ Interrupt entry from a software-set flag to the handler: ~1.5 µs.
 | switch register read / write | ~0.8 / ~3.4 µs |
 | SerDes read | ~2.9 µs |
 | **MDIO (PHY) read** | **~161 µs** |
-| console character | **87 µs** (115200 baud; `write_char` busy-waits today) |
+| console character | **87 µs** (115200 baud) |
 | banked call | under ~1 µs |
-| sector erase (4 KiB) | ~35-40 ms |
-| page program (256 B) | ~1 ms (datasheet; to confirm). But `flash_write_bytes()` programs 4 bytes per command and waits for each: ~1 ms per 4 bytes in rtlsim, so 256 B take ~66 ms (B3). Silicon to confirm in C |
+| sector erase (4 KiB) | 40.2 / 41.6 ms (C, two runs); 35.5 ms in EB's config save |
+| `flash_write_bytes()`, 4 B (one program command) | 49-55 µs (C) |
+| `flash_write_bytes()`, 256 B (64 commands) | 1.71 ms (C) |
+| I2C transaction (an SFP read, 16 B at 100 kHz) | ~2 ms (estimate, not measured: e2-sfp.txt) |
 
-## Today's longest main-loop pass
+The firmware programs 4 bytes per command and that is fast enough: ~27 µs
+of overhead a command, so no page programming is needed. The old "1.9 ms"
+figure was one 256-byte `flash_write_bytes()` (silicon.md).
+
+## The old main loop's longest passes
+
+Fork main 612116e, before the scheduler (the probe build):
 
 | Scenario | Longest pass |
 |---|---|
@@ -54,19 +65,29 @@ Interrupt entry from a software-set flag to the handler: ~1.5 µs.
 ## Flash busy
 
 During a sector erase, **memory-mapped reads from the bank window return
-wrong data, with no stall** (15-16 of 64 checksum passes over 512 spread
-addresses were bad, then good again). Repeated reads of one address stay
-correct (some read buffer). So **no banked code may run while the flash is
-busy**: only the common area (code RAM) and ISRs. That is today's design
-too; every erase/program poll loop already lives in `rtl837x_flash.c`,
-which is resident.
+0x00**, with no stall: 64 of 64 spread bytes of bank 2, on two runs, while
+the idle read gives the image's code (C). The earlier probe, with another
+read pattern, saw only some reads wrong (15-16 of 64 checksum passes over
+512 addresses), and repeated reads of one address right (some read
+buffer). Either way **no banked code may run while the flash is busy**:
+only the common area (code RAM) and ISRs. Every erase and program wait
+lives in `rtl837x_flash.c`, which is resident (chapter 10).
 
 ## Reset
 
 - No hardware watchdog exists: the DW8051 has none, and the switch has none.
 - **xdata above the C start-up's clear survives a chip reset.** SDCC clears
-  only XSEG (app 0x0001-0x448e, loader 0x0001-0x4f6a); bytes at 0x5000,
-  0x8000 and 0xbf00 survived `^R ^R` through the loader. 0x5000-0xbfff can
-  carry a crash record across a reset (not across power-off).
+  only XSEG; bytes at 0x5000, 0x8000 and 0xbf00 survived `^R ^R` through the
+  loader (probe), and the crash record at **0xbfe0** survived every reset
+  through the loader in C, DB and EB. Not across a power cut. The app's
+  XSEG ends at 0x5109 (fb-build.txt), the loader's at 0x4f6a.
+- **A chip reset before the switch init hangs the chip** until power is
+  cycled: no loader banner, nothing (C, on images that skipped the NIC
+  reset, SMI and PHY/SerDes set-up). `rtl837x_sfr.h` records the same on a
+  SWTG024AS. The exact condition is unknown. So the software watchdog stays
+  off until the scheduler runs (chapter 11), and rtlsim models the hang,
+  scoped to this evidence (chapter 13).
 - Never write `RST_GLB_CTRL_0` (0x24) bit 4: it holds the 8051 in reset
   until power-off.
+- The loader's XMODEM takes at most 1856 blocks (237,568 B): the app image,
+  not the install image (silicon.md).
