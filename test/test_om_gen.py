@@ -220,6 +220,16 @@ check(sch["sys"]["f"]["ip"] == ["ip", None, None, "192.168.1.1"] and
 mt = os.path.getmtime(js_path)
 subprocess.run([sys.executable, GEN, "-s", d, "--js", js_path], capture_output=True)
 check(os.path.getmtime(js_path) == mt, "an unchanged schema.js is not rewritten")
+# a state Enum whose words are the build's (sched_gen.py --om): --js alone
+# takes it without them, the tables don't
+with open(os.path.join(d, "b.py"), "w") as f:
+    f.write('state("sys")\nst("slot", Enum("sslotn"))\n')
+p = subprocess.run([sys.executable, GEN, "-s", d, "--js", js_path], capture_output=True, text=True)
+txt = open(js_path).read()
+check(p.returncode == 0 and '"state.sys":{"f":{"slot":["e"]}}' in txt, "--js: a state Enum the build declares, no words",
+      p.stdout + p.stderr + txt[-200:])
+p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o3")], capture_output=True, text=True)
+check(p.returncode != 0 and "declared nowhere" in p.stdout + p.stderr, "-o: it is declared nowhere", p.stdout + p.stderr)
 
 print("schema constants (const)")
 for name, schema, want in [

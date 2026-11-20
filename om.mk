@@ -7,15 +7,20 @@
 OM_GEN = $(BUILDDIR)/om
 # OM_SIM=1: rtlsim measurements, with test/om_sim's schema (a 64-entry keyed
 # object); use its own BUILDDIR
-OM_DIRS = schema $(if $(OM_SIM),test/om_sim)
-OM_SCHEMA = $(foreach d,$(OM_DIRS),$(wildcard $(d)/*.py) $(d)/registry.txt)
+# state.sched's rows come from the scheduler's generator (sched.mk, --om)
+OM_DIRS = schema $(SCHED_GEN)/om $(if $(OM_SIM),test/om_sim)
+OM_SCHEMA = $(foreach d,schema $(if $(OM_SIM),test/om_sim),$(wildcard $(d)/*.py) $(d)/registry.txt) \
+	$(SCHED_GEN)/om/state_sched.py
 CC_FLAGS += -I$(OM_GEN)
-OM_SRCS = om.c om_port.c om_sys.c om_gen.c
+# schedtest has its own `health`: no state.sched, state.health or state.con
+# (the scheduler's words stay, state.sys.reset's)
+OM_SKIP = $(if $(SCHEDTEST),state_health.py)
+OM_SRCS = om.c om_port.c om_sys.c $(if $(SCHEDTEST),,om_health.c) om_gen.c
 SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 
 $(OM_GEN)/gen.stamp: $(OM_SCHEMA) tools/om_gen.py
-	python3 tools/om_gen.py $(addprefix -s ,$(OM_DIRS)) -o $(OM_GEN)
+	python3 tools/om_gen.py $(addprefix -s ,$(OM_DIRS)) $(addprefix -x ,$(OM_SKIP)) -o $(OM_GEN)
 	touch $@
 $(OM_GEN)/om_gen.h $(OM_GEN)/om_gen.c: $(OM_GEN)/gen.stamp ;
 $(BUILDDIR)/om_gen.rel: $(OM_GEN)/om_gen.c $(BUILDDIR)/.ccflags | create_build_dir

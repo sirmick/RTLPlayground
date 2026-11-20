@@ -15,9 +15,12 @@ ISR_SERIAL_PUSHES = 8
 CC_FLAGS += -I$(SCHED_GEN) -DISR_T2_PUSHES=$(ISR_T2_PUSHES) -DISR_SERIAL_PUSHES=$(ISR_SERIAL_PUSHES)
 
 # Resident: the core, the crash record, the dispatch tables. Banked, placed
-# by place_banks.py: the rest of the scheduler, health and the names, the
-# tasks' steps.
-SCHED_SRCS = sched.c sched_bank.c sched_health.c crash.c sched_gen.c sched_gen_names.c \
+# by place_banks.py: the rest of the scheduler, health, the tasks' steps;
+# the state and slot names in schedtest only (the firmware's are the object
+# model's: get prints them), and state.sched's state_task[] in the firmware
+# only (schedtest has its own health: --om-words, the words alone).
+SCHED_SRCS = sched.c sched_bank.c sched_health.c crash.c sched_gen.c \
+	$(if $(SCHEDTEST),sched_gen_names.c,sched_gen_tasks.c) \
 	$(if $(SCHEDTEST),,tasks.c flash_job.c om_job.c)
 SRCS += $(SCHED_SRCS)
 RESIDENT_SRCS += sched.c crash.c sched_gen.c
@@ -35,16 +38,20 @@ $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py F
 	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' \
 		--all $(filter %.c,$(SRCS)) -- $(SCHED_STEP_SRCS) > /dev/null
 $(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
-	python3 tools/sched_gen.py -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
+	python3 tools/sched_gen.py --om $(SCHED_GEN)/om $(if $(SCHEDTEST),--om-words) -o $(SCHED_GEN) $(SCHED_DEFS) > $(SCHED_GEN)/sequence.txt || { cat $(SCHED_GEN)/sequence.txt; exit 1; }
 	cat $(SCHED_GEN)/sequence.txt
 	touch $@
 $(SCHED_GEN)/sched_gen.h $(SCHED_GEN)/sched_gen.c $(SCHED_GEN)/sched_gen_names.c: $(SCHED_GEN)/gen.stamp ;
+# the object model's state.sched: its rows (om.mk reads $(SCHED_GEN)/om) and state_task[]
+$(SCHED_GEN)/sched_gen_tasks.h $(SCHED_GEN)/sched_gen_tasks.c $(SCHED_GEN)/om/state_sched.py: $(SCHED_GEN)/gen.stamp ;
 # A step returns its next state (decision 22): one that can fall off its
 # end (SDCC's warning 59) fails the build.
 $(patsubst %.c,$(BUILDDIR)/%.rel,$(SCHED_STEP_SRCS)): OBJ_FLAGS += --Werror
 $(BUILDDIR)/sched_gen.rel: $(SCHED_GEN)/sched_gen.c $(BUILDDIR)/.ccflags | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 $(BUILDDIR)/sched_gen_names.rel: $(SCHED_GEN)/sched_gen_names.c $(BUILDDIR)/.ccflags | create_build_dir
+	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
+$(BUILDDIR)/sched_gen_tasks.rel: $(SCHED_GEN)/sched_gen_tasks.c $(BUILDDIR)/.ccflags | create_build_dir
 	$(CC) -MMD $(CC_FLAGS) $(BANK_FLAGS) -o $@ -c $<
 $(OBJS): | $(SCHED_GEN)/sched_gen.h
 # The Makefile reads DEPS (:=) before this file adds to SRCS: read these

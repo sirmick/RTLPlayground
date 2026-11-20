@@ -70,16 +70,20 @@ $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
 # The object model's tables, from the firmware's schema (tools/om_gen.py).
+# With state.sched's rows, as the firmware has them: here the scheduler
+# generator's from test_sched.c's tasks (below).
 OM_SCHEMA := $(wildcard $(SRCROOT)/schema/*.py) $(SRCROOT)/schema/registry.txt
-$(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -o $(BUILDDIR)/om > /dev/null
+SCHED_T = $(BUILDDIR)/sched_core
+SCHED_OM = $(SCHED_T)/om/state_sched.py
+$(BUILDDIR)/om/om_gen.c $(BUILDDIR)/om/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -o $(BUILDDIR)/om > /dev/null
 $(filter-out $(BUILDDIR)/test_om_gen,$(TESTS)): | $(BUILDDIR)/om/om_gen.h
 
 # om.c, the engine, UNMODIFIED, over the real schema and om_schema/ (every
 # kind and type no real object uses yet); the handlers are stubs in the test.
 OM_T_SCHEMA := $(wildcard om_schema/*.py) om_schema/registry.txt
-$(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
-	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s om_schema -o $(BUILDDIR)/om_t > /dev/null
+$(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h &: $(OM_SCHEMA) $(SCHED_OM) $(OM_T_SCHEMA) $(SRCROOT)/tools/om_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema -o $(BUILDDIR)/om_t > /dev/null
 $(BUILDDIR)/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS))
 OM_T_SRCS = test_om.c support.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(BUILDDIR)/om_t/om_gen.c
 $(BUILDDIR)/test_om: $(OM_T_SRCS) | $(BUILDDIR)
@@ -192,15 +196,14 @@ $(BUILDDIR)/test_resource_gate: test_resource_gate.py $(wildcard gate/*) $(SRCRO
 # over the tables the generator makes from test_sched.c's TASK/STEP lines
 # (swept with the host's preprocessor, as sched.mk does with SDCC's) and
 # sched_core/sequence.def.
-SCHED_T = $(BUILDDIR)/sched_core
-$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h &: test_sched.c sched_core/hw.h sched_core/sequence.def \
-		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR) $(BUILDDIR)/om/om_gen.h
-	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -I$(BUILDDIR)/om -include sched_core/hw.h' test_sched.c >/dev/null
-	python3 $(SRCROOT)/tools/sched_gen.py --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
+$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen.h $(SCHED_T)/sched_gen_tasks.c $(SCHED_T)/om/state_sched.py &: test_sched.c sched_core/hw.h sched_core/sequence.def \
+		$(SRCROOT)/sched.h $(SRCROOT)/tools/sched_sweep.py $(SRCROOT)/tools/sched_gen.py | $(BUILDDIR)
+	python3 $(SRCROOT)/tools/sched_sweep.py -o $(SCHED_T) --cpp '$(SWEEP_CPP) -include sched_core/hw.h' test_sched.c >/dev/null
+	python3 $(SRCROOT)/tools/sched_gen.py --om $(SCHED_T)/om --slots 8 --sequence sched_core/sequence.def -o $(SCHED_T) $(SCHED_T)/test_sched.def >/dev/null
 $(BUILDDIR)/test_sched: CFLAGS += -I$(SCHED_T) -include sched_core/hw.h \
 	'-DCRASH_RESET()=host_reset()' '-DCRASH_JUMP()=crash_die()' '-DCRASH_IDATA(a)=host_idata[(uint8_t)(a)]'
 $(BUILDDIR)/test_sched: test_sched.c $(SRCROOT)/sched.c $(SRCROOT)/sched_bank.c $(SRCROOT)/con_ring.c $(SRCROOT)/crash.c $(SRCROOT)/sched_health.c \
-		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c | $(SCHED_T)/sched_gen.h
+		$(SCHED_T)/sched_gen.c $(SCHED_T)/sched_gen_names.c $(SCHED_T)/sched_gen_tasks.c | $(SCHED_T)/sched_gen.h $(BUILDDIR)/om/om_gen.h
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
 

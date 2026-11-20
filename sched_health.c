@@ -1,20 +1,26 @@
 /*
- * sched_health.c - `health tasks`, `health clear`, the crash record at boot
- * and as state.sys.reset. Banked: it reads state_name/slot_name directly, so
- * place_banks.py puts it in the bank with sched_gen_names.c.
+ * sched_health.c - the scheduler's state for the object model (state.sched,
+ * do sched.clear), the crash record at boot and as state.sys.reset; and
+ * schedtest's `health tasks` printer. Banked: it reads state_task (in
+ * schedtest, state_name and slot_name) directly, so place_banks.py puts it
+ * in the bank with sched_gen_tasks.c (sched_gen_names.c).
  */
 #include <8051.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "rtl837x_common.h"
 #include "sched.h"
 #include "con_ring.h"
 #include "crash.h"
 #include "build_id.h"
 #include "om_gen.h"
+#include "sched_gen_tasks.h"
 
 static __xdata uint8_t i, ps;
 static __xdata uint16_t u, lo;
+static __xdata uint8_t * __xdata dp;
 
+#if defined(SCHEDTEST) || defined(RTLP_HOST_TEST)	/* the firmware has get state.sched */
 /* A 32-bit count kept as two halves, in hex. */
 static void print_halves(void)		/* u = high, then lo */
 {
@@ -180,35 +186,52 @@ void sched_health_tasks(void) __banked
 	while (sched_health_line())
 		;
 }
+#endif
 
+/* the step statistics, the console's overruns, the hardware timeouts */
 void sched_health_clear(void) __banked
 {
 	sched_clear_stats();
 	ES = 0;			/* an ISR increment mid-write would leave a stray count */
 	con_rx_overruns = 0;
 	ES = 1;
+	hw_timeouts = hw_timeout_reg = 0;
 }
+
+#ifndef SCHEDTEST	/* schedtest's health is the printer's, not the object model's */
+uint8_t om_do_sched_clear(uint8_t idx) __banked
+{
+	(void)idx;
+	sched_health_clear();
+	return OM_OK;
+}
+#endif
 
 /* At boot: a record whose magic and sum hold, written by this image, is
  * kept for state.sys.reset, and consumed. A power-on finds garbage and
  * ignores it; a record another image left (a web update keeps xdata) is
  * dropped unread: its slots and states aren't this image's. An update's is
  * the exception: kept, without them (slot none, states "-"). */
+/* the record's step fields, tick to ring_idx: none (slot -, states -) */
+static void crash_blank(void)
+{
+	memset((__xdata uint8_t *)&crash_rec.tick, 0,
+	       offsetof(struct crash_rec, spare) - offsetof(struct crash_rec, tick));
+	crash_rec.slot = 0xff;
+}
+
 void crash_boot(void) __banked
 {
 	crash_last.magic = 0;
 	crash_prior = 0;
 	if (crash_rec.magic != CRASH_MAGIC || crash_rec.sum != crash_sum())
-		return;
+		goto out;
 	if (crash_rec.image_lo != CRASH_IMAGE_LO || crash_rec.image_hi != CRASH_IMAGE_HI) {
 		if (crash_rec.cause != CRASH_UPDATE) {
 			crash_rec.magic = 0;
-			return;
+			goto out;
 		}
-		crash_rec.slot = 0xff;		/* consumed below: the sum no longer matters */
-		crash_rec.state = 0;
-		crash_rec.pc = 0;
-		memset((__xdata uint8_t *)crash_rec.ring, 0, 8);
+		crash_blank();			/* consumed below: the sum no longer matters */
 	}
 	for (i = 0; i < sizeof(struct crash_rec); i++)
 		((__xdata uint8_t *)&crash_last)[i] = ((__xdata uint8_t *)&crash_rec)[i];
@@ -218,19 +241,88 @@ void crash_boot(void) __banked
 	print_string("Last reset: ");
 	crash_print();
 #endif
+out:
+	/* the last run's notes: a reset before the scheduler runs (^R ^R in the
+	 * boot) records no step of its own */
+	crash_blank();
 }
 
 /* state.sys.reset (schema/state_sys.py): the record crash_boot kept; none,
- * cause power. The names are copied here, beside their tables. */
+ * cause power. Numbers: get prints the slot and state names. */
 #define R	om_st.sys_reset
-static __xdata char * __xdata dp;
 
-static void put(__code const char *s)
+#ifndef SCHEDTEST
+/* state.sched (the rows tools/sched_gen.py --om writes): numbers only, get
+ * prints the slot, state and task names from the object model's tables */
+#define SS	om_st.sched
+#define SL	om_st.sched_slot
+#define ST	om_st.sched_state
+
+/* fine units u as microseconds, a U32 at dp: x 25166 / 4096 (6.144 to
+ * 0.0007%). SDCC's _mullong, which the image links already, costs no
+ * internal RAM of its own (memory.md rule 3 is about the spills) */
+static void fine_us(void)
 {
-	while (*s)
-		*dp++ = *s++;
-	*dp = 0;
+	*(__xdata uint32_t *)dp = ((uint32_t)u * 25166) >> 12;
 }
+
+uint8_t om_get_sched(uint8_t idx) __banked
+{
+	(void)idx;
+	((__xdata uint16_t *)&SS.passes)[0] = sched_passes_lo;
+	((__xdata uint16_t *)&SS.passes)[1] = sched_passes_hi;
+	((__xdata uint16_t *)&SS.idle)[0] = sched_idle_lo;
+	((__xdata uint16_t *)&SS.idle)[1] = sched_idle_hi;
+	u = sched_pass_max;
+	dp = (__xdata uint8_t *)&SS.pass_max_us;
+	fine_us();
+	SS.overruns = sched_overruns;
+	SS.overrun_last = sched_overrun_state;
+	SS.slots = SCHED_SLOTS;
+	SS.fixed = T_FIXED;
+	SS.fine_per_tick = sched_fine_per_tick;
+	return OM_OK;
+}
+
+uint8_t om_get_sched_slot(uint8_t idx) __banked
+{
+	memset((__xdata uint8_t *)&SL, 0, sizeof(SL));
+	ps = sched_task[idx].state;
+	if (!ps)
+		return OM_OK;			/* free: none */
+	SL.state = ps;
+	SL.task = state_task[ps];
+	SL.mask = sched_task[idx].mask;
+	u = sched_task[idx].wake - sched_now;
+	if ((int16_t)u > 0)
+		SL.wake = u;
+	SL.arg = sched_task[idx].arg;
+	return OM_OK;
+}
+
+uint8_t om_get_sched_state(uint8_t idx) __banked
+{
+	ps = idx + 1;				/* past S_NONE */
+	ST.runs = sched_st_runs[ps];
+	u = sched_st_max[ps];
+	dp = (__xdata uint8_t *)&ST.max_us;
+	fine_us();
+	return OM_OK;
+}
+
+/* the longest of the task's states */
+uint8_t om_get_sched_task(uint8_t idx) __banked
+{
+	lo = 0;
+	for (ps = 1; ps < S_COUNT; ps++)
+		if (state_task[ps] == idx + 1 && sched_st_max[ps] > lo)
+			lo = sched_st_max[ps];
+	u = lo;
+	dp = (__xdata uint8_t *)&om_st.sched_task.max_us;
+	fine_us();
+	return OM_OK;
+}
+#endif
 
 uint8_t om_get_sys_reset(uint8_t idx) __banked
 {
@@ -239,23 +331,15 @@ uint8_t om_get_sys_reset(uint8_t idx) __banked
 	if (crash_last.magic != CRASH_MAGIC)
 		return OM_OK;
 	R.cause = crash_last.cause;
-	ps = crash_last.slot;
-	dp = R.slot;
-	put(ps < SCHED_SLOTS ? slot_name[ps] : "-");
-	ps = crash_last.state;
-	dp = R.state;
-	put(ps < S_COUNT ? state_name[ps] : "?");
+	R.slot = crash_last.slot + 1;		/* sslotn: none (0xff), then the slots */
+	R.state = crash_last.state;		/* sstate: none (S_NONE), then the states */
 	u = crash_last.tick - crash_last.step_tick;
 	R.step_ms = u < 13107 ? u * SCHED_TICK_MS : 65535;
 	R.pc = crash_last.pc;
 	R.bank = crash_last.bank;
-	dp = R.states;
-	for (i = 0; i < 8; i++) {		/* oldest first */
-		if (i)
-			put(" ");
-		ps = crash_last.ring[(crash_last.ring_idx + i) & 7];
-		put(ps < S_COUNT ? state_name[ps] : "?");
-	}
+	dp = &R.states_1;			/* oldest first */
+	for (i = 0; i < 8; i++)
+		dp[i] = crash_last.ring[(crash_last.ring_idx + i) & 7];
 	return OM_OK;
 }
 

@@ -15,3 +15,4 @@ field 1.9 port.lldp Enum(lldp)
 field 1.10 port.eee BOOL
 field 1.11 port.isolate PMASK
 obj 2 sys
+obj 3 sched

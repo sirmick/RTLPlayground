@@ -4,6 +4,16 @@
 # Deferred for room (P5-1), to return when the banks have it: state.sys.
 # build_id, toolchain, chip_n, chip_ok, layout, temp_poweron_c, and
 # state.sys.reset.count.
+# Deferred, and need firmware first (DESIGN 7.1-7.2):
+#   chip_rev        CHIP_INFO is read at boot but not kept; which byte is the
+#                   revision is unverified (boot.c prints one byte twice)
+#   ticks           `ticks` is 32-bit and ISR-written: needs a stable read
+#   mac_source      the boot's MAC choice (flash or derived) isn't stored
+#   flash.jedec     only the capacity byte is kept at boot
+#   flash.sio       machine.flash_sio, free: room only
+#   button_held_s   the house task keeps no hold time, only edges
+#   reset.sp        in the record already: room only
+#   wdt.timeout_ms  SWDT_TICKS x 5, a constant: room only
 
 state("sys", get="om_get_sys")
 st("version", Str(31))
@@ -25,12 +35,14 @@ st("button", Bool, tip="The reset button is held")
 
 state("sys.reset", get="om_get_sys_reset")
 st("cause", Enum("rcause", "power watchdog ctrl_r cmd update web button factory"))
-st("slot", Str(11))
-st("state", Str(11))
+# the scheduler's words (state_sched.py, generated with the build)
+st("slot", Enum("sslotn"), tip="none: the reset came before the scheduler, or from another image")
+st("state", Enum("sstate"))
 st("step_ms", U16())
 st("pc", U16(), tip="0: not from an interrupt")
 st("bank", U8())
-st("states", Str(95), tip="The last 8 states run, oldest first")
+for n in "12345678":
+    st("states.%s" % n, Enum("sstate"), tip="The last 8 states run, oldest first")
 
 # state.loader (DESIGN.md 7.12): the rest of it with P5-3
 state("loader", get="om_get_loader")
