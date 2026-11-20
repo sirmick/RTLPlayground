@@ -10,6 +10,7 @@
 #include "rtl837x_common.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_lacp.h"
+#include "om_gen.h"
 #include "cmd_parser.h"
 #include "rtl837x_trap.h"
 #include "rtl837x_port.h"
@@ -509,45 +510,27 @@ void lacp_off(void) __banked
 }
 
 
-/* lacp show: the first line, then a LAG or a port per lacp_show_line()
- * (the cli's lacp job, E1) */
-static __xdata uint8_t lacp_line;
+/* state.lag, state.lacp.port (schema/state_lag.py) */
+typedef char lacprx_is_rx[E_LACPRX_INITIALIZE == LACP_RX_INITIALIZE && E_LACPRX_PORT_DISABLED == LACP_RX_PORT_DISABLED &&
+	E_LACPRX_EXPIRED == LACP_RX_EXPIRED && E_LACPRX_DEFAULTED == LACP_RX_DEFAULTED &&
+	E_LACPRX_CURRENT == LACP_RX_CURRENT && LACP_STATE_ACTIVITY == 1 && LACP_STATE_EXPIRED == 0x80 ? 1 : -1];
+#define LP	om_st.lacp_port
 
-void lacp_show(void) __banked
+uint8_t om_get_lag(uint8_t idx) __banked
 {
-	print_string("LACP "); print_string(lacpEnabled ? "on" : "off"); write_char('\n');
-	lacp_line = 0;
-	cli_job = CLI_JOB_LACP;
+	om_st.lag.active = lacp_lag_ports[idx] ? lacp_members_last[idx] : port_lag_members_get(idx);
+	om_st.lag.agg_valid = lacp_agg_valid[idx];
+	memcpy(om_st.lag.aggregator, lacp_agg_sys[idx], MAC_ADDR_LEN);
+	return OM_OK;
 }
 
-uint8_t lacp_show_line(void) __banked
+uint8_t om_get_lacp_port(uint8_t idx) __banked
 {
-	uint8_t l = lacp_line++;
-
-	if (l < LACP_NUM_LAGS) {
-		if (lacp_lag_ports[l]) {
-			print_string("lag "); print_byte(l + 1);
-			print_string(" ports "); print_short(lacp_lag_ports[l]);
-			print_string(" aggregator ");
-			if (lacp_agg_valid[l]) {
-				for (uint8_t j = 0; j < MAC_ADDR_LEN; j++)
-					print_byte(lacp_agg_sys[l][j]);
-			} else {
-				print_string("(none)");
-			}
-			print_string(" members "); print_short(lacp_members_last[l]); write_char('\n');
-		}
-		return 1;
-	}
-	uint8_t i = l - LACP_NUM_LAGS + MACHINE_MIN_PORT;
-	print_string("port "); print_byte(machine.log_to_phys_port[i]);
-	print_string(" actor "); print_byte(lacp_actor_state[i]);
-	print_string(" partner "); print_byte(lacp_partner_state[i]);
-	print_string(" rxst "); print_byte(lacp_rx_state[i]);
-	print_string(" rx "); print_short(lacp_rx_count[i]);
-	print_string(" psys ");
-	for (uint8_t j = 0; j < MAC_ADDR_LEN; j++)
-		print_byte(lacp_partner_sys[i][j]);
-	write_char('\n');
-	return i < MACHINE_MAX_PORT;
+	LP.lag = lacp_port_lag[idx] == LACP_LAG_NONE ? 0 : lacp_port_lag[idx] + 1;
+	LP.actor = lacp_actor_state[idx];
+	LP.partner = lacp_partner_state[idx];
+	LP.rx_state = lacp_rx_state[idx];
+	LP.rx_pdus = lacp_rx_count[idx];
+	memcpy(LP.partner_sys, lacp_partner_sys[idx], MAC_ADDR_LEN);
+	return OM_OK;
 }

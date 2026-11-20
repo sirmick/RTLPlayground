@@ -33,7 +33,6 @@ void send_lag(void);
 void send_stp(void) __banked;
 void send_lldp(void);
 void send_loop(void);
-void send_stp_counters(void) __banked;
 void send_vlanlist(void);
 
 /*  Convert only the lower nibble to ascii HEX char.

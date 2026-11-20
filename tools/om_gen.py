@@ -617,7 +617,7 @@ def gen(objs, outdir):
     H("")
     for e in ename:
         for i, w in enumerate(enums[e]):
-            H("#define E_%s_%s %d" % (e.upper(), w.upper(), i))
+            H("#define E_%s_%s %d" % (e.upper(), re.sub(r"\W", "_", w.upper()), i))	# lag.1: E_X_LAG_1
     for i, m in enumerate(SCHEMA["msgs"]):
         H("#define OM_E_%s %d" % (m.upper(), i))
     H("")

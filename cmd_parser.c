@@ -1511,12 +1511,10 @@ void cmd_parser(void) __banked
 		} else if (cmd_compare(0, "stp")) {
 			stp_parse();
 		} else if (cmd_compare(0, "lacp")) {
-			if (cmd_compare(1, "show"))
-				lacp_show();
-			else if (cmd_compare(1, "off"))
+			if (cmd_compare(1, "off"))	/* the state: get state.lag state.lacp */
 				lacp_off();
 			else
-				cmd_error("lacp (show | off); a group starts LACP with: lag <1-4> lacp <port>...\n");
+				cmd_error("lacp off; a group starts LACP with: lag <1-4> lacp <port>...\n");
 		} else if (cmd_compare(0, "vlan")) {
 			parse_vlan();
 		} else if (cmd_compare(0, "mirror")) {
@@ -1727,9 +1725,6 @@ void cli_job_more(void) __banked
 	case CLI_JOB_OM:
 	case CLI_JOB_OMAPPLY:
 		job_more = om_line();
-		break;
-	case CLI_JOB_LACP:
-		job_more = lacp_show_line();
 		break;
 	case CLI_JOB_STPFDB:
 		job_more = stp_fdb_line();

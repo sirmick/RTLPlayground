@@ -19,7 +19,7 @@ stp off                 # stop, all ports back to forwarding
 ```
 
 Live status is on the Spanning Tree page of the web UI (or `/stp.json`),
-and on the serial console via `stp status`.
+and on the console via `get state.stp`.
 
 With no other bridge around, the switch elects itself root and every port ends
 up forwarding — you can leave it on safely. Put the settings in the startup
@@ -259,20 +259,21 @@ JSON:
 GET /stp.json
 ```
 
-The Counters section of the same page (or `/stpcnt.json`) shows per port the
-BPDUs received and sent, those of them that carried the topology change flag
-(TCNs included), and the time since the last BPDU arrived. The counters start
-from zero with `stp on`, and `stp clear` resets them; the topology change
-counter is not reset.
+The Counters section of the same page shows per port the BPDUs received and
+sent, those of them that carried the topology change flag (TCNs included),
+and the time since the last BPDU arrived. The counters start from zero with
+`stp on`, and `stp clear` resets them; the topology change counter is not
+reset.
 
-The `stp status` command prints the same view on the serial console. A port
-is reported with one of the roles Root, Designated, Alternate, Backup or
-Disabled; Disabled covers a port with STP turned off on it, one shut down by
-BPDU guard and one without link.
-
-The console's `age[s]` column (previously labelled `bpdu`) is the elapsed
-time since the last BPDU, capped at 255 seconds; it is not a receive count.
-Use the web counters or `/stpcnt.json` for full receive counts.
+`get state.stp` shows the same on the console (or over POST /cli): the
+bridge and root IDs, whether this switch is the root, the root port
+(`lag.L` for a LAG) and cost, the topology changes, and per port and LAG
+(`state.stp.port.N`, `state.stp.lag.L`) the state, role, edge, the time
+since the last BPDU in milliseconds and the four counters. A port is
+reported with one of the roles root, designated, alternate, backup or
+disabled; disabled covers a port with STP turned off on it, one shut down by
+BPDU guard and one without link. A port in a LAG, and a LAG with no
+members, read as off.
 
 An own BPDU received back on another port can temporarily hold its sending
 port in discarding, even if that sending port has received no BPDUs itself.

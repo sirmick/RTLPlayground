@@ -41,10 +41,6 @@ void stp_parse(void) __banked __reentrant
 		stp_enabled = 0;
 		return;
 	}
-	if (cmd_compare(1, "status")) {
-		stp_status();
-		return;
-	}
 	if (cmd_compare(1, "clear")) {
 		stp_counters_clear();
 		return;

@@ -110,7 +110,7 @@ STEP(con, edit)
 #define CLI_CON	1
 #define CLI_WEB	2
 /* Free TX ring a command starts with: more than any unchunked command
- * prints (the tour's most, lacp show, ~600 B), so it doesn't wait on the
+ * prints (the tour's most, ~600 B), so it doesn't wait on the
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */

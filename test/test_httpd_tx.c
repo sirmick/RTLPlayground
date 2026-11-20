@@ -300,7 +300,6 @@ void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }
 void send_lag(void) { }
 void send_stp(void) { }
-void send_stp_counters(void) { }
 void send_vlanlist(void) { }
 void send_lldp(void) {}
 void send_loop(void) { }
