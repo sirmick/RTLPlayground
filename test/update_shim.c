@@ -42,7 +42,7 @@ void flash_read_bulk(uint8_t *dst)  { fd_read(&g_flash, flash_region.addr, dst, 
 /* A modelled power cut aborts execution where it happens - the CPU dies, it
  * does not skip one write and carry on - so unwind out of the routine. */
 void flash_sector_erase(void)       { fd_erase_sector(&g_flash, flash_region.addr); if (g_flash.powercut) longjmp(reset_jmp, 2); }
-void flash_write_bytes(uint8_t *ptr){ fd_write(&g_flash, flash_region.addr, ptr, flash_region.len); if (g_flash.powercut) longjmp(reset_jmp, 2); }
+void flash_write_bytes(uint8_t *ptr){ fd_write_ops(&g_flash, flash_region.addr, ptr, flash_region.len, 1); if (g_flash.powercut) longjmp(reset_jmp, 2); }
 
 /* --- boot hooks the routine touches --- */
 void set_sys_led_state(uint8_t state) { (void)state; }

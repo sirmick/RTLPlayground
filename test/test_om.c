@@ -62,7 +62,8 @@ struct flash_region_t flash_region;
 uint8_t flash_buf[FLASH_BUF_SIZE];
 void flash_read_bulk(uint8_t *dst) { fd_read(&fl, flash_region.addr, dst, flash_region.len); }
 void flash_sector_erase(void) { fd_erase_sector(&fl, flash_region.addr); if (fl.powercut) longjmp(fl_cut, 1); }
-void flash_write_bytes(uint8_t *p) { fd_write(&fl, flash_region.addr, p, flash_region.len); if (fl.powercut) longjmp(fl_cut, 1); }
+static int old_ops;		/* program as before 4 B ops were cut at a page */
+void flash_write_bytes(uint8_t *p) { fd_write_ops(&fl, flash_region.addr, p, flash_region.len, !old_ops); if (fl.powercut) longjmp(fl_cut, 1); }
 
 uint8_t fl_req, fl_kind;
 uint16_t fl_len;
@@ -1252,6 +1253,38 @@ static void binary(void)
 	fl_busy = 1;
 	expect("save", "err save: busy\n");
 	fl_busy = 0;
+
+	printf("a save of several chunks\n");
+	{
+		static struct cfg big;
+		char c[80];
+		for (n = 1; n <= OM_PORTS; n++) {
+			snprintf(c, sizeof c, "set port.%d.name port %02d is a name of 31 chars!!", n, n);
+			expect(c, "ok\n");
+			snprintf(c, sizeof c, "set port.%d.tstorm.bcast.rate %d", n, 100 + n);
+			expect(c, "ok\n");
+			snprintf(c, sizeof c, "set port.%d.tstorm.ucast.rate %d", n, 200 + n);
+			expect(c, "ok\n");
+			snprintf(c, sizeof c, "set tstp.port.%d.cost %d", n, 1000 + n);
+			expect(c, "ok\n");
+		}
+		expect("apply", "ok\n");
+		memcpy(&big, &cfg_run, sizeof big);
+		old_ops = 1;
+		fl.page_wraps = 0;
+		expect("save", "err save: failed\n");
+		CHECK(fl.page_wraps > 0, "4 B ops from an unaligned chunk cross a page: the model wraps them and the CRC fails");
+		old_ops = 0;
+		fl.page_wraps = 0;
+		expect("save", "ok\n");
+		expect("get state.cfg.save", "state.cfg.save done\nok\n");
+		CHECK(!fl.page_wraps, "ops cut at the page: none wraps");
+		sec_read();
+		CHECK((sec[4] | sec[5] << 8) > 2 * 256, "the save took 3 chunks or more");
+		boot();
+		CHECK(cfg_is(&big) && !strstr(out_buf, "not applied"), "boot loads the several-chunk save");
+		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 0\nok\n");
+	}
 
 	printf("unknown records, values out of range\n");
 	{
