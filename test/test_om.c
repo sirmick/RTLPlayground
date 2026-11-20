@@ -163,7 +163,17 @@ uint8_t om_do_sys_rnd(uint8_t idx) { sys_rnd++; return OM_OK; }
 static int t_syslog;
 static struct cfg_syslog syslog_new;
 uint8_t om_apply_syslog(uint8_t idx) { t_syslog++; syslog_new = cfg_run.syslog; return OM_OK; }
-static int t_dns, t_ntp, t_web;
+static int t_dns, t_ntp, t_web, t_mgmt, t_renew;
+uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
+uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
+{
+	t_renew++;
+	if (cfg_run.mgmt.mode != E_MGMTMODE_DHCP) {
+		om_fail(OM_E_MGMT_STATIC);
+		return OM_ERR;
+	}
+	return OM_OK;
+}
 uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
 uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
 uint8_t om_apply_dns(uint8_t idx) { t_dns++; return OM_OK; }
@@ -434,10 +444,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get vlan.1", "err vlan.1: dns ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get vlan.1", "err vlan.1: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "port.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
+	expect("get", "dns\nmgmt\nntp\nport.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\nsched\nstate.mgmt\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\nsys\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\ntsys\ntvlan.*\ntlag.*\ntstp\ntstp.port.*\nport.*.tstorm.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -808,7 +818,7 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: dns mgmt ntp port.* sched sys syslog web tsys tvlan.* tlag.* tstp tstp.port.* port.*.tstorm.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
@@ -1299,6 +1309,15 @@ static void services(void)
 {
 	printf("services\n");
 	om_init();
+	expect("get mgmt", "mgmt.mode static\nmgmt.ip 192.168.2.2\nmgmt.netmask 255.255.255.0\nmgmt.gateway 192.168.2.22\nmgmt.vlan 1\nok\n");
+	expect("do mgmt.dhcp_renew", "err mgmt.dhcp_renew: mgmt.mode is static\n");
+	expect("set mgmt.ip 10.0.0.5", "ok\n");
+	expect("set mgmt.netmask 255.0.255.0", "err mgmt.netmask: a.b.c.d, contiguous\n");
+	expect("set mgmt.mode dhcp", "ok\n");
+	t_mgmt = 0;
+	expect("apply", "ok\n");
+	CHECK(t_mgmt == 1 && cfg_run.mgmt.mode == E_MGMTMODE_DHCP && cfg_run.mgmt.ip[3] == 5, "mgmt: one apply, dhcp, the static address kept");
+	expect("do mgmt.dhcp_renew", "ok\n");
 	expect("get dns", "dns.server1 0.0.0.0\ndns.server2 0.0.0.0\nok\n");
 	expect("set dns.server2 9.9.9.9", "ok\n");
 	t_dns = 0;

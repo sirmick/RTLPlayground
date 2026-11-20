@@ -691,23 +691,6 @@ void parse_vlan(void)
 			goto err;
 		vlan_settings.vlan = atoi_results_short;
 
-		if (cmd_compare(2, "mgmt")) {
-			if (management_vlan == vlan_settings.vlan) {
-				print_string("Management VLAN unchanged\n");
-				return;
-			}
-			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
-			management_vlan = vlan_settings.vlan;
-			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
-			if (dhcp_state.state != DHCP_OFF)
-				dhcp_start();
-			if (!vlan_settings.vlan)
-				print_string("Management VLAN disabled\n");
-			else
-				print_string("Management VLAN set to "); print_short(management_vlan); write_char('\n');
-			return;
-		}
-
 		// Other commands vlan 0 is invalid
 		if (!vlan_settings.vlan)
 			goto err;
@@ -1517,41 +1500,6 @@ void cmd_parser(void) __banked
 			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
-		} else if (cmd_compare(0, "ip")) {
-			if (cmd_compare(1, "dhcp")) {
-				dhcp_start();
-			} else {		/* the address now: get state.mgmt */
-				if (dhcp_state.state && cmd_words_len > 1)
-					dhcp_stop();
-				if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-					uip_ipaddr(&uip_hostaddr, ip[0], ip[1], ip[2], ip[3]);
-					print_string("Setting ip: ");
-					print_ip(ip); write_char('\n');
-				} else {
-					cmd_error("Invalid IP address\n" \
-								 "Error: ip <ip-address>|dhcp\n" \
-								 "  The dhcp option enables the dhcp client (get state.mgmt shows the address)\n" \
-								 "  Calling with a valid IP address will stop any ongoing dhcp client and set the IP address\n");
-				}
-			}
-		} else if (cmd_compare(0, "gw")) {
-			if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-				uip_ipaddr(&uip_draddr, ip[0], ip[1], ip[2], ip[3]);
-				print_string("Setting gw: ");
-				print_ip(ip); write_char('\n');
-			} else {
-				cmd_error("Invalid IP address\n" \
-								 "Error: gw <ip-address>\n");
-			}
-		} else if (cmd_compare(0, "netmask")) {
-			if (cmd_words_len > 1 && parse_ip(cmd_words_b[1]) != 0) {
-				uip_ipaddr(&uip_netmask, ip[0], ip[1], ip[2], ip[3]);
-				print_string("Setting netmask: ");
-				print_ip(ip); write_char('\n');
-			} else {
-				cmd_error("Invalid IP address\n");
-			}
-			write_char('\n');
 		} else if (cmd_compare(0, "l2")) {
 			if (cmd_compare(1, "forget"))
 				port_l2_forget();

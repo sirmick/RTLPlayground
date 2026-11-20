@@ -33,7 +33,6 @@
 extern __code const struct machine machine;
 extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];
 extern __xdata uint16_t slen;
-extern __xdata uint16_t management_vlan;
 extern __xdata uint16_t cont_len;
 extern __xdata uint32_t cont_addr;
 extern __code const uint8_t * __code const hex;
@@ -970,9 +969,7 @@ void send_vlanlist(void)
 	uint8_t first = 1;
 
 	slen = strtox(outbuf, HTTP_RESPONSE_JSON);
-	str_code_to_html("{" JSONQUOTE("mgmt") ":");
-	itoa16_html(management_vlan);
-	str_code_to_html("," JSONQUOTE("vlan") ":[");
+	str_code_to_html("{" JSONQUOTE("vlan") ":[");
 
 	for (i = vlan_next(1); i < 4095; i = vlan_next(i + 1)) {	/* E4: the bitmap */
 		if (slen + 141 > TCP_OUTBUF_SIZE) /* comma + 138-byte worst-case entry + closing "]}" */

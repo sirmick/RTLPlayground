@@ -1,8 +1,9 @@
 /*
- * om_svc.c - the network services for the object model (schema/dns.py,
- * ntp.py, syslog.py, web.py): apply their config. What the old dns server,
- * ntp, syslog, passwd and session commands did; ntp and syslog stop, take
- * the fields, start if enabled; a new password logs every session out.
+ * om_svc.c - the management interface and the network services for the
+ * object model (schema/mgmt.py, dns.py, ntp.py, syslog.py, web.py): apply
+ * their config. What the old ip, gw, netmask, vlan N mgmt, dns server, ntp,
+ * syslog, passwd and session commands did; ntp and syslog stop, take the
+ * fields, start if enabled; a new password logs every session out.
  */
 #include <stdint.h>
 #include <stdbool.h>
@@ -12,10 +13,51 @@
 #include "dns.h"
 #include "ntp.h"
 #include "sessions.h"
+#include "dhcp.h"
+#include "rtl837x_port.h"
+#include "uip/uip.h"
 #include "om_gen.h"
 
 extern __xdata char passwd[21];
 extern __xdata uint16_t session_timeout;
+extern __xdata uint16_t management_vlan;
+extern __xdata struct dhcp_state dhcp_state;
+extern __xdata struct uip_eth_addr uip_ethaddr;
+
+/* mgmt: the L2 entry to the new VLAN; static: the addresses (DHCP stopped);
+ * dhcp: (re)started when it comes on or the VLAN moves */
+uint8_t om_apply_mgmt(uint8_t idx) __banked
+{
+	(void)idx;
+	if (cfg_run.mgmt.vlan != management_vlan) {
+		port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
+		management_vlan = cfg_run.mgmt.vlan;
+		port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
+		if (cfg_run.mgmt.mode == E_MGMTMODE_DHCP)
+			dhcp_start();
+	}
+	if (cfg_run.mgmt.mode == E_MGMTMODE_STATIC) {
+		if (dhcp_state.state != DHCP_OFF)
+			dhcp_stop();
+		memcpy(uip_hostaddr, cfg_run.mgmt.ip, 4);
+		memcpy(uip_netmask, cfg_run.mgmt.netmask, 4);
+		memcpy(uip_draddr, cfg_run.mgmt.gateway, 4);
+	} else if (dhcp_state.state == DHCP_OFF) {
+		dhcp_start();
+	}
+	return OM_OK;
+}
+
+uint8_t om_do_mgmt_dhcp_renew(uint8_t idx) __banked
+{
+	(void)idx;
+	if (cfg_run.mgmt.mode != E_MGMTMODE_DHCP) {
+		om_fail(OM_E_MGMT_STATIC);
+		return OM_ERR;
+	}
+	dhcp_start();
+	return OM_OK;
+}
 
 uint8_t om_apply_syslog(uint8_t idx) __banked
 {
