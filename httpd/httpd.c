@@ -907,10 +907,19 @@ void httpd_webcmd_begin(void) __banked
 	exec_begin(config_buf);
 }
 
+/* A step that overflowed outbuf: marked where it was cut, and the capture
+ * goes on with the next */
+static void webcmd_mark(void)
+{
+	if (webcmd_cap == 2) {
+		slen += strtox(outbuf + slen, CMD_TRUNCATED);
+		webcmd_cap = 1;
+	}
+}
+
 void httpd_webcmd_end(void) __banked
 {
-	if (webcmd_cap == 2)
-		slen += strtox(outbuf + slen, CMD_TRUNCATED);
+	webcmd_mark();
 	webcmd_cap = 0;
 	webcmd_done = 1;
 	/* a /cli, or a /cmd whose header has gone: the body says */
@@ -1286,6 +1295,7 @@ void httpd_appcall(void)
 				send_outbuf();
 		} else if (s->tstate == TSTATE_WEBCMD && (webcmd_done || webcmd_wait)) {
 			/* done, or cli waits for room: what is there goes */
+			webcmd_mark();
 			send_outbuf();
 		} else if (s->tstate == TSTATE_ACKED) {
 			dbg_string("Closing because everything has been transmitted\n");

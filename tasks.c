@@ -43,6 +43,7 @@ extern __code const struct machine machine;
 
 static __xdata uint16_t house_due, loop_due;
 static __xdata uint8_t ti, tn;
+static __xdata uint8_t rx_wait;	/* cli waited for outbuf before this step */
 
 /* rx: woken by INT1 (HW_RX); up to RX_BUDGET frames a step */
 TASK(rx, fixed, high, first=idle)
@@ -53,8 +54,9 @@ STEP(rx, idle)
 
 STEP(rx, step)
 {
+	rx_wait = webcmd_wait;		/* the ACK that frees outbuf clears it */
 	tn = rx_service();
-	if (webcmd_pending || webcmd_wait)
+	if (webcmd_pending || rx_wait)
 		task_wake(T_CLI);	/* httpd queued a /cmd, or an ACK may have freed outbuf */
 	if (tn)
 		return STEP_STAY;	/* more waiting: again at the next position */

@@ -2037,7 +2037,20 @@ static void scenario_flash_busy(void)
  * end httpd_webcmd_end. A run whose connection ended (webcmd_busy 0) stops. */
 #define BENCH_CLI_ROOM	640
 static int cli_lines, cli_n, cli_running;
+static int cli_big = -1;	/* this line prints BIG_LINE bytes in one step */
+#define BIG_LINE	2400
 static uint8_t cli_err;
+
+/* write_char_no_syslog()'s capture (rtlplayground.c) */
+static void cap_putc(char c)
+{
+	if (!cmd_capture)
+		return;
+	if (slen < TCP_OUTBUF_SIZE - sizeof(CMD_TRUNCATED))
+		outbuf[slen++] = c;
+	else
+		cmd_capture = 2;
+}
 
 static int cli_line(char *buf, int n)
 {
@@ -2066,9 +2079,17 @@ static void cli_model(void)
 			webcmd_wait = 1;
 			return;
 		}
-		n = cli_line(line, cli_n++);
-		memcpy(outbuf + slen, line, n);
-		slen += n;
+		WEBCMD_CAPTURE_ON();
+		if (cli_n == cli_big) {
+			for (n = 0; n < BIG_LINE; n++)
+				cap_putc(n == BIG_LINE - 1 ? '\n' : 'x');
+			cli_n++;
+		} else {
+			n = cli_line(line, cli_n++);
+			for (int i = 0; i < n; i++)
+				cap_putc(line[i]);
+		}
+		WEBCMD_CAPTURE_OFF();
 	}
 	err_status = cli_err;
 	httpd_webcmd_end();
@@ -2164,6 +2185,42 @@ static void scenario_cli_long_reply(void)
 	cli_err = ERR_OK;
 }
 
+/* A step that prints more than outbuf's room is cut where it overflowed,
+ * marked there, and the steps after it arrive whole */
+static void scenario_cli_overflow(void)
+{
+	char line[64], *body, *at, *mark;
+	int n, ok = 1;
+
+	cli_lines = 200;
+	cli_big = 100;
+	cli_err = ERR_OK;
+	cli_post("/cli", "get state.port");
+	cli_drive(0);
+	cli_big = -1;
+	stream[stream_len < STREAM_MAX ? stream_len : STREAM_MAX - 1] = 0;
+	body = (char *)stream + body_offset();
+	mark = strstr(body, CMD_TRUNCATED);
+	CHECK(mark && !strstr(mark + 1, CMD_TRUNCATED), "/cli overflow: marked once");
+	at = body;
+	for (n = 0; n < cli_lines; n++) {
+		if (n == 100) {
+			ok &= mark && mark > at;
+			at = mark ? mark + strlen(CMD_TRUNCATED) : at;
+			continue;
+		}
+		cli_line(line, n);
+		at = strstr(at, line);
+		if (!at) {
+			ok = 0;
+			break;
+		}
+		at += strlen(line);
+	}
+	CHECK(ok, "/cli overflow: every other line in order, the mark where the big one was cut");
+	CHECK(fin_seen, "/cli overflow: the reply ends at close");
+}
+
 static void scenario_cli_dropped(void)
 {
 	static char want[STREAM_MAX];
@@ -2257,6 +2314,7 @@ int main(int argc, char **argv)
 	scenario_reset_after_ack();
 	scenario_side_effect_gets();
 	scenario_cli_long_reply();
+	scenario_cli_overflow();
 	scenario_cli_dropped();
 	scenario_fragmented_get_cookie();
 	scenario_fragmented_get_cookie_value();
