@@ -70,19 +70,16 @@ forwarding tables of the switch, see [L2 learning](l2.md).
 The code currently provides the following functions:
 ```
 void igmp_setup(void) __banked;
-void igmp_enable(void) __banked;
-void igmp_router_port_set(uint16_t pmask) __banked;
+uint8_t om_apply_igmp(uint8_t idx) __banked;
 uint8_t igmp_packet_handler(void) __banked;
-void igmp_show(void) __banked;
-```c
+```
 `igmp_setup()` is called at boot-time and configures flooding of all IP-MC packets by
-default, as otherwise no IP-MC would be possible in the network. `igmp off` calls it as
-well; groups learned while IGMP was on stay in the table, but are no longer looked up.
+default, as otherwise no IP-MC would be possible in the network. Applying `igmp.enabled off`
+calls it as well; groups learned while IGMP was on stay in the table, but are no longer looked up.
 
-`igmp_enable()`starts IGMP which cause IGMP packets to be handled by the CPU and forwarding
-of IP-MC packets to be limited to only subscribed ports.
-
-`igmp_router_port_set()`configures forwarding ports for IGMP messages.
+`om_apply_igmp()` applies the object model's `igmp.enabled` (schema/igmp.py): on starts IGMP,
+which causes IGMP packets to be handled by the CPU and forwarding of IP-MC packets to be
+limited to only subscribed ports; off is `igmp_setup()`.
 
 `igmp_packet_handler()` implements handling of trapped IGMP packets by the CPU. It is called
 for frames to 01:00:5e:xx:xx:xx and returns 0 when the frame is not a trapped IGMP packet,
@@ -93,17 +90,15 @@ Reports for groups in 224.0.0.0/24 are ignored: the switch floods that block
 even with IGMP on, and an entry for a group such as 224.0.0.251 (mDNS) would
 otherwise limit it to the ports that reported it, as RFC 4541 warns against.
 
-`igmp_show()` prints out the IGMP configuration on the CLI.
-
-
-## IGMP configuration on the Serial Console
-For testing the following commands are provided on the serial console:
+## IGMP configuration
+On the serial console, or by POST /cli from the web:
 ```
-> igmp [on/off]
-  Enables or disables IGMP
+> set igmp.enabled on
+> apply
+  Enables IGMP snooping (off disables it)
 
-> igmp show
-  Shows information on IGMP
+> get igmp
+  Shows igmp.enabled
 ```
 
 ## LAG configuration via the Web Interface
@@ -130,7 +125,8 @@ you can force the output interface of vlc by using `--miface=<ifname>`
 
 Enable IGMP on the switch-CLI:
 ```
-> igmp on
+> set igmp.enabled on
+> apply
 ```
 The flickering should now stop on all ports except the port where the streaming device is connected:
 the switch drops all IP-MC packets as there are no listeners.

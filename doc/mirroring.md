@@ -24,19 +24,23 @@ RRRR: 16 bit mask for ports where received packets are mirrored
 TTTT: 16 bit mask for ports where transmitted packets are mirrored
 ```
 
-## Mirroring API
-The code currently provides the following functions:
+## Configuration
+Mirroring is the object model's `mirror` (schema/mirror.py); apply
+(om_apply_mirror, om_port.c) writes MIRROR_CONF, then MIRROR_CTRL:
 ```
-void port_mirror_set(register uint8_t port, __xdata uint16_t rx_pmask, __xdata uint16_t tx_pmask) __banked
-void port_mirror_del(void)
+mirror.enabled on|off     mirroring on (default off)
+mirror.port <port>|none   the mirroring port, where the copies go
+mirror.rx <ports>         the ports whose received frames are copied
+mirror.tx <ports>         the ports whose sent frames are copied
 ```
-
-# Mirroring on the Serial Console
-For testing the following commands are provided on the serial console:
+Ports are front-panel numbers (a list like 1-3,5). apply refuses mirror.enabled
+on without a port, and a mirroring port that is also in rx or tx. On the
+console, or by POST /cli from the web:
 ```
-mirror <mirroring port> <P1>[r|t] [P2][r|t] ...
-  mirror to port <mirroring port>, source ports are P1 with the givent packet types, P2 and so on
-
-mirror d
-  Deletes mirroring configuration
+> set mirror.port 1
+> set mirror.rx 2,3
+> set mirror.tx 2,4
+> set mirror.enabled on
+> apply
+> get mirror
 ```
