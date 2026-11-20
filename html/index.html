@@ -378,18 +378,6 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
       </div>
     </section>
 
-    <section class="tab" id="tab-isolate">
-      <div class="card"><h2 data-i18n="iso_title">Port isolation</h2>
-        <p class="small mut" style="margin-bottom:10px" data-i18n="iso_intro">A frame entering a port may only leave through the ports ticked in its row.</p>
-        <div class="scrollx"><table class="t" id="isotbl" style="width:auto"><thead></thead><tbody></tbody></table></div>
-        <p class="small mut" style="margin-top:6px" data-i18n="iso_legend">The cell of the port itself is always allowed.</p>
-        <div style="display:flex;gap:12px;margin-top:10px">
-          <button class="ctl pri" id="isoapply" data-i18n="c_apply">Apply</button>
-          <button class="ctl" id="isoall" data-i18n="iso_all">Allow all</button>
-        </div>
-      </div>
-    </section>
-
     <section class="tab" id="tab-lag">
       <div id="lagwrap" class="grid2"></div>
       <div class="card" style="margin-top:14px"><h2 data-i18n="lacp_heading">LACP (802.3ad)</h2>
@@ -398,15 +386,6 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <tbody></tbody></table></div>
       </div>
       <p class="small mut" style="margin-top:10px" data-i18n="lag_note">A LAG needs at least one member to be saved in the startup config; applying an empty group clears it.</p>
-    </section>
-
-    <section class="tab" id="tab-eee">
-      <div class="card"><h2 data-i18n="e_title">Energy Efficient Ethernet</h2>
-        <div class="scrollx"><table class="t" id="etable">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="e_adv">Advertised</th><th data-i18n="e_lp">Link partner</th><th data-i18n="e_active">Active</th><th data-i18n="e_enable">Enable</th></tr></thead>
-          <tbody></tbody></table></div>
-        <p class="small mut" style="margin-top:8px" data-i18n="e_note">Advertised and link-partner flags per speed: 100M, 1G, 2.5G. SFP ports do not support EEE.</p>
-      </div>
     </section>
 
     <section class="tab" id="tab-bw">

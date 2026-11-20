@@ -8,9 +8,7 @@ var LANG = {
         nav_vlan: "VLANs",
         nav_l2: "MAC table",
         nav_mirror: "Mirroring",
-        nav_isolate: "Isolation",
         nav_lag: "LAG",
-        nav_eee: "EEE",
         nav_bw: "Bandwidth",
         nav_system: "System",
         nav_fw: "Firmware",
@@ -106,6 +104,12 @@ var LANG = {
         p_rxlos: "RX LOS",
         p_adv: "Advertising",
         pt_title: "Port configuration",
+        pt_conn: "Devices learned",
+        pt_speed: "Speed",
+        pt_mtu: "MTU",
+        pt_sfp_note: "SFP speed is set per slot and is not saved in the startup config.",
+        pt_name_err: "Port name: 1-15 characters, no spaces",
+        pt_mtu_err: "MTU must be 64-16383",
         stp_title: "Spanning tree",
         loop_title: "Loop detection",
         loop_d: "The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.",
@@ -250,12 +254,6 @@ var LANG = {
         m_both: "Both",
         m_note: "Both = mirror RX and TX of the port to the monitor port.",
         m_none: "Select at least one mirrored port",
-        iso_title: "Port isolation",
-        iso_from: "From port",
-        iso_to: "To port",
-        iso_all: "Allow all",
-        iso_intro: "A frame entering a port may only leave through the ports ticked in its row. Isolation is decided before forwarding, so a port that is not ticked is unreachable directly, whatever the address table says.",
-        iso_legend: "The cell of the port itself is always allowed. A port number in red marks a port that is not fully open.",
         lag_hash: "Hash:",
         lag_note: "A LAG needs at least one member to be saved in the startup config; applying an empty group clears it.",
         lacp_heading: "LACP (802.3ad)",
@@ -272,14 +270,6 @@ var LANG = {
         lacp_psys: "Partner system",
         lag_clear_q: "Clear LAG {n}?",
         lag_clear_d: "All member ports return to normal operation.",
-        e_title: "Energy Efficient Ethernet",
-        e_adv: "Advertised",
-        e_lp: "Link partner",
-        e_active: "Active",
-        e_enable: "Enable",
-        e_note: "Advertised and link-partner flags per speed: 100M, 1G, 2.5G. SFP ports do not support EEE.",
-        e_idle: "idle",
-        e_na: "n/a",
         bw_title: "Bandwidth limits",
         bw_h: "Mbit/s, 0.016-10000",
         bw_in: "Ingress limit",
@@ -443,7 +433,6 @@ var LANG = {
         nav_l2: "MAC テーブル",
         nav_mirror: "ミラーリング",
         nav_lag: "LAG",
-        nav_eee: "EEE",
         nav_bw: "帯域制限",
         nav_system: "システム",
         nav_fw: "ファームウェア",
@@ -520,6 +509,12 @@ var LANG = {
         p_rxlos: "RX 信号ロス",
         p_adv: "アドバタイズ",
         pt_title: "ポート設定",
+        pt_conn: "学習済みデバイス",
+        pt_speed: "速度",
+        pt_mtu: "MTU",
+        pt_sfp_note: "SFP の速度はスロット単位で設定され、起動設定には保存されません。",
+        pt_name_err: "ポート名: 1〜15 文字、空白不可",
+        pt_mtu_err: "MTU は 64〜16383 の範囲で指定してください",
         stp_title: "スパニングツリー",
         stp_h: "RSTP, 802.1w",
         stp_version: "バージョン",
@@ -633,14 +628,6 @@ var LANG = {
         lag_note: "起動設定に保存するには LAG に 1 つ以上のメンバーが必要です。メンバーなしで適用するとグループを解除します。",
         lag_clear_q: "LAG {n} を解除しますか?",
         lag_clear_d: "すべてのメンバーポートが通常動作に戻ります。",
-        e_title: "Energy Efficient Ethernet",
-        e_adv: "アドバタイズ",
-        e_lp: "リンクパートナー",
-        e_active: "有効",
-        e_enable: "有効化",
-        e_note: "速度ごとのアドバタイズ/リンクパートナーのフラグ: 100M、1G、2.5G。SFP ポートは EEE に対応していません。",
-        e_idle: "アイドル",
-        e_na: "n/a",
         bw_title: "帯域制限",
         bw_h: "Mbit/s、0.016〜10000",
         bw_in: "入力制限",
@@ -748,9 +735,7 @@ var LANG = {
         nav_vlan: "VLAN",
         nav_l2: "MAC 表",
         nav_mirror: "端口镜像",
-        nav_isolate: "端口隔离",
         nav_lag: "LAG",
-        nav_eee: "EEE",
         nav_bw: "带宽限制",
         nav_system: "系统",
         nav_fw: "固件",
@@ -828,6 +813,12 @@ var LANG = {
         p_rxlos: "RX 信号丢失",
         p_adv: "通告能力",
         pt_title: "端口配置",
+        pt_conn: "已学习设备",
+        pt_speed: "速率",
+        pt_mtu: "MTU",
+        pt_sfp_note: "SFP 速率按插槽设置，不会保存到启动配置。",
+        pt_name_err: "端口名称: 1-15 个字符，不能包含空格",
+        pt_mtu_err: "MTU 范围为 64-16383",
         stp_title: "生成树",
         stp_h: "RSTP, 802.1w",
         stp_version: "版本",
@@ -964,12 +955,6 @@ var LANG = {
         m_both: "双向",
         m_note: "双向 = 将该端口的 RX 和 TX 都镜像到目的端口。",
         m_none: "请至少选择一个被镜像端口",
-        iso_title: "端口隔离",
-        iso_from: "源端口",
-        iso_to: "目的端口",
-        iso_all: "全部放行",
-        iso_intro: "从某个端口进入的以太网帧，只能通过该行中勾选的端口转发出去。端口隔离在转发之前生效，因此，无论 MAC 地址表中如何记录，未勾选的端口都无法直接访问。",
-        iso_legend: "端口自身对应的单元格始终允许。端口号显示为红色，表示该端口尚未完全开放。",
         lag_hash: "哈希:",
         lag_note: "LAG 至少需要一个成员才能保存到启动配置；应用空组将清除该组。",
         lacp_heading: "LACP (802.3ad)",
@@ -986,14 +971,6 @@ var LANG = {
         lacp_psys: "对端系统",
         lag_clear_q: "清除 LAG {n}?",
         lag_clear_d: "所有成员端口恢复正常工作。",
-        e_title: "节能以太网 (EEE)",
-        e_adv: "本端通告",
-        e_lp: "链路伙伴",
-        e_active: "已生效",
-        e_enable: "启用",
-        e_note: "按速率显示本端/链路伙伴的通告标志: 100M、1G、2.5G。SFP 端口不支持 EEE。",
-        e_idle: "空闲",
-        e_na: "n/a",
         bw_title: "带宽限制",
         bw_h: "Mbit/s，0.016-10000",
         bw_in: "入方向限速",
@@ -1133,7 +1110,6 @@ var LANG = {
         nav_l2: "Tabla MAC",
         nav_mirror: "Duplicación",
         nav_lag: "LAG",
-        nav_eee: "EEE",
         nav_bw: "Ancho de banda",
         nav_system: "Sistema",
         nav_fw: "Firmware",
@@ -1209,6 +1185,12 @@ var LANG = {
         p_rxlos: "Pérdida RX (LOS)",
         p_adv: "Anunciado",
         pt_title: "Configuración de puerto",
+        pt_conn: "Dispositivos aprendidos",
+        pt_speed: "Velocidad",
+        pt_mtu: "MTU",
+        pt_sfp_note: "La velocidad del SFP se ajusta por ranura y no se guarda en la configuración de inicio.",
+        pt_name_err: "Nombre de puerto: 1-15 caracteres, sin espacios",
+        pt_mtu_err: "El MTU debe estar entre 64 y 16383",
         stp_title: "Árbol de expansión",
         stp_h: "RSTP, 802.1w",
         stp_version: "Versión",
@@ -1322,14 +1304,6 @@ var LANG = {
         lag_note: "Un LAG necesita al menos un miembro para guardarse en la configuración de inicio; aplicar un grupo vacío lo borra.",
         lag_clear_q: "¿Borrar LAG {n}?",
         lag_clear_d: "Todos los puertos miembros vuelven a la operación normal.",
-        e_title: "Ethernet de bajo consumo",
-        e_adv: "Anunciado",
-        e_lp: "Par de enlace",
-        e_active: "Activo",
-        e_enable: "Habilitar",
-        e_note: "Banderas anunciadas y del socio de enlace por velocidad: 100M, 1G, 2.5G. Los puertos SFP no soportan EEE.",
-        e_idle: "inactivo",
-        e_na: "n/d",
         bw_title: "Límites de ancho de banda",
         bw_h: "Mbit/s, 0.016-10000",
         bw_in: "Límite de entrada",
@@ -1427,7 +1401,6 @@ var LANG = {
         fw_login: "Ir al inicio de sesión",
         fw_rebooting: "el switch se está reiniciando...",
         fw_timeout: "el switch no ha vuelto tras 150 s: comprueba la alimentación / consola serie",
-        nav_isolate: "Aislamiento",
         nav_lldp: "LLDP",
         i_temp: "Temperatura",
         lldp_enabled: "LLDP activado",
@@ -1459,12 +1432,6 @@ var LANG = {
         v_rename: "Renombrar",
         v_rename_t: "Renombrar VLAN",
         v_mgmt_tt: "La VLAN de gestión no se puede borrar, primero hay que asignar la gestión a otra VLAN.",
-        iso_title: "Aislamiento de puertos",
-        iso_from: "Desde el puerto",
-        iso_to: "Hacia el puerto",
-        iso_all: "Permitir todo",
-        iso_intro: "Una trama que entra por un puerto solo puede salir por los puertos marcados en su fila. El aislamiento se decide antes del reenvío, así que un puerto sin marcar es inalcanzable de forma directa, diga lo que diga la tabla de direcciones.",
-        iso_legend: "La celda del propio puerto siempre está permitida. Un número de puerto en rojo indica un puerto que no está del todo abierto.",
         lacp_heading: "LACP (802.3ad)",
         lag_mode: "Modo",
         lag_static: "Estático",
@@ -1519,7 +1486,6 @@ var LANG = {
         nav_l2: "Table MAC",
         nav_mirror: "Mise en mirroir",
         nav_lag: "Aggrégation",
-        nav_eee: "Energie",
         nav_bw: "Bande passante",
         nav_system: "Système",
         nav_fw: "Micro logiciel",
@@ -1597,6 +1563,12 @@ var LANG = {
         p_rxlos: "RX pertes de signaux",
         p_adv: "Capacités",
         pt_title: "Configuration du port",
+        pt_conn: "Appareils appris",
+        pt_speed: "Vitesse",
+        pt_mtu: "MTU",
+        pt_sfp_note: "La vitesse SFP est paramétrée pour le port et n'est pas enregistrée dans la configuration de démarrage.",
+        pt_name_err: "Nom du port: 1 à 15 caractères, sans espaces",
+        pt_mtu_err: "MTU doit être comrpis entre 64 et 16383",
         stp_title: "Arborescence",
         stp_h: "RSTP, 802.1w",
         stp_version: "Protocole",
@@ -1710,24 +1682,10 @@ var LANG = {
         m_both: "RX&TX",
         m_note: "RX&TX = duplique RX et TX du port vers le port de supervision.",
         m_none: "Selectionnez au moins un port à dupliquer",
-        iso_title: "Isolation des ports",
-        iso_from: "Du port",
-        iso_to: "Au port",
-        iso_all: "Tout autoriser",
-        iso_intro: "Une trame réseau accédant à un port ne peut repartir que par le port selectionné dans cette ligne. L'isolement est prioritaire sur la retransmission, un port non non coché n'est pas accessible directement, quoi que dit la table d'adresses.",
-        iso_legend: "La cellule du port lui-même est toujours autorisée. Une port de couleur rouge indique que celui-ci n'est que partiellement ouvert.",
         lag_hash: "Hachage:",
         lag_note: "Un groupe d'agrégation de Lien (LAG) nécessite au moins un membre pour être sauvegardé dans la configuration de démarrage; Utiliser un groupe vide fait office de remise à zero.",
         lag_clear_q: "Effacer l'agrégation {n}?",
         lag_clear_d: "Tous les ports membres vont redevenir normaux.",
-        e_title: "Gestion énergétique des ports",
-        e_adv: "Capacités",
-        e_lp: "Capacité du partenaire",
-        e_active: "Actif",
-        e_enable: "Basse consommation",
-        e_note: "Capacité de l'hôte et des partenaires : 100M, 1G, 2.5G. Les ports SFP ne peuvent pas bénéficier de l'EEE.",
-        e_idle: "Inactif",
-        e_na: "N/A",
         bw_title: "Limitations de bande passante",
         bw_h: "Mbit/s, 0.016-10000",
         bw_in: "Limite entrante",
@@ -1866,9 +1824,7 @@ var LANG = {
         nav_vlan: "VLANs",
         nav_l2: "MAC-Tabelle",
         nav_mirror: "Spiegelung",
-        nav_isolate: "Isolation",
         nav_lag: "LAG",
-        nav_eee: "EEE",
         nav_bw: "Bandbreite",
         nav_system: "System",
         nav_fw: "Firmware",
@@ -1945,6 +1901,12 @@ var LANG = {
         p_rxlos: "RX LOS",
         p_adv: "Angeboten",
         pt_title: "Port-Konfiguration",
+        pt_conn: "Gelernte Geräte",
+        pt_speed: "Geschwindigkeit",
+        pt_mtu: "MTU",
+        pt_sfp_note: "Die SFP-Geschwindigkeit wird pro Steckplatz gesetzt und nicht in der Startkonfiguration gespeichert.",
+        pt_name_err: "Port-Name: 1-15 Zeichen, keine Leerzeichen",
+        pt_mtu_err: "MTU muss zwischen 64 und 16383 liegen",
         stp_title: "Spanning Tree",
         stp_h: "RSTP, 802.1w",
         stp_version: "Version",
@@ -2084,12 +2046,6 @@ var LANG = {
         m_both: "Beide",
         m_note: "Beide = RX und TX des Ports auf den Monitor-Port spiegeln.",
         m_none: "Mindestens einen zu spiegelnden Port wählen",
-        iso_title: "Port-Isolation",
-        iso_from: "Von Port",
-        iso_to: "Zu Port",
-        iso_all: "Alle erlauben",
-        iso_intro: "Ein Paket, das über einen Port hereinkommt, darf den Switch nur über die Ports verlassen, die in seiner Zeile angehakt sind. Die Isolation wirkt vor der Weiterleitung: Ein nicht angehakter Port ist direkt nicht erreichbar, egal was in der MAC-Tabelle steht.",
-        iso_legend: "Das Feld des Ports selbst ist immer erlaubt. Eine rote Portnummer markiert einen Port, der nicht ganz offen ist.",
         lag_hash: "Hash:",
         lag_note: "Eine LAG braucht mindestens ein Mitglied, um in der Startkonfiguration gespeichert zu werden; eine leere Gruppe zu übernehmen löscht sie.",
         lag_clear_q: "LAG {n} auflösen?",
@@ -2106,14 +2062,6 @@ var LANG = {
         lacp_rxstate: "Empfangsstatus",
         lacp_rx: "Empfangene LACPDUs",
         lacp_psys: "Partner-System",
-        e_title: "Energy Efficient Ethernet",
-        e_adv: "Angeboten",
-        e_lp: "Gegenstelle",
-        e_active: "Aktiv",
-        e_enable: "Aktivieren",
-        e_note: "Angebotene und von der Gegenstelle unterstützte Stufen je Geschwindigkeit: 100M, 1G, 2.5G. SFP-Ports unterstützen kein EEE.",
-        e_idle: "inaktiv",
-        e_na: "k. A.",
         bw_title: "Bandbreitenbegrenzung",
         bw_h: "Mbit/s, 0.016-10000",
         bw_in: "Eingangslimit",
@@ -2424,8 +2372,9 @@ function getText(p) {
 /* ---- The object model (DESIGN.md 14): CLI lines over POST /cli ---------- */
 
 /* Lines in, their output out. Each command's output ends in one status
- * line, "ok" or "err <path>: <why>": r.out[i] is command i's lines, r.st[i]
- * its status, r.errs the failures' reasons. */
+ * line, "ok" or "err <path>: <why>" (an old command's "Error: ..." counts
+ * as one): r.out[i] is command i's lines, r.st[i] its status, r.errs the
+ * failures' reasons. A reply httpd had to cut is a failure too. */
 function cli(lines) {
     return api("/cli", {
         method: "POST",
@@ -2439,19 +2388,35 @@ function cli(lines) {
             },
             cur = [];
         r.body.split("\n").forEach(function(l) {
-            if (l === "ok" || l.slice(0, 4) === "err ") {
+            if (l === "[output truncated]") res.errs.push(l);
+            else if (l === "ok" || /^err |^error\b/i.test(l)) {
                 res.out.push(cur);
                 res.st.push(l);
-                if (l !== "ok") res.errs.push(l.slice(4));
+                if (l !== "ok") res.errs.push(l.replace(/^err /, ""));
                 cur = [];
             } else if (l) cur.push(l);
         });
-        if (cur.length) {           /* an old command: no status line */
+        if (cur.length) {           /* an old command that printed no status */
             res.out.push(cur);
             res.st.push("");
         }
         return res;
     });
+}
+
+/* paths into as few "get" lines as fit the cli's line (CMD_BUF_SIZE, 128) */
+function getLines(paths) {
+    var out = [],
+        l = "get";
+    paths.forEach(function(p) {
+        if (l.length + p.length > 120) {
+            out.push(l);
+            l = "get";
+        }
+        l += " " + p;
+    });
+    out.push(l);
+    return out;
 }
 
 /* "path value" lines into nested objects: "port.3.mtu 1500" -> o.port[3].mtu */
@@ -2470,10 +2435,11 @@ function parseLines(lines, o) {
 
 /* Stand-in for schema.js, which om_gen.py is to emit (DESIGN 14.3): per
  * field its type (t: bool enum num str pmask), enum words (e), limits,
- * length, default (d), label (l), tip and when rule (w). */
+ * length, default (d), label (l, or the UI string i), tip and when rule (w). */
 var SCHEMA = {
     port: {
         name: {
+            i: "c_name",
             t: "str",
             len: 31,
             d: "",
@@ -2481,6 +2447,7 @@ var SCHEMA = {
             tip: "Shown in the UI and sent as the LLDP port description"
         },
         enabled: {
+            i: "c_enabled",
             t: "bool",
             d: "on",
             w: "copper",
@@ -2488,6 +2455,7 @@ var SCHEMA = {
             tip: "Administrative state"
         },
         speed: {
+            i: "pt_speed",
             t: "enum",
             e: "auto 10m 100m 1g 2g5 5g 10g",
             d: "auto",
@@ -2504,6 +2472,7 @@ var SCHEMA = {
             tip: "Duplex for a forced 10m or 100m"
         },
         mtu: {
+            i: "pt_mtu",
             t: "num",
             min: 64,
             max: 16383,
@@ -2512,6 +2481,7 @@ var SCHEMA = {
             tip: "Largest frame accepted, in bytes"
         },
         pvid: {
+            i: "v_pvid",
             t: "num",
             min: 0,
             max: 4094,
@@ -2520,6 +2490,7 @@ var SCHEMA = {
             tip: "VLAN for untagged frames; 0 parks a tagged-only port"
         },
         ingress: {
+            i: "v_accept",
             t: "enum",
             e: "all tagged untagged",
             d: "all",
@@ -2527,12 +2498,14 @@ var SCHEMA = {
             tip: "Acceptable frame types"
         },
         ingress_filter: {
+            i: "stp_bh_filter",
             t: "bool",
             d: "on",
             l: "Filter",
             tip: "Drop frames of VLANs the port is not a member of"
         },
         lldp: {
+            i: "nav_lldp",
             t: "enum",
             e: "permit block",
             d: "permit",
@@ -2555,9 +2528,11 @@ var SCHEMA = {
     },
     "state.port": {
         link: {
+            i: "c_link",
             l: "Link"
         },
         speed: {
+            i: "pt_speed",
             l: "Speed"
         },
         duplex: {
@@ -2568,6 +2543,7 @@ var SCHEMA = {
             l: "Media"
         },
         ms_role: {
+            i: "stp_role",
             l: "Role",
             w: "copper"
         },
@@ -2578,6 +2554,7 @@ var SCHEMA = {
             l: "Pause RX"
         },
         macs: {
+            i: "pt_conn",
             l: "MACs"
         },
         eee_active: {
@@ -2800,10 +2777,14 @@ function stgDiscard() {
 var STG_WINDOW = 30;
 
 function stgApply() {
+    var until = Date.now() + STG_WINDOW * 1000;
     $("stgApply").disabled = true;
     cli(["apply " + STG_WINDOW]).then(function(r) {
         if (r.errs.length) throw new Error(r.errs[0]);
-        return stgConfirm(Date.now() + STG_WINDOW * 1000);
+    }, function() {}).then(function() {
+        /* applied, or its reply lost (the change may cut this browser
+         * off): the window is open either way, confirm once through */
+        return stgConfirm(until);
     }).then(function() {
         toast(t("stg_applied"), "ok");
     }, function(e) {
@@ -3030,20 +3011,12 @@ var TABS = [{
         icon: "M12 3v18M7 8l-4 4 4 4M17 8l4 4-4 4"
     },
     {
-        id: "isolate",
-        icon: "M4 4h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM4 14h6v6H4z"
-    },
-    {
         id: "lag",
         icon: "M7 8a4 4 0 100 8h3M17 8a4 4 0 110 8h-3M9 12h6"
     },
     {
         id: "lldp",
         icon: "M11 12a1 1 0 002 0 1 1 0 00-2 0M8.5 8.5a5 5 0 000 7M15.5 8.5a5 5 0 010 7M5.6 5.6a9 9 0 000 12.8M18.4 5.6a9 9 0 010 12.8"
-    },
-    {
-        id: "eee",
-        icon: "M13 2L4 14h6l-1 8 9-12h-6z"
     },
     {
         id: "bw",
@@ -3444,6 +3417,10 @@ tabHooks.dash = {
 
 /* ---- Tables bound to paths: rows the ports, columns an object's fields -- */
 
+function label(f) {
+    return f.i ? t(f.i) : f.l
+}
+
 function tHead(tbl, obj, cols) {
     var f = SCHEMA[obj],
         hr = tbl.createTHead().insertRow();
@@ -3452,7 +3429,7 @@ function tHead(tbl, obj, cols) {
     }));
     cols.forEach(function(c) {
         hr.appendChild(h("th", {
-            text: f[c].l,
+            text: label(f[c]),
             title: f[c].tip || ""
         }));
     });
@@ -3523,9 +3500,9 @@ function ptLoad() {
 }
 
 function ptState() {
-    return cli(PT_ST.map(function(c) {
-        return "get state.port.*." + c
-    })).then(function(r) {
+    return cli(getLines(PT_ST.map(function(c) {
+        return "state.port.*." + c
+    }))).then(function(r) {
         var o = {};
         r.out.forEach(function(ls) {
             parseLines(ls, o)
@@ -4648,144 +4625,6 @@ tabHooks.mirror = {
     }
 };
 
-var isoAllow = [];
-
-function isoBox(r, c) {
-    return $("iso" + r + "_" + c)
-}
-
-function isoMark() {
-    for (var r = 1; r <= S.n; r++) {
-        var full = true;
-        for (var c = 1; c <= S.n + 1; c++) {
-            var b = isoBox(r, c);
-            if (b && !b.checked) full = false;
-        }
-        $("isoh" + r).style.color = full ? "" : "var(--bad)";
-    }
-}
-
-function isoTouch() {
-    $("isotbl").dataset.dirty = "1";
-    isoMark()
-}
-
-function isoTh(row, txt, attrs) {
-    var e = h("th", attrs);
-    e.textContent = txt;
-    row.appendChild(e);
-    return e
-}
-
-function buildIso() {
-    var tb = $("isotbl");
-    if (tb.tBodies[0].rows.length) return;
-    var h1 = tb.tHead.insertRow(),
-        h2 = tb.tHead.insertRow();
-    isoTh(h1, t("iso_from"), {
-        rowspan: "2"
-    });
-    isoTh(h1, t("iso_to"), {
-        colspan: String(S.n),
-        style: "text-align:center"
-    });
-    isoTh(h1, "CPU", {
-        rowspan: "2"
-    });
-    for (var c = 1; c <= S.n; c++) isoTh(h2, String(c), {
-        style: "text-align:center"
-    });
-    for (var r = 1; r <= S.n; r++) {
-        var tr = tb.tBodies[0].insertRow();
-        isoTh(tr, String(r), {
-            id: "isoh" + r
-        });
-        for (c = 1; c <= S.n + 1; c++) {
-            var td = tr.insertCell();
-            td.style.textAlign = "center";
-            if (r === c) {
-                td.className = "mut";
-                td.textContent = "\u2022";
-                continue;
-            }
-            td.appendChild(h("input", {
-                type: "checkbox",
-                id: "iso" + r + "_" + c,
-                onchange: isoTouch
-            }));
-        }
-    }
-}
-
-function isoLoad() {
-    return getJSON("/isolation.json").then(function(s) {
-        isoAllow = s;
-        if ($("isotbl").dataset.dirty) return;
-        s.forEach(function(e) {
-            for (var c = 1; c <= S.n; c++) {
-                var b = isoBox(e.port, c);
-                if (b) b.checked = e.allow.includes(c);
-            }
-            var cpu = isoBox(e.port, S.n + 1);
-            if (cpu) cpu.checked = e.allow.includes(0);
-        });
-        isoMark();
-    });
-}
-
-function isoArray(r) {
-    var m = [];
-    for (var c = 1; c <= S.n; c++) {
-        var b = isoBox(r, c);
-        if (r === c || (b && b.checked)) { m.push(c); }
-    }
-    var cpu = isoBox(r, S.n + 1);
-    if (cpu && cpu.checked) { m.push(0); }
-    return m;
-}
-$("isoapply").addEventListener("click", function() {
-    var cmds = [];
-    for (var r = 1; r <= S.n; r++) {
-        var cur = [];
-        isoAllow.forEach(function(e) {
-            if (e.port === r) cur = e.allow;
-        });
-
-        if (isoArray(r).sort().join(",") === cur.sort().join(",")) continue;
-
-        var cmd = "isolate " + r;
-        for (var c = 1; c <= S.n; c++) {
-            var b = isoBox(r, c);
-            if (r === c || (b && b.checked)) cmd += " " + c;
-        }
-        var cpu = isoBox(r, S.n + 1);
-        if (cpu && cpu.checked) cmd += " 0";
-        cmds.push(cmd);
-    }
-    delete $("isotbl").dataset.dirty;
-    if (!cmds.length) {
-        isoLoad().catch(function() {});
-        return;
-    }
-    postCmds(cmds).then(isoLoad).catch(function() {});
-});
-$("isoall").addEventListener("click", function() {
-    for (var r = 1; r <= S.n; r++)
-        for (var c = 1; c <= S.n + 1; c++) {
-            var b = isoBox(r, c);
-            if (b) b.checked = true;
-        }
-    isoTouch();
-});
-tabHooks.isolate = {
-    enter: function() {
-        needPorts(function() {
-            buildIso();
-            isoLoad().catch(function() {})
-        })
-    }
-};
-
 var HASHF = ["spa", "smac", "dmac", "sip", "dip", "sport", "dport"];
 
 function buildLag() {
@@ -4945,50 +4784,6 @@ $("lldp_en").addEventListener("change", function() {
 });
 tabHooks.lldp = {
     enter: lldpLoad
-};
-
-function eeeLoad() {
-    return getJSON("/eee.json").then(function(s) {
-        var tb = $("etable").tBodies[0];
-        tb.innerHTML = "";
-        byPort(s).forEach(function(p) {
-            var tr = tb.insertRow();
-            tr.insertCell().textContent = p.port + (p.isSFP ? " (SFP)" : "");
-            if (p.isSFP) {
-                for (var c = 0; c < 3; c++) tr.insertCell().textContent = "-";
-                tr.insertCell().textContent = t("e_na");
-                return;
-            }
-            tr.insertCell().textContent = p.advertised.join(", ");
-            tr.insertCell().textContent = p.linkPartner.join(", ");
-            tr.insertCell().innerHTML = p.active ? badge(t("e_active"), "ok") : badge(t("e_idle"));
-            var on = p.advertised.length != 0;
-            var sw = h("label", { class: "switch" }, [
-                h("input", {
-                    type: "checkbox",
-                    onchange: function() {
-                        postCmd("eee " + (this.checked ? "on" : "off") + " " + p.port)
-                            .then(function() {
-                                setTimeout(eeeLoad, 300)
-                            }).catch(function() {});
-                    }
-                }), h("i")
-            ]);
-            sw.firstChild.checked = on;
-            tr.insertCell().appendChild(sw);
-        });
-    });
-}
-var eeePoller = new Poller(function() {
-    return eeeLoad()
-}, 4000);
-tabHooks.eee = {
-    enter: function() {
-        eeePoller.start()
-    },
-    leave: function() {
-        eeePoller.stop()
-    }
 };
 
 function bwLoad() {
