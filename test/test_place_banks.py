@@ -81,6 +81,17 @@ check(all(v <= 0xC000 for v in used.values()) and len(banks(txt)) == len(GROUPS)
 st2, _, txt2 = place(GROUPS)
 check(st2 == 0 and txt2 == txt, "search: the same input, the same placement")
 
+# made by hand: 141 of 144 KiB, which both greedy packings fail; the search
+# needs 17 backtracks, one past banks as full as one already tried
+tight = [k * 1024 for k in (30, 27, 19, 16, 14, 14, 12, 9)]
+st, err, txt = place(tight, pinned={})
+fill = [0, 0, 0]
+for l in banks(txt):
+    n, b = l.split()[:2]
+    fill[int(b) - 1] += tight[int(n[1:])]
+check(st == 0 and "packed by a search" in err and max(fill) <= 0xC000 and sum(fill) == sum(tight),
+      "search: backtracks past a tie to pack 141 of 144 KiB", err + str(fill))
+
 # what the greedy packs stays the greedy's (the first groups shrink by 100 B)
 easy = [GROUPS[0] - 100] + GROUPS[1:]
 st, err, txt = place(easy)
