@@ -175,3 +175,42 @@ Findings:
   guess), SFP_CONFIG with a module insert (the DAC was present from boot),
   a failing I2C transaction's step, LACP (no partner on the rig).
 - The 8x is on fcf16cc again.
+
+## M4 bench: LACP on silicon (phase F2), 2026-11-20
+
+The scheduler firmware after F1b, ca29f41 (two clean builds byte-identical),
+web-updated over fcf16cc and back; the partner a Linux 802.3ad bond on the
+bench host (two I225 ports to fronts 7 and 8, `lacp_rate fast`), LACPDUs
+logged on the host with their capture times; logs not published.
+
+| Check | ca29f41 | fcf16cc |
+|---|---|---|
+| `lag 1 lacp 7 8` against the bond | both members collecting/distributing (0x3f both ends) within seconds | same |
+| idle, ~80 PDUs a port | gap 1.020 s max 1.021 | |
+| 1000 MACs, a console `l2`, a web `l2` and a config save at once | gap 1.019-1.021 s, no churn; RX_STEP 17.9 ms (the config POST), FL_ERASE 37.5 ms, overruns 0 | **3.46 s with no PDU**; front 7 left the trunk (actor 07, partner expired) and came back ~1 s later |
+| the same with a firmware upload instead of the config save | gap 1.005-1.035 s up to the reset | |
+| member flap: front 8's link down 5 s | out of the trunk within 0.6 s; back 6.2 s after the host's `link up` (3.5 s of it the I225's 2.5G autoneg) | |
+| fast timeout: the host's PDUs on front 8 dropped (tc), link up | out after 3.4-3.7 s (4 s from the last PDU received, lacp.md); back 1.2 s after the PDUs resume | |
+| L2 flush: `l2 forget` with 1000 and 4000 learned MACs | the whole CLI step 454 us, hw timeouts 0 | |
+| DAC pulled and re-inserted (Michael) | link down/up, module re-read; SFP_CONFIG 614 us, SFP_READ max 3.9 ms, hw timeouts 0 | |
+| firmware upload, curl, nothing else running (the receiving firmware's time) | 15.9, 16.0, 16.3 s (b27eeb6 at EB: 16.2 s) | 14.9 s |
+
+Findings:
+
+- **LACP holds under the M3 blockers.** The dumps and the flash job that
+  cost fcf16cc a member leave the PDU spacing within 35 ms of the fast
+  period.
+- **The upload is CPU-bound on silicon, not window-bound.** With F1b's window
+  the host sends the whole stage (4480 B) at once; the switch acknowledges
+  it in ~10 ms, advertises 0, and opens the window again ~230 ms later, so
+  the host's zero-window probe (~200 ms) comes first each time. `health tasks`
+  read over the console mid-upload: 32 stage cycles in ~7 s, 36 FL_ERASE
+  (~41 ms each) and 337 FL_PROG steps up to 19.9 ms: ~45 us a byte of
+  parsing and copying in upload_prog(), ~19 KB/s. The sim's 8.7 s is
+  optimistic about that CPU time. Faster needs that parse optimised
+  (decision 25 leaves it).
+- **The L2 flush is fast:** under 0.5 ms with 4000 entries, against
+  HW_FLUSH_TICKS' 15-20 ms guess, which stays as a bound.
+- Not covered: a failing I2C transaction on silicon (the sim's E4 tests
+  cover the path); the 4+2 (after F2, with Michael's go).
+- The 8x is on fcf16cc again.
