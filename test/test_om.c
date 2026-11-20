@@ -254,7 +254,7 @@ uint8_t om_check_mgmt(uint8_t idx)	/* as om_svc.c */
 /* the VLAN table (rtl837x_port.c), under om_vlan.c: the calls, as text */
 #include "rtl837x_port.h"
 struct vlan_settings vlan_settings;
-static char vlan_ops[512];
+static char vlan_ops[4096];	/* 64 VLANs made at a boot: 13 B each */
 void vlan_create(void)
 {
 	sprintf(vlan_ops + strlen(vlan_ops), "+%u %03x/%03x ", vlan_settings.vlan, vlan_settings.members,
@@ -1705,6 +1705,44 @@ static void binary(void)
 		expect("get -d", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
 		expect("get -s", "tsys.ip 10.0.0.1\ndel tvlan.1\ntvlan.7.name sev\nport.3.mtu 9000\nport.3.tstorm.mcast.rate 500\nok\n");
 		dump("skip", 1);
+	}
+
+	printf("a saved config without vlan.1 and every slot taken: all of it at boot\n");
+	{
+		char c[64];
+		boot();
+		expect("set port.*.pvid 0", "ok\n");
+		expect("del vlan.1", "ok\n");
+		expect("apply", "ok\n");	/* one apply holds 64 keys over running and the candidate */
+		for (int v = 2; v < 2 + MAX_VLANS; v++) {
+			snprintf(c, sizeof c, "set vlan.%d.members 1", v);
+			expect(c, "ok\n");
+		}
+		expect("set port.*.pvid 2", "ok\n");
+		vlan_ops[0] = 0;
+		expect("apply", "ok\n");
+		expect("save", "ok\n");
+		vlan_ops[0] = 0;
+		boot();
+		const char *o = run("get vlan.*.members");
+		int n = 0;
+		for (const char *q = o; (q = strstr(q, ".members 1\n")); q++)
+			n++;
+		CHECK(n == MAX_VLANS && !strstr(o, "vlan.1.members") && strstr(o, "vlan.65.members 1\n"),
+		      "boot: every VLAN of the save, vlan.1 deleted (its slot taken)");
+		expect("get state.cfg.load.skipped state.cfg.pending", "state.cfg.load.skipped 0\nstate.cfg.pending 0\nok\n");
+		CHECK(!strstr(out_buf, "not applied") && strstr(vlan_ops, "-1 ") && strstr(vlan_ops, "+65 "),
+		      "and applied: VLAN 1 out of the table, 65 in");
+		vlan_ops[0] = 0;
+		for (int v = 2; v < 2 + MAX_VLANS; v++) {
+			snprintf(c, sizeof c, "del vlan.%d", v);
+			expect(c, "ok\n");
+		}
+		expect("apply", "ok\n");
+		expect("del vlan", "ok\n");
+		expect("del port", "ok\n");
+		expect("apply", "ok\n");
+		expect("save", "ok\n");
 	}
 
 	printf("a sector boot doesn't take\n");
