@@ -104,9 +104,10 @@ STEP(con, edit)
 }
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
- * The prompt only from CLI_PROMPT. A dump runs as a job, a line a step in
- * CLI_MORE (E1); a web /cmd a line a step in CLI_NEXT, each step with the
- * capture on, so only cli's own output goes into the reply. A reply that
+ * The prompt only from CLI_PROMPT. A dump runs as a job in CLI_MORE (E1), a
+ * line a step for the console, lines up to CLI_WEB_FINE for the web; a web
+ * /cmd a line a step in CLI_NEXT; a web step with the capture on, so only
+ * cli's own output goes into the reply (and not to the UART or syslog). A reply that
  * outgrows outbuf isn't cut: cli waits (webcmd_wait) while httpd sends what
  * is there, and is woken by rx on the ACKs; the timeout notices a
  * connection that ended in the net task. */
@@ -117,9 +118,11 @@ STEP(con, edit)
  * UART; a job's line needs CON_TX_LINE. */
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
-/* a web reply's lines a step: until the step has run 3 ms (a line's getter
- * may take ~3 ms more: under 5 ms) */
-#define CLI_WEB_FINE	(3000000UL / SCHED_FINE_NS)
+/* a web reply's lines a step: another only if the step so far and the
+ * dearest line (~2.9 ms, a port's first field: its getter) stay under 5 ms.
+ * The last line's cost doesn't say: a cheap line may come before a getter's */
+#define CLI_LINE_MAX	3000000UL	/* ns */
+#define CLI_WEB_FINE	((uint16_t)((5000000UL - CLI_LINE_MAX) / SCHED_FINE_NS))
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
 #define CLI_WEB_ROOM	640
@@ -238,7 +241,7 @@ STEP(cli, more)
 		if (cli_web_full())
 			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
-		do				/* lines while outbuf has room, for CLI_WEB_FINE */
+		do				/* lines while outbuf has room, to CLI_WEB_FINE */
 			cli_job_more();
 		while (cli_job && !cli_job_sleep && WEBCMD_ROOM(CLI_WEB_ROOM)
 		       && sched_step_fine() < CLI_WEB_FINE);
