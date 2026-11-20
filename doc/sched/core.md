@@ -32,9 +32,10 @@ __xdata uint16_t sched_now;			/* tick snapshot, renewed after each step */
 __xdata uint8_t  sched_ev;			/* this pass's hardware events */
 ```
 
-For `health`: per state the longest step and a run count (16 bits each,
-saturating); globals: passes and idle passes (32 bits, as two halves),
-overruns and the last overrun's state, the longest pass.
+For `health`: per state the longest step, this second's runs and the last
+second's (16 bits each); globals: passes and idle passes (32 bits, as two
+halves), overruns and the last overrun's state, the longest pass, the last
+second's load (8 bits). Decision 26.
 
 Generated (chapter 5): `step_addr[]` (3 B per state), `run_seq[]` (a slot
 index per position), `fixed_first[]` (each fixed slot's first state),
@@ -213,14 +214,50 @@ built from one-parameter calls.
   `RCAP2` at `sched_init`).
 - Around each step (`sched_m_step_start`, `sched_m_step_end`): the step's
   length, saturating at 80 ticks (400 ms, shown as `>400ms`); per state the
-  longest and the run count. A step of 50 ms or more (8138 units,
+  longest, and a run counted in `sched_st_runs[]`, this second's (16 bits:
+  a state runs at most a few hundred times a second; nothing saturates). A
+  step of 50 ms or more (8138 units,
   decision 25; 20 ms, 3255, until F1b) is an overrun: counted, with its
   state. The step start also clears `hw_stuck`
   (chapter 9).
 - Around each pass: the longest pass, the pass count.
+- **The second** (decision 26): at the first pass end at or past the
+  second's tick, each state's count is published into `sched_st_rate[]`
+  and zeroed, and the time asleep becomes `sched_load`. The seconds keep to
+  a fixed 200-tick grid, half a second off the grid of the 1 s tasks
+  (`house`, `loop` start theirs at their first step, just after
+  `sched_init`), so a 1/s state reads 1, not 0 or 2 as its run and the roll
+  jitter. A roll is late by at most the pass that crossed the tick; that
+  time goes to the next second, not out of the average: a periodic state
+  reads its period's rate +-1 at worst, and in the sim exactly
+  (`tools/sched_rates.py`: `HOUSE_SEC`, `LOOP_POLL` 1/s, `NET_TICK`,
+  `STP_TICK`, `LACP_TICK`, `LLDP_TICK` 200/s). A pass of more than a second
+  starts the grid again from it. The first second after boot is half a
+  second (its rates and load read half). The counts start at 0 with XSEG's
+  clear. The roll writes the next second's tick (`sched_roll_tick`) last:
+  a tool that stops the firmware anywhere and sees it move sees the whole
+  second, so it can total the runs (`tools/flash_job_steps.py` counts
+  `FL_ERASE` since power-on that way).
+- **Time asleep:** `sched_idle()` reads the fine clock before its check and
+  after the wake, and adds what it slept, in 1% steps of a second (2 ticks,
+  1626 units) and a remainder under one (16 bits: memory.md
+  rule 3; the remainder carries into the next second). The fine clock is
+  Timer 2, which runs in IDL (its ISR is what wakes the CPU), and a sleep
+  ends at the next interrupt, the tick's at the latest: so a sleep is at
+  most a tick plus the waking ISR, and `fine_elapsed()` counts a tick that
+  came inside it. The ISR's time and the few instructions around `PCON`
+  count as asleep. `load = 100 - (steps asleep)`, floored to 0: the part of
+  the last second not asleep, -0/+1 point from the 1% steps. Checked
+  against rtlsim's own busy cycles over 10 idle seconds: 21.7 % against
+  21.8 % on the 8x, 21.9 against 22.0 on SWGT024. The firmware's idle is
+  not 0: two passes a tick over the 72 positions and the four tick tasks
+  cost ~1.1 ms of each 5 ms tick in the sim. While `l2` dumps 1000 hosts
+  the load reads 93-94 %.
 - `health tasks` prints every slot (name, state name, mask, wake), every
-  state's runs and longest step, and the totals: passes, idle, longest
-  pass, overruns and the last one's state, console RX overruns,
-  hardware-poll timeouts and the last register, and the last reset's line.
-  It runs as a cli job, a line a step (chapter 7). `health clear` resets the
-  numbers.
+  state's runs in the last second (`runs/s`) and longest step, and the
+  totals: passes, idle, the last second's load (`load NN%`), longest pass,
+  overruns and the last one's state, console RX overruns, hardware-poll
+  timeouts and the last register, and the last reset's line. It runs as a
+  cli job, a line a step (chapter 7); the web's `/cmd` runs the same.
+  `health clear` resets the longest steps, the totals and the overruns; the
+  rates and the load stay, as they are always the last whole second.

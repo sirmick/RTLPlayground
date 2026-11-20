@@ -20,7 +20,8 @@ SWGT024 now: the same internal RAM and xdata, common area 164 B left, banks
 
 - **Internal RAM: 0 bytes.** No scheduler file has DSEG. Two things sit in
   space that was already there: `sched_bank.c`'s `fine_read()` keeps two
-  locals in the shared overlay (a leaf; the overlay stays 8 B), and
+  locals in the shared overlay, and `roll()` (decision 26) its `t`, 2 B
+  (leaves both; the overlay stays 8 B), and
   `tasks.c`'s `cli_web_live()` has one bit, SDCC's for its `&&`, in BSEG
   (the bit space stays 3 B). That bit is known: compiler-generated, gate
   unchanged, sched7 to look at it. The gate counts bytes, so it doesn't see

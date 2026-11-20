@@ -41,12 +41,12 @@ SIM = {}
 
 def sizes(b):
     sc, slots = len(b["states"]), b["slots"]
-    u8 = ("sched_overrun_state", "st_stack_hw", "st_stack_paint_from", "st_sp_step_max", "st_deep_sp",
+    u8 = ("sched_overrun_state", "sched_load", "st_stack_hw", "st_stack_paint_from", "st_sp_step_max", "st_deep_sp",
           "st_fl_state", "st_pk_bank")
     s = {n: 2 for n in b["syms"]}
     s.update({n: 1 for n in u8})
     s.update({n: LOG_SIZE for n in b["syms"] if n.startswith("st_log_")})
-    s.update(ticks=4, sched_st_runs=2 * sc, sched_st_max=2 * sc, sched_task=TASK_SIZE * slots,
+    s.update(ticks=4, sched_st_rate=2 * sc, sched_st_max=2 * sc, sched_task=TASK_SIZE * slots,
              st_ft=24, flash_peek=128)
     return s
 
@@ -481,7 +481,7 @@ class Silicon:
     def report(self):
         self.fine()
         p = self.peek("ticks", "sched_pass_max", "sched_overruns", "sched_overrun_state", "con_rx_overruns")
-        p.update(self.peek("sched_st_runs", "sched_st_max"))
+        p.update(self.peek("sched_st_rate", "sched_st_max", "sched_load"))
         p.update(self.peek("st_stack_hw", "st_jobs_claimed", "st_jobs_full", "st_jobs_done", "st_print_done"))
         p.update(self.peek("st_log_sleep_a", "st_log_sleep_b", "st_log_sleep_c"))
         p.update(self.peek("st_log_waiter", "st_log_poster", "st_log_hot"))
@@ -494,10 +494,11 @@ class Silicon:
         e = self.log(p["st_log_hot"])["entries"]
         g = [self.span_us(a, b) for a, b in zip(e, e[1:])]
         rows.append(("hot", f"runs {len(e)} gap_max_us {max(g or [0]):.0f}"))
-        runs, mx = self.u16s(p["sched_st_runs"]), self.u16s(p["sched_st_max"])
+        runs, mx = self.u16s(p["sched_st_rate"]), self.u16s(p["sched_st_max"])
+        rows.append(("load", f"pct {self.u(p['sched_load'])}"))
         for i, s in enumerate(self.b["states"][1:-1], 1):
-            if runs[i]:
-                rows.append(("state", f"{s[2:]} runs {runs[i]} max_us {mx[i] * FINE_US:.0f}"))
+            if mx[i]:
+                rows.append(("state", f"{s[2:]} runs_per_s {runs[i]} max_us {mx[i] * FINE_US:.0f}"))
         ost = self.u(p["sched_overrun_state"])
         rows += [("overruns", f"n {self.u(p['sched_overruns'])} last {self.b['states'][ost][2:] if ost else '-'}"),
                  ("rx", f"overruns {self.u(p['con_rx_overruns'])}"),
@@ -615,7 +616,7 @@ def embed(build):
     mp = open(os.path.join(build, "rtlplayground.map")).read()
     data = {n: int(a, 16) for a, n in re.findall(r"^D:\s+([0-9A-F]{8})\s+_(\w+)", mp, re.M)}
     code = sorted((int(a, 16), "_" + n) for a, n in re.findall(r"^C:\s+([0-9A-F]{8})\s+_(\w+)", mp, re.M))
-    want = ["ticks", "sched_fine_per_tick", "sched_pass_max", "sched_st_runs", "sched_st_max", "sched_overruns",
+    want = ["ticks", "sched_fine_per_tick", "sched_pass_max", "sched_st_rate", "sched_st_max", "sched_load", "sched_overruns",
             "sched_overrun_state", "con_rx_overruns", "st_con_rx_n", "st_con_rx_sum", "st_stack_hw",
             "st_stack_paint_from", "st_sp_step_max", "st_deep_sp", "st_deep_runs", "st_jobs_claimed", "st_jobs_full",
             "st_jobs_done", "st_fl_state", "st_fl_bad", "st_print_done", "st_slow_runs", "sched_task",

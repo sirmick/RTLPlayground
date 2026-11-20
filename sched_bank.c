@@ -1,7 +1,7 @@
 /*
  * sched_bank.c - the scheduler's banked half; see sched.c. The fine clock
- * and the per-state measurement, the event snapshot, idle and the loop,
- * init, task_claim and task_sleep.
+ * and the per-state measurement, the second's rates and load, the event
+ * snapshot, idle and the loop, init, task_claim and task_sleep.
  */
 #include <8051.h>
 #include <stdint.h>
@@ -91,14 +91,45 @@ void sched_m_step_end(void) __banked
 	e_tick = s_tick;
 	e_cnt = s_cnt;
 	d = fine_elapsed();
-	if (sched_st_runs[sched_st] != 0xffff)
-		sched_st_runs[sched_st]++;
+	sched_st_runs[sched_st]++;	/* a second's runs: a few hundred at most */
 	if (d > sched_st_max[sched_st])
 		sched_st_max[sched_st] = d;
 	if (d >= SCHED_OVERRUN_FINE) {
 		sched_overruns++;
 		sched_overrun_state = sched_st;
 	}
+}
+
+/* ---- the second (decision 26) ---- */
+
+__xdata uint16_t sched_roll_tick;	/* the next second starts at this tick (sched.h) */
+static __xdata uint16_t sl_part;	/* fine units asleep, under 1% of a second */
+static __xdata uint8_t  sl_pct;		/* whole 1% steps asleep this second */
+
+/* At the first pass end at or past the second's tick: this second's runs
+ * become the rates, and the time asleep the load. The seconds keep to a
+ * 200-tick grid, so a late roll (by at most one pass) takes time from the
+ * next second, not from the average; a pass longer than a second starts
+ * the grid again. The new tick is written last: a reader (the sim's
+ * tools) that sees sched_roll_tick move sees the whole second published.
+ * A leaf: its locals are registers, but t, 2 B in the shared overlay. */
+static void roll(void)
+{
+	__xdata uint16_t *p, *q;
+	uint8_t n;
+	uint16_t t = sched_f_tick - sched_roll_tick;
+	if ((int16_t)t < 0)
+		return;
+	t = t >= SCHED_SEC_TICKS ? sched_f_tick : sched_roll_tick;
+	p = sched_st_runs;
+	q = sched_st_rate;
+	for (n = S_COUNT; n; n--) {
+		*q++ = *p;
+		*p++ = 0;
+	}
+	sched_load = sl_pct < 100 ? 100 - sl_pct : 0;
+	sl_pct = 0;
+	sched_roll_tick = t + SCHED_SEC_TICKS;	/* last: who sees it move sees the whole second */
 }
 
 void sched_m_pass_end(void) __banked
@@ -111,6 +142,7 @@ void sched_m_pass_end(void) __banked
 		sched_pass_max = d;
 	if (!++sched_passes_lo)
 		sched_passes_hi++;
+	roll();
 }
 
 /* ---- sleeping ---- */
@@ -161,10 +193,8 @@ uint8_t task_claim(uint8_t first) __banked
 void sched_clear_stats(void) __banked
 {
 	uint8_t i;
-	for (i = 0; i < S_COUNT; i++) {
-		sched_st_max[i] = 0;
-		sched_st_runs[i] = 0;
-	}
+	for (i = 0; i < S_COUNT; i++)
+		sched_st_max[i] = 0;	/* not the runs: the rates are always a whole second */
 	sched_passes_lo = sched_passes_hi = 0;
 	sched_idle_lo = sched_idle_hi = 0;
 	sched_overruns = 0;
@@ -186,6 +216,8 @@ void sched_init(void) __banked
 	fine_reload = ((uint16_t)RCAP2H << 8) | RCAP2L;
 	sched_fine_per_tick = (uint16_t)(0 - fine_reload) >> 6;
 	fine_mid_h = ((uint16_t)RCAP2H + 0x100) >> 1;
+	/* the counts and the asleep sum start at 0 with XSEG's clear (crtxclear) */
+	sched_roll_tick = sched_now + SCHED_SEC_TICKS / 2;	/* half a second off the 1 s tasks' grid */
 	sched_clear_stats();
 }
 
@@ -215,11 +247,20 @@ uint8_t sched_events(void) __banked
 /* Sleep to the next interrupt, unless there is something to do already.
  * The IE write delays the interrupt by one instruction, so the interrupt
  * that should wake us is taken after the PCON write (core.md). A tick since
- * the pass started counts: a task may have come due after its position. */
+ * the pass started counts: a task may have come due after its position.
+ * The time asleep is summed for the load, in 1% steps of a second (2
+ * ticks' fine units) and a remainder (16-bit, memory.md): from just
+ * before the check to just after the wake, which takes in the waking ISR. A sleep ends at the next interrupt, the
+ * tick's at the latest: half a step at most, and fine_elapsed() counts a
+ * tick that came inside it. */
 void sched_idle(void) __banked
 {
+	uint16_t s, u;		/* after the last call: registers */
 	if (!++sched_idle_lo)
 		sched_idle_hi++;
+	fine_read();
+	e_tick = sched_f_tick;
+	e_cnt = sched_f_cnt;
 	EA = 0;
 	if (link_irq || rx_irq || con_rx_ready()
 	    || *(volatile __xdata uint8_t *)&ticks != (uint8_t)sched_now) {
@@ -228,6 +269,14 @@ void sched_idle(void) __banked
 	}
 	EA = 1;
 	PCON |= 1;
+	fine_read();
+	s = sl_part + fine_elapsed();
+	u = sched_fine_per_tick << 1;
+	if (s >= u) {
+		s -= u;
+		sl_pct++;
+	}
+	sl_part = s;
 }
 
 void sched_run(void) __banked

@@ -257,7 +257,7 @@ class Suite:
         self.fine(sim)
         pr = self.st_max_us(sim, "S_PR_LINE")
         con = self.st_max_us(sim, "S_CON_EDIT")
-        self.record(lines=len(lines), pr_line_max_us=round(pr, 1), runs=self.u16_at(sim, "sched_st_runs", self.S["S_PR_LINE"]))
+        self.record(lines=len(lines), pr_line_max_us=round(pr, 1), pr_line_rate=self.u16_at(sim, "sched_st_rate", self.S["S_PR_LINE"]))
         self.check(lines == want, f"3000 lines, in order, none lost or garbled ({len(lines)} seen)")
         self.check(self.u(sim, "st_print_done") == 3000, "st_print_done 3000")
         self.check(pr < 5000 and con < 5000, f"no printer or console step over 5 ms (PR_LINE {pr:.0f} us, CON_EDIT {con:.0f} us)")
@@ -346,20 +346,26 @@ class Suite:
 
     def t_horizon(self, sim):
         """170 s with no input: a wait without timeout (con, cli, ...) reaches its
-        horizon (0x7fff ticks, ~164 s) and is pushed on, without running."""
+        horizon (0x7fff ticks, ~164 s) and is pushed on, without running. The
+        run counts are per second (decision 26): from 2 s before the horizon
+        to 6 s after it, sampled every 0.5 s, con's last second and this one
+        stay 0."""
         self.boot(sim)
         sim.run(100)
-        runs0 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
         t0 = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=1)
-        sim.run(170000)
+        sim.run(162000)
+        ran = 0
+        for _ in range(16):
+            sim.run(500)
+            ran += self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
+            ran += self.u16_at(sim, "sched_st_rate", self.S["S_CON_EDIT"])
         t1 = sim.read_struct("sched_task", [("state", "B"), ("mask", "B"), ("wake", "H"), ("arg", "H")], count=1)
         now = self.u(sim, "sched_now")
-        runs1 = self.u16_at(sim, "sched_st_runs", self.S["S_CON_EDIT"])
         ahead = (t1["wake"] - now) & 0xffff
-        self.record(con_runs=runs1 - runs0, wake_before=t0["wake"], wake_after=t1["wake"])
+        self.record(con_runs_seen=ran, wake_before=t0["wake"], wake_after=t1["wake"])
         self.check(t1["mask"] & 0x80 and t1["wake"] != t0["wake"] and 0 < ahead <= MAX_WAIT,
                    f"con's horizon was pushed on (wake {t0['wake']:#x} -> {t1['wake']:#x}, {ahead} ticks ahead)")
-        self.check(runs1 == runs0, f"and con did not run for it ({runs1 - runs0} runs)")
+        self.check(ran == 0, f"and con did not run for it (runs seen around the horizon: {ran})")
 
     def t_soak(self, sim):
         """10 minutes of firmware time, everything but hot (whose yield never

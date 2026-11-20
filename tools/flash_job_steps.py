@@ -53,9 +53,9 @@ FINE_NS = 6144					# sched.h SCHED_FINE_NS
 
 
 def health(out):
-    """state -> (runs, longest µs) from `health tasks`"""
+    """state -> (runs in the last second, longest µs) from `health tasks`"""
     res = {}
-    for l in out.split("state\truns\tmax", 1)[-1].splitlines():
+    for l in re.split(r"state\truns(?:/s)?\tmax", out, maxsplit=1)[-1].splitlines():
         m = re.match(r"(\w+)\t(\d+)\t(>?)(\d+)(us|ms)$", l)
         if m:
             st, runs, over, v, unit = m.groups()
@@ -65,13 +65,13 @@ def health(out):
 
 def judge(name, steps):
     long = {s: v for s, v in steps.items() if v[1] > LIMIT_US}
-    fl = " ".join(f"{s} {v[0]}x max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
+    fl = " ".join(f"{s} {v[0]}/s max {v[1] / 1000:.1f} ms" for s, v in sorted(steps.items()) if s.startswith("FL_"))
     top = max(((v[1], s) for s, v in steps.items() if s != "FL_ERASE"), default=(0, "-"))
     hs = steps.get("HOUSE_SEC")
     print(f"   {name}: {fl}; longest other {top[1]} {top[0] / 1000:.1f} ms"
-          + (f"; HOUSE_SEC {hs[0]}x max {hs[1] / 1000:.1f} ms" if hs else ""))
+          + (f"; HOUSE_SEC {hs[0]}/s max {hs[1] / 1000:.1f} ms" if hs else ""))
     for s, v in long.items():
-        print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs)")
+        print(f"   {name}: LONG {s} {v[1] / 1000:.1f} ms ({v[0]} runs/s)")
     return not long and any(s.startswith("FL_") for s in steps)
 
 
@@ -259,20 +259,48 @@ def main(argv):
     names = ["NONE"] + [n.strip()[2:] for n in names.split(",") if n.strip()]
     xsym = {}
     for l in open(os.path.join(build, "rtlplayground.map")):
-        m = re.match(r"\w*:?\s+([0-9A-F]{8})\s+(_sched_st_max|_sched_st_runs)\s", l)
+        m = re.match(r"\w*:?\s+([0-9A-F]{8})\s+(_sched_st_max|_sched_st_rate|_sched_st_runs|_sched_roll_tick)\s", l)
         if m:
             xsym[m.group(2)] = int(m.group(1), 16)
 
     def xsteps(r):
-        """state -> (runs, longest µs), from the scheduler's xdata"""
+        """state -> (runs in the last second, longest µs), from the scheduler's
+        xdata: every state that has run since the clear (its longest isn't 0)"""
         mx = r.b.sim.peek(f"x:{xsym['_sched_st_max']:#x}", 2 * len(names))
-        rn = r.b.sim.peek(f"x:{xsym['_sched_st_runs']:#x}", 2 * len(names))
+        rn = r.b.sim.peek(f"x:{xsym['_sched_st_rate']:#x}", 2 * len(names))
         steps = {}
         for i, n in enumerate(names):
-            runs = rn[2 * i] | rn[2 * i + 1] << 8
-            if runs:
-                steps[n] = (runs, (mx[2 * i] | mx[2 * i + 1] << 8) * FINE_NS // 1000)
+            runs, m = rn[2 * i] | rn[2 * i + 1] << 8, mx[2 * i] | mx[2 * i + 1] << 8
+            if m:
+                steps[n] = (runs, m * FINE_NS // 1000)
         return steps
+
+    class Runs:
+        """Each state's runs since power-on, totalled from the per-second
+        counts (decision 26): a bench device, looked at on the bench's grid
+        (every 0.5-10 ms), adds the last second's sched_st_rate[] whenever
+        sched_roll_tick has moved (a roll; they are a second apart), and
+        total() the current second's sched_st_runs[]."""
+        def __init__(self, r):
+            self.sim, self.tot, self.rt = r.b.sim, [0] * len(names), None
+            r.b.devices.append(self)
+
+        def u16s(self, sym, n):
+            raw = self.sim.peek(f"x:{xsym[sym]:#x}", 2 * n)
+            return [raw[2 * i] | raw[2 * i + 1] << 8 for i in range(n)]
+
+        def take(self, port, frame):
+            pass
+
+        def tick(self, now=None):
+            rt = self.u16s("_sched_roll_tick", 1)[0]
+            if rt != self.rt:
+                self.tot = [t + v for t, v in zip(self.tot, self.u16s("_sched_st_rate", len(names)))]
+                self.rt = rt
+
+        def total(self, name):
+            self.tick()
+            return self.tot[names.index(name)] + self.u16s("_sched_st_runs", len(names))[names.index(name)]
 
     def upload_req(r, data, name):
         bnd = "----flashjob0123456789"
@@ -284,6 +312,7 @@ def main(argv):
     fails = []
     r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
     try:
+        runs = Runs(r)
         r.boot()
         r.login()
         r.wait(8000)		# past the loader's confirm, LDR_CONFIRM_S after the boot
@@ -297,7 +326,7 @@ def main(argv):
         # S0
         steps = health(ask("health tasks"))
         hs = steps.get("HOUSE_SEC", (0, 0))
-        ok = judge("S0", steps) and hs[1] < 5000 and steps.get("FL_ERASE", (0, 0))[0] == 1
+        ok = judge("S0", steps) and hs[1] < 5000 and runs.total("FL_ERASE") == 1
         print(f"S0 the loader's confirm, {r.b.now / 1e6:.1f} s after power-on: {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("S0")
@@ -389,6 +418,7 @@ def main(argv):
         r.b.close()
     r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), payload)
     try:
+        runs = Runs(r)
         r.boot(slot=12000)	# the prompt at ~11 s, the confirm at ~17.6 s (sim)
         r.login(slot=1000)
         r._now()
@@ -398,13 +428,13 @@ def main(argv):
         t0 = r.b.now
         resp = r.host.http(upload_req(r, bytes(bad), "bad.bin"), r.b.now + 120 * 1000000)
         t1 = r.b.now
-        mid = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        e_mid = runs.total("FL_ERASE")
         r.b.advance(r.b.now + 3000000)
         after = health(r.b.console("health tasks", r.b.now + 8000000)[1] or "")
+        e_after = runs.total("FL_ERASE")
         staged = r.b.flash(UPLOAD_START, len(bad))
         bc1 = r.b.flash(LDR_BOOTCNT, 2)
         sectors = (len(bad) + 0xfff) // 0x1000
-        e_mid, e_after = mid.get("FL_ERASE", (0, 0))[0], after.get("FL_ERASE", (0, 0))[0]
         ok = (isinstance(resp, bytes) and b"checksum failed" in resp and staged == bytes(bad)
               and bc0 == b"BC" and bc1 == b"\xff\xff" and e_after == sectors + 1)
         print(f"   S5 upload {t0 / 1e6:.1f}..{t1 / 1e6:.1f} s after power-on; answer "
