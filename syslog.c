@@ -3,6 +3,7 @@
 #include "cmd_parser.h"
 #include "uip/uip.h"
 #include "rtl837x_common.h"
+#include "debug.h"
 
 
 #define SYSLOG_P ((__xdata uint8_t *)uip_appdata)
@@ -30,16 +31,18 @@ void syslog_start(void) __banked
 		uip_ipaddr(server_ip, state.server_ip[0], state.server_ip[1], state.server_ip[2], state.server_ip[3]);
 		state.syslog_conn = uip_udp_new(&server_ip, HTONS(state.server_port));
 		if (state.syslog_conn == 0) {
-			print_string_newline_no_syslog("Failed to create a new UDP client");
+			dbg_string("Failed to create a new UDP client\n");
 			return;
 		}
+#ifdef DEBUG
 		print_string_newline_no_syslog("Started syslog to IP ");
 		print_ip(state.server_ip);
 		write_char(':'); itoa_short(state.server_port); write_char('\n');
+#endif
 		state.enabled = 1;
 	}
 	else {
-		print_string_newline_no_syslog("Syslog is already running");
+		dbg_string("Syslog is already running\n");
 	}
 }
 
@@ -49,9 +52,9 @@ void syslog_stop(void) __banked
 	if (state.syslog_conn != 0) {
 		uip_udp_remove(state.syslog_conn);
 		state.syslog_conn = 0;
-		print_string_newline_no_syslog("Stopped syslog");
+		dbg_string("Stopped syslog\n");
 	} else {
-		print_string_newline_no_syslog("Syslog is not running");
+		dbg_string("Syslog is not running\n");
 	}
 }
 

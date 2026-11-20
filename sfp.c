@@ -320,7 +320,7 @@ uint8_t sfp_pins(uint8_t slot) __banked
 	if (!gpio_pin_test(machine.sfp_port[sfp].pin_detect)) {
 		if (sfp_pins_last & pm) {
 			sfp_pins_last &= ~pm;
-			print_string("\n<MODULE INSERTED>  Slot: "); write_char('1' + sfp);
+			print_string("\n<MODULE INSERTED>  Slot: "); write_char('1' + sfp); write_char('\n');
 			timer_set(&sfp_wake_timer[sfp], SFP_WAKE_TICKS);
 			sfp_wake_pending[sfp] = 1;
 			sfp_ready[sfp] = sfp_id_ok[sfp] = sfp_diag_ok[sfp] = 0;

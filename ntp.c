@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include "rtl837x_common.h"
+#include "debug.h"
 #include "rtl837x_regs.h"
 #include "cmd_parser.h"
 #include "uip/uip.h"
@@ -128,8 +129,9 @@ static void ntp_connect(__xdata uint8_t *a) __reentrant
 		uip_udp_remove(ntp_state.conn);
 	uip_ipaddr(ntp_ip, a[0], a[1], a[2], a[3]);
 	ntp_state.conn = uip_udp_new(&ntp_ip, HTONS(NTP_PORT));
-	if (!ntp_state.conn)
-		print_string("NTP: no free UDP connection\n");
+	if (!ntp_state.conn) {
+		dbg_string("NTP: no free UDP connection\n");
+	}
 }
 
 
