@@ -44,7 +44,7 @@ for i, n in enumerate(("BOOL U8 U16 U32 U64 ENUM STR PMASK SCALED ACT IPV4 MASK4
                        "FLAGS FLAGS16 SECRET I16 TZ PORT BRID").split()):
     T[n] = i + 1
 WHEN = {"always": 0, "copper": 1, "sfp": 2, "10g": 3}
-IX = {"PORT": 0, "NUM": 1, "KEY": 2, "WORD": 3}
+IX = {"PORT": 0, "NUM": 1, "KEY": 2, "WORD": 3, "IDX": 4, "STREAM": 5}
 
 
 class Type:
@@ -121,7 +121,8 @@ def MAC(auto=False):
 
 
 def Port(none=False):
-    """One port: the logical port inside, its front-panel number outside; 0xff = none."""
+    """One port: the logical port inside, its front-panel number outside; 0xff = none,
+    CPU_LOGICAL_PORT (9) cpu (printed only)."""
     return Type("PORT", "uint8_t", 1, arg=1 if none else 0)
 
 
@@ -146,26 +147,33 @@ def Scaled(decimals):
 class Field:
     def __init__(self, name, typ, access, default=None, when="always", tip="", fn=None,
                  derived=False, unit="", label=""):
-        if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z0-9_]+)*", name):
+        # "": a state object's one value, printed as the instance's path
+        if not (name == "" and access == "state") and not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z0-9_]+)*", name):
             raise SystemExit("bad field name %r" % name)
         self.name, self.typ, self.access = name, typ, access
         self.default, self.when, self.tip, self.fn = default, WHEN[when], tip, fn
         self.unit, self.label = unit, label      # the web UI's only (schema.js)
-        self.cname = name.replace(".", "_")
+        self.cname = name.replace(".", "_") or "v"
+        if self.cname in ("static", "default", "auto", "register", "char", "int"):
+            self.cname += "_"           # a C keyword
         self.id = 0
         self.derived = derived
 
 
 class Obj:
-    """An object: up to two index levels, each (kind, count, arg, C dimension)."""
+    """An object: up to two index levels, each (kind, count, arg, C dimension).
+    from0: count's index runs 0..count-1 (IDX), not 1..count. stream=n: a
+    state object indexed 0..n-1 whose getter finds each instance (om.h
+    IX_STREAM). names: the web UI's names for the indexes (schema.js only)."""
 
     def __init__(self, name, state, count=1, keyed=None, max=None, parent=None,
-                 apply=None, check=None, get=None, derive=None, order=0, tip=""):
+                 apply=None, check=None, get=None, derive=None, order=0, tip="",
+                 from0=False, stream=None, names=None):
         if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*", name):
             raise SystemExit("bad object name %r" % name)
         self.state = state
         self.apply, self.check, self.get, self.derive = apply, check, get, derive
-        self.order, self.tip = order, tip
+        self.order, self.tip, self.names = order, tip, names
         self.fields, self.entries = [], []
         self.id = 0
         self.dir = SCHEMA["dir"]
@@ -188,13 +196,17 @@ class Obj:
                     raise SystemExit("%s: max=%s is no const() declared before it" % (name, max))
                 max = SCHEMA["consts"][max]
             lv.append(("KEY", max, keyed, dim))
+        elif stream is not None:
+            if parent is not None or not state or not get:
+                raise SystemExit("%s: a streamed object is a state object with get= and no parent" % name)
+            lv.append(("STREAM", stream, None, "0"))
         elif count == "ports":
             lv.append(("PORT", 9, None, "OM_PORTS"))
         elif isinstance(count, Type):
             lv.append(("WORD", len(count.words), count, str(len(count.words))))
         elif count != 1:
-            lv.append(("NUM", count, None, str(count)))
-        if len(lv) > 1 and lv[1][0] in ("PORT", "KEY"):
+            lv.append(("IDX" if from0 else "NUM", count, None, str(count)))
+        if len(lv) > 1 and lv[1][0] in ("PORT", "KEY", "STREAM"):
             raise SystemExit("%s: the second index must be a number or a word" % name)
         self.levels = lv
         # the name with '#' for each index
@@ -582,8 +594,8 @@ def gen(objs, outdir):
         for lv in o.levels:
             if lv[0] in ("KEY", "WORD"):
                 use.add(lv[0])
-            if lv[0] == "NUM":
-                use.add("NUM")
+            if lv[0] in ("NUM", "IDX", "STREAM"):
+                use.add(lv[0])
         if len(o.levels) == 2:
             use.add("IX2")
         if any(chip(f.default) for f in o.fields):
@@ -606,7 +618,7 @@ def gen(objs, outdir):
         H("#define %s %d" % (k, v))
     H("#define OM_N_OBJ %d" % len(objs))
     H("#define OM_VMAX %d\t/* the largest settable value */" % vmax)
-    for u in ("NUM KEY WORD IX2 CHIPDEF DERIVE IPV4 MAC FLAGS SECRET I16 TZ PORT BRID").split():
+    for u in ("NUM KEY WORD IDX STREAM IX2 CHIPDEF DERIVE IPV4 MAC FLAGS SECRET I16 TZ PORT BRID").split():
         H("#define OM_USE_%s %d" % (u, u in use))
     # OM_SET_<type>: a config field has it, so om.c parses it (a state-only
     # type is printed, never parsed)
@@ -722,6 +734,8 @@ def gen(objs, outdir):
             if lv[0] == "KEY":
                 lv_lim = lim(lv[2].lo, lv[2].hi)
                 o.key_lim = lv_lim
+            if lv[0] == "STREAM":
+                o.key_lim = lim(0, lv[1] - 1)
     C("")
     C("__code const struct om_lim om_lim[] = {")
     for lo, hi in lims or [(0, 0)]:
@@ -752,9 +766,9 @@ def gen(objs, outdir):
             return ("IX_NUM", "1", "0")
         kind, cnt, arg, dim = o.levels[n]
         a = "0"
-        if kind == "KEY":
+        if kind in ("KEY", "STREAM"):
             a = str(o.key_lim)
-            cnt = dim               # a const()'s name stays a name in C
+            cnt = dim               # a const()'s name stays a name in C; a stream's 0
         elif kind == "WORD":
             a = str(ename.index(arg.enum))
         return ("IX_" + kind, str(cnt), a)
@@ -795,8 +809,10 @@ def gen(objs, outdir):
 
 
 # The web UI's schema (--js). Per object (its path, "state." before a state
-# object's): i its index kinds (P port, N<count>, K<max> keyed, W<words>),
-# t its tip, f its fields in schema order, each an array [type, a, b,
+# object's): i its index kinds (P port, N<count>, K<max> keyed, W<words>,
+# I<count> from 0, S<count> streamed), t its tip, n the indexes' names (a
+# name, or [high, low] for two 32-bit halves), f its fields (the name "": the
+# instance's one value) in schema order, each an array [type, a, b,
 # default, when, tip, unit, label] with trailing empties dropped. a, b by type: e/f the
 # words; n the limits; d the decimals; s/p the length; m 1 with the CPU;
 # mac 1 with auto; pt 1 with none; tz the limits in minutes. when: 0 always,
@@ -846,6 +862,8 @@ def js(objs, path):
             e["i"] = "".join(k[0] + ("" if k == "PORT" else str(n)) for k, n, _, _ in o.levels)
         if o.tip:
             e["t"] = o.tip
+        if o.names:
+            e["n"] = o.names
         e["f"] = {f.name: js_field(f) for f in o.fields}
         out[("state." if o.state else "") + o.regname] = e
     text = ("// Generated by tools/om_gen.py --js from schema/: do not edit (DESIGN 14.3)\n"

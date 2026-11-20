@@ -15,8 +15,8 @@ most, so a step near 20 ms here means a poll waited more than once), and
 after the release the same thing must work
 without a timeout:
 
-  table    reg 5cac (TBL_CTRL execute): `vlan 30`, /l2.json (a page of polls)
-  stat     reg 0f60 (STAT_GET): /counters.json (55 counters), `stat`
+  table    reg 5cac (TBL_CTRL execute): `vlan 30`, get state.l2 (a poll an entry)
+  stat     reg 0f60 (STAT_GET): get state.port.1.mib (55 counters)
   flush    reg 53d4 (L2 flush): `l2 forget`
   i2c      reg 0418 (I2C_CTRL): an SFP module's read fails, said once
   wel      flash wp (WEL never set): a web config save
@@ -144,13 +144,13 @@ def main(argv):
         C = a.cases
         if "table" in C:
           case("table", "5cac", "reg hold 5cac 1", "reg release 5cac",
-               lambda: cli(f"vlan 30 {F[1]}")() + web("/l2.json?idx=0")(), lambda x: prompt(x) and "Error" not in x,
-               after=lambda: cli(f"vlan 31 {F[1]}")() + web("/l2.json?idx=0", "/vlanlist.json")())
+               lambda: cli(f"vlan 30 {F[1]}", "get state.l2")(), lambda x: prompt(x) and "Error" not in x,
+               after=lambda: cli(f"vlan 31 {F[1]}", "get state.l2")() + web("/vlanlist.json")())
           vl = [v for k, v in r.results.items() if k.endswith("GET /vlanlist.json")][-1]
           check('"id":30' in vl and '"id":31' in vl, "table: VLANs 30 and 31 listed after the release")
         if "stat" in C:
           case("stat", "0f60", "reg hold f60 1", "reg release f60",
-               lambda: web("/counters.json?port=1")() + cli("stat")(), prompt)
+               cli("get state.port.1.mib"), prompt)
         if "flush" in C:
           case("flush", "53d4", "reg hold 53d4 1ffff", "reg release 53d4", cli("l2 forget"), prompt)
 

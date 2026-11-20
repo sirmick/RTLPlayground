@@ -19,11 +19,9 @@ void char_to_html(char c);
 
 void itoa16_html(uint16_t v);
 
-bool send_counters(uint8_t phys_port);
 void send_vlan(uint16_t vlan);
 void send_bandwidth(void);
 void send_storm(void);
-void send_l2(uint16_t idx);
 void l2_delete(uint16_t idx);
 void send_mirror(void);
 void send_lag(void);

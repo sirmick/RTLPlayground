@@ -44,6 +44,8 @@
 #define IX_NUM		1	/* 1..n (n 1 and no '#' in the path: no index) */
 #define IX_KEY		2	/* keyed: n slots, a key in om_lim[a] at the element's start */
 #define IX_WORD		3	/* the words of om_enum[a] */
+#define IX_IDX		4	/* 0..n-1 */
+#define IX_STREAM	5	/* 0..om_lim[a].hi, found by the getter (state, level 0 only) */
 
 /* om_field.when: where a field exists (om_when()) */
 #define W_ALWAYS	0
@@ -78,6 +80,15 @@ struct om_obj {
 typedef uint8_t (*om_fn)(uint8_t) __banked;
 #define OM_OK	0
 #define OM_ERR	1
+
+/*
+ * A state getter fills om_st for its instance: idx is level 0's element;
+ * a second level's index is om_ix1. A streamed object's getter finds the
+ * first instance at or after om_key, sets om_key to it and fills om_st, or
+ * returns OM_ERR if there is none (the search wrapped).
+ */
+extern __xdata uint8_t om_ix1;
+extern __xdata uint16_t om_key;
 
 /*
  * A derive handler fills om_val with the value of field om_fid (stored

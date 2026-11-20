@@ -204,6 +204,52 @@ uint8_t om_get_port(uint8_t idx) __banked
 	return OM_OK;
 }
 
+/* state.port.N.mib.K: STAT index K's raw word */
+uint8_t om_get_port_mib(uint8_t idx) __banked
+{
+	b = om_ix1;
+	STAT_GET(b, idx);
+	dst = om_st.port_mib.v;
+	stat_pair();
+	return OM_OK;
+}
+
+/* state.l2: the first entry at or after om_key (om.h), by its table index */
+#define L	om_st.l2
+static __xdata uint16_t ix;
+
+uint8_t om_get_l2(uint8_t idx) __banked
+{
+	(void)idx;
+	if (om_key >> 12 || hw_poll(RTL837X_TBL_CTRL))
+		return OM_ERR;
+	reg_read_m(RTL837x_TBL_DATA_0);
+	sfr_data[1] &= 0xfc;
+	sfr_data[2] |= TBL_LUTREAD_NEXT_L2UC << 6;
+	reg_write_m(RTL837x_TBL_DATA_0);
+	REG_WRITE(RTL837X_TBL_CTRL, om_key >> 8, om_key, TBL_L2_UNICAST, TBL_EXECUTE);
+	if (hw_poll(RTL837X_TBL_CTRL))	/* E4: a stuck table ends the walk */
+		return OM_ERR;
+	reg_read_m(RTL837x_TBL_DATA_0);
+	ix = ((uint16_t)(sfr_data[2] & 0x0f) << 8) | sfr_data[3];
+	reg_read_m(RTL837x_L2_DATA_OUT_B);
+	if (!(sfr_data[0] & 0x20) || ix < om_key)	/* none, or the search wrapped */
+		return OM_ERR;
+	om_key = ix;
+	L.vlan = ((uint16_t)(sfr_data[0] & 0x0f) << 8) | sfr_data[1];
+	L.mac[0] = sfr_data[2];
+	L.mac[1] = sfr_data[3];
+	l = sfr_data[0] >> 6;
+	reg_read_m(RTL837x_L2_DATA_OUT_A);
+	memcpy(L.mac + 2, sfr_data, 4);
+	reg_read_m(RTL837x_L2_DATA_OUT_C);
+	L.static_ = sfr_data[1] & 1;
+	l |= (sfr_data[3] & 3) << 2;
+	L.port = l;
+	L.lag = port_lag_of(l) + 1;		/* PORT_LAG_NONE + 1: 0 */
+	return OM_OK;
+}
+
 uint8_t om_do_port_cabletest(uint8_t idx) __banked
 {
 	phy_settings.port = idx;

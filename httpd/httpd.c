@@ -1330,17 +1330,10 @@ void httpd_appcall(void)
 			if (!strcmp(q, "/vlan.json")) {
 				parse_short(q + 15);
 				send_vlan(short_parsed);
-			} else if (is_word(q, "/counters.json")) {
-				uint8_t cport = q[20] - '0';
-				if (send_counters(cport))
-					send_bad_request();
 			} else if (is_word(q, "/bandwidth.json")) {
 				send_bandwidth();
 			} else if (is_word(q, "/storm.json")) {
 				send_storm();
-			} else if (is_word(q, "/l2.json")) {
-				parse_short(q + 13); // e.g.: /l2.json?idx=10
-				send_l2(short_parsed);
 			} else if (is_word(q, "/mirror.json")) {
 				send_mirror();
 			} else if (is_word(q, "/lag.json")) {

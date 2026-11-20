@@ -286,13 +286,11 @@ bool strstart(const uint8_t *a, const uint8_t *b)
 
 bool strstart_x(const uint8_t *a, const uint8_t *b) { return strstart(a, b); }
 
-bool send_counters(uint8_t phys_port) { (void)phys_port; return false; }
 void send_vlan(uint16_t vlan) { (void)vlan; }
 void send_bandwidth(void) { }
 void send_storm(void) { }
 void send_isolation(void) { }
 void send_eee(void) { }
-void send_l2(uint16_t idx) { (void)idx; }
 static int l2_deleted = -1;
 void l2_delete(uint16_t idx) { l2_deleted = idx; }
 void send_mirror(void) { }

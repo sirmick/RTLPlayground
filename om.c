@@ -74,7 +74,9 @@ static __xdata uint8_t ft;		/* fdx's type */
 static __xdata uint16_t cv;		/* level 0: front-panel number, number from 0, key, word */
 static __xdata uint8_t ce;		/* level 0's element: logical port, number, slot */
 #if OM_USE_IX2
-static __xdata uint8_t cv1, r_v1;	/* level 1: number from 0, word; as given */
+__xdata uint8_t om_ix1;		/* level 1: number from 0, word */
+static __xdata uint8_t r_v1;		/* as given */
+__xdata uint16_t om_key;		/* a streamed object's instance (om.h) */
 #endif
 static __xdata uint8_t lv, lk, ln, la;	/* a level, its kind, count, arg */
 static __xdata uint8_t cur_e, cur_l, cur_f, cur_ok;	/* element, logical port, field, valid */
@@ -317,7 +319,7 @@ static void emit_obj(void)		/* the instance's path: "port.3", "vlan.10" */
 		v16 = cv;
 #if OM_USE_IX2
 		if (lv)
-			v16 = cv1;
+			v16 = om_ix1;
 #endif
 		if (e_star) {
 			write_char('*');
@@ -590,6 +592,8 @@ static void emit_value(void)		/* fd's value at vp */
 	case T_PORT:
 		if (*vp == 0xff)
 			print_string("none");
+		else if (*vp == CPU_LOGICAL_PORT)
+			print_string("cpu");
 		else
 			itoa_short(machine.log_to_phys_port[*vp]);
 		return;
@@ -635,8 +639,10 @@ static void emit_value(void)		/* fd's value at vp */
 static void emit_path(void)
 {
 	emit_obj();
-	write_char('.');
-	print_string(fdx.name);
+	if (*fdx.name) {		/* "": the instance's one value */
+		write_char('.');
+		print_string(fdx.name);
+	}
 }
 
 static void emit_line(void)		/* "path value" */
@@ -1031,6 +1037,11 @@ static uint8_t key_step(void)
 }
 #endif
 
+static uint8_t call(uint8_t fn)
+{
+	return om_fns[fn](cur_e);
+}
+
 /* level 0's next index at or after cv that the path allows: 0 if none */
 static uint8_t step0(void)
 {
@@ -1044,6 +1055,15 @@ static uint8_t step0(void)
 			return 0;
 		cv = r_v;
 	}
+#if OM_USE_STREAM
+	if (lk == IX_STREAM) {
+		om_key = cv;
+		if (call(obx.get) || ((r_fix & 1) && om_key != r_v))
+			return 0;
+		cv = om_key;
+		return 1;
+	}
+#endif
 	for (; cv < obx.n[0] + (lk == IX_PORT); cv++) {
 		ce = cv;
 		if (lk != IX_PORT || (ce = log_of(cv)) != 0xff)
@@ -1053,14 +1073,14 @@ static uint8_t step0(void)
 }
 
 #if OM_USE_IX2
-static uint8_t step1(void)		/* level 1's, at or after cv1 */
+static uint8_t step1(void)		/* level 1's, at or after om_ix1 */
 {
 	if (r_fix & 2) {
-		if (cv1 > r_v1)
+		if (om_ix1 > r_v1)
 			return 0;
-		cv1 = r_v1;
+		om_ix1 = r_v1;
 	}
-	return cv1 < obx.n[1];
+	return om_ix1 < obx.n[1];
 }
 #endif
 
@@ -1069,7 +1089,7 @@ static void elem(void)			/* the cursor's element */
 	cur_l = ce;
 	cur_e = ce;
 #if OM_USE_IX2
-	cur_e = ce * obx.n[1] + cv1;
+	cur_e = ce * obx.n[1] + om_ix1;
 #endif
 }
 
@@ -1078,7 +1098,7 @@ static void first_inst(void)		/* cur_ok: there is one */
 	cv = 0;
 	cur_ok = step0();
 #if OM_USE_IX2
-	cv1 = 0;
+	om_ix1 = 0;
 	step1();
 #endif
 	elem();
@@ -1087,12 +1107,12 @@ static void first_inst(void)		/* cur_ok: there is one */
 static void next_inst(void)
 {
 #if OM_USE_IX2
-	cv1++;
+	om_ix1++;
 	if (step1()) {
 		cur_e++;
 		return;
 	}
-	cv1 = 0;
+	om_ix1 = 0;
 	step1();
 #endif
 	cv++;
@@ -1100,10 +1120,6 @@ static void next_inst(void)
 	elem();
 }
 
-static uint8_t call(uint8_t fn)
-{
-	return om_fns[fn](cur_e);
-}
 
 /* ---- paths ------------------------------------------------------------ */
 
@@ -1150,14 +1166,15 @@ static uint8_t ix_parse(void)
 		if (num[1] || log_of(num[0]) == 0xff)
 			goto bad;
 	}
-#if OM_USE_NUM
-	else if (lk == IX_NUM) {
-		if (!v16 || v16 > ln)
+#if OM_USE_NUM || OM_USE_IDX
+	else if (lk == IX_NUM || lk == IX_IDX) {
+		if (lk == IX_NUM)
+			v16--;		/* 0: past ln */
+		if (v16 >= ln)
 			goto bad;
-		v16--;
 	}
 #endif
-#if OM_USE_KEY
+#if OM_USE_KEY || OM_USE_STREAM
 	else {
 		cp = (__code const uint8_t *)&om_lim[la];
 		if (!in_lim())
@@ -1184,8 +1201,13 @@ bad:
 		print_string("1-");
 		itoa_short(ln);
 #endif
-#if OM_USE_KEY
-	} else if (lk == IX_KEY) {
+#if OM_USE_IDX
+	} else if (lk == IX_IDX) {
+		print_string("0-");
+		itoa_short(ln - 1);
+#endif
+#if OM_USE_KEY || OM_USE_STREAM
+	} else if (lk == IX_KEY || lk == IX_STREAM) {
 		cp = (__code const uint8_t *)&om_lim[la];
 		print_lim();
 #endif
@@ -1305,8 +1327,16 @@ static void path_err(void)
 
 static void job_inst(void)		/* entering an instance */
 {
-	if ((obx.flags & OM_STATE) && obx.get != 0xff)
+	if ((obx.flags & OM_STATE) && obx.get != 0xff
+#if OM_USE_STREAM
+	    && obx.k[0] != IX_STREAM		/* step0 has filled om_st */
+#endif
+	    ) {
+#if OM_USE_IX2
+		cur_e = cur_l;			/* level 0's element; level 1's is om_ix1 */
+#endif
 		call(obx.get);
+	}
 	cur_f = 0;
 	j_in = 3;
 #if OM_USE_KEY
@@ -1446,7 +1476,7 @@ static void cv_of_e(void)		/* cur_e's indices, for its path in a message */
 {
 	ce = cur_e;
 #if OM_USE_IX2
-	cv1 = cur_e % obx.n[1];
+	om_ix1 = cur_e % obx.n[1];
 	ce = cur_e / obx.n[1];
 #endif
 	cv = ce;
@@ -2140,7 +2170,7 @@ static void enc_chunk(void)
 			cv = e_cv;
 			ce = e_ce;
 #if OM_USE_IX2
-			cv1 = e_cv1;
+			om_ix1 = e_cv1;
 #endif
 			elem();
 			cur_ok = 1;
@@ -2171,7 +2201,7 @@ static void enc_chunk(void)
 				e_cv = cv;
 				e_ce = ce;
 #if OM_USE_IX2
-				e_cv1 = cv1;
+				e_cv1 = om_ix1;
 #endif
 				goto full;
 			}
@@ -2180,7 +2210,7 @@ static void enc_chunk(void)
 				v16++;
 #if OM_USE_IX2
 			if (obx.n[1] > 1)
-				v16 = v16 << 8 | cv1;
+				v16 = v16 << 8 | om_ix1;
 #endif
 			put(obx.id);
 			put16(v16);

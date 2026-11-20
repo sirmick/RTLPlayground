@@ -1479,7 +1479,7 @@ void cmd_parser(void) __banked
 			if (cmd_compare(1, "forget"))
 				port_l2_forget();
 			else
-				port_l2_learned();
+				cmd_error("\nUsage:\n\tl2 forget\n\t(the table: get state.l2)\n");
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
 		} else if (cmd_compare(0, "igmp")) {
@@ -1627,9 +1627,6 @@ static __xdata uint8_t job_more;
 void cli_job_more(void) __banked
 {
 	switch (cli_job) {
-	case CLI_JOB_L2:
-		job_more = port_l2_line();
-		break;
 	case CLI_JOB_OM:
 	case CLI_JOB_OMAPPLY:
 		job_more = om_line();

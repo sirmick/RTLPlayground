@@ -9,6 +9,7 @@ switch's /cli. Python's standard library only.
   rtlpg_client.py default [--machine M] in.txt out       the build's default config sector
   rtlpg_client.py --host H [--password P] cli LINE...    POST /cli, print the reply
   rtlpg_client.py --host H [--password P] get-config     GET /config (get -s)
+  rtlpg_client.py --host H [--password P] mib N          port N's counters, by name
 
 The codec reads the schema with tools/om_gen.py (its IDs from the registry)
 and the board from machine/<M>.c (port numbers, SFP ports): a port mask is
@@ -22,6 +23,10 @@ without "set "; "del <entry>" removes a keyed entry (a default one too).
 bin2txt prints a line per record a load takes, the Secrets too
 (--no-secrets leaves them out, as get -s and GET /config do); what a load
 would skip goes to stderr.
+
+mib names the counters (schema/state_mib.py: the firmware prints a STAT
+index's raw 64-bit word, state.port.N.mib.K): a word holding two 32-bit
+counters gives two lines, the high half's name first.
 """
 import argparse
 import os
@@ -121,6 +126,7 @@ class Schema:
         regs = {d: om_gen.read_registry(os.path.join(d, "registry.txt")) for d in dirs}
         om_gen.apply_registry(objs, regs, False)
         self.objs = [o for o in objs if not o.state]
+        self.mib = next((o.names for o in objs if o.state and o.regname == "port.mib"), [])
         self.board = board or Board()
         for o in self.objs:
             o.cfields = [f for f in o.fields if f.access == "cfg"]
@@ -604,6 +610,22 @@ class Switch:
         return b.decode("latin-1")
 
 
+def mib_named(sch, text):
+    """get state.port.N.mib's reply with the counters' names."""
+    out = []
+    for ln in text.splitlines():
+        m = re.fullmatch(r"(state\.port\.\d+\.mib\.)(\d+) (\d+)", ln)
+        if not m or int(m[2]) >= len(sch.mib):
+            out.append(ln)
+            continue
+        n, v = sch.mib[int(m[2])], int(m[3])
+        if isinstance(n, list):
+            out += ["%s%s %d" % (m[1], n[0], v >> 32), "%s%s %d" % (m[1], n[1], v & 0xffffffff)]
+        else:
+            out.append("%s%s %d" % (m[1], n, v))
+    return "\n".join(out) + "\n"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--machine", help="machine/<M>.c for the ports (default: the 8x)")
@@ -611,14 +633,17 @@ def main():
     ap.add_argument("--host")
     ap.add_argument("--password", default="1234")
     ap.add_argument("--no-secrets", action="store_true")
-    ap.add_argument("cmd", choices=["txt2bin", "bin2txt", "convert", "default", "cli", "get-config"])
+    ap.add_argument("cmd", choices=["txt2bin", "bin2txt", "convert", "default", "cli", "get-config", "mib"])
     ap.add_argument("args", nargs="*")
     a = ap.parse_args()
     try:
-        if a.cmd in ("cli", "get-config"):
+        if a.cmd in ("cli", "get-config", "mib"):
             if not a.host:
                 ap.error("--host")
             sw = Switch(a.host, a.password)
+            if a.cmd == "mib":
+                sys.stdout.write(mib_named(Schema(a.schema), sw.cli(["get state.port.%s.mib" % a.args[0]])))
+                return 0
             sys.stdout.write(sw.cli(a.args) if a.cmd == "cli" else sw.get_config())
             return 0
         if a.cmd == "convert":
