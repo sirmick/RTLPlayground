@@ -35,19 +35,14 @@ def check(cond, name, detail=""):
             print("      " + detail.strip().replace("\n", "\n      "))
 
 
-def place(groups, pinned=PINNED, asm=None, rel_extra=None):
-    """(exit status, stderr, banks.txt); asm: {module index: its .asm},
-    rel_extra: {module index: more .rel lines (areas, symbols)}"""
+def place(groups, pinned=PINNED):
+    """(exit status, stderr, banks.txt)"""
     d = tempfile.mkdtemp()
     banked, other = [], []
     for i, size in enumerate(groups):
         rel = os.path.join(d, "m%02d.rel" % i)
         with open(rel, "w") as f:
             f.write("A BANKED size %X flags 20 addr 0\nS _f%02d Def0000\n" % (size, i))
-            f.write((rel_extra or {}).get(i, ""))
-        if asm and i in asm:
-            with open(os.path.join(d, "m%02d.asm" % i), "w") as f:
-                f.write(asm[i])
         banked.append(rel)
     for b, size in pinned.items():
         rel = os.path.join(d, "pin%d.rel" % b)
@@ -103,31 +98,6 @@ t = time.time()
 st, err, _ = place(GROUPS + [700])
 check(st == 1 and "no bank has room" in err and time.time() - t < 60,
       "search: a set that can't fit fails (%.1f s)" % (time.time() - t), err)
-
-# __code data handed to another file's __banked function: the two share a
-# bank. Three 30000 B files take a bank each; m03 and m04 (5000 B) would go
-# to banks 1 and 2, unless grouped.
-CALLEE = ";\tfunction g\n_g:\n\tljmp\t__sdcc_banked_ret\n"
-SIZES = [30000, 30000, 30000, 5000, 5000]
-
-
-def handed(load, between="", rel=""):
-    caller = ("\tmov\tdptr,#%s\n\tmov\tb,#0x80\n%s\tmov\tr0,#_g\n\tmov\tr1,#(_g >> 8)\n"
-              "\tmov\tr2,#(_g >> 16)\n\tlcall\t__sdcc_banked_call\n" % (load, between))
-    st, err, txt = place(SIZES, pinned={}, asm={3: caller, 4: CALLEE},
-                         rel_extra={3: rel, 4: "S _g Def0000\n"})
-    b = dict(l.split()[:2] for l in banks(txt))
-    return st, b.get("m03"), b.get("m04"), err
-
-
-st, a, b, err = handed("___str_0")
-check(st == 0 and a == b, "group: a string literal handed to a __banked function", "%s %s %s" % (a, b, err))
-st, a, b, err = handed("_msgs", rel="S _msgs Def0010\n")
-check(st == 0 and a == b, "group: a named __code const of its own handed over", "%s %s %s" % (a, b, err))
-st, a, b, err = handed("_xvar", rel="A XSEG size 10 flags 40 addr 0\nS _xvar Def0000\n")
-check(st == 0 and a != b, "group: an xdata address isn't __code data", "%s %s" % (a, b))
-st, a, b, err = handed("___str_0", between="\tlcall\t_strcpy\n")
-check(st == 0 and a != b, "group: not when another call comes first (it isn't seen)", "%s %s" % (a, b))
 
 print("\n%s" % ("ALL PASS" if not fails else "%d FAILED" % fails))
 sys.exit(1 if fails else 0)

@@ -29,9 +29,11 @@ such files together, so this would be a bug there.
 
 And __code data handed over: an address loaded into dptr (`mov dptr,#___str_0`,
 or a named __code const) and then, before any other call, a function named as
-a banked call's target (`mov r0,#_om_fail`) that sits in a nonzero bank other
-than the data's. The callee reads it with its own bank mapped (om_fail("...")
-from a handler in another bank). Not seen: an address kept across a call or
+a banked call's target (`mov r0,#_f`) that sits in a nonzero bank other than
+the data's. The callee reads it with its own bank mapped (om_fail("...") from
+a handler in another bank was one, before om_fail took a message ID).
+tools/place_banks.py doesn't group such files: pass an ID, or keep the data
+in the callee's file. Not seen: an address kept across a call or
 stored to xdata and passed later, or a call through a function pointer.
 
 Usage: check_cross_bank.py <build-output-dir> [--placement placement.json]
@@ -192,7 +194,7 @@ def main(argv):
             print("OK: none handed to a function in another bank")
         else:
             print(f"\n{len(handed_violations)} __code ADDRESS(ES) HANDED TO A FUNCTION IN ANOTHER BANK"
-                  " - it reads them in its own bank; they must share one (tools/place_banks.py):\n")
+                  " - it reads them in its own bank: pass an ID, or keep the data in its file\n")
             for db, fb, mod, name, f, addr in sorted(handed_violations):
                 print(f"  {mod} (@0x{addr:06x}) hands {name} (bank {db}) to {f} (bank {fb})")
     return 1 if violations or data_violations or handed_violations else 0
