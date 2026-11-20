@@ -29,7 +29,10 @@ import rtlpg_client as rc  # noqa: E402
 fails = 0
 runs = 0
 M = "KEEPLINK_KP_9000_9XHPML_V1_2"
+MAC = "02:00:00:00:00:01"
+OTHER = "02:00:00:00:00:99"
 PCB = "TEST_PCB"
+FACTORY = open(os.path.join(HERE, "..", "config.txt")).read().splitlines()
 
 
 def check(cond, msg, detail=""):
@@ -66,13 +69,18 @@ class Fake:
         self.om, self.at, self.uploads, self.lost = False, "old", 0, lost	# lost: unreachable after apply
         self.drops, self.texts = 0, None	# GET /config: connections dropped first; texts to answer in turn
         self.info, self.save_fail, self.pw_after = {}, False, None	# more /information.json; save fails; pw after apply
+        self.impostor = None	# a role: another switch (om, OTHER, 1234) there, while the real one isn't
+        self.gone, self.back = False, "boot"	# never back after the upload; else the role it is back at
+        self.late = 0		# requests the real one leaves unanswered after the upload
+        self.imp_log = []
         self.cand, self.run, self.saved = [], [], []
         self.log = []
         self.sch = rc.Schema(board=rc.Board(M))
         self.srv = {}
-        for role in ("old", "boot"):
-            s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), self.handler(role))
-            threading.Thread(target=s.serve_forever, daemon=True).start()
+        for role in ("old", "boot", "lease"):	# lease: 127.0.0.2, the old port (a DHCP address)
+            addr = ("127.0.0.2", self.srv["old"].server_address[1]) if role == "lease" else ("127.0.0.1", 0)
+            s = http.server.ThreadingHTTPServer(addr, self.handler(role))
+            threading.Thread(target=s.serve_forever, args=(0.02,), daemon=True).start()
             self.srv[role] = s
 
     def port(self, role):
@@ -90,7 +98,7 @@ class Fake:
             w = ln.split()
             if ln.startswith("get state.sys"):
                 out += ["state.sys.version v-new", "state.sys.machine " + M, "state.sys.pcb " + PCB,
-                        "sys.hostname x"]
+                        "state.sys.mac " + MAC, "sys.hostname x"]
             elif w[0] in ("set", "del"):
                 if any(r in ln for r in self.refuse):
                     out.append("err %s: refused" % ln)	# echoes the line, a password too
@@ -104,7 +112,9 @@ class Fake:
                 for x in self.run:
                     if x.startswith("set web.password "):
                         self.pw = x.split()[2]
-                if any(x.startswith("set mgmt.ip ") for x in self.run):
+                if "set mgmt.mode dhcp" in self.run:
+                    self.at = "lease"
+                elif any(x.startswith("set mgmt.ip ") for x in self.run):
                     self.at = "old"
                 if self.lost:
                     self.at = "nowhere"
@@ -117,8 +127,8 @@ class Fake:
                 out.append("state.cfg.apply done")
             elif ln == "get state.cfg.save":
                 out.append("state.cfg.save " + ("failed" if self.save_fail else "done"))
-            elif ln == "get -s":
-                out += rc.bin2txt(self.sch, rc.txt2bin(self.sch, self.saved), secrets=False)
+            elif ln == "get -s":		# the factory default the firmware booted on, then the lines
+                out += rc.bin2txt(self.sch, rc.txt2bin(self.sch, FACTORY + self.saved), secrets=False)
             out.append("ok")
         return "\n".join(out) + "\n"
 
@@ -141,16 +151,24 @@ class Fake:
                 return self.rfile.read(int(self.headers.get("Content-Length", 0)))
 
             def handle_one_request(self):
-                if fake.at != role:		# not at this address: no answer
+                self.other = fake.impostor == role and fake.om and fake.at != role
+                if fake.at != role and not self.other:	# not at this address: no answer
+                    self.close_connection = True
+                    return
+                if not self.other and fake.om and fake.late:
+                    fake.late -= 1
                     self.close_connection = True
                     return
                 super().handle_one_request()
 
             def do_GET(self):
+                if self.other:
+                    self.reply(200 if self.path == "/login.html" else 404, b"x")
+                    return
                 if self.path == "/login.html":
                     self.reply(200, b"login")
                 elif self.path == "/information.json" and not fake.om:
-                    info = dict({"sw_ver": "v-old", "hw_ver": "8x", "pcb_ver": PCB}, **fake.info)
+                    info = dict({"sw_ver": "v-old", "hw_ver": "8x", "pcb_ver": PCB, "mac_address": MAC}, **fake.info)
                     self.reply(200, json.dumps(info).encode())
                 elif self.path == "/config" and not fake.om and fake.text is not None:
                     if fake.drops:
@@ -165,6 +183,17 @@ class Fake:
 
             def do_POST(self):
                 b = self.body()
+                if self.other:		# another switch on the object model, factory password
+                    fake.imp_log.append((self.path, b.decode(errors="replace")))
+                    if self.path == "/login":
+                        ok = b.decode() == "pwd=1234"
+                        self.reply(302, headers=[("Location", "/index.html" if ok else "/login.html")] +
+                                   ([("Set-Cookie", "session=imp")] if ok else []))
+                    elif self.path == "/cli":
+                        self.reply(200, ("state.sys.version v-new\nstate.sys.mac %s\nok\n" % OTHER).encode())
+                    else:
+                        self.reply(404)
+                    return
                 if self.path == "/login":
                     ok = b.decode() == "pwd=" + fake.pw
                     self.reply(302, headers=[("Location", "/index.html" if ok else "/login.html")] +
@@ -174,7 +203,7 @@ class Fake:
                 elif self.path == "/upload":
                     fake.uploads += 1
                     self.reply(200, b"Upload done, rebooting")
-                    fake.om, fake.at, fake.pw = True, "boot", "1234"
+                    fake.om, fake.at, fake.pw = True, "nowhere" if fake.gone else fake.back, "1234"
                 else:
                     self.reply(404)
         return H
@@ -259,6 +288,7 @@ def main():
     check(os.stat(PLAN).st_mode & 0o777 == 0o600 and text.startswith("# fwupdate plan: 127.0.0.1:")
           and "# dropped, legacy (P4-3): lag 1 7 8\n" in text and "# dropped, untranslated: frobnicate\n" in text
           and "\nmgmt.ip 127.0.0.1\n" in text and "\nweb.password *\n" in text and "secret9" not in text
+          and text.split("\n")[0].endswith(", mac " + MAC)
           and err.find("Plan written to") < err.find("Uploading"),
           "the plan is written before the upload, owner-only, with what it drops, the password masked", text)
     steps = [err.find("Step %d/4" % n) for n in range(1, 5)]
@@ -333,6 +363,51 @@ def main():
     fwupdate.CONFIRM_S = keep
     check(st == 5 and "within the confirm window" in err and "confirm" not in f.log and not f.saved,
           "exit 5, never confirmed: the window rolls it back", err)
+    f.close()
+
+    print("another switch at the factory address, factory password: refused")
+    plan2 = PLAN + "2"
+    fwupdate.SETTLE_S, keep_settle = 0, fwupdate.SETTLE_S
+    f = Fake(CLEAN)
+    f.impostor, f.back, f.late = "boot", "old", 1	# the real one back at HOST a moment later, another at the factory address
+    st, out, err = run(f, img, "--save-plan", plan2)
+    check(st == 0 and "Skipping 127.0.0.1:%d: another switch (MAC %s" % (f.port("boot"), OTHER) in err
+          and "Saved: get -s is the plan" in err and f.imp_log and not [b for p, b in f.imp_log if "set " in b],
+          "the other switch was asked who it is, never set; the real one updated", (f.imp_log, err))
+    f.close()
+    f = Fake(CLEAN)
+    f.impostor, f.gone = "boot", True
+    st, out, err = run(f, img, "--save-plan", plan2, "--wait-timeout", "2")
+    check(st == 5 and "only another switch answered" in err and not [b for p, b in f.imp_log if "set " in b],
+          "only another switch answers: exit 5, nothing set", err)
+    f.close()
+    fwupdate.SETTLE_S = keep_settle
+    f = Fake("")
+    f.om, f.at, f.pw, f.impostor = True, "boot", "1234", "old"	# --plan: another switch at HOST
+    st, out, err = run(f, None, "--plan", PLAN)
+    check(st == 0 and "another switch (MAC %s" % OTHER in err and "Config carried over" in out
+          and not [b for p, b in f.imp_log if "set " in b],
+          "--plan: the other switch at HOST skipped, the real one at its factory address set", err)
+    f.close()
+
+    print("DHCP: the new lease by the old MAC in the neighbour table")
+    arp = os.path.join(tempfile.mkdtemp(), "arp")
+    open(arp, "w").write("IP address HW type Flags HW address Mask Device\n127.0.0.2 0x1 0x2 %s * lo\n" % MAC)
+    fwupdate.ARP, keep_arp = arp, fwupdate.ARP
+    f = Fake("ip dhcp\nhostname leased\n")
+    st, out, err = run(f, img, "--save-plan", plan2)
+    check(st == 0 and "Logged in to 127.0.0.2:%d after the apply" % f.port("old") in err
+          and "set mgmt.mode dhcp" in f.saved and not [x for x in f.saved if x.startswith("set mgmt.ip")]
+          and "Saved: get -s is the plan" in err, "found at the lease, mgmt.ip not pinned, get -s config.txt + plan",
+          (f.saved, err))
+    f.close()
+    open(arp, "w").write("IP address HW type Flags HW address Mask Device\n")
+    fwupdate.CONFIRM_S, keep = 1, fwupdate.CONFIRM_S
+    f = Fake("ip dhcp\nhostname leased\n")
+    st, out, err = run(f, img, "--save-plan", plan2)
+    fwupdate.CONFIRM_S, fwupdate.ARP = keep, keep_arp
+    check(st == 5 and "(or a DHCP lease this host saw)" in err and "rolls back" in err and "--plan" in err
+          and "save" not in f.log, "no lease seen: exit 5, the rollback, the --plan line", err)
     f.close()
 
     print("--no-wait can't carry a config")

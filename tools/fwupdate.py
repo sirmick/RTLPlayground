@@ -32,6 +32,12 @@ order:
      address), save, and compare get -s with the plan.
 Step 4 applies with a confirm window (apply 120): if the switch can't be
 reached at its address after it, it rolls back to its factory default.
+Every address is checked to be the same switch (state.sys.mac against the
+old switch's MAC, kept in the plan) before set and before confirm: another
+switch answering there is skipped.  With DHCP the new lease is looked for
+by the MAC in this host's neighbour table only; if it isn't found, the
+window rolls back, and `--plan HOST.plan <the lease's address>` redoes
+step 4 once you know it.
 Step 1 writes the plan to HOST.plan (--save-plan): if the update stops
 after 2, `fwupdate.py --plan HOST.plan HOST` redoes step 4 from it.  The
 web password is shown and written as * (step 4 sets the -p password); the
@@ -432,45 +438,48 @@ def probe(host, port, timeout):
         return None
 
 
+SETTLE_S = 9		# answering this long without going down: back (or never left)
+
+
 def wait_for_switch(host, port, timeout, wait_timeout, password, before,
-                    require_down=False, also=(), passwords=()):
+                    require_down=False, also=(), passwords=(), mac=None):
     """Wait until the switch has rebooted and answers again.
 
     require_down is set when the switch closed the upload connection without
     a verdict: then only an observed reboot proves that the image was taken.
     also: more (host, port) the switch may come back at (a new firmware on
-    its built-in config), asked in turn; passwords: more to try there.
-    Returns (info, cookie, (host, port)) from the fresh login after the
-    reboot; info and cookie are None when that login or the state.sys read
-    failed.
+    its factory default), asked in turn; passwords: more to try there.
+    mac: the old switch's; an answer whose state.sys.mac differs is another
+    switch, skipped. Returns (info, cookie, (host, port)) from the fresh
+    login after the reboot; info and cookie are None when that login or
+    the state.sys read failed (only without mac).
     """
     start = time.monotonic()
     seen_down = False
+    others = set()
     targets = [(host, port)] + [t for t in also if t != (host, port)]
     print("Waiting for the switch to reboot ...", file=sys.stderr)
     while time.monotonic() - start < wait_timeout:
+        up = []
         for at in targets:
             status = probe(at[0], at[1], min(timeout, 5))
             if status is not None:
-                break
-        if status is not None and at != targets[0]:
-            seen_down = True	# not where it was: it has rebooted
+                up.append((at, status))
         elapsed = time.monotonic() - start
-        if status is None:
-            if not seen_down:
-                print("Switch is down (rebooting) ...", file=sys.stderr)
-                seen_down = True
-            time.sleep(2)
-            continue
-        if (status in (200, 401) and not seen_down and elapsed >= 9
-                and require_down):
-            raise Failure(
-                "switch never rebooted and gave no verdict; the image was "
-                "probably rejected", 3)
-        # Stay reachable for a few seconds before believing the boot is
-        # complete; otherwise a fast reply may just be the old session.
-        if status in (200, 401) and (seen_down or elapsed >= 9):
-            print(f"Switch is back at {at[0]}:{at[1]}.", file=sys.stderr)
+        if not any(at == targets[0] for at, _ in up) and not seen_down:
+            print("Switch is down (rebooting) ...", file=sys.stderr)
+            seen_down = True
+        for at, status in up:
+            if (at == targets[0] and status in (200, 401) and not seen_down
+                    and elapsed >= SETTLE_S and require_down):
+                raise Failure(
+                    "switch never rebooted and gave no verdict; the image was "
+                    "probably rejected", 3)
+            # Stay reachable for a few seconds before believing the boot is
+            # complete; otherwise a fast reply may just be the old session.
+            # Not where it was: it has rebooted, if it is the same switch.
+            if status not in (200, 401) or not (seen_down or elapsed >= SETTLE_S or at != targets[0]):
+                continue
             after = None
             cookie = None
             for pw in [password] + [p for p in passwords if p != password]:
@@ -480,6 +489,15 @@ def wait_for_switch(host, port, timeout, wait_timeout, password, before,
                     break
                 except Failure:
                     cookie = None
+            if mac:
+                got = (after or {}).get("mac", "").lower()
+                if not (after or {}).get("om") or got != mac:
+                    if got and got != mac and at not in others:
+                        print(f"Skipping {at[0]}:{at[1]}: another switch (MAC {got}, "
+                              f"not {mac})", file=sys.stderr)
+                        others.add(at)
+                    continue
+            print(f"Switch is back at {at[0]}:{at[1]}.", file=sys.stderr)
             if after:
                 print(f"Now running {describe(after)}", file=sys.stderr)
                 if before and (after.get("version") == before.get("version")
@@ -490,6 +508,9 @@ def wait_for_switch(host, port, timeout, wait_timeout, password, before,
                           file=sys.stderr)
             return after, cookie, at
         time.sleep(2)
+    if others:
+        raise Failure(f"only another switch answered ({', '.join(f'{h}:{p}' for h, p in others)}); "
+                      f"the one with MAC {mac} didn't within {wait_timeout} seconds", 5)
     raise Failure(f"switch did not answer within {wait_timeout} seconds", 4)
 
 
@@ -523,7 +544,7 @@ class Plan:
     """An old config, converted: lines (path lines), legacy ((line, node)),
     bad, warn; the new firmware's factory default address and password."""
 
-    def __init__(self, args, text, machine=None, lines=None, running=None):
+    def __init__(self, args, text, machine=None, lines=None, running=None, mac=None):
         sys.path.insert(0, HERE)
         import legacy_map
         import rtlpg_client
@@ -531,15 +552,17 @@ class Plan:
         self.machine = machine or machine_of(args)
         self.sch = rtlpg_client.Schema(args.schema, rtlpg_client.Board(self.machine))
         self.warn, self.filled = [], []
+        self.mac = (mac or "").lower() or None	# the old switch's: the identity checks
         # the factory default (config.txt, DESIGN.md 15.1): what the new
         # firmware boots on, and where it answers then
-        cfg, factory = self.rc.Config(self.sch), []
+        cfg, factory, self.factory = self.rc.Config(self.sch), [], []
         try:
             for ln in open(os.path.join(HERE, "..", "config.txt")):
                 cfg.line(ln)
                 w = ln.split()
                 if w and not w[0].startswith("#"):
                     factory.append(w[1] if w[0] == "set" else w[0])
+                    self.factory.append(" ".join(w[1:] if w[0] == "set" else w))
         except (OSError, self.rc.Bad) as error:
             print(f"warning: config.txt: {error}", file=sys.stderr)
         self.boot_ips = list(dict.fromkeys([self.value(cfg, "mgmt.ip"),
@@ -558,7 +581,10 @@ class Plan:
         # switch stays where it was, and get -s is config.txt + the plan
         have = {ln.split()[0] for ln in self.lines}
         built = self.rc.Config(self.sch)
+        dhcp = "mgmt.mode dhcp" in self.lines	# the lease decides: not pinned
         for path in dict.fromkeys(factory):
+            if dhcp and path in ("mgmt.ip", "mgmt.netmask", "mgmt.gateway"):
+                continue
             if path not in have and not self.empty:
                 v = (running or {}).get(path) or self.value(built, path)
                 try:
@@ -593,7 +619,7 @@ class Plan:
         password is put back), the old lines it drops as comments."""
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            f.write(f"# fwupdate plan: {host}:{port}, machine {self.machine}\n")
+            f.write(f"# fwupdate plan: {host}:{port}, machine {self.machine}, mac {self.mac}\n")
             for line, node in self.legacy:
                 f.write(f"# dropped, legacy ({node}): {line}\n")
             for line in self.bad:
@@ -609,13 +635,13 @@ class Plan:
             text = open(path).read()
         except OSError as error:
             raise Failure(f"cannot read {path}: {error}", 1)
-        m = re.match(r"# fwupdate plan: \S+, machine (\S+)\n", text)
+        m = re.match(r"# fwupdate plan: \S+, machine (\S+), mac ([0-9a-f:]{17})\n", text)
         if not m:
-            raise Failure(f"{path}: not a plan fwupdate wrote", 1)
+            raise Failure(f"{path}: not a plan fwupdate wrote (or without the switch's MAC)", 1)
         lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
         lines = [f"web.password {password}" if ln == "web.password *" else ln for ln in lines]
         try:
-            plan = cls(args, None, args.machine or m.group(1), lines)
+            plan = cls(args, None, args.machine or m.group(1), lines, mac=m.group(2))
         except OSError as error:
             raise Failure(f"the schema or the board: {error}", 1)
         for ln in lines:
@@ -633,8 +659,9 @@ class Plan:
         return None if v.get("mgmt.mode") == "dhcp" else v.get("mgmt.ip")
 
     def saved(self):
-        """What get -s will print once the lines are saved."""
-        return self.rc.bin2txt(self.sch, self.rc.txt2bin(self.sch, self.lines), secrets=False)
+        """What get -s will print once the lines are saved: the factory
+        default (what the new firmware booted on) and the lines over it."""
+        return self.rc.bin2txt(self.sch, self.rc.txt2bin(self.sch, self.factory + self.lines), secrets=False)
 
     def lost(self):
         return len(self.legacy) + len(self.bad)
@@ -685,7 +712,7 @@ def read_plan(args, host, port, cookie, before=None):
     except Failure as error:
         why, body = str(error), b""
     try:
-        plan = Plan(args, body, running=before)
+        plan = Plan(args, body, running=before, mac=(before or {}).get("mac"))
     except OSError as error:
         raise Failure(f"the schema or the board: {error}", 1)
     if why is None and plan.empty:
@@ -708,17 +735,32 @@ def state(args, host, port, cookie, what, busy):
 CONFIRM_S = 120		# apply's confirm window: a wrong address rolls back
 
 
+ARP = "/proc/net/arp"
+
+
 def arp_ip(mac):
     """The address this host's neighbour table has for mac (Linux), or
     None: where a switch in DHCP answers now, if it is on our segment."""
     try:
-        for row in open("/proc/net/arp").read().splitlines()[1:]:
+        for row in open(ARP).read().splitlines()[1:]:
             w = row.split()
             if len(w) >= 4 and w[3].lower() == (mac or "").lower() and w[2] != "0x0":
                 return w[0]
     except OSError:
         pass
     return None
+
+
+def same_switch(args, plan, at, cookie):
+    """at runs the object model and its state.sys.mac is the old switch's;
+    else says so."""
+    info = fetch_info(at[0], at[1], args.timeout, cookie) or {}
+    got = info.get("mac", "").lower()
+    if info.get("om") and got == plan.mac:
+        return True
+    print(f"Skipping {at[0]}:{at[1]}: " + (f"another switch (MAC {got}, not {plan.mac})" if got
+                                          else "not the object model, or no MAC"), file=sys.stderr)
+    return False
 
 
 def carry_over(args, plan, host, port, password, at, cookie):
@@ -729,6 +771,8 @@ def carry_over(args, plan, host, port, password, at, cookie):
     rolls back to its factory default."""
     if cookie is None:
         raise Failure(f"can't log in at {at[0]}:{at[1]} after the update", 5)
+    if not same_switch(args, plan, at, cookie):
+        raise Failure(f"{at[0]}:{at[1]} isn't the switch with MAC {plan.mac}", 5)
     out = cli(at[0], at[1], args.timeout, cookie,
               [f"set {ln}" if not ln.startswith("del ") else ln for ln in plan.lines])
     errs = [ln for ln in out.splitlines() if ln.startswith("err")]
@@ -736,6 +780,8 @@ def carry_over(args, plan, host, port, password, at, cookie):
         cli(at[0], at[1], args.timeout, cookie, ["discard"])
         raise Failure(plan.scrub("the switch refused lines: " + "; ".join(errs[:5])), 5)
     print(f"Set {len(plan.lines)} lines; apply {CONFIRM_S} ...", file=sys.stderr)
+    applied = time.monotonic()
+    deadline = applied + CONFIRM_S - max(5, CONFIRM_S // 10)	# before the rollback
     try:
         out = cli(at[0], at[1], min(args.timeout, 10), cookie, [f"apply {CONFIRM_S}"])
         if "err" in out:
@@ -751,27 +797,36 @@ def carry_over(args, plan, host, port, password, at, cookie):
     targets.append(at)
     targets = list(dict.fromkeys(targets))
     cookie = None
-    start = time.monotonic()
+    lport = port
     while cookie is None:
-        lease = None if ip else arp_ip(getattr(plan, "mac", None))	# DHCP: by the old MAC
-        for host, port in targets + ([(lease, port)] if lease and (lease, port) not in targets else []):
+        lease = None if ip else arp_ip(plan.mac)	# DHCP: by the old MAC
+        for host, port in targets + ([(lease, lport)] if lease and (lease, lport) not in targets else []):
             for pw in dict.fromkeys([password, plan.boot_password]):
+                if time.monotonic() > deadline:
+                    break
                 try:
                     cookie = login(host, port, min(args.timeout, 5), pw)
-                    break
                 except Failure:
-                    pass
+                    continue
+                if same_switch(args, plan, (host, port), cookie):
+                    break
+                cookie = None
+                break		# another switch: not this address
             if cookie:
                 break
         if cookie is None:
-            if time.monotonic() - start > CONFIRM_S * 0.8:
+            if time.monotonic() > deadline:
+                left = max(0, int(applied + CONFIRM_S - time.monotonic()))
                 raise Failure("the switch didn't answer at "
                               + ", ".join(f"{h}:{p}" for h, p in targets)
-                              + f" within the confirm window: it rolls back to "
-                              "its factory default", 5)
+                              + (" (or a DHCP lease this host saw)" if not ip else "")
+                              + f" within the confirm window: in {left} s it rolls "
+                              "back to its factory default", 5)
             time.sleep(2)
     print(f"Logged in to {host}:{port} after the apply; confirming",
           file=sys.stderr)
+    if not same_switch(args, plan, (host, port), cookie):
+        raise Failure(f"{host}:{port} isn't the switch with MAC {plan.mac}; not confirmed", 5)
     out = cli(host, port, args.timeout, cookie, ["confirm"])
     if not out.rstrip().endswith("ok"):
         raise Failure(plan.scrub(f"confirm: {out.strip()}"), 5)
@@ -823,8 +878,12 @@ def plan_only(args):
                 cookie = login(at[0], at[1], args.timeout, pw)
             except Failure:
                 continue
-            info = fetch_info(at[0], at[1], args.timeout, cookie)
-            if not (info or {}).get("om"):
+            info = fetch_info(at[0], at[1], args.timeout, cookie) or {}
+            if info.get("mac", "").lower() != plan.mac:
+                print(f"Skipping {at[0]}:{at[1]}: another switch (MAC "
+                      f"{info.get('mac', '?')}, not {plan.mac})", file=sys.stderr)
+                break
+            if not info.get("om"):
                 raise Failure(f"{at[0]}:{at[1]} doesn't run the object model; "
                               "update it first", 5)
             print(f"Logged in to {at[0]}:{at[1]}; step 4/4: setting, "
@@ -832,8 +891,9 @@ def plan_only(args):
             step4(args, plan, args.plan, host, port, password, at, cookie)
             print("Config carried over.")
             return 0
-    raise Failure("can't log in to the switch at "
-                  + ", ".join(f"{h}:{p}" for h, p in dict.fromkeys(targets)), 2)
+    raise Failure(f"the switch with MAC {plan.mac} isn't at "
+                  + ", ".join(f"{h}:{p}" for h, p in dict.fromkeys(targets))
+                  + " (a DHCP lease: give its address as HOST)", 5)
 
 
 def parse_args(argv):
@@ -985,7 +1045,6 @@ def run(args):
         print("Step 1/4: reading and converting the saved config",
               file=sys.stderr)
         plan, why = read_plan(args, host, port, cookie, before)
-        plan.mac = (before or {}).get("mac")
         back = plan.boot_ips
         if why:
             print(f"No readable config: {why}; the switch will boot its "
@@ -1009,6 +1068,10 @@ def run(args):
             raise Failure(
                 f"{plan.lost()} config lines would be lost (listed above); "
                 "--drop-legacy to update all the same", 5)
+        if not re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", plan.mac or ""):
+            raise Failure("the old switch didn't say its MAC (/information.json "
+                          "mac_address): no way to tell it from another switch "
+                          "after the update", 5)
         if plan.lost():
             print(f"Dropping {plan.lost()} config lines (--drop-legacy)",
                   file=sys.stderr)
@@ -1047,7 +1110,8 @@ def run(args):
     _, cookie, at = wait_for_switch(
         host, port, args.timeout, args.wait_timeout, password, before,
         require_down=accepted is None, also=also,
-        passwords=[plan.boot_password] if plan else ["1234"] if back else [])
+        passwords=[plan.boot_password] if plan else ["1234"] if back else [],
+        mac=plan.mac if plan else None)
     if plan:
         print("Step 4/4: setting, applying and saving the config",
               file=sys.stderr)
