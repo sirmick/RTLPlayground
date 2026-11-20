@@ -29,8 +29,9 @@ $(shell mkdir -p $(SCHED_GEN))
 # STEP/TASK in any other source of the build, and on a step returning what a
 # helper chose; the generator
 # runs when those change, and rewrites only the tables that change, so an
-# edit that moves no task or state recompiles nothing else.
-$(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py FORCE
+# edit that moves no task or state recompiles nothing else. It runs the
+# build's own SDCC: in a fresh tree, only once that is built.
+$(SCHED_DEFS) $(SCHED_DEFS:.def=.i) &: $(SCHED_STEP_SRCS) tools/sched_sweep.py FORCE | $(SDCC)
 	python3 tools/sched_sweep.py -o $(SCHED_GEN) --cpp '$(CC) -E $(CC_FLAGS)' \
 		--all $(filter %.c,$(SRCS)) -- $(SCHED_STEP_SRCS) > /dev/null
 $(SCHED_GEN)/gen.stamp: $(SCHED_DEFS) $(SCHED_DEFS:.def=.i) tools/sched_gen.py
