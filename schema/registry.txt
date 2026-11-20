@@ -48,3 +48,29 @@ obj 10 lag
 field 10.1 lag.mode Enum(lagmode)
 field 10.2 lag.members PMASK
 field 10.3 lag.hash Flags(laghash)
+obj 11 stp
+field 11.1 stp.enabled BOOL
+field 11.2 stp.version Enum(stpver)
+field 11.3 stp.priority U8
+field 11.4 stp.hello_s U8
+field 11.5 stp.maxage_s U8
+field 11.6 stp.fwd_delay_s U8
+field 11.7 stp.txhold U8
+field 11.8 stp.pathcost Enum(stpcost)
+field 11.9 stp.bpdu Enum(stpbpdu)
+obj 12 stp.lag
+field 12.1 stp.lag.enabled BOOL
+field 12.2 stp.lag.edge Enum(stpedge)
+field 12.3 stp.lag.cost U32
+field 12.4 stp.lag.priority U8
+field 12.5 stp.lag.guard Enum(stpguard)
+field 12.6 stp.lag.filter BOOL
+field 12.7 stp.lag.p2p Enum(stpp2p)
+obj 13 stp.port
+field 13.1 stp.port.enabled BOOL
+field 13.2 stp.port.edge Enum(stpedge)
+field 13.3 stp.port.cost U32
+field 13.4 stp.port.priority U8
+field 13.5 stp.port.guard Enum(stpguard)
+field 13.6 stp.port.filter BOOL
+field 13.7 stp.port.p2p Enum(stpp2p)

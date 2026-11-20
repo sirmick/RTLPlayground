@@ -24,22 +24,15 @@ struct machine_runtime machine_detected = { .isRTL8373 = 1 };
 uint8_t sfr_data[4];
 bool stp_enabled;
 uint16_t management_vlan;
-uint8_t cmd_buffer[CMD_BUF_SIZE];
-uint8_t cli_job;		/* cmd_parser.c: stp off's VLAN walk is a cli job (E1) */
-uint8_t stp_fdb_line(void);
+#include "om_gen.h"
+union om_st om_st;		/* om_get_stp*'s, not under test here */
 
-/* What the firmware's cli does a step at a time, all at once */
+/* What the stp task does a step at a time (stp off's VLAN walk), all at once */
 static void sim_finish(void)
 {
-	while (cli_job)
-		if (!stp_fdb_line())
-			cli_job = 0;
+	while (stp_fdb_vid)
+		stp_fdb_line();
 }
-uint8_t cmd_words_len;
-uint8_t cmd_words_b[15];
-char save_cmd;
-uint8_t err_status;
-uint8_t atoi_results_u8;
 
 static int verbose;
 
@@ -82,48 +75,6 @@ void itoa(uint8_t v)
 void print_reg(uint16_t reg)
 {
 	(void)reg;
-}
-
-uint8_t cmd_compare(uint8_t start, const uint8_t *cmd)
-{
-	const char *w;
-	size_t n;
-
-	if (start >= cmd_words_len)
-		return 0;
-	w = (const char *)&cmd_buffer[cmd_words_b[start]];
-	n = strlen((const char *)cmd);
-	return strncmp(w, (const char *)cmd, n) == 0 && (w[n] == ' ' || w[n] == 0);
-}
-
-uint8_t atoi_byte(uint8_t idx)
-{
-	unsigned v = 0, n = 0;
-	while (cmd_buffer[idx + n] >= '0' && cmd_buffer[idx + n] <= '9')
-		v = v * 10 + (cmd_buffer[idx + n++] - '0');
-	atoi_results_u8 = (uint8_t)v;
-	return (uint8_t)n;
-}
-
-uint8_t cmd_parse_port_separator(uint8_t idx)
-{
-	if (!atoi_byte(idx) || atoi_results_u8 < 1 || atoi_results_u8 > NPORTS)
-		return 0;
-	atoi_results_u8--;
-	return 1;
-}
-
-static void sim_cmd(const char *line)
-{
-	memset(cmd_buffer, 0, sizeof(cmd_buffer));
-	strncpy((char *)cmd_buffer, line, sizeof(cmd_buffer) - 1);
-	cmd_words_len = 0;
-	for (uint8_t i = 0; cmd_buffer[i]; i++)
-		if (cmd_buffer[i] != ' ' && (i == 0 || cmd_buffer[i - 1] == ' '))
-			cmd_words_b[cmd_words_len++] = i;
-	err_status = ERR_OK;
-	stp_parse();
-	sim_finish();
 }
 
 void execute_config(void)
@@ -1708,40 +1659,6 @@ static void scen_agreement_from_alternate(void)
 	check_state(1, 3, "the agreement in an alternate-role BPDU opens it");
 }
 
-static void scen_timer_relation(void)
-{
-	printf("42. bridge times must keep 2*(fwd-1) >= maxage >= 2*(hello+1)\n");
-	reset_all();
-	save_cmd = 1;
-	sim_cmd("stp fwd 30");
-	sim_cmd("stp maxage 40");
-	check(stp_fwddelay_s == 30 && stp_maxage_s == 40, "fwd 30 then maxage 40 is accepted");
-	check(err_status == ERR_OK, "an accepted value reports no error, so it is kept in the command history");
-	sim_cmd("stp fwd 20");
-	check(stp_fwddelay_s == 30, "fwd 20 under maxage 40 is refused");
-	check(err_status != ERR_OK, "a refused value reports an error, so it stays out of the command history");
-	sim_cmd("stp port 3 cost x");
-	check(err_status != ERR_OK, "a malformed command reports an error too");
-	sim_cmd("stp maxage 6");
-	sim_cmd("stp hello 3");
-	check(stp_maxage_s == 6 && stp_hello_s == 2, "hello 3 under maxage 6 is refused");
-	sim_cmd("stp fwd 4");
-	sim_cmd("stp maxage 7");
-	check(stp_fwddelay_s == 4 && stp_maxage_s == 6, "maxage 7 over fwd 4 is refused");
-	stp_defaults();
-	save_cmd = 0;
-	sim_cmd("stp maxage 40");
-	sim_cmd("stp fwd 30");
-	check(stp_maxage_s == 40 && stp_fwddelay_s == 30, "a saved config may pass through a broken order");
-	stp_setup();
-	check(stp_maxage_s == 40 && stp_fwddelay_s == 30, "and keeps its values when the result is consistent");
-	sim_cmd("stp fwd 10");
-	stp_setup();
-	check(stp_hello_s == 2 && stp_maxage_s == 20 && stp_fwddelay_s == 15,
-		"an inconsistent result falls back to 2/20/15 when STP starts");
-	save_cmd = 1;
-}
-
 static void scen_recent_root(void)
 {
 	struct sim_bpdu r9;
@@ -1941,8 +1858,8 @@ static void scen_counters(void)
 	tcn.legacy = 2;
 	bpdu_in(&tcn);
 	check(stp_cnt[STP_CNT_TCRX][8] == 2 && stp_cnt[STP_CNT_RX][8] == 42, "and so is a TCN");
-	sim_cmd("stp clear");
-	zero = err_status == ERR_OK;
+	stp_counters_clear();		/* do stp.counters_clear */
+	zero = 1;
 	for (int k = 0; k < STP_CNT_N; k++)
 		for (int p = 0; p < NPORTS; p++)
 			zero &= stp_cnt[k][p] == 0;
@@ -1962,8 +1879,7 @@ static void scen_path_cost_method(void)
 		secs(1);
 	}
 	check(root_bridge_cost == 20000, "long method: a 1G root port costs 20000");
-	sim_cmd("stp pathcost short");
-	check(err_status == ERR_OK && stp_pcost_short == 1, "stp pathcost short is accepted");
+	stp_pcost_short = 1;		/* stp.pathcost short (om_apply_stp) */
 	for (int i = 0; i < 2; i++) {
 		bpdu_in(&r);
 		secs(1);
@@ -1975,9 +1891,7 @@ static void scen_path_cost_method(void)
 		secs(1);
 	}
 	check(root_bridge_cost == 2, "and a 10G port costs 2");
-	sim_cmd("stp pathcost medium");
-	check(err_status != ERR_OK && stp_pcost_short == 1, "an unknown method is refused");
-	sim_cmd("stp pathcost long");
+	stp_pcost_short = 0;
 	sim_speed[8] = 2;
 }
 
@@ -1991,20 +1905,20 @@ static void scen_bpdu_handling(void)
 	sim_finish();
 	check(l2mc_calls && (l2mc_pmask & PMASK_9) == PMASK_9, "by default BPDUs are flooded when STP stops");
 	l2mc_calls = 0;
-	sim_cmd("stp bpdu filter");
-	check(err_status == ERR_OK && l2mc_calls && l2mc_pmask == PMASK_CPU,
+	stp_bpdu_filter = 1;		/* stp.bpdu filter while off: om_apply_stp's stp_off() */
+	stp_off();
+	sim_finish();
+	check(l2mc_calls && l2mc_pmask == PMASK_CPU,
 		"filter keeps them on the CPU, at once while STP is off");
 	stp_enabled = 1;
 	stp_setup();
 	l2mc_calls = 0;
-	sim_cmd("stp bpdu flood");
+	stp_bpdu_filter = 0;		/* while on: stored only */
 	check(l2mc_calls == 0, "while STP runs the setting only waits");
 	stp_enabled = 0;
 	stp_off();
 	sim_finish();
 	check((l2mc_pmask & PMASK_9) == PMASK_9, "and applies when STP stops");
-	sim_cmd("stp bpdu drop");
-	check(err_status != ERR_OK, "an unknown handling is refused");
 	stp_enabled = 1;
 }
 
@@ -2060,12 +1974,7 @@ static void scen_lag(void)
 	bpdu_in(&b);
 	check(port_state(1) == 3 && port_state(2) == 3, "both members forward as the root port");
 
-	sim_cmd("stp port 2 cost 5");
-	check(err_status != ERR_OK, "a member port cannot be set on its own");
-	sim_cmd("stp lag 1 cost 5");
-	check(err_status == ERR_OK && stp_pcost[STP_LAG_BASE] == 5, "the group takes the setting");
-	sim_cmd("stp lag 5 cost 5");
-	check(err_status != ERR_OK, "a group number past the last one is refused");
+	stp_pcost[STP_LAG_BASE] = 5;	/* stp.lag.1.cost 5 (om_apply_stp_lag) */
 
 	memset(tx_frames, 0, sizeof(tx_frames));
 	tcn_frames[1] = 0;
@@ -2334,6 +2243,24 @@ static void scen_port_id_panel(void)
 	check_state(6, 1, "its BPDU coming back on another port blocks chip port 6");
 }
 
+static void scen_guard_clear(void)
+{
+	struct sim_bpdu b = { .port = 3, .root_prio = 0x40, .root_cost = 0, .br_prio = 0x40, .port_id = 2 };
+
+	printf("67. BPDU guard disables a port; clear_guard brings it back\n");
+	reset_all();
+	stp_pflags[3] |= STP_PF_BPDUGUARD;
+	links_set(1 << 3);
+	secs(1);
+	memcpy(b.root_mac, ROOT_MAC, 6);
+	memcpy(b.br_mac, ROOT_MAC, 6);
+	bpdu_in(&b);
+	check((stp_pflags[3] & STP_PF_TRIPPED) && port_state(3) == 0, "a BPDU in trips the guard: the port disabled");
+	stp_ent_restart(3);		/* do stp.port.4.clear_guard */
+	check(!(stp_pflags[3] & STP_PF_TRIPPED) && port_state(3) == 1, "clear_guard: untripped, discarding first");
+	stp_pflags[3] &= ~STP_PF_BPDUGUARD;
+}
+
 int main(int argc, char **argv)
 {
 	verbose = argc > 1 && argv[1][0] == '-' ? (argv[1][1] == 'd' ? 2 : 1) : 0;
@@ -2378,7 +2305,6 @@ int main(int argc, char **argv)
 	scen_legacy_root_tcn();
 	scen_alternate_agrees();
 	scen_agreement_from_alternate();
-	scen_timer_relation();
 	scen_recent_root();
 	scen_recent_backup();
 	scen_short_bpdu();
@@ -2396,6 +2322,7 @@ int main(int argc, char **argv)
 	scen_loop_peer_autoedge_off();
 	scen_mikrotik_wire_capture();
 	scen_port_id_panel();
+	scen_guard_clear();
 	if (failures) {
 		printf("\n%d check(s) failed\n", failures);
 		return 1;

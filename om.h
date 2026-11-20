@@ -156,6 +156,13 @@ uint8_t om_save_end(void) __banked;	/* FL_SAVE: read it back, a step at a time: 
  */
 void om_fail(uint8_t msg) __banked;
 void om_fail_ports(uint8_t msg) __banked;	/* and the ports in om_val (a PortMask): "... 3-4" */
+/* at boot (om_booting), a reference check fixes its field instead of refusing
+ * (mgmt.vlan to 0, port.N.pvid to 1: mgmt must survive); om_boot_note names it
+ * in state.cfg.boot_defaults by a message whose text is its path. If the fix
+ * still refuses (VLAN 1 itself missing), the check sets om_boot_ref to the
+ * referenced object (O_CFG_*) and refuses: boot resets that object instead */
+extern __xdata uint8_t om_booting, om_boot_ref;
+void om_boot_note(uint8_t msg) __banked;
 
 /* om_vlan.c: vid is 0, or a VLAN of the candidate (port.N.pvid, mgmt.vlan) */
 uint8_t om_vlan_known(uint16_t vid) __banked;

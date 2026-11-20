@@ -150,6 +150,14 @@ uint8_t om_check_port(uint8_t idx)
 {
 	checks++;
 	if (vlan_checks && !om_vlan_known(cfg_cand.port[idx].pvid)) {	/* as om_port.c */
+		if (om_booting) {
+			cfg_cand.port[idx].pvid = 1;
+			om_boot_note(OM_E_PVID_ONE);
+			if (om_vlan_known(1))
+				return OM_OK;
+			om_boot_ref = O_CFG_VLAN;
+			return OM_ERR;
+		}
 		om_fail(OM_E_PVID);
 		return OM_ERR;
 	}
@@ -232,6 +240,11 @@ uint8_t om_apply_mgmt(uint8_t idx) { t_mgmt++; return OM_OK; }
 uint8_t om_check_mgmt(uint8_t idx)	/* as om_svc.c */
 {
 	if (vlan_checks && !om_vlan_known(cfg_cand.mgmt.vlan)) {
+		if (om_booting) {
+			cfg_cand.mgmt.vlan = 0;
+			om_boot_note(OM_E_MGMT_VLAN_ANY);
+			return OM_OK;
+		}
 		om_fail(OM_E_MGMT_VLAN);
 		return OM_ERR;
 	}
@@ -270,6 +283,25 @@ void reg_write(uint16_t reg)
 {
 	sprintf(lag_ops + strlen(lag_ops), "H%u %02x ", (reg - RTL837X_TRK_HASH_CTRL_BASE) >> 2, SFR_DATA_0);
 }
+/* the spanning tree (rtl837x_stp.c), under om_stp.c: its config, the calls as text */
+#include "rtl837x_stp.h"
+bool stp_enabled;
+uint8_t stp_prio, stp_hello_s, stp_maxage_s, stp_fwddelay_s, stp_rstp, stp_txhold;
+uint8_t stp_pcost_short, stp_bpdu_filter;
+uint8_t stp_pflags[STP_ENTITIES], stp_pprio[STP_ENTITIES], stp_pp2p[STP_ENTITIES];
+uint32_t stp_pcost[STP_ENTITIES];
+static char stp_ops[256];
+static uint16_t stp_gone;	/* entities that aren't (a LAG member, no such LAG) */
+#define STP_OP(...)	sprintf(stp_ops + strlen(stp_ops), __VA_ARGS__)
+void stp_setup(void) { STP_OP("on "); }
+void stp_off(void) { STP_OP("off "); }
+void stp_prio_apply(void) { STP_OP("prio "); }
+void stp_lag_map(void) { }
+void stp_counters_clear(void) { STP_OP("clear "); }
+void stp_port_admin(uint8_t port, uint8_t on) { STP_OP("A%u %u ", port, on); }
+void stp_port_mcheck(uint8_t port) { STP_OP("M%u ", port); }
+void stp_ent_restart(uint8_t e) { STP_OP("R%u ", e); stp_pflags[e] &= ~STP_PF_TRIPPED; }
+uint8_t stp_ent_id(uint8_t e) { return (stp_gone >> e & 1) ? 0 : e + 1; }
 uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 {
 	t_renew++;
@@ -652,10 +684,10 @@ static void cases(void)
 		snprintf(all, sizeof all, "%s", run("get port.*.pvid"));
 		expect("get port.pvid", all);
 	}
-	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.*\n");
+	expect("get lacp.1", "err lacp.1: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.*\n");
 	expect("get port.10", "err port.10: no such port\n");
 	expect("get port.0.mtu", "err port.0.mtu: no such port\n");
-	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp.port.*\nvlan.*\nmgmt\ndns\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nntp\nsyslog\nweb\nlag.*\nport.*\nport.*.tstorm.*\n"
+	expect("get", "sched\nsys\ntsys\ntvlan.*\ntlag.*\nstate.port.*\nstate.cfg\nstate.health\nstate.con\ntstp\nstate.l2.*\nstate.lag.*\nstate.lacp.port.*\nstate.mgmt\nstate.port.*.mib.*\nstate.sfp.*\nstate.stp\nstate.stp.port.*\nstate.stp.lag.*\nstate.ntp\nstate.dns\nstate.loop\nstate.sys\nstate.sys.reset\nstate.loader\ntstp.port.*\nvlan.*\nmgmt\ndns\nntp\nsyslog\nweb\nstate.sched\nstate.sched.slot.*\nstate.sched.state.*\nstate.sched.task.*\nlag.*\nport.*\nport.*.tstorm.*\nstp\nstp.lag.*\nstp.port.*\n"
 	       "state.tsys\nok\n");
 
 	printf("set, diff, apply\n");
@@ -1119,13 +1151,13 @@ static void kinds(void)
 	printf("several paths\n");
 	expect("get port.1.mtu tlag.1.mode state.tsys.ip", "port.1.mtu 16383\ntlag.1.mode static\nstate.tsys.ip 10.0.0.7\nok\n");
 	expect("get -c port.1.mtu tvlan.1.members", "port.1.mtu 16383\ntvlan.1.members 1-9\nok\n");
-	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.*\n");
+	expect("get port.1.mtu nope", "port.1.mtu 16383\nerr nope: sched sys tsys tvlan.* tlag.* tstp tstp.port.* vlan.* mgmt dns ntp syslog web lag.* port.* port.*.tstorm.* stp stp.lag.* stp.port.*\n");
 	expect("get port.1.mtu port.9.eee", "port.1.mtu 16383\nerr port.9.eee: not on this port\n");
 	expect("get port.1.mtu tlag.9", "port.1.mtu 16383\nerr tlag.9: 1-4\n");
 	{
 		const char *o = run("get state");
 		CHECK(!strncmp(o, "state.port.1.link ", 18) && strstr(o, "state.port.9.rx_bad 0\nstate.cfg.pending ") &&
-		      strstr(o, "state.cfg.load.skipped 0\nstate.health.hw_timeouts 2\n") &&
+		      strstr(o, "state.cfg.load.skipped 0\nstate.cfg.boot_defaults \nstate.health.hw_timeouts 2\n") &&
 		      strstr(o, "state.con.tx_free 2047\nstate.l2.16.mac 02:00:00:00:00:00\n") &&
 		      strstr(o, "state.l2.2288.static off\nstate.lag.1.active 1-2\n") &&
 		      strstr(o, "state.port.9.mib.54 34359738422\nstate.sfp.1.present on\n") &&
@@ -1146,7 +1178,7 @@ static void staging(void)
 	memset(applied, 0, sizeof applied);
 
 	printf("staging\n");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty off\nstate.cfg.apply idle\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
 	CHECK(!t_strcmp(prompt(), ""), "the prompt: nothing to add");
 	expect("set port.3.mtu 1500", "ok\n");
 	expect("set port.3.pvid 7", "ok\n");
@@ -1163,7 +1195,7 @@ static void staging(void)
 	CHECK(job_steps >= 3 * chunks + 2 && job_steps <= 3 * chunks + 2 + 1 + OM_N_OBJ,
 	      "apply: the copies, the walk and the settle, each in bounded steps");
 	CHECK(!memcmp(&cfg_roll, &cfg_run, sizeof cfg_run), "apply without a window: the rollback copy is running again");
-	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nok\n");
+	expect("get state.cfg", "state.cfg.pending 0\nstate.cfg.dirty on\nstate.cfg.apply done\nstate.cfg.confirm_s 0\nstate.cfg.format ok\nstate.cfg.save idle\nstate.cfg.saved_bytes 0\nstate.cfg.load.skipped 0\nstate.cfg.boot_defaults \nok\n");
 	memset(applied, 0, sizeof applied);
 	job_steps = 0;
 	expect("apply", "ok\n");
@@ -1357,19 +1389,39 @@ static void staging(void)
 	CHECK(applied[5] && applied[6] && applied[7] && applied[8] && applied[0],
 	      "and the ports after it were applied too (the boot's whole apply)");
 	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
-	fail_check_on = 4;		/* the check refuses it: nothing applied */
+	fail_check_on = 4;		/* the check refuses it, at its defaults too: nothing applied */
 	memset(applied, 0, sizeof applied);
 	out_reset();
 	om_boot_apply();
 	out_buf[out_len] = 0;
 	fail_check_on = -1;
 	CHECK(strstr(out_buf, "Boot config not applied\n") && !memcmp(&cfg_run, &before, sizeof before) &&
-	      !memcmp(&cfg_cand, &mid, sizeof mid) && !applied[4], "a boot check refuses: none applied, the candidate kept");
-	expect("diff", "- port.5.mtu 16383\n+ port.5.mtu 5000\nok\n");
-	expect("get state.cfg.apply", "state.cfg.apply rolled_back\nok\n");
+	      cfg_cand.port[4].mtu == 16383 && !applied[4],
+	      "a boot check refuses an object at its defaults: none applied, the object reset in the candidate");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply rolled_back\nstate.cfg.boot_defaults port.#\nok\n");
 	expect("discard", "ok\n");
 	om_boot_apply();
-	expect("get state.cfg.apply", "state.cfg.apply idle\nok\n");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults \nok\n");
+	/* P4-4b: an object a check refuses goes back to its defaults, the rest applies */
+	expect("set port.5.mtu 5000", "ok\n");
+	expect("set stp.maxage_s 40", "ok\n");	/* with hello 2, fwd 15: 6.20.5 refuses */
+	expect("set stp.priority 3", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "err stp: needs") && !strstr(out_buf, "Boot config not applied") &&
+	      cfg_run.port[4].mtu == 5000 && cfg_run.stp.maxage_s == 20 && cfg_run.stp.priority == 8,
+	      "boot: stp refused goes back to its defaults, port applies");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults stp\nok\n");
+	expect("diff", "ok\n");
+	expect("set lag.1.hash none", "ok\n");	/* two objects: both named, in apply order */
+	expect("set stp.hello_s 10", "ok\n");
+	expect("set stp.port.2.priority 8", "ok\n");
+	om_boot_apply();
+	expect("get state.cfg.boot_defaults", "state.cfg.boot_defaults lag.# stp stp.port.#\nok\n");
+	CHECK(cfg_run.lag[0].hash == cfg_cand.lag[1].hash && cfg_run.stp.hello_s == 2 && cfg_run.stp_port[1].priority == 128,
+	      "each refused object at its defaults");
+	om_init();
 }
 
 /* ---- the saved config: binary records, save, load, boot ----------------- */
@@ -2287,6 +2339,50 @@ static void vlans(void)
 	}
 	expect("set vlan.4000.members 1", "err vlan.4000.members: table full\n");
 	expect("discard", "ok\n");
+	/* P4-4b/c with a keyed object: vlan refused goes back to its defaults (VLAN 20 with
+	 * it); the references to it are fixed field by field (mgmt.vlan 0, port.N.pvid 1),
+	 * so mgmt, the port names and speeds all stay */
+	om_init();
+	expect("set vlan.20.members 1-2", "ok\n");
+	expect("set vlan.20.tagged 3", "ok\n");	/* vlan's own check refuses: tagged not a member */
+	expect("set mgmt.ip 192.168.2.77", "ok\n");
+	expect("set mgmt.vlan 20", "ok\n");
+	expect("set port.1.pvid 20", "ok\n");
+	expect("set port.2.pvid 20", "ok\n");
+	expect("set port.1.name uplink", "ok\n");
+	expect("set port.2.speed 100m", "ok\n");
+	expect("set sys.hostname keep", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(strstr(out_buf, "err vlan.20: tagged ports must be members\n") && !strstr(out_buf, "err mgmt")
+	      && !strstr(out_buf, "err port") && !strstr(out_buf, "not applied"), "boot: vlan refused, alone");
+	expect("get state.cfg.apply state.cfg.boot_defaults", "state.cfg.apply idle\nstate.cfg.boot_defaults vlan.# mgmt.vlan port.#.pvid\nok\n");
+	expect("get -d mgmt port sys vlan", "mgmt.ip 192.168.2.77\nmgmt.vlan 0\nport.1.name uplink\nport.2.speed 100m\n"
+	       "sys.hostname keep\nok\n");	/* the pvids 1, VLAN 1 back: defaults */
+	CHECK(cfg_run.mgmt.vlan == 0 && cfg_run.port[0].pvid == 1 && cfg_run.port[1].pvid == 1, "and running has them");
+	/* VLAN 1 deleted with the default pvids and mgmt.vlan 1: mgmt.vlan 0; a pvid 1 still
+	 * names nothing, so port names vlan, and vlan's reset brings VLAN 1 back */
+	om_init();
+	expect("del vlan.1", "ok\n");
+	expect("set vlan.5.members 1-2", "ok\n");
+	expect("set mgmt.ip 192.168.2.77", "ok\n");
+	expect("set port.3.mtu 2000", "ok\n");
+	out_reset();
+	om_boot_apply();
+	out_buf[out_len] = 0;
+	CHECK(!strstr(out_buf, "err ") && !strstr(out_buf, "not applied"), "boot: no refusal said");
+	expect("get state.cfg.apply state.cfg.boot_defaults mgmt.ip mgmt.vlan port.3.mtu vlan.1.members",
+	       "state.cfg.apply idle\nstate.cfg.boot_defaults mgmt.vlan port.#.pvid vlan.#\nmgmt.ip 192.168.2.77\n"
+	       "mgmt.vlan 0\nport.3.mtu 2000\nvlan.1.members 1-9\nok\n");
+	expect("set mgmt.vlan 30", "ok\n");	/* a live apply still refuses */
+	expect("apply", "err mgmt: vlan: no such vlan\n");
+	expect("discard", "ok\n");
+	expect("set port.1.pvid 30", "ok\n");
+	expect("apply", "err port.1: pvid: no such vlan\n");
+	expect("discard", "ok\n");
+	om_init();
+	om_boot_apply();		/* a clean boot: boot_defaults empty again */
 	vlan_checks = 0;
 
 	/* the text views of a keyed object: a default entry deleted, an entry at
@@ -2516,6 +2612,139 @@ static void lags(void)
 	om_init();
 }
 
+static void stps(void)
+{
+	printf("stp\n");
+	om_init();
+	{
+		const char *o = run("get stp"), *w = "stp.enabled off\nstp.version rstp\nstp.priority 8\nstp.hello_s 2\n"
+			"stp.maxage_s 20\nstp.fwd_delay_s 15\nstp.txhold 6\nstp.pathcost long\nstp.bpdu flood\n"
+			"stp.lag.1.enabled on\n";
+		CHECK(!strncmp(o, w, t_strlen(w)) && strstr(o, "stp.port.9.p2p auto\nok\n"),
+		      "get stp: the defaults, then the LAGs and the ports");
+	}
+	expect("get stp.port.3", "stp.port.3.enabled on\nstp.port.3.edge auto\nstp.port.3.cost 0\nstp.port.3.priority 128\n"
+	       "stp.port.3.guard none\nstp.port.3.filter off\nstp.port.3.p2p auto\nok\n");
+	stp_ops[0] = 0;
+	expect("set stp.priority 2", "ok\n");
+	expect("set stp.version stp", "ok\n");
+	expect("set stp.pathcost short", "ok\n");
+	expect("set stp.hello_s 1", "ok\n");
+	expect("set stp.txhold 3", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "prio ") && stp_prio == 0x20 && !stp_rstp && stp_pcost_short && stp_hello_s == 1
+	      && stp_txhold == 3 && stp_maxage_s == 20 && stp_fwddelay_s == 15 && !stp_enabled,
+	      "stp: the globals, the priority as the BPDU's byte");
+	stp_ops[0] = 0;
+	expect("set stp.bpdu filter", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "off ") && stp_bpdu_filter, "bpdu while off: stp_off floods or filters them now");
+	stp_ops[0] = 0;
+	expect("set stp.enabled on", "ok\n");
+	expect("set stp.priority 15", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "on prio ") && stp_enabled && stp_prio == 0xf0, "on: stp_setup");
+	expect("set stp.maxage_s 40", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.fwd_delay_s 21", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.hello_s 10", "ok\n");	/* 6.20.5's edges: 2*(12-1) = 22 = 2*(10+1) */
+	expect("set stp.maxage_s 22", "ok\n");
+	expect("set stp.fwd_delay_s 12", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.maxage_s 21", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.maxage_s 23", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("set stp.hello_s 1", "ok\n");
+	expect("set stp.maxage_s 40", "ok\n");
+	expect("set stp.fwd_delay_s 21", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.maxage_s 6", "ok\n");
+	expect("set stp.hello_s 3", "ok\n");
+	expect("apply", "err stp: needs 2*(fwd_delay_s-1) >= maxage_s >= 2*(hello_s+1)\n");
+	expect("discard", "ok\n");
+	expect("set stp.port.2.priority 100", "ok\n");
+	expect("apply", "err stp.port.2: priority is a multiple of 16\n");
+	expect("discard", "ok\n");
+	expect("set stp.lag.4.priority 241", "err stp.lag.4.priority: 0-240\n");
+	expect("set stp.lag.4.priority 8", "ok\n");
+	expect("apply", "err stp.lag.4: priority is a multiple of 16\n");
+	expect("discard", "ok\n");
+	expect("set stp.port.9.cost 200000001", "err stp.port.9.cost: 0-200000000\n");
+	/* port.3 is logical 2 (the test's machine: front = logical + 1) */
+	stp_ops[0] = 0;
+	expect("set stp.port.3.edge on", "ok\n");
+	expect("set stp.port.3.guard root", "ok\n");
+	expect("set stp.port.3.filter on", "ok\n");
+	expect("set stp.port.3.cost 200000000", "ok\n");
+	expect("set stp.port.3.priority 240", "ok\n");
+	expect("set stp.port.3.p2p off", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_ADMEDGE | STP_PF_OPEREDGE | STP_PF_ROOTGUARD | STP_PF_FILTER)
+	      && stp_pcost[2] == 200000000 && stp_pprio[2] == 240 && stp_pp2p[2] == 2 && !strcmp(stp_ops, "A2 0 "),
+	      "stp.port.N: the entity's flags, cost, priority, p2p; an admin edge forwards at once");
+	stp_ops[0] = 0;
+	expect("set stp.port.3.edge off", "ok\n");
+	expect("set stp.port.3.guard bpdu", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_BPDUGUARD | STP_PF_FILTER) && !strcmp(stp_ops, "A2 1 "),
+	      "edge off drops the operational edge, listens first");
+	stp_pflags[2] |= STP_PF_TRIPPED | STP_PF_OPEREDGE;	/* runtime, as the tree sets them */
+	expect("set stp.port.3.p2p on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(stp_pflags[2] == (STP_PF_ENABLED | STP_PF_BPDUGUARD | STP_PF_FILTER | STP_PF_TRIPPED | STP_PF_OPEREDGE)
+	      && stp_pp2p[2] == 1, "the runtime bits stay");
+	stp_ops[0] = 0;
+	expect("set stp.port.3.enabled off", "ok\n");
+	expect("apply", "ok\n");
+	expect("set stp.port.3.enabled on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "A2 0 A2 1 ") && !(stp_pflags[2] & STP_PF_TRIPPED),
+	      "enabled off: forwarding; on: listening, the guard untripped");
+	stp_ops[0] = 0;
+	expect("do stp.port.3.clear_guard", "ok\n");
+	CHECK(!stp_ops[0], "clear_guard, not tripped: nothing");
+	stp_pflags[2] |= STP_PF_TRIPPED;
+	expect("do stp.port.3.clear_guard", "ok\n");
+	CHECK(!strcmp(stp_ops, "R2 ") && !(stp_pflags[2] & STP_PF_TRIPPED), "clear_guard: the entity starts over");
+	stp_pflags[STP_LAG_BASE + 3] |= STP_PF_TRIPPED;
+	stp_ops[0] = 0;
+	expect("do stp.lag.4.clear_guard", "ok\n");
+	CHECK(!strcmp(stp_ops, "R13 "), "stp.lag.L's: entity STP_LAG_BASE + L - 1");
+	stp_pflags[STP_LAG_BASE + 3] = 0;
+	stp_ops[0] = 0;
+	stp_gone = 1 << 4;		/* port.5 in a LAG */
+	expect("set stp.port.5.enabled off", "ok\n");
+	expect("set stp.lag.2.enabled off", "ok\n");
+	expect("set stp.lag.2.edge on", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "A11 0 ") && stp_pflags[4] == STP_PF_AUTOEDGE
+	      && stp_pflags[STP_LAG_BASE + 1] == (STP_PF_ADMEDGE | STP_PF_OPEREDGE),
+	      "stp.lag.L is entity STP_LAG_BASE + L - 1; a LAG member's stp.port.N stored, no call");
+	stp_ops[0] = 0;
+	expect("do stp.port.5.mcheck", "ok\n");
+	expect("do stp.port.1.mcheck", "ok\n");
+	expect("do stp.lag.2.mcheck", "ok\n");
+	expect("do stp.counters_clear", "ok\n");
+	CHECK(!strcmp(stp_ops, "M0 M11 clear "), "mcheck: an entity's, none for a LAG member");
+	stp_gone = 0;
+	stp_ops[0] = 0;
+	expect("set stp.enabled off", "ok\n");
+	expect("set stp.port.1.enabled off", "ok\n");
+	expect("apply", "ok\n");
+	CHECK(!strcmp(stp_ops, "off ") && !stp_enabled, "off: stp_off; an entity off while the tree is off: stored");
+	stp_ops[0] = 0;
+	expect("do stp.port.1.mcheck", "ok\n");
+	CHECK(!stp_ops[0], "mcheck while off: nothing");
+	expect("get -d stp", "stp.version stp\nstp.priority 15\nstp.hello_s 1\nstp.maxage_s 40\nstp.fwd_delay_s 21\nstp.txhold 3\n"
+	       "stp.pathcost short\nstp.bpdu filter\n"
+	       "stp.lag.2.enabled off\nstp.lag.2.edge on\n"
+	       "stp.port.1.enabled off\nstp.port.3.edge off\nstp.port.3.cost 200000000\nstp.port.3.priority 240\n"
+	       "stp.port.3.guard bpdu\nstp.port.3.filter on\nstp.port.3.p2p on\nstp.port.5.enabled off\nok\n");
+	om_init();
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -2532,6 +2761,7 @@ int main(int argc, char **argv)
 	completion();
 	vlans();
 	lags();
+	stps();
 	staging();
 	binary();
 	roundtrip();

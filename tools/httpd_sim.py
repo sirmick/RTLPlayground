@@ -382,15 +382,6 @@ class Handler(SimpleHTTPRequestHandler):
         ]
     def _api_stp(self):
         return {
-            "on":True,
-            "type":"rstp",
-            "prio":8,
-            "hello":2,
-            "maxage":20,
-            "fwd":15,
-            "txhold":6,
-            "bh": "flood",
-            "pcs": "short",
             "rootPrio":"8000",
             "rootMac":"060f00124737",
             "myMac":"060f00124737",
@@ -399,10 +390,10 @@ class Handler(SimpleHTTPRequestHandler):
             "rootPort":False,
             "tc":"0000",
             "ports":[
-                ({"p":i,"lag":0,"mbr":[],"st":3,"role":2,"f":5,"pc":"00000000","prio":128,"p2":0,"db":"8000060f00124737","dp":"8009","dc":"00000000"})
+                ({"p":i,"lag":0,"mbr":[],"st":3,"role":2,"f":5,"db":"8000060f00124737","dp":"8009","dc":"00000000"})
                 for i in range(1, PORTS + 1)
             ] + [
-                {"p":102,"st":3,"role":2,"f":69,"pc":"00000000","mbr":[6],"prio":128,"p2":0,"lk":1,"lg":0,"db":"8000060f00124737","dp":"8066","dc":"00000000"}
+                {"p":102,"st":3,"role":2,"f":69,"mbr":[6],"lk":1,"lg":0,"db":"8000060f00124737","dp":"8066","dc":"00000000"}
             ]
         }
 

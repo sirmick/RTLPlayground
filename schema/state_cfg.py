@@ -12,3 +12,5 @@ st("format", Enum("cfgformat", "ok blank bad"),
 st("save", Enum("cfgsave", "idle erasing writing done failed"), tip="The last save")
 st("saved_bytes", U16(), tip="The saved config's size in flash")
 st("load.skipped", U16(), tip="Records the last load skipped: unknown, or out of range")
+st("boot_defaults", Str(31),
+   tip="The objects boot put back to their defaults: their saved values failed this build's checks")

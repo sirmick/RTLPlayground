@@ -52,6 +52,11 @@ uint8_t om_check_mgmt(uint8_t idx) __banked
 {
 	(void)idx;
 	if (!om_vlan_known(cfg_cand.mgmt.vlan)) {
+		if (om_booting) {	/* boot: answer on any VLAN rather than lose the address */
+			cfg_cand.mgmt.vlan = 0;
+			om_boot_note(OM_E_MGMT_VLAN_ANY);
+			return OM_OK;
+		}
 		om_fail(OM_E_MGMT_VLAN);
 		return OM_ERR;
 	}

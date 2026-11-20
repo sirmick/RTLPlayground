@@ -259,8 +259,7 @@ SRCS += \
 	rtl837x_storm.c \
 	rtl837x_lacp.c \
 	rtl837x_rldp.c \
-	rtl837x_trap.c \
-	rtl837x_stp_cli.c
+	rtl837x_trap.c
 SRCS += \
 	httpd/httpd.c \
 	httpd/page_impl.c \

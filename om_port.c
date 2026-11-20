@@ -95,6 +95,14 @@ uint8_t om_check_port(uint8_t idx) __banked
 	l = idx;
 	memcpy(&r, &cfg_cand.port[l], sizeof(r));
 	if (!om_vlan_known(r.pvid)) {
+		if (om_booting) {	/* boot: VLAN 1, and VLAN 1 back if it is gone */
+			cfg_cand.port[l].pvid = 1;
+			om_boot_note(OM_E_PVID_ONE);
+			if (om_vlan_known(1))
+				return OM_OK;
+			om_boot_ref = O_CFG_VLAN;
+			return OM_ERR;
+		}
 		om_fail(OM_E_PVID);
 		return OM_ERR;
 	}

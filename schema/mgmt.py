@@ -12,3 +12,4 @@ cfg("vlan", U16(0, 4094), 1, tip="The VLAN the switch answers on; 0: any")
 action("dhcp_renew", "om_do_mgmt_dhcp_renew", tip="Ask the DHCP server again")
 message("mgmt_static", "mgmt.mode is static")
 message("mgmt_vlan", "vlan: no such vlan")
+message("mgmt_vlan_any", "mgmt.vlan")	# boot's fix (0, any VLAN), named in state.cfg.boot_defaults

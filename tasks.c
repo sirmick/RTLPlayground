@@ -119,9 +119,14 @@ STEP(con, edit)
 #define CLI_ROOM	1024
 #define CLI_WEB_WAIT	50	/* ms: a wait for outbuf's room, at most */
 /* a web reply's lines a step: another only if the step so far and the
- * dearest line (~2.9 ms, a port's first field: its getter) stay under 5 ms.
- * The last line's cost doesn't say: a cheap line may come before a getter's */
-#define CLI_LINE_MAX	3000000UL	/* ns */
+ * dearest line stay under 5 ms. The last line's cost doesn't say: a cheap
+ * line may come before a getter's. The dearest is a line that starts the
+ * get's next path (its lookup, then the getter: 3.96 ms, state.port.9.macs
+ * then port.9.mtu, on the console, 58c6566), not a getter alone (~1.9 ms);
+ * sim_smoke's line_costs() fails when a probed line passes CLI_LINE_MAX.
+ * Measured: one line a step is no slower (the dashboard poll 104 ms, at
+ * 3 ms 128) */
+#define CLI_LINE_MAX	4500000UL	/* ns */
 #define CLI_WEB_FINE	((uint16_t)((5000000UL - CLI_LINE_MAX) / SCHED_FINE_NS))
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
@@ -322,7 +327,8 @@ STEP(net, tick)
 	return STEP_STAY;
 }
 
-/* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick */
+/* stp: its 50 Hz timer, caught up by at most STP_CATCH_UP a tick; off,
+ * stp off's VLAN walk */
 TASK(stp, fixed, medium)
 STEP(stp, tick)
 {
@@ -332,6 +338,8 @@ STEP(stp, tick)
 			timer_reset(&stp_step);
 			stp_timers();
 		}
+	} else if (stp_fdb_vid) {
+		stp_fdb_line();
 	}
 	task_until(sched_now + 1);
 	return STEP_STAY;

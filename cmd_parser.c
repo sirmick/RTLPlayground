@@ -14,7 +14,6 @@
 #include "rtl837x_phy.h"
 #include "rtl837x_regs.h"
 #include "rtl837x_sfr.h"
-#include "rtl837x_stp.h"
 #include "rtl837x_igmp.h"
 #include "rtl837x_bandwidth.h"
 #include "rtl837x_lldp.h"
@@ -39,7 +38,6 @@
 
 
 extern __code const struct machine machine;
-extern __xdata bool stp_enabled;
 extern __code const uint8_t log_to_phys_port[9];
 extern __xdata bool lldp_enabled;
 
@@ -1241,8 +1239,6 @@ void cmd_parser(void) __banked
 			else {
 				cmd_error("igmp on|off|show\n");
 			}
-		} else if (cmd_compare(0, "stp")) {
-			stp_parse();
 		} else if (cmd_compare(0, "mirror")) {
 			parse_mirror();
 		} else if (cmd_compare(0, "sds")) {
@@ -1368,9 +1364,6 @@ void cli_job_more(void) __banked
 	case CLI_JOB_OM:
 	case CLI_JOB_OMAPPLY:
 		job_more = om_line();
-		break;
-	case CLI_JOB_STPFDB:
-		job_more = stp_fdb_line();
 		break;
 	default:
 		job_more = 0;

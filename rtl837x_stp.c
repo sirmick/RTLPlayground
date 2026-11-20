@@ -1338,10 +1338,22 @@ void stp_timers(void) __banked
 }
 
 
-/* Reset all configuration to the 802.1D/802.1w defaults. Called once at boot
- * (before the startup config replays "stp ..." commands over it). */
+/* Every port forwarding, the CPU too: MSTP_STATES' power-on 0xfffff */
+static void stp_all_fwd(void)
+{
+	sfr_data[0] = 0;
+	sfr_data[1] = 0x0f;
+	sfr_data[2] = sfr_data[3] = 0xff;
+	reg_write_m(RTL837X_MSTP_STATES);
+}
+
+
+/* Reset all configuration to the 802.1D/802.1w defaults (schema/stp.py's)
+ * and every port forwarding, as at power-on: a soft reset keeps what STP
+ * wrote. Called once at boot, before the config applies. */
 void stp_defaults(void) __banked
 {
+	stp_all_fwd();
 	stp_prio = 0x80;	/* high byte of the priority: 0x8000 is 32768 */
 	stp_hello_s = 2;
 	stp_maxage_s = 20;
@@ -1394,9 +1406,11 @@ void stp_defaults(void) __banked
  * can arrive VLAN-tagged and then classify into the tag's VID - cover
  * every VLAN that exists in the VLAN table, plus every port's PVID for
  * the untagged case. A duplicate VID just overwrites the same slot.
- * The walk reads 4094 VLAN entries (~33 ms), so it is a cli job (E1):
+ * The walk reads 4094 VLAN entries (~33 ms), so the stp task runs it while
+ * STP is off (stp off comes from apply, the cfg job, while the cli waits):
  * stp_fdb_line() goes on from the last VID, a step's budget at a time. */
-static __xdata uint16_t stp_fdb_vid, stp_fdb_pmask;
+__xdata uint16_t stp_fdb_vid;		/* the walk's next VID, 0: none */
+static __xdata uint16_t stp_fdb_pmask;
 static __xdata uint8_t stp_fdb_i;
 static __xdata uint16_t stp_fdb_budget;
 
@@ -1406,7 +1420,6 @@ static void stp_fdb_update(__xdata uint16_t pmask)
 {
 	stp_fdb_pmask = pmask;
 	stp_fdb_vid = 1;
-	cli_job = CLI_JOB_STPFDB;
 }
 
 uint8_t stp_fdb_line(void) __banked
@@ -1424,19 +1437,8 @@ uint8_t stp_fdb_line(void) __banked
 	}
 	for (stp_fdb_i = MACHINE_MIN_PORT; stp_fdb_i <= MACHINE_MAX_PORT; stp_fdb_i++)
 		port_l2mc_set(0x00, port_pvid_get(stp_fdb_i), stp_fdb_pmask);
+	stp_fdb_vid = 0;
 	return 0;
-}
-
-
-static void stp_times_check(void) __reentrant
-{
-	if ((uint16_t)2 * (stp_fwddelay_s - 1) >= stp_maxage_s
-	    && stp_maxage_s >= (uint16_t)2 * (stp_hello_s + 1))
-		return;
-	print_string("STP: timers break 2*(fwd-1) >= maxage >= 2*(hello+1), using 2/20/15\n");
-	stp_hello_s = 2;
-	stp_maxage_s = 20;
-	stp_fwddelay_s = 15;
 }
 
 
@@ -1450,11 +1452,9 @@ void stp_counters_clear(void) __banked __reentrant
 void stp_setup(void) __banked
 {
 	timer_set(&stp_step, STP_TICK_STEP);
-	stp_times_check();
 	stp_counters_clear();
 	stp_tc_seen = stp_tc_count;
 	stp_tc_secs = 0;
-	print_string("Enabling STP: ");
 	stp_claim_root();
 	stp_newinfo = 0;
 	stp_reroot = 0;
@@ -1474,25 +1474,18 @@ void stp_setup(void) __banked
 	stp_map_changed = 0;
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++)
 		stp_ent_reset(stp_i);
-
-	print_reg(RTL837X_MSTP_STATES); write_char('\n');
-
 	trap_rma_set(RTL837X_RMA0_CONF, RTL837X_RMA_ACT_TRAP);
 }
 
 
 void stp_off(void) __banked
 {
-	sfr_data[0] = sfr_data[1] = sfr_data[2] = sfr_data[3] = 0;
-	for (stp_i = MACHINE_MIN_PORT; stp_i <= MACHINE_MAX_PORT; stp_i++)
-		sfr_data[3 - (stp_i >> 2)] |= (uint8_t)(0b11 << ((stp_i << 1) & 0x7));
 	for (stp_i = 0; stp_i < STP_ENTITIES; stp_i++) {
 		stp_pflags[stp_i] &= ~(STP_PF_OPEREDGE | STP_PF_TRIPPED);
 		stp_loop_held[stp_i] = 0;
 		port_timers[stp_i] = 0;
 	}
-	sfr_data[1] |= 0x0c; // Do not block the CPU port (bits 3:2 of byte 1 = port 9)
-	reg_write_m(RTL837X_MSTP_STATES);
+	stp_all_fwd();
 
 	if (stp_bpdu_filter) {
 		stp_fdb_update(PMASK_CPU);
@@ -1528,6 +1521,12 @@ uint8_t stp_port_role(uint8_t port) __banked
 	if ((stp_alt >> port) & 1)
 		return 3;
 	return 2;
+}
+
+
+void stp_ent_restart(uint8_t e) __banked
+{
+	stp_ent_reset(e);
 }
 
 
