@@ -4959,7 +4959,7 @@ function sySets(ids) {
     for (var i = 0; i < ids.length; i++) {
         var id = ids[i],
             v = syGet(id),
-            why = v === "" ? "" : omCheck(syField(id), v);
+            why = v === "" ? "" : SY_F[id] === "sys.hostname" && /\s/.test(v) ? t("sy_host_err") : omCheck(syField(id), v);
         if (v === SY[id]) continue;
         if (why) {
             toast(SY_F[id] + ": " + why, "err");
