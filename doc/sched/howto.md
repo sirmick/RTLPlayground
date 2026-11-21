@@ -19,7 +19,8 @@ Before you start:
   returns a state with no wait yields: it runs again at its next position.
   Every wait is said again on every exit that waits.
 - After a build, `<builddir>/sched/sequence.txt` shows your task's slot and
-  spacing, and `health tasks` its states' run counts and longest steps.
+  spacing, and `health tasks` its states' runs in the last second and
+  longest steps, and the load (decision 26).
 
 ## 1. A periodic task: once a second
 

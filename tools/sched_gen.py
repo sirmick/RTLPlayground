@@ -423,6 +423,7 @@ def om_rows(defs, slots, fill, sequence, words_only=False):
           'st("slots", U8())',
           'st("fixed", U8())',
           'st("fine_per_tick", U16(), tip="Timer 2 fine units (6.144 us) a 5 ms tick measured")',
+          'st("load", U8(), tip="% of the last second not asleep")',
           "# deferred (DESIGN 7.3): step_limit_ms, tick_ms, constants 50 and 5",
           "",
           'state("sched.slot", count=SLOT, get="om_get_sched_slot")',
@@ -435,6 +436,7 @@ def om_rows(defs, slots, fill, sequence, words_only=False):
           'state("sched.state", count=STATES, get="om_get_sched_state")',
           'st("runs", U16(), tip="Saturates at 65535")',
           'st("max_us", U32(), tip="The longest; 402630 and more: past 400 ms")',
+          'st("rate", U16(), tip="Runs in the last second")',
           "",
           'state("sched.task", count=TASKS, get="om_get_sched_task")',
           'st("max_us", U32(), tip="The longest of its states")']

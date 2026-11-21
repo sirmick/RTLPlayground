@@ -1048,7 +1048,7 @@ static void kinds(void)
 	expect("get state.sched.slot.a", "state.sched.slot.a.task a\nstate.sched.slot.a.state A_STEP\n"
 	       "state.sched.slot.a.mask link,forever\nstate.sched.slot.a.wake 0\nstate.sched.slot.a.arg 0\nok\n");
 	expect("get state.sched.slot.job0.state", "state.sched.slot.job0.state none\nok\n");
-	expect("get state.sched.state.B_STEP", "state.sched.state.B_STEP.runs 1\nstate.sched.state.B_STEP.max_us 402640\nok\n");
+	expect("get state.sched.state.B_STEP", "state.sched.state.B_STEP.runs 1\nstate.sched.state.B_STEP.max_us 402640\nstate.sched.state.B_STEP.rate 0\nok\n");
 	expect("get state.sched.task.w", "state.sched.task.w.max_us 12\nok\n");
 	expect("get state.sched.slot.nope", "err state.sched.slot.nope: a b w job0 job1 job2 job3 job4\n");
 	expect("set state.sched.slots 3", "err state.sched.slots: read only\n");

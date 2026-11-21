@@ -195,7 +195,8 @@ class Neg(Suite):
         self.check(ov == 1 and st == self.S["S_SL_SLOW"], f"one overrun, of SL_SLOW (overruns {ov}, state {st})")
         self.check(54500 <= mx < 56000, f"the step measured ~55 ms: {mx:.0f} us")
         self.check(re.search(r"^overruns 1 last SL_SLOW,", h, re.M), "health names it: overruns 1 last SL_SLOW")
-        self.check(m and m.group(1) == "1" and 54 <= int(m.group(2)) <= 56, "and lists SL_SLOW once, ~55 ms",
+        # its runs are the last second's (decision 26): 1, or 0 once that second has rolled; once is overruns 1
+        self.check(m and m.group(1) in ("0", "1") and 54 <= int(m.group(2)) <= 56, "and lists SL_SLOW at ~55 ms, 0-1 runs/s",
                    m and m.group(0))
 
     # ---- bad_flash ----

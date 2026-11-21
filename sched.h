@@ -44,6 +44,7 @@
 #define SCHED_FOREVER	0xffff		/* task_sleep()/task_wait(): no timeout */
 #define SCHED_TICK_MS	5
 #define SCHED_MAX_WAIT	0x7fff		/* ticks; a wake further ahead reads as past */
+#define SCHED_SEC_TICKS	200		/* the rates' second (decision 26) */
 
 /* Hardware events (events.md, decision 23): 8 bits, sampled at each pass's
  * start. One task waking another is task_wake(), not an event. Bit 7 is the
@@ -73,6 +74,10 @@ extern __xdata uint8_t  sched_ev;	/* this pass's hardware events */
 #define SCHED_OVERRUN_FINE	8138	/* 50 ms, the step limit (decision 25) */
 extern __xdata uint16_t sched_st_max[S_COUNT];	/* longest step per state */
 extern __xdata uint16_t sched_st_runs[S_COUNT];	/* runs per state, saturating */
+extern __xdata uint16_t sched_st_sec[S_COUNT];	/* runs per state, this second */
+extern __xdata uint16_t sched_st_rate[S_COUNT];	/* runs per state, the last second */
+extern __xdata uint8_t  sched_load;		/* % of the last second not asleep */
+extern __xdata uint16_t sched_roll_tick;	/* the next second's tick: moves at each roll (the sim's tools see it) */
 extern __xdata uint16_t sched_passes_lo, sched_passes_hi;
 extern __xdata uint16_t sched_idle_lo, sched_idle_hi;
 extern __xdata uint16_t sched_overruns;

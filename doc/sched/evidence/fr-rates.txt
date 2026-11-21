@@ -1,0 +1,118 @@
+FR: health rates (runs per second per state) and load % (decision 26)
+=====================================================================
+
+Branch feat/sched-rates, off feat/sched 53ee574. Commits:
+  2be0ab1 sched: health rates: runs per second per state, and the load (decision 26)
+  cab765f tools: sched_rates.py: the rates and the load on the firmware in rtlsim
+  424e9af schedtest: sim_neg's overrun check reads the last second's runs
+  414dbdc doc: sched: decision 26, health rates and load (FR)
+  3e3df73 sched: the second's roll writes its tick last, and exports it
+  15c5b08 tools: flash_job_steps: S0 and S5 count FL_ERASE since power-on
+  8512f9a doc: sched: core: the roll's tick is written last; decision 26's size
+
+Verified on a clean worktree of 8512f9a (/tmp/fr/wt-8512f9a, logs
+/tmp/fr/v-8512f9a, script /tmp/fr/verify.sh), ovs-rtlpg feat/sched-sim
+dff814d (its long_steps reads the `runs/s` header: QA fr-health-header).
+
+The design (core.md "Measurement")
+----------------------------------
+- sched_st_runs[] counts this second's runs, 16 bits, no saturation test.
+- The roll is the dispatcher's, at sched_m_pass_end(): at the first pass
+  end at or past sched_roll_tick, the counts go into sched_st_rate[] and
+  are zeroed, the time asleep becomes sched_load. The grid is fixed (200
+  ticks), half a second off house's and loop's: a late roll (by at most
+  the pass that crossed) moves time to the next second, not out of the
+  average; a pass over a second restarts the grid. With the half-second
+  offset a 1/s state can't flip between 0 and 2. Chosen over HOUSE_SEC: no task's
+  lateness in it, and nothing for a task to forget.
+- Time asleep: sched_idle() reads the fine clock before its check and
+  after the wake; each sleep ends at the next interrupt (the tick's at the
+  latest), so it's at most a tick plus the waking ISR, and fine_elapsed()
+  counts a tick inside it. Timer 2 runs in IDL (its ISR wakes the CPU;
+  rtlsim advances it while idle-skipping). Summed in 1% steps of a
+  second (2 ticks, sl_unit = 1626 units) plus a 16-bit remainder that
+  carries: 3 B, not the 4 B two-halves value of the brief, the same
+  arithmetic rule (memory.md rule 3), no division.
+- sched_roll_tick is written last in roll(): a tool that stops the
+  firmware anywhere and sees it move sees the whole second (3e3df73,
+  found by flash_job_steps S5: a sample mid-roll lost 5 erases).
+
+Sizes (vs 53ee574, the same build commands)
+-------------------------------------------
+  internal RAM: data 90, overlay 8, bits 3, unchanged; DSEG symbols 50, none new
+  xdata: XSEG 0x50f3 -> 0x5135, +66 B = 2 x S_COUNT (29) + 8
+         (sched_load 1, sched_roll_tick 2, sl_unit 2, sl_part 2, sl_pct 1)
+  code (tools /tmp/es-tools/funcs.py, per function; the -dirty name strings aside):
+    sched_bank: roll +148, sched_idle +104, sched_init +48, sched_m_pass_end +3,
+                sched_clear_stats -16, sched_m_step_end -12   => +275
+    sched_health: sched_health_line +25                       => +25
+    total +300 B banked; common area unchanged (163 B left)
+  banks free, 8x:      80 / 513 / 557 = 1150 -> 209 / 617 / 24 = 850 B
+  banks free, SWGT024: 545 / 63 / 498 = 1106 -> 183 / 615 / 8  = 806 B
+  (place_banks reshuffled; the tightest bank is now bank 3, 24 / 8 B)
+
+Commands and results (8512f9a)
+------------------------------
+  tools/docker-make.sh MACHINE=<board> LAYOUT=compact LOADER=1; ... gate   gate PASS x2, IRAM 0
+  tools/docker-make.sh schedtest MACHINE=8x LAYOUT=compact [ST_NEG=hang|overrun|bad_flash]  4 ok
+  make -C test quick           PASS (test_sched: + rates, + load; health checks for runs/s, load)
+  make -C test/stp             PASS
+  make schedtest-sim ... SIM_ARGS=--twice OVS=~/src/ovs-rtlpg   PASS
+  oldnew (--checks --known --expect evidence/e4-oldnew.expect)
+     8x       17 of 17 match; long steps PASS on the new image (none over 50 ms)
+     SWGT024  17 of 17 match; the same
+  tools/sched_rates.py         PASS x2 (below)
+  sched_tour, console_bugs, webcmd_abort, lldp_overrun, flash_job_steps, sfp_pull,
+  hw_timeouts                  PASS x2
+  vlan_eee                     84 results, 0 differ, 0 over 5 ms x2
+  cli_steps --web              0 cli states over 5 ms x2
+
+The expect file: no new lines. `health tasks` is the harness's own line
+(long_steps), not a result, so its output is in no old-vs-new diff. The
+"matched no difference" notes are the timing lines already there before
+FR (b53c3c1's run has the same 8 on SWGT024; on the 8x 'loop frames *
+rldp' now matches a difference, the D1/D2 RLDP-probe case its comment
+explains).
+
+sched_rates.py (8x; SWGT024 the same but SFP_POLL 40/s, two slots)
+----------------------------------------------------------------
+  20-30 s idle: firmware load [22,21,22,22,21,22,22,21,22,22] %, mean 21.7;
+                rtlsim's busy cycles 21.8 % (SWGT024 21.9 / 22.0)
+  idle 5 s: HOUSE_SEC 1, LOOP_POLL 1, NET_TICK/STP_TICK/LACP_TICK/LLDP_TICK
+            200 each second; LINK_READ 12, SFP_POLL 20; load 21-22 %
+  health tasks: `state\truns/s\tmax`, 28 state lines, `passes .. idle .. load 21% longest ..`
+  l2 with 1000 learned hosts: 1005 lines in 3.25 s; load every 250 ms
+            49 49 62 62 62 62 93 93 93 93 94 94 94 %; CLI_MORE 618/s at the peak
+  after: 21-22 %
+
+Findings, open
+--------------
+1. The idle floor is ~22 %, not ~0 (node body: "load near 0% idle"). It is
+   real: rtlsim's own busy cycles agree to 0.1 point. 401 passes/s, two a
+   tick (the one that runs the tick tasks, then an empty one before the
+   sleep), each over the 72 run_seq positions, plus NET/STP/LACP/LLDP_TICK
+   every tick: ~1.1 ms of each 5 ms tick. O2's "idle positions cost a load
+   and a compare" is about 22 % of the CPU at idle; a smaller run sequence
+   or skipping the empty pass would lower it. Not changed (not FR's).
+   Silicon may differ from the sim's cycle model: on the 8x after F3.
+2. The first second after boot is half a second (rates and load read half).
+3. Load is -0/+1 point (1% steps); the waking ISR counts as asleep.
+4. ovs-rtlpg's long_steps needed the header change: done by the orchestrator
+   (dff814d). Before it, the check would have been skipped silently.
+
+Review savings (reviewer3's nits), b12a35b + 71644f7
+---------------------------------------------------
+- sched_idle sums into a register local against sched_fine_per_tick << 1
+  (sl_unit gone, -2 B xdata): -2 B; sched_init leaves sl_part/sl_pct to
+  XSEG's clear (crtxclear linked on both boards; the host test needs no
+  hook: no earlier test's sleep takes time): -25 B. Tried and not taken:
+  roll()'s clamp as `if` (+3 B), a single-subtract compare in idle (+5 B).
+- roll()'s comment: its t is 2 B of the shared overlay; memory.md says so.
+- Now: xdata XSEG ends 0x5133 (+64 B vs 53ee574: 2 x 29 + 6), banked code
+  +273 B (sched_bank +248, sched_health +25), IRAM 90/8/3 unchanged.
+  Banks free 8x 209 / 617 / 51 = 877 B, SWGT024 183 / 615 / 35 = 833 B.
+- Verified on a clean worktree of 71644f7 (logs /tmp/fr/v-71644f7): gate x2,
+  schedtest x4, quick, stp, schedtest-sim, oldnew 17/17 x2, sched_rates x2
+  (21.7/21.8, 21.9/22.0; l2 94/93 %), flash_job_steps x2 (FL_ERASE 58/59),
+  sched_tour, console_bugs, webcmd_abort, lldp_overrun, sfp_pull,
+  hw_timeouts x2; vlan_eee, cli_steps clean.
