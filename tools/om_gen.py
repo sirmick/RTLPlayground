@@ -905,6 +905,9 @@ def js(objs, path):
         e = {}
         if o.levels:
             e["i"] = "".join(k[0] + ("" if k == "PORT" else str(n)) for k, n, _, _ in o.levels)
+            w = [" ".join(t.words) for k, _, t, _ in o.levels if k == "WORD"]
+            if w:
+                e["w"] = w       # a word index's words (the CLI page completes them)
         if o.tip:
             e["t"] = o.tip
         if o.names:

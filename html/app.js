@@ -1,6 +1,11 @@
 "use strict";
 var LANG = {
     en: {
+        i_host: "Hostname",
+        i_ip: "IP address",
+        i_mask: "Netmask",
+        i_gw: "Gateway",
+        i_syslog: "Syslog",
         nav_dash: "Dashboard",
         nav_ports: "Ports",
         nav_stp: "Spanning tree",
@@ -13,6 +18,15 @@ var LANG = {
         nav_system: "System",
         nav_fw: "Firmware",
         nav_schema: "Schema",
+        nav_cli: "CLI",
+        cl_console: "Console",
+        cl_clear: "Clear",
+        cl_cand: "Load into candidate",
+        cl_cfg_note: "The saved configuration: what differs from the factory default, as path lines. Load it into the candidate, then Apply and Save in the bar above.",
+        cl_lines: "{n} lines",
+        cl_loaded: "Loaded into the candidate: {n} lines. Apply, then Save.",
+        cl_refused: "{n} lines refused: the candidate keeps the others",
+        cl_hello: "The switch's CLI (doc/cli.md): get, set, del, diff, apply, confirm, discard, load, save, do, help. Tab completes, Up and Down recall.",
         nav_lldp: "LLDP",
         hdr_dirty: "unsaved changes",
         hdr_dirty_t: "Running config differs from startup config",
@@ -309,14 +323,8 @@ var LANG = {
         sy_repeat: "Repeat",
         sy_pwapply: "Change password",
         sy_pw_note: "Takes effect immediately; save to flash to keep it after reboot.",
-        sy_console: "Console",
-        sy_cmd: "CLI command...",
-        sy_send: "Send",
         sy_startup: "Startup configuration",
-        sy_replayed: "replayed on every boot",
         sy_reload: "Reload from flash",
-        sy_write: "Write to flash",
-        sy_unknown_note: "Unknown lines are highlighted before writing.",
         sy_maint: "Maintenance",
         sy_reboot: "Reboot switch",
         sy_lang: "Language",
@@ -356,19 +364,6 @@ var LANG = {
         sy_reboot_q: "Reboot the switch?",
         sy_reboot_d: "There are UNSAVED changes and they will be lost. Save to flash first if you want to keep them.",
         sy_rebooting: "Rebooting, reconnect in about 20 s",
-        sy_bytes: "bytes",
-        cw_title: "Write this startup configuration?",
-        cw_save_title: "Save running configuration to flash?",
-        cw_info: "{n} / 2048 bytes, replayed line by line on every boot",
-        cw_toolarge: "Too large: the config sector accepts at most 2048 bytes. Remove lines first.",
-        cw_longline: "Line {n} is {m} bytes long: the switch can only replay lines up to 126 bytes and would skip it on boot, so the write is refused. Shorten it first.",
-        cw_unknown: "Not in the known config grammar (will still be written): ",
-        cw_empty: "(empty)",
-        cw_writing: "Writing configuration...",
-        cw_failed: "config write failed: HTTP {n}",
-        cw_verify_fail: "Verification failed: flash content differs from what was sent. Command log NOT cleared.",
-        cw_saved: "Startup configuration saved and verified",
-        cw_collect: "Collecting running changes...",
         fw_title: "Firmware update",
         fw_intro: "The application: the -install image (the application with the loader; a switch without the loader gets it on the way), or a plain application image. It is staged to flash and CRC-checked; on success the switch reboots and installs it. The startup configuration is kept.",
         sy_download: "Download",
@@ -423,6 +418,11 @@ var LANG = {
         fw_timeout: "switch has not come back after 150 s: check power / serial console"
     },
     ja: {
+        i_host: "ホスト名",
+        i_ip: "IP アドレス",
+        i_mask: "ネットマスク",
+        i_gw: "ゲートウェイ",
+        i_syslog: "Syslog",
         nav_dash: "ダッシュボード",
         nav_ports: "ポート",
         nav_stp: "スパニングツリー",
@@ -632,14 +632,8 @@ var LANG = {
         sy_repeat: "再入力",
         sy_pwapply: "パスワードを変更",
         sy_pw_note: "即時に反映されます。再起動後も保持するにはフラッシュに保存してください。",
-        sy_console: "コンソール",
-        sy_cmd: "CLI コマンド...",
-        sy_send: "送信",
         sy_startup: "起動設定",
-        sy_replayed: "起動のたびに再実行されます",
         sy_reload: "フラッシュから再読み込み",
-        sy_write: "フラッシュに書き込み",
-        sy_unknown_note: "不明な行は書き込み前に強調表示されます。",
         sy_maint: "メンテナンス",
         sy_reboot: "スイッチを再起動",
         sy_lang: "言語",
@@ -657,19 +651,6 @@ var LANG = {
         sy_reboot_q: "スイッチを再起動しますか?",
         sy_reboot_d: "未保存の変更があり、失われます。保持したい場合は先にフラッシュに保存してください。",
         sy_rebooting: "再起動中です。約 20 秒後に再接続してください",
-        sy_bytes: "バイト",
-        cw_title: "この起動設定を書き込みますか?",
-        cw_save_title: "実行中の設定をフラッシュに保存しますか?",
-        cw_info: "{n} / 2048 バイト、起動のたびに 1 行ずつ実行されます",
-        cw_toolarge: "サイズ超過: 設定セクタは最大 2048 バイトです。先に行を削除してください。",
-        cw_longline: "{n} 行目は {m} バイトです: スイッチが起動時に実行できる行は 126 バイトまでで、この行は読み飛ばされるため、書き込みを拒否します。先に短くしてください。",
-        cw_unknown: "既知の設定文法に含まれない行 (そのまま書き込まれます): ",
-        cw_empty: "(空)",
-        cw_writing: "設定を書き込み中...",
-        cw_failed: "設定の書き込みに失敗しました: HTTP {n}",
-        cw_verify_fail: "検証失敗: フラッシュの内容が送信内容と異なります。コマンドログは消去されていません。",
-        cw_saved: "起動設定を保存し検証しました",
-        cw_collect: "実行中の変更を収集中...",
         fw_title: "ファームウェア更新",
         fw_upload: "アップロード",
         fw_checking: "{f}: {n} バイト。確認中...",
@@ -699,6 +680,11 @@ var LANG = {
         fw_timeout: "150 秒経ってもスイッチが復帰しません。電源 / シリアルコンソールを確認してください"
     },
     zh: {
+        i_host: "主机名",
+        i_ip: "IP 地址",
+        i_mask: "子网掩码",
+        i_gw: "网关",
+        i_syslog: "Syslog",
         nav_dash: "仪表盘",
         nav_ports: "端口",
         nav_stp: "生成树",
@@ -953,14 +939,8 @@ var LANG = {
         sy_repeat: "重复输入",
         sy_pwapply: "修改密码",
         sy_pw_note: "立即生效；如需重启后保留请保存到 Flash。",
-        sy_console: "控制台",
-        sy_cmd: "CLI 命令...",
-        sy_send: "发送",
         sy_startup: "启动配置",
-        sy_replayed: "每次启动时重新执行",
         sy_reload: "从 Flash 重新读取",
-        sy_write: "写入 Flash",
-        sy_unknown_note: "未知行会在写入前高亮显示。",
         sy_maint: "维护",
         sy_reboot: "重启交换机",
         sy_lang: "语言",
@@ -1000,19 +980,6 @@ var LANG = {
         sy_reboot_q: "重启交换机?",
         sy_reboot_d: "存在未保存的更改，重启后将丢失。如需保留请先保存到 Flash。",
         sy_rebooting: "正在重启，约 20 秒后重新连接",
-        sy_bytes: "字节",
-        cw_title: "写入此启动配置?",
-        cw_save_title: "将运行配置保存到 Flash?",
-        cw_info: "{n} / 2048 字节，每次启动时逐行执行",
-        cw_toolarge: "过大: 配置扇区最多容纳 2048 字节。请先删除部分行。",
-        cw_longline: "第 {n} 行有 {m} 字节: 交换机启动时只能执行不超过 126 字节的行，该行会被跳过，因此拒绝写入。请先缩短该行。",
-        cw_unknown: "不属于已知配置语法的行 (仍会写入): ",
-        cw_empty: "(空)",
-        cw_writing: "正在写入配置...",
-        cw_failed: "配置写入失败: HTTP {n}",
-        cw_verify_fail: "校验失败: Flash 内容与发送内容不一致。命令日志未清除。",
-        cw_saved: "启动配置已保存并校验",
-        cw_collect: "正在收集运行中的更改...",
         fw_title: "固件升级",
         fw_upload: "上传",
         fw_checking: "{f}: {n} 字节。正在检查...",
@@ -1043,6 +1010,11 @@ var LANG = {
         fw_timeout: "150 秒后交换机仍未恢复: 请检查电源 / 串口控制台"
     },
     es: {
+        i_host: "Nombre de host",
+        i_ip: "Dirección IP",
+        i_mask: "Máscara de red",
+        i_gw: "Puerta de enlace",
+        i_syslog: "Syslog",
         nav_dash: "Panel",
         nav_ports: "Puertos",
         nav_stp: "Árbol de expansión",
@@ -1251,14 +1223,8 @@ var LANG = {
         sy_repeat: "Repetir",
         sy_pwapply: "Cambiar contraseña",
         sy_pw_note: "Toma efecto inmediatamente; guarda en flash para conservarla tras el reinicio.",
-        sy_console: "Consola",
-        sy_cmd: "Comando de CLI...",
-        sy_send: "Enviar",
         sy_startup: "Configuración de inicio",
-        sy_replayed: "reaplicada en cada arranque",
         sy_reload: "Recargar desde flash",
-        sy_write: "Escribir en flash",
-        sy_unknown_note: "Las líneas desconocidas se resaltan antes de escribir.",
         sy_maint: "Mantenimiento",
         sy_reboot: "Reiniciar switch",
         sy_lang: "Idioma",
@@ -1276,18 +1242,6 @@ var LANG = {
         sy_reboot_q: "¿Reiniciar el switch?",
         sy_reboot_d: "Hay cambios SIN GUARDAR y se perderán. Guarda en flash primero si quieres conservarlos.",
         sy_rebooting: "Reiniciando, reconecta en unos 20 s",
-        sy_bytes: "bytes",
-        cw_title: "¿Escribir esta configuración de inicio?",
-        cw_save_title: "¿Guardar la configuración en ejecución en flash?",
-        cw_info: "{n} / 2048 bytes, reaplicada línea a línea en cada arranque",
-        cw_toolarge: "Demasiado grande: el sector de configuración admite como máximo 2048 bytes. Elimina líneas primero.",
-        cw_unknown: "No está en la gramática de configuración conocida (aun así se escribirá): ",
-        cw_empty: "(vacío)",
-        cw_writing: "Escribiendo configuración...",
-        cw_failed: "error al escribir la configuración: HTTP {n}",
-        cw_verify_fail: "Verificación fallida: el contenido de la flash difiere de lo enviado. El registro de comandos NO se ha borrado.",
-        cw_saved: "Configuración de inicio guardada y verificada",
-        cw_collect: "Recopilando cambios en ejecución...",
         fw_title: "Actualización de firmware",
         fw_upload: "Subir",
         fw_checking: "{f}: {n} bytes. Comprobando...",
@@ -1385,10 +1339,14 @@ var LANG = {
         sy_ntp_err: "Introduce el nombre de host o la dirección IPv4 del servidor NTP",
         sy_ntpint_err: "El intervalo de consulta debe ser 1-1440",
         sy_time_note: "El switch no tiene reloj con batería: la hora se pierde en cada arranque y se vuelve a fijar desde el servidor NTP cuando la red está lista. Guarda en flash para conservar los ajustes.",
-        cw_longline: "La línea {n} mide {m} bytes: el switch solo puede ejecutar líneas de hasta 126 bytes y la saltaría al arrancar, así que se rechaza la escritura. Acórtala primero.",
         fw_other: "Esta imagen no se compiló para este switch ({m}): los pines de SFP, LEDs y botones pueden no coincidir. Súbela solo si estás seguro."
     },
     fr: {
+        i_host: "Nom d'hote",
+        i_ip: "Adresse IP",
+        i_mask: "Masque réseau",
+        i_gw: "Passerelle",
+        i_syslog: "Journal système",
         nav_dash: "Tableau de bord",
         nav_ports: "Ports",
         nav_stp: "Arborescence",
@@ -1611,14 +1569,8 @@ var LANG = {
         sy_repeat: "Confirmation",
         sy_pwapply: "Changer le mot de passe",
         sy_pw_note: "Prends effet immédiatement; Sauvegardez en flash afin de conserver la configuration lors du redémarrage.",
-        sy_console: "Console",
-        sy_cmd: "Ligne de commande...",
-        sy_send: "Envoyer",
         sy_startup: "Configuration de démarrage",
-        sy_replayed: "Rejouée à chaque redémarrage",
         sy_reload: "Recharger depuis la mémoire flash",
-        sy_write: "Ecrire en mémoire flash",
-        sy_unknown_note: "Les lignes incorrectes sont mises en évidence avant l'écriture.",
         sy_maint: "Maintenance",
         sy_reboot: "Redémarre le commutateur",
         sy_lang: "Langage",
@@ -1658,19 +1610,6 @@ var LANG = {
         sy_reboot_q: "Redémarrer le commutateur ?",
         sy_reboot_d: "Il y a des paramètres NON SAUVEGARDES qui vont être perdus. Sauvegardez-les au préalable en mémoire flash si vous souhaitez les conserver.",
         sy_rebooting: "Redémarrage, reconnectez-vous d'ici 20s",
-        sy_bytes: "bytes",
-        cw_title: "Enregistrer cette configuration de démarrage?",
-        cw_save_title: "Enregistrer la configuration active en mémoire flash?",
-        cw_info: "{n} / 2048 bytes, qui seront rejouées ligne par ligne à chaque redémarrage",
-        cw_toolarge: "Trop grand : La quota du secteur de démarrage ne peut excéder 2048 bytes. Supprimez des lignes.",
-        cw_longline: "La ligne {n} est longue de {m} bytes: Le commutateur ne peut exécuter des lignes de plus de 126 bytes et les omettra donc au démarragee, l'écriture est refusé. Raccourcissez les d'abord.",
-        cw_unknown: "Ne respecte pas la grammaire de configuration (sera néanmoins sauvegardé): ",
-        cw_empty: "(vide)",
-        cw_writing: "Configuration enregistrée...",
-        cw_failed: "Echec de l'enregistrement de la configuration: HTTP {n}",
-        cw_verify_fail: "Verification erronée: La mémoire flash présente des différences par rapport à ce qui a été transmis. Le log de commande ne sera pas éffacé.",
-        cw_saved: "Configuration de démarrage sauvegardée et vérifiée",
-        cw_collect: "Récolement des modification des paramètres courants...",
         fw_title: "Mise à jour du micro-logiciel",
         fw_upload: "Charger",
         fw_checking: "{f}: {n} bytes. Vérification...",
@@ -1701,6 +1640,11 @@ var LANG = {
         fw_timeout: "Le commutateur n'est plus joignable depuis 150 s: verifiez l'alimentation ou utilisez la console série"
     },
     de: {
+        i_host: "Hostname",
+        i_ip: "IP-Adresse",
+        i_mask: "Netzmaske",
+        i_gw: "Gateway",
+        i_syslog: "Syslog",
         nav_dash: "Übersicht",
         nav_ports: "Ports",
         nav_stp: "Spanning Tree",
@@ -1957,14 +1901,8 @@ var LANG = {
         sy_repeat: "Wiederholen",
         sy_pwapply: "Passwort ändern",
         sy_pw_note: "Wirkt sofort; im Flash speichern, damit es nach einem Neustart erhalten bleibt.",
-        sy_console: "Konsole",
-        sy_cmd: "CLI-Befehl...",
-        sy_send: "Senden",
         sy_startup: "Startkonfiguration",
-        sy_replayed: "wird bei jedem Start ausgeführt",
         sy_reload: "Aus dem Flash neu laden",
-        sy_write: "In den Flash schreiben",
-        sy_unknown_note: "Unbekannte Zeilen werden vor dem Schreiben hervorgehoben.",
         sy_maint: "Wartung",
         sy_reboot: "Switch neu starten",
         sy_lang: "Sprache",
@@ -2004,19 +1942,6 @@ var LANG = {
         sy_reboot_q: "Switch neu starten?",
         sy_reboot_d: "Es gibt UNGESPEICHERTE Änderungen, sie gehen verloren. Zuerst im Flash speichern, wenn du sie behalten willst.",
         sy_rebooting: "Neustart läuft, in etwa 20 s neu verbinden",
-        sy_bytes: "Bytes",
-        cw_title: "Diese Startkonfiguration schreiben?",
-        cw_save_title: "Laufende Konfiguration im Flash speichern?",
-        cw_info: "{n} / 2048 Bytes, wird bei jedem Start Zeile für Zeile ausgeführt",
-        cw_toolarge: "Zu gross: Der Konfigurationssektor fasst höchstens 2048 Bytes. Zuerst Zeilen entfernen.",
-        cw_longline: "Zeile {n} ist {m} Bytes lang: Der Switch kann beim Start nur Zeilen bis 126 Bytes ausführen und würde sie überspringen, deshalb wird das Schreiben abgelehnt. Zuerst kürzen.",
-        cw_unknown: "Nicht in der bekannten Konfigurationssyntax (wird trotzdem geschrieben): ",
-        cw_empty: "(leer)",
-        cw_writing: "Konfiguration wird geschrieben...",
-        cw_failed: "Schreiben der Konfiguration fehlgeschlagen: HTTP {n}",
-        cw_verify_fail: "Prüfung fehlgeschlagen: Der Flash-Inhalt weicht vom Gesendeten ab. Befehlsprotokoll wurde NICHT gelöscht.",
-        cw_saved: "Startkonfiguration gespeichert und geprüft",
-        cw_collect: "Laufende Änderungen werden gesammelt...",
         fw_title: "Firmware-Update",
         fw_upload: "Hochladen",
         fw_checking: "{f}: {n} Bytes. Wird geprüft...",
@@ -2824,6 +2749,10 @@ var TABS = [{
     {
         id: "system",
         icon: "M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2M18 12h2M12 4v2M12 18v2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M7.5 16.5L6 18"
+    },
+    {
+        id: "cli",
+        icon: "M4 17l6-5-6-5M12 19h8"
     },
     {
         id: "fw",
@@ -5134,31 +5063,270 @@ $("sy-pwapply").addEventListener("click", function() {
         });
     });
 });
-$("sy-send").addEventListener("click", sysConsole);
-$("sy-cmd").addEventListener("keydown", function(e) {
-    if (e.key === "Enter") sysConsole()
+/* ---- the CLI page: the console (POST /cli, a line at a time) ------------- */
+
+var CL = {
+    hist: [],
+    at: 0,
+    tabs: 0,
+    vlans: null
+};
+var CL_VERBS = ["get", "set", "del", "diff", "apply", "confirm", "discard", "load", "save", "do", "help"];
+
+function clPrint(text, cls) {
+    var o = $("cl-out");
+    o.appendChild(h("span", {
+        text: text,
+        class: cls || ""
+    }));
+    while (o.childNodes.length > 4000) o.removeChild(o.firstChild);
+    o.scrollTop = o.scrollHeight;
+}
+
+/* the prompt as the serial console's: [confirm N] in a window, * with changes staged */
+function clPrompt() {
+    return cli(["get state.cfg"]).then(function(r) {
+        var c = (parseLines(r.out[0] || []).state || {}).cfg || {};
+        $("cl-prompt").textContent = (c.apply === "confirm" ? "[confirm " + c.confirm_s + "] " : "") +
+            (+c.pending ? "*" : "") + ">";
+    }).catch(function() {});
+}
+
+function clRun(line) {
+    clPrint($("cl-prompt").textContent + " " + line + "\n", "p");
+    if (line && CL.hist[CL.hist.length - 1] !== line) CL.hist.push(line);
+    CL.at = CL.hist.length;
+    if (!line) return;
+    $("cl-in").disabled = true;
+    api("/cli", {
+        method: "POST",
+        body: line
+    }).then(function(r) {
+        r.body.replace(/\s+$/, "").split("\n").forEach(function(l) {
+            clPrint(l + "\n", /^err[ :]|^Error/.test(l) ? "e" : "")
+        });
+        if (/^(set|del|apply|confirm|discard|load|save|do)\b/.test(line)) {
+            CL.vlans = null;
+            omReload();
+        }
+    }).catch(function(e) {
+        clPrint(String(e.message || e) + "\n", "e")
+    }).then(function() {
+        $("cl-in").disabled = false;
+        $("cl-in").focus();
+        return clPrompt();
+    });
+}
+
+/* Tab completion from the UI's schema (schema.js): the verbs, then a path a
+ * segment at a time, then an enum's or a bool's words after set. An index
+ * completes as the board's ports, 1-n, a word index's words or the VLANs
+ * there are. Each object's index letters (o.i) follow its last name segment,
+ * a sub-object's first one its parent's (port.N.storm.W) */
+function clTemplates() {
+    if (CL.tpl) return CL.tpl;
+    var out = [];
+    Object.keys(SCHEMA).forEach(function(k) {
+        var o = SCHEMA[k],
+            seg = k.split("."),
+            idx = (o.i || "").match(/[A-Z][0-9]*/g) || [],
+            words = (o.w || []).slice(),
+            tpl = [];
+        var at = idx.length === 2 ? [seg.length - 2, seg.length - 1] : idx.length ? [seg.length - 1] : [];
+        seg.forEach(function(sg, n) {
+            tpl.push(sg);
+            var j = at.indexOf(n);
+            if (j >= 0) tpl.push({
+                k: idx[j][0],
+                n: +idx[j].slice(1) || 0,
+                w: idx[j][0] === "W" ? (words.shift() || "").split(" ") : null
+            });
+        });
+        Object.keys(o.f || {}).forEach(function(f) {
+            out.push({
+                f: o.f[f],
+                state: k.slice(0, 6) === "state.",
+                t: tpl.concat(f ? f.split(".") : [])	/* "": the instance's own value (state.port.N.mib.K) */
+            })
+        });
+    });
+    return (CL.tpl = out);
+}
+
+function clCount(n, from) {
+    return Array.from({
+        length: n
+    }, function(_, i) {
+        return String(i + from)
+    });
+}
+
+function clIndexWords(x) {
+    if (x.k === "P") return clCount(S.n || 9, 1).concat("*");
+    if (x.k === "N") return clCount(x.n, 1).concat("*");
+    if (x.k === "I") return clCount(x.n, 0).concat("*");
+    if (x.k === "W") return x.w.concat("*");
+    if (x.k === "K") return (CL.vlans || []).concat("*");
+    return ["*"];
+}
+
+function clSegOk(x, v) {
+    if (typeof x === "string") return x === v;
+    if (v === "*") return true;
+    if (x.k === "W") return x.w.indexOf(v) >= 0;
+    return /^[0-9][0-9,-]*$/.test(v);
+}
+
+function clStarts(list, cur) {
+    return list.filter(function(v) {
+        return v.indexOf(cur) === 0
+    });
+}
+
+/* the candidates for the word at the cursor: [full words, a leaf (a space
+ * after it), more segments after it (a dot)] */
+function clCandidates(words, verb) {
+    var cur = words[words.length - 1];
+    if (words.length === 1) return [clStarts(CL_VERBS, cur), true];
+    if (verb === "load") return [clStarts(["saved", "default"], cur), true];
+    var pathAt = (verb === "get" || verb === "help") && words[1] && words[1][0] === "-" ? 2 : 1;
+    var tpls = clTemplates().filter(function(c) {
+        if (verb === "do") return c.f[0] === "a";
+        if (verb === "set" || verb === "del") return !c.state && c.f[0] !== "a";
+        return verb === "help" || c.f[0] !== "a";
+    });
+    if (verb === "set" && words.length === pathAt + 2) {
+        var segs = words[pathAt].split("."),
+            hit = tpls.filter(function(c) {
+                return c.t.length === segs.length && c.t.every(function(x, i) {
+                    return clSegOk(x, segs[i])
+                })
+            })[0];
+        if (!hit) return [[], true];
+        var w = hit.f[0] === "e" ? (hit.f[1] || "").split(" ") : hit.f[0] === "b" ? ["on", "off"] :
+            hit.f[0] === "m" ? ["none", "all"] : hit.f[0] === "mac" ? ["auto"] : [];
+        return [clStarts(w, cur), true];
+    }
+    if (words.length !== pathAt + 1) return [[], true];
+    var typed = cur.split("."),
+        last = typed.pop(),
+        opts = {},
+        more = {},
+        leaf = {};
+    tpls.forEach(function(c) {
+        if (c.t.length <= typed.length) return;
+        for (var i = 0; i < typed.length; i++)
+            if (!clSegOk(c.t[i], typed[i])) return;
+        var x = c.t[typed.length];
+        clStarts(typeof x === "string" ? [x] : clIndexWords(x), last).forEach(function(v) {
+            opts[v] = 1;
+            if (c.t.length > typed.length + 1) more[v] = 1;
+            else leaf[v] = 1;
+        });
+    });
+    var list = Object.keys(opts).sort(function(a, b) {
+        return (+a - +b) || (a < b ? -1 : a > b ? 1 : 0)
+    });
+    var one = list.length === 1 ? list[0] : null;
+    return [list.map(function(v) {
+        return (typed.length ? typed.join(".") + "." : "") + v
+    }), one !== null && !more[one], one !== null && more[one] && !leaf[one]];
+}
+
+function clPrefix(a) {
+    var p = a[0] || "";
+    a.forEach(function(s) {
+        while (s.indexOf(p) !== 0) p = p.slice(0, -1)
+    });
+    return p;
+}
+
+function clTab() {
+    var inp = $("cl-in"),
+        line = inp.value.slice(0, inp.selectionStart),
+        rest = inp.value.slice(inp.selectionStart),
+        words = line.replace(/^\s+/, "").split(/\s+/);
+    var verb = words[0] === "h" || words[0] === "?" ? "help" : words[0];
+    var go = function() {
+        var r = clCandidates(words, verb),
+            list = r[0],
+            cur = words[words.length - 1];
+        if (!list.length) return;
+        var p = list.length === 1 ? list[0] + (r[1] ? " " : r[2] ? "." : "") : clPrefix(list);
+        if (p.length > cur.length) {
+            inp.value = line.slice(0, line.length - cur.length) + p + rest;
+            inp.selectionStart = inp.selectionEnd = line.length - cur.length + p.length;
+            CL.tabs = 0;
+        } else if (++CL.tabs >= 2) {	/* a second Tab lists them */
+            clPrint(list.map(function(v) {
+                return v.split(".").pop()
+            }).join("  ") + "\n", "m");
+            CL.tabs = 0;
+        }
+    };
+    if (CL.vlans === null && /^vlan\./.test(words[words.length - 1] || "")) {
+        CL.vlans = [];
+        cli(["get vlan"]).then(function(r) {
+            var ks = {};
+            (r.out[0] || []).forEach(function(l) {
+                var m = /^vlan\.(\d+)\./.exec(l);
+                if (m) ks[m[1]] = 1;
+            });
+            CL.vlans = Object.keys(ks).sort(function(a, b) {
+                return a - b
+            });
+            go();
+        }).catch(go);
+    } else go();
+}
+
+$("cl-in").addEventListener("keydown", function(e) {
+    if (e.key === "Tab") {
+        e.preventDefault();
+        clTab();
+        return;
+    }
+    CL.tabs = 0;
+    if (e.key === "Enter") {
+        var l = this.value.trim();
+        this.value = "";
+        clRun(l);
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        CL.at = Math.max(0, Math.min(CL.hist.length, CL.at + (e.key === "ArrowUp" ? -1 : 1)));
+        this.value = CL.hist[CL.at] || "";
+    } else if (e.key === "l" && e.ctrlKey) {
+        e.preventDefault();
+        $("cl-out").textContent = "";
+    }
+});
+$("cl-clear").addEventListener("click", function() {
+    $("cl-out").textContent = "";
+    $("cl-in").focus();
 });
 
-function sysConsole() {
-    var c = $("sy-cmd").value.trim();
-    if (!c) return;
-    var out = $("sy-cout");
-    api("/cmd", {
-        method: "POST",
-        body: c
-    }).then(function(r) {
-        var body = r.body.replace(/\s+$/, "");
-        out.textContent += "> " + c + "\n";
-        if (body) out.textContent += body + "\n";
-        else out.textContent += (r.ok ? "OK" : "ERROR " + r.status) + "\n";
-        if (out.textContent.length > 20000) out.textContent = out.textContent.slice(-16000);
-        out.scrollTop = out.scrollHeight;
-        stgRefresh().catch(function() {});	/* a set, apply or save there moves the bar */
-    }).catch(function(e) {
-        out.textContent += "> " + c + "\n" + e + "\n"
-    });
-    $("sy-cmd").value = "";
+function clPane(cfg) {
+    $("cl-con").style.display = cfg ? "none" : "";
+    $("cl-cfg").style.display = cfg ? "" : "none";
+    $("cl-clear").style.display = cfg ? "none" : "";
+    $("cl-t-con").classList.toggle("act", !cfg);
+    $("cl-t-cfg").classList.toggle("act", cfg);
+    if (cfg) cfgReload();
+    else $("cl-in").focus();
 }
+$("cl-t-con").addEventListener("click", function() {
+    clPane(false)
+});
+$("cl-t-cfg").addEventListener("click", function() {
+    clPane(true)
+});
+tabHooks.cli = {
+    enter: function() {
+        if (!$("cl-out").childNodes.length) clPrint(t("cl_hello") + "\n", "m");
+        clPrompt();
+        if ($("cl-con").style.display !== "none") $("cl-in").focus();
+    }
+};
 $("sy-reboot").addEventListener("click", function() {
     confirmModal(t("sy_reboot_q"), S.dirty ? t("sy_reboot_d") : "", function() {
         api("/reset", post()).catch(function() {});
@@ -5166,34 +5334,65 @@ $("sy-reboot").addEventListener("click", function() {
     });
 });
 
+/* GET /config is get -s: its path lines, then ok; "err get: blank" when
+ * nothing is saved (the editor is empty then) */
 function cfgReload() {
     return getText("/config").then(function(x) {
         x = x.replace(/\0[\s\S]*$/, "");
-        $("cfgedit").value = x;
+        $("cfgedit").value = cfgLinesOf(x).join("\n") + (cfgLinesOf(x).length ? "\n" : "");
         cfgBytes();
     }).catch(function() {});
 }
 
-function cfgLongLine(v) {
-    var ls = v.split("\n");
-    for (var i = 0; i < ls.length; i++) {
-        var n = new Blob([ls[i]]).size;
-        if (n > 126) return {
-            n: i + 1,
-            m: n
-        };
-    }
-    return null;
+function cfgLinesOf(v) {	/* path lines: no blank lines, # comments, get's ok or err */
+    return v.split("\n").map(function(l) {
+        return l.trim()
+    }).filter(function(l) {
+        return l && l[0] !== "#" && l !== "ok" && !/^err[ :]/.test(l)
+    });
 }
 
 function cfgBytes() {
-    var v = $("cfgedit").value,
-        n = new Blob([v]).size;
-    var el = $("cfgbytes");
-    el.textContent = n + " / 2048 " + t("sy_bytes");
-    el.style.color = (n > 2048 || cfgLongLine(v)) ? "var(--bad)" : "";
+    var n = cfgLinesOf($("cfgedit").value).length;
+    $("cfgbytes").textContent = t("cl_lines", {
+        n: n
+    });
     return n;
 }
+
+/* the editor into the candidate: load default, then each line as a set (a
+ * del as it is), 16 lines a request; Apply and Save are the bar's */
+$("cfgcand").addEventListener("click", function() {
+    var ls = cfgLinesOf($("cfgedit").value).map(function(l) {
+        return /^(set|del) /.test(l) ? l : "set " + l
+    });
+    var res = $("cfgres"),
+        bad = [],
+        p = cli(["load default"]);
+    for (var i = 0; i < ls.length; i += 16)(function(b) {
+        p = p.then(function() {
+            return cli(b).then(function(r) {
+                r.st.forEach(function(st, k) {
+                    if (st !== "ok") bad.push(b[k] + "  -> " + st)
+                })
+            })
+        })
+    })(ls.slice(i, i + 16));
+    p.then(function() {
+        return cli(["diff"])
+    }).then(function(r) {
+        res.style.display = "";
+        res.textContent = (bad.length ? bad.join("\n") + "\n\n" : "") + (r.out[0] || []).join("\n");
+        toast(bad.length ? t("cl_refused", {
+            n: bad.length
+        }) : t("cl_loaded", {
+            n: ls.length
+        }), bad.length ? "err" : "ok");
+        return omReload();
+    }).catch(function(e) {
+        toast(e.message, "err")
+    });
+});
 $("cfgedit").addEventListener("input", cfgBytes);
 $("cfgreload").addEventListener("click", cfgReload);
 // Download what is in flash as text; a file loaded back goes into the editor,

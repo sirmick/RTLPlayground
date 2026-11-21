@@ -39,6 +39,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
         $(BUILDDIR)/test_sfp_cal \
         $(BUILDDIR)/test_om_codec \
         $(BUILDDIR)/test_fwupdate \
+        $(BUILDDIR)/test_ui_keys \
         $(BUILDDIR)/test_port_tables \
         $(BUILDDIR)/test_httpd_tx \
         $(BUILDDIR)/test_httpd_tx_compact \
@@ -114,6 +115,9 @@ $(BUILDDIR)/test_om_codec: test_om_codec.py $(SRCROOT)/tools/rtlpg_client.py $(S
 # The generator: broken schemas fail with their message, the registry holds.
 # tools/fwupdate.py's upgrade flow against a fake switch (old firmware, then
 # the object model)
+$(BUILDDIR)/test_ui_keys: test_ui_keys.py $(SRCROOT)/html/app.js $(SRCROOT)/html/index.html | $(BUILDDIR)
+	printf '#!/bin/sh\nexec python3 "%s/test_ui_keys.py"\n' "$(CURDIR)" > $@ && chmod +x $@
+
 $(BUILDDIR)/test_fwupdate: test_fwupdate.py $(SRCROOT)/tools/fwupdate.py $(SRCROOT)/tools/rtlpg_client.py \
 		$(SRCROOT)/tools/legacy_map.py $(SRCROOT)/tools/om_gen.py $(OM_SCHEMA) | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_fwupdate.py"\n' "$(CURDIR)" > $@ && chmod +x $@
