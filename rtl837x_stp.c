@@ -253,6 +253,7 @@ static void print_port_nl(uint8_t port) __reentrant
 
 static uint8_t stp_state_get(uint8_t port) __reentrant;
 static uint8_t stp_ent_active(uint8_t e) __reentrant;
+static uint8_t stp_pnum(uint8_t e) __reentrant;
 
 
 /* state.stp (schema/state_stp.py) */
@@ -262,7 +263,7 @@ typedef char stp_lag_like_port[sizeof(om_st.stp_lag) == sizeof(SP) + 2 &&
 	offsetof(struct st_stp_lag, tx_tc) == offsetof(struct st_stp_port, tx_tc) &&
 	offsetof(struct st_stp_port, tx_tc) == offsetof(struct st_stp_port, rx_bpdu) + 12 &&
 	STP_CNT_RX == 0 && STP_CNT_TX == 1 && STP_CNT_TCRX == 2 && STP_CNT_TCTX == 3 &&
-	STP_PF_OPEREDGE == 0x40 ? 1 : -1];
+	STP_PF_OPEREDGE == 0x40 && STP_PF_TRIPPED == 0x80 ? 1 : -1];
 
 uint8_t om_get_stp(uint8_t idx) __banked
 {
@@ -274,6 +275,13 @@ uint8_t om_get_stp(uint8_t idx) __banked
 	SS.is_root = stp_root_port == 0xff;
 	SS.root_cost = root_bridge_cost;
 	SS.tc_count = stp_tc_count;
+	SS.tc_age_s = stp_tc_secs;
+	SS.root_maxage_s = stp_root_maxage;
+	SS.root_fwd_s = stp_root_fwd;
+	if (stp_root_port == 0xff) {		/* the root: our own */
+		SS.root_maxage_s = stp_maxage_s;
+		SS.root_fwd_s = stp_fwddelay_s;
+	}
 	stp_i = stp_root_port;		/* stproot: none, the port's number, lag.L */
 	SS.root_port = stp_i == 0xff ? 0 : stp_i >= STP_LAG_BASE ? 10 + stp_i - STP_LAG_BASE
 		       : machine.log_to_phys_port[stp_i];
@@ -292,6 +300,25 @@ static void stp_ent_state(void)
 	SP.bpdu_age_ms = (uint32_t)stp_bpdu_age[stp_i] * (1000 / STP_HZ);
 	for (stp_ss_i = 0; stp_ss_i < STP_CNT_N; stp_ss_i++)	/* rx_bpdu tx_bpdu rx_tc tx_tc: STP_CNT_* */
 		memcpy(&SP.rx_bpdu + stp_ss_i, &stp_cnt[stp_ss_i][stp_i], 4);
+	SP.guard_tripped = stp_pflags[stp_i] >> 7;	/* STP_PF_TRIPPED */
+	SP.link = stp_link_prev >> stp_i & 1;
+	SP.legacy = stp_legacy >> stp_i & 1;
+	/* the designated bridge, port and cost: what the port heard while
+	 * it is valid, else our own (a backup port held by a loop: the port
+	 * that holds it) */
+	if (stp_dpid[stp_i] && stp_info_while[stp_i]) {
+		memcpy(SP.dbridge, &stp_dbridge[stp_i], sizeof(SP.dbridge));
+		SP.dport = stp_dpid[stp_i];
+		SP.dcost = stp_dcost[stp_i];
+		return;
+	}
+	SP.dbridge[0] = stp_prio;
+	memcpy(SP.dbridge + 2, uip_ethaddr.addr, 6);
+	stp_ss_i = stp_i;
+	if ((stp_backup >> stp_i & 1) && stp_loop_held[stp_i])
+		stp_ss_i = stp_loop_held[stp_i] - 1;
+	SP.dport = (uint16_t)stp_pprio[stp_ss_i] << 8 | stp_pnum(stp_ss_i);
+	SP.dcost = root_bridge_cost;
 }
 
 uint8_t om_get_stp_port(uint8_t idx) __banked

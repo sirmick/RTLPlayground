@@ -60,7 +60,6 @@ class Handler(SimpleHTTPRequestHandler):
             "/isolation.json": self._api_isolation,
             "/lldp.json": self._api_lldp,
             "/mirror.json": self._api_mirror,
-            "/stp.json": self._api_stp,
             "/loop.json": self._api_loop,
             "/vlan.json": lambda: self._api_vlan(query),
             "/vlanlist.json": self._api_vlanlist,
@@ -365,23 +364,6 @@ class Handler(SimpleHTTPRequestHandler):
         global state
         # the servers only: DHCP's and the lookups are get state.dns (P5-3)
         return b"DNS servers 0.0.0.0 0.0.0.0"
-
-    def _api_stp(self):
-        return {
-            "rootPrio":"8000",
-            "rootMac":"060f00124737",
-            "myMac":"060f00124737",
-            "cost":"00000000",
-            "weRoot":True,
-            "rootPort":False,
-            "tc":"0000",
-            "ports":[
-                ({"p":i,"lag":0,"mbr":[],"st":3,"role":2,"f":5,"db":"8000060f00124737","dp":"8009","dc":"00000000"})
-                for i in range(1, PORTS + 1)
-            ] + [
-                {"p":102,"st":3,"role":2,"f":69,"mbr":[6],"lk":1,"lg":0,"db":"8000060f00124737","dp":"8066","dc":"00000000"}
-            ]
-        }
 
     def _api_eee(self):
         global state, machine_config

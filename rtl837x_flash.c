@@ -146,6 +146,7 @@ void flash_init(uint8_t enable_dio)
 	flash_configure_mmio();
 }
 
+#if defined(LDR_BUILD) || OM_DBG	/* the loader's; the app's `flash u` */
 void flash_read_uid(void)
 {
 	flash_configure_sio();
@@ -181,6 +182,7 @@ void flash_read_uid(void)
 
 	flash_configure_mmio();
 }
+#endif
 
 __code const char* get_flash_size_str(void)
 {
@@ -269,7 +271,7 @@ void flash_read_bulk(__xdata uint8_t *dst)
 }
 
 
-#ifndef LDR_BUILD
+#if !defined(LDR_BUILD) && OM_DBG	/* `flash s` */
 void flash_read_security(void)
 {
 	if (!flash_region.len)

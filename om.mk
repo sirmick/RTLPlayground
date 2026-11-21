@@ -14,8 +14,9 @@ OM_SCHEMA = $(foreach d,schema $(if $(OM_SIM),test/om_sim),$(wildcard $(d)/*.py)
 CC_FLAGS += -I$(OM_GEN)
 # schedtest has its own `health`: no state.sched, state.health or state.con
 # (the scheduler's words stay, state.sys.reset's)
-OM_SKIP = $(if $(SCHEDTEST),state_health.py)
-OM_SRCS = om.c om_port.c om_vlan.c om_lag.c om_stp.c om_sys.c om_svc.c $(if $(SCHEDTEST),,om_health.c) om_gen.c
+OM_SKIP = $(if $(SCHEDTEST),state_health.py) $(if $(filter 0,$(OM_DBG)),state_dbg.py)
+OM_SRCS = om.c om_port.c om_vlan.c om_lag.c om_stp.c om_sys.c om_svc.c $(if $(SCHEDTEST),,om_health.c) \
+	$(if $(filter 0,$(OM_DBG)),,om_dbg.c) om_gen.c
 SRCS += $(OM_SRCS)
 $(shell mkdir -p $(OM_GEN))
 

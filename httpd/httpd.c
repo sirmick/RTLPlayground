@@ -1073,11 +1073,7 @@ void handle_post(uint16_t body_off)
 			return;
 		webcmd_queue(p);
 		return;
-	/* these change something: POSTs, not GETs (P3C), until P6's actions */
-	} else if (is_word(request_path, "l2_del.json")) {
-		parse_short(request_path + 16);	/* l2_del.json?idx=10 */
-		l2_delete(short_parsed);
-		return;
+	/* it changes something: a POST, not a GET (P3C) */
 	} else if (is_word(request_path, "reset")) {
 		s->fw_reset_pending = FW_RESET_PENDING;	/* after the ACK */
 		crash_pending = CRASH_WEB;
@@ -1331,9 +1327,7 @@ void httpd_appcall(void)
 				goto do_send;
 			}
 			dbg_string("Not file entry\n");
-			if (is_word(q, "/stp.json")) {
-				send_stp();
-			} else if (is_word(q, "/config")) {
+			if (is_word(q, "/config")) {
 				/* the saved config as text: get -s, as a /cli */
 				strtox(config_buf, "get -s");
 				webcmd_cli = 1;

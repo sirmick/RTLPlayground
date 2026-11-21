@@ -3545,7 +3545,7 @@ tabHooks.ports = {
     },
 };
 
-/* /stp.json's runtime flags (its config is stp.*, P4-4) */
+/* an entity's runtime flags, f below (its config is stp.*, P4-4) */
 var STP_PF = {
     OPEREDGE: 64,
     TRIP: 128
@@ -3757,16 +3757,69 @@ function stpCnt() {
     });
 }
 
-/* /stp.json the tree as it runs; get -c stp the fields, running's
- * enabled, version, priority and p2p for the status */
+var STPST = ["off", "block", "learn", "fwd"],
+    STPRO = ["disabled", "root", "designated", "alternate", "backup"];
+
+function stpBrid(v) {	/* a BridgeId, prio/4096.ext.MAC, as fmtBridge's hex */
+    var m = /^(\d+)\.(\d+)\.(.*)$/.exec(v || "");
+    return m ? (m[1] * 4096 + +m[2]).toString(16).padStart(4, "0") + m[3].replace(/:/g, "") : "";
+}
+
+function stpPt(s, e, p) {	/* entity e (state.stp.port.N or .lag.L) as p in s.ports */
+    var pt = {
+        p: p,
+        st: STPST.indexOf(e.state),
+        role: STPRO.indexOf(e.role),
+        f: (e.edge === "on" ? STP_PF.OPEREDGE : 0) | (e.guard_tripped === "on" ? STP_PF.TRIP : 0),
+        lk: e.link === "on",
+        lg: e.legacy === "on",
+        db: stpBrid(e.dbridge),
+        dp: +e.dport,
+        dc: e.dcost
+    };
+    s.ports.push(pt);
+    return pt;
+}
+
+/* state.stp: the bridge, and the entities that run: each LAG with members
+ * (p 100 + L), each port in none */
+function stpState(o) {
+    var s = {
+            me: stpBrid(o.bridge),
+            root: stpBrid(o.root),
+            weRoot: o.is_root === "on",
+            cost: o.root_cost,
+            tc: o.tc_count,
+            tcs: o.tc_age_s,
+            rMaxage: o.root_maxage_s,
+            rFwd: o.root_fwd_s,
+            ports: []
+        },
+        inLag = {};
+    for (var L in o.lag || {}) {
+        var m = pmParse(o.lag[L].members, S.n),
+            l = [];
+        for (var i in m)
+            if (+i) {
+                l.push(+i);
+                inLag[i] = 1;
+            }
+        if (l.length) stpPt(s, o.lag[L], 100 + +L).mbr = l;
+    }
+    for (var n in o.port || {})
+        if (!inLag[n]) stpPt(s, o.port[n], +n);
+    return s;
+}
+
+/* state.stp the tree as it runs; get -c stp the fields, running's
+ * enabled, version and p2p for the status */
 function stpLoad() {
-    return Promise.all([getJSON("/stp.json"), cli(["get -c stp", "get stp.enabled stp.version stp.priority stp.port.*.p2p stp.lag.*.p2p", "diff"])]).then(function(x) {
-        var s = x[0],
-            u = parseLines(x[1].out[1] || []).stp || {};
-        STPC = parseLines(x[1].out[0] || []).stp || {};
+    return cli(["get state.stp", "get -c stp", "get stp.enabled stp.version stp.port.*.p2p stp.lag.*.p2p", "diff"]).then(function(r) {
+        var s = stpState((parseLines(r.out[0] || []).state || {}).stp || {}),
+            u = parseLines(r.out[2] || []).stp || {};
+        STPC = parseLines(r.out[1] || []).stp || {};
         s.on = u.enabled === "on";
         s.type = u.version;
-        s.prio = +u.priority;
         s.ports.forEach(stpEnt);
         s.ports.sort(function(a, b) {
             return (a.lag - b.lag) || (a.p - b.p)
@@ -3784,7 +3837,7 @@ function stpLoad() {
         var msg;
         if (!s.on) msg = t("stp_off_msg");
         else {
-            var me = (s.prio * 4096).toString(16).padStart(4, "0") + s.myMac,
+            var me = s.me,
                 tc = parseInt(s.tc),
                 rp = "-";
             s.ports.forEach(function(pt) {
@@ -3792,13 +3845,13 @@ function stpLoad() {
             });
             msg = t("stp_bridge") + " " + fmtBridge(me) + (s.weRoot ?
                     " (" + t("stp_root_self") + ")" :
-                    "; " + t("stp_root") + " " + fmtBridge(s.rootPrio + s.rootMac) + " " + t("stp_via") + " " + rp + ", " + t("stp_cost") + " " + parseInt(s.cost)) +
+                    "; " + t("stp_root") + " " + fmtBridge(s.root) + " " + t("stp_via") + " " + rp + ", " + t("stp_cost") + " " + parseInt(s.cost)) +
                 "; " + t("stp_tc") + ": " + tc + (tc ? " (" + t("stp_lasttc") + " " + stpDhms(parseInt(s.tcs)) + ")" : "") +
                 "; " + t("stp_times") + " " + s.rMaxage + " / " + s.rFwd + " s";
         }
         $("stpids").textContent = msg;
         var bc = $("stpbridge"),
-            df = (x[1].out[2] || []).join("\n") + "\n";	/* staged: diff's "- path v" lines */
+            df = (r.out[3] || []).join("\n") + "\n";	/* staged: diff's "- path v" lines */
         bc.classList.toggle("stg", /^. stp\.[a-z_]+ /m.test(df));
         if (!bc.dataset.dirty) stpPut(STPB, "", STPC);
         s.ports.forEach(function(pt) {
@@ -3814,7 +3867,7 @@ function stpLoad() {
                 }
             }));
             $("stdb" + p).textContent = s.on ? fmtBridge(pt.db) : "-";
-            $("stdp" + p).textContent = s.on ? parseInt(pt.dp.slice(0, 2), 16) + "." + parseInt(pt.dp.slice(2), 16) : "-";
+            $("stdp" + p).textContent = s.on ? (pt.dp >> 8) + "." + (pt.dp & 255) : "-";
             $("stdc" + p).textContent = s.on ? parseInt(pt.dc) : "-";
             $("stoe" + p).textContent = s.on ? t((pt.f & STP_PF.OPEREDGE) ? "c_yes" : "c_no") : "-";
             $("stop" + p).textContent = s.on ? t(stpObj(p, u).p2p === "off" ? "c_no" : "c_yes") : "-";
@@ -4478,7 +4531,8 @@ function l2Render() {
             text: "\u2715",
             title: t("l2_del_t"),
             onclick: function() {
-                postJSON("/l2_del.json?idx=" + e.idx).then(function() {
+                cli(["do l2.delete " + e.idx]).then(function(r) {
+                    if (r.errs.length) return toast(r.errs[0], "err");
                     l2Rows = l2Rows.filter(function(x) {
                         return x !== e
                     });
@@ -4503,7 +4557,8 @@ $("l2refresh").addEventListener("click", function() {
 });
 $("l2flush").addEventListener("click", function() {
     confirmModal(t("l2_flush_q"), "", function() {
-        postCmd("l2 forget").then(function() {
+        cli(["do l2.flush"]).then(function(r) {
+            if (r.errs.length) return toast(r.errs[0], "err");
             setTimeout(l2Fetch, 500)
         }).catch(function() {});
     });

@@ -109,8 +109,6 @@ static __xdata struct timer delay_timer;
 // Registry data in sfr is in *big endian* order, so sfr_data[0] is the MSB and sfr_data[3] the LSB
 __xdata uint8_t sfr_data[4];
 
-extern __xdata uint8_t gpio_last_value[8];
-
 extern __xdata struct flash_region_t flash_region;
 
 __code const uint8_t * __code const greeting = "\nA minimal prompt to explore the RTL8372:\n";

@@ -12,6 +12,9 @@
 #ifndef OM_HELP
 #define OM_HELP		1	/* help (DESIGN.md 13); 0 compiles it out, its text too */
 #endif
+#ifndef OM_DBG
+#define OM_DBG		1	/* state.dbg and the raw pokes (DESIGN.md 9); 0: release */
+#endif
 
 /* field types (tools/om_gen.py: T) */
 #define T_BOOL		1
@@ -34,6 +37,7 @@
 #define T_TZ		18	/* I16 minutes, as +hh:mm */
 #define T_PORT		19	/* one port: logical inside, front-panel number outside */
 #define T_BRID		20	/* bridge ID: priority (big endian) and MAC, as prio/4096.MAC */
+#define T_HEX32		21	/* a register (state only): 0x and eight digits */
 #define T_TYPE		0x1f	/* om_field.tw: the type; the when rule above it */
 #define T_WHEN		5
 #define T_DERIVED	0x80	/* a Str stored empty is printed as the object's derive handler's */
@@ -90,7 +94,8 @@ typedef uint8_t (*om_fn)(uint8_t) __banked;
  * a second level's index is om_ix1. A streamed object's getter finds the
  * first instance at or after om_key, sets om_key to it and fills om_st, or
  * returns OM_ERR if there is none (the search wrapped). get <path>.K- is
- * a page: the first OM_PAGE instances at or after K.
+ * a page: the first OM_PAGE instances at or after K. An action's handler
+ * finds its argument (do <path> N) here, 0xffff if none.
  */
 extern __xdata uint8_t om_ix1;
 extern __xdata uint16_t om_key;

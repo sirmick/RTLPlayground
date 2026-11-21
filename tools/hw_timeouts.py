@@ -17,7 +17,7 @@ without a timeout:
 
   table    reg 5cac (TBL_CTRL execute): `vlan 30`, get state.l2 (a poll an entry)
   stat     reg 0f60 (STAT_GET): get state.port.1.mib (55 counters)
-  flush    reg 53d4 (L2 flush): `l2 forget`
+  flush    reg 53d4 (L2 flush): `do l2.flush`
   i2c      reg 0418 (I2C_CTRL): an SFP module's read fails, said once
   wel      flash wp (WEL never set): a web config save
   boot     reg 5cac held over a power cut: the boot must reach its prompt
@@ -152,7 +152,7 @@ def main(argv):
           case("stat", "0f60", "reg hold f60 1", "reg release f60",
                cli("get state.port.1.mib"), prompt)
         if "flush" in C:
-          case("flush", "53d4", "reg hold 53d4 1ffff", "reg release 53d4", cli("l2 forget"), prompt)
+          case("flush", "53d4", "reg hold 53d4 1ffff", "reg release 53d4", cli("do l2.flush"), prompt)
 
         if "i2c" in C and 1 in r.cages:
             eeprom = _sfp("10g")

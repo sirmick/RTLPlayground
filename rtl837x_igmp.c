@@ -166,22 +166,6 @@ uint8_t om_apply_igmp(uint8_t idx) __banked
 }
 
 
-/*
- * IGMP show the current entries and state (until state.dbg.igmp.port.N, P7)
- */
-void igmp_show(void) __banked
-{
-	print_string("igmp_show called\n");
-	for (uint8_t i = MACHINE_MIN_PORT; i <= MACHINE_MAX_PORT; i++) {
-		write_char('0' + i); write_char(':');
-		reg_read_m(RTL837X_IGMP_PORT_CFG + (i << 2));
-		print_sfr_data();
-		write_char('\n');
-	}
-	// TODO: print all L3MC entries in the table
-}
-
-
 #ifdef IPMC_USES_L3MC
 void entry_to_l3mc(void)
 {

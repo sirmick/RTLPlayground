@@ -56,7 +56,6 @@ ok
 | `POST /loader` | A new loader image, staged; installed at the next boot. |
 | `POST /mdata` | The board's machine-data blob (PoE firmware) into its own region. |
 | `POST /reset` | Resets after the reply (`do sys.reset` does the same over `/cli`). |
-| `POST /l2_del.json?idx=N` | Deletes L2 entry N (the L2 tab's delete). |
 | `GET /`, `/index.html`, `/login.html`, `app.js`, `favicon.ico` | The web UI's files. |
 
 Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.port`,
@@ -65,7 +64,8 @@ Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.por
 `state.loader`); `/l2.json` (`get state.l2`), `/counters.json` (`state.port.N.mib`);
 `/bandwidth.json`, `/storm.json` (`port.N.bw_*`, `port.N.storm.T.*`);
 `/cmd_log`, `/cmd_log_clear` (no command history any more); `/lag.json` (`get lag`,
-`state.lag`, `state.lacp.port`).
+`state.lag`, `state.lacp.port`); `/l2_del.json` (`do l2.delete K`); `/stp.json`
+(`get stp`, `get state.stp`).
 
 ## The JSON pages left
 
@@ -74,49 +74,6 @@ Each is a GET, needs the cookie, and goes when its object moves:
 | Page | Until | Then |
 |---|---|---|
 | `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
-| `/stp.json` | P4-4 | `stp.*`, `state.stp` |
-
-## stp (until P4-4)
-```json
-{
-    "tcs":"0x000002a8","rMaxage":20,"rFwd":15,"rootPrio":"8000","rootMac":"010203040506","myMac":"010203040506","cost":"0x00000000","weRoot":true,"tc":"0x0000",
-    "ports":[
-        {"p":1,"st":3,"role":2,"f":69,"lk":1,"lg":0,"db":"8000010203040506","dp":"8001","dc":"0x00000000"},
-        {"p":2,"st":3,"role":0,"f":69,"lk":0,"lg":0,"db":"8000010203040506","dp":"8002","dc":"0x00000000"},
-        ...
-        {"p":102,"st":3,"role":2,"f":69,"mbr":[6],"lk":1,"lg":0,"db":"8000010203040506","dp":"8066","dc":"0x00000000"}
-    ]
-}
-```
-The tree as it runs; its config is `get stp` (`stp`, `stp.port.N`, `stp.lag.L`,
-doc/stp.md) over POST /cli, which also has most of this as `get state.stp`.
-
-| Property | Description
-|----------|------------
-| `tcs` | Seconds since last topology change
-| `rMaxage` | Root bridge max age (s)
-| `rFwd` |  Root bridge forward delay (s)
-| `rootPrio` | Root bridge priority
-| `rootMac` | Root bridge MAC address
-| `myMac` | This device MAC address
-| `cost` | Cost to reach the root bridge
-| `weRoot` | true if we are the root bridge
-| `tc` | Number of topology changes
-| `ports` | Array of STP Port Status
-
-### STP Port Status
-| Property | Description
-|----------|------------
-| `p` | Physical port number, if > 100 it is LAG number + 100
-| `st` | Port state 
-| `role` | STP port role
-| `f` | Port flags (rtl837x_stp.h STP_PF_*: the config's, and operational edge 0x40, guard tripped 0x80)
-| `mbr` | List of port members (for LAGs)
-| `lk` | Previous link state that STP saw
-| `lg` | Link partner is using legacy STP (not RSTP/MSTP etc)
-| `db` | Designated bridge
-| `dp` | Designated port
-| `dc` | Designated cost
 
 ## vlan (until P4-2)
 

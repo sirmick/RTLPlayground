@@ -51,11 +51,13 @@ extern __xdata struct dhcp_state dhcp_state;
 
 extern __xdata uint16_t management_vlan;
 extern __xdata struct uip_eth_addr uip_ethaddr;
-__xdata uint8_t gpio_last_value[8] = { 0 };
 
 // Temporatly for str to hex convertion value.
 // Support up to 32_bits.
+#if OM_DBG
 __xdata uint8_t hexvalue[4] = { 0 };
+__xdata uint8_t atoi_results_u8;
+#endif
 
 
 // Buffer for writing to flash 0x1fd000, copy to 0x1fe000
@@ -63,7 +65,6 @@ __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 
 __xdata	char save_cmd;
 
-__xdata uint8_t ip[4];
 __xdata uint8_t mac_parse_result[6];
 
 // These variables combined create a Fixed-capacity vector/bounded buffer.
@@ -84,16 +85,7 @@ static void cmd_save(void);
 // Error set by commands
 __xdata uint8_t err_status;
 
-__xdata uint16_t atoi_results_short;
-__xdata uint8_t atoi_results_u8;
-
-inline uint8_t isnumber(uint8_t l)
-{
-	// return (l >= '0' && l <= '9');
-	l -= '0';
-	return (l <= ('9'-'0'));
-}
-
+#if OM_DBG	/* the raw pokes' parsers (OM_DBG=0: release) */
 inline uint8_t ishexnumber(uint8_t l)
 {
 	if ((l >= '0' && l <= '9') || (l >= 'a' && l <= 'f') || (l >= 'A' && l <= 'F')) {
@@ -135,6 +127,7 @@ uint8_t atoi_short_hex(__xdata uint16_t *num, uint8_t idx)
 	*num = (uint16_t) temp;
 	return err;
 }
+#endif
 
 uint8_t cmd_compare(uint8_t start, __code const uint8_t * cmd)
 {
@@ -169,6 +162,7 @@ uint8_t cmd_compare(uint8_t start, __code const uint8_t * cmd)
 }
 
 
+#if OM_DBG
 /* Converts ascii-hex array into value.
 	returns number of hexvalue[] entries has been written.
 	return value = 0 means error.
@@ -249,138 +243,8 @@ uint8_t atoi_byte(uint8_t idx)
 	atoi_results_u8 = num;
 	return cnt;
 }
+#endif
 
-
-// Returns 0 or the number of digits taken into account for conversion.
-// Stops at any non-digit '0'-'9' char or bytes is more then 5.
-uint8_t atoi_short(uint8_t idx)
-{
-	uint8_t cnt = 0;
-	atoi_results_short = 0;
-
-	uint8_t *ptr = &cmd_buffer[idx];
-
-	while (1) {
-		uint8_t val = *ptr++ - '0';
-		if (val > 9)
-			break;
-		if (atoi_results_short > 6553 || (atoi_results_short == 6553 && val > 5) || cnt >= 5)
-			return 0;
-		atoi_results_short = (atoi_results_short * 10) + val;
-		cnt++;
-	}
-
-	return cnt;
-}
-
-/* Parse, validate and translate phys_to_log_port physical port argument.
- * The CPU-port, i.e. port 0, is not a valid argument.
- * returns 0 when on parser error or invalid value.
- * returns non-zero number of characters consumed.
- * Store the value in atoi_results_u8.
- */
-uint8_t cmd_parse_port(uint8_t idx) {
-	uint8_t port = cmd_buffer[idx] - '0' - 1;
-	if (port > 8)
-		return 0;
-
-	port = machine.phys_to_log_port[port];
-	if (!MACHINE_PORT_VALID(port))
-		return 0;
-
-	atoi_results_u8 = port;
-	return 1;
-}
-
-
-// Same as cmd_parse_port() but additionally check for trailing SPACE or NUL.
-// returns 0 when on parser error or invalid value or no SPACE or no NUL.
-// returns non-zero number of characters consumed including the SPACE.
-uint8_t cmd_parse_port_separator(uint8_t idx) {
-	uint8_t ret = cmd_parse_port(idx);
-	if (ret != 0) {
-		idx += ret;
-		uint8_t c = cmd_buffer[idx];
-		if (c == ' ') {
-			ret++;
-		} else if (c != NUL)
-			ret = 0;
-	}
-	return ret;
-}
-
-// Same as cmd_parse_port_separator() but additionally allow CPU-port.
-// returns 0 when on parser error or invalid value or no SPACE or no NUL.
-// returns number of characters consumed including the SPACE.
-uint8_t cmd_parse_port_cpu_separator(uint8_t idx) {
-	uint8_t ret = cmd_parse_port(idx);
-
-	if (ret == 0 && cmd_buffer[idx] == '0') {
-		ret = 1;
-		atoi_results_u8 = CPU_LOGICAL_PORT;
-	}
-
-	if (ret != 0) {
-		idx += ret;
-		uint8_t c = cmd_buffer[idx];
-		if (c == ' ') {
-			ret++;
-		} else if (c != NUL)
-			ret = 0;
-	}
-	return ret;
-}
-
-
-// check if the cmd_buffer[idx] is a SPACE.
-__bit cmd_is_space(uint8_t idx) {
-	return cmd_buffer[idx] == ' ';
-}
-
-// check if the cmd_buffer[idx] is a SPACE or NUL.
-__bit cmd_is_space_or_nul(uint8_t idx) {
-	uint8_t c = cmd_buffer[idx];
-	return c == ' ' || c == NUL;
-}
-
-// Parse an IPv4 address
-// returns 0 when on parse error or invalid value or it don't ends with SPACE or NUL.
-// returns non-zero number of characters consumed including the SPACE.
-uint8_t parse_ip(uint8_t idx)
-{
-	uint8_t b = 0;
-	uint8_t ret;
-	uint8_t idx_start = idx;
-
-	while(1) {
-		ret = atoi_byte(idx);
-		if (ret == 0)
-			goto err;
-
-		idx += ret;
-		ip[b++] = atoi_results_u8;
-
-		ret = cmd_buffer[idx];
-		if (b == 4) {
-			if (ret == ' ') {
-				idx++;
-				break;
-			}
-			if (ret == NUL)
-				break;
-			goto err;
-		}
-		idx++;
-
-		if (ret != '.')
-			goto err;
-	}
-	return idx - idx_start;
-
-err:
-	print_string("Error in IP format\n");
-	return 0;
-}
 
 // Prints an IPv4 address.
 void print_ip(__xdata uint8_t * ptr) __banked
@@ -509,6 +373,7 @@ void parse_mac_cmd(void)
 	print_string("Save the startup config to keep it across reboots\n");
 }
 
+#if OM_DBG
 void parse_regget(void)
 {
 	if (cmd_words_len != 2) {
@@ -878,6 +743,8 @@ void parse_flash(void)
 	}
 }
 
+#endif
+
 // Parse command into words
 // cmd_words_len contains the number of words found.
 // cmd_words_b[] contains only start of a word offset.
@@ -927,35 +794,6 @@ void cmd_tokenize(void) __banked
 	}
 }
 
-#ifdef DEBUG_OBJ
-// Print GPIO status
-void print_gpio_status(void) {
-	for (uint8_t idx = 0; idx < 2; idx++) {
-		reg_read(RTL837X_REG_GPIO_00_31_INPUT + (idx * 4));
-		print_string("GPIO ");
-		write_char(idx + '0');
-		write_char(':');
-		write_char(' ');
-
-		print_byte(SFR_DATA_24);
-		print_byte(SFR_DATA_16);
-		print_byte(SFR_DATA_8);
-		print_byte(SFR_DATA_0);
-
-		write_char(' ');
-		print_byte( gpio_last_value[(idx *4)] ^ SFR_DATA_24);
-		gpio_last_value[(idx *4)] = SFR_DATA_24;
-		print_byte( gpio_last_value[(idx *4) + 1] ^ SFR_DATA_16);
-		gpio_last_value[(idx *4) + 1] = SFR_DATA_16;
-		print_byte( gpio_last_value[(idx *4) + 2] ^ SFR_DATA_8);
-		gpio_last_value[(idx *4) + 2] = SFR_DATA_8;
-		print_byte( gpio_last_value[(idx *4) + 3] ^ SFR_DATA_0);
-		gpio_last_value[(idx *4) + 3] = SFR_DATA_0;
-		write_char('\n');
-	}
-}
-#endif
-
 // Identify command
 void cmd_parser(void) __banked
 {
@@ -978,25 +816,14 @@ void cmd_parser(void) __banked
 		if (om_cmd()) {
 		} else if (cmd_compare(0, "sfp")) {
 			cmd_error("\nUsage: get state.sfp; a cage's speed: port.N.speed\n");
-		} else if (cmd_compare(0, "flash")) {
-			parse_flash();
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
-		} else if (cmd_compare(0, "l2")) {
-			if (cmd_compare(1, "forget"))
-				port_l2_forget();
-			else
-				cmd_error("\nUsage:\n\tl2 forget\n\t(the table: get state.l2)\n");
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
-		} else if (cmd_compare(0, "igmp") && cmd_compare(1, "show")) {
-			igmp_show();	/* the ports' IGMP_PORT_CFG; on or off: get igmp */
-		} else if (cmd_compare(0, "sds")) {
-			print_reg(RTL837X_REG_SDS_MODES);
-			write_char('\n');
-#ifdef DEBUG_OBJ
-		} else if (cmd_compare(0, "gpio")) {
-			print_gpio_status();
+#if OM_DBG
+		} else if (cmd_compare(0, "flash")) {
+			parse_flash();
+#if OM_DBG_LEDS
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
 #endif
@@ -1012,6 +839,7 @@ void cmd_parser(void) __banked
 			parse_phyget();
 		} else if (cmd_compare(0, "physet")) {
 			parse_physet();
+#endif
 		} else {
 			cmd_error("Unknown command\n");
 		}
