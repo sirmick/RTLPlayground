@@ -271,7 +271,7 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
         <div class="card"><h2 data-i18n="d_system">System</h2><table class="t" id="sysinfo"></table></div>
         <div class="card"><h2><span data-i18n="d_traffic">Traffic</span> <span class="hint" data-i18n="d_traffic_h">packets/s, live</span></h2>
           <div class="scrollx"><table class="t" id="traffic">
-            <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_link">Link</th><th class="num" data-i18n="d_txpps">TX pps</th><th class="num" data-i18n="d_rxpps">RX pps</th><th class="num" data-i18n="d_txbad">TX bad</th><th class="num" data-i18n="d_rxbad">RX bad</th></tr></thead>
+            <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_link">Link</th><th class="num" data-i18n="d_txpps">TX pps</th><th class="num" data-i18n="d_rxpps">RX pps</th><th class="num" data-f="state.port.tx_bad" data-ft="state.port.tx_bad"></th><th class="num" data-f="state.port.rx_bad" data-ft="state.port.rx_bad"></th></tr></thead>
             <tbody></tbody></table></div>
         </div>
       </div>
@@ -290,11 +290,11 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <span class="switch"><input type="checkbox" id="stpen"><i></i></span></label>
         <p class="small mono" id="stpids">-</p>
         <div id="stpbridge" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
-          <label><span class="small mut" data-i18n="stp_version">Version</span><br><select class="in" id="stpver"><option value="rstp">RSTP</option><option value="stp" data-i18n="stp_v_stp">STP compatible</option></select></label>
+          <label><span class="small mut" data-f="stp.version" data-ft="stp.version"></span><br><select class="in" id="stpver"><option value="rstp">RSTP</option><option value="stp" data-i18n="stp_v_stp">STP compatible</option></select></label>
           <label><span class="small mut" data-i18n="stp_pcs">Path cost</span><br><select class="in" id="stppcs"><option value="long" data-i18n="stp_pcs_long">Long (32 bit)</option><option value="short" data-i18n="stp_pcs_short">Short (16 bit)</option></select></label>
           <label><span class="small mut" data-i18n="stp_bh">BPDUs while disabled</span><br><select class="in" id="stpbh"><option value="flood" data-i18n="stp_bh_flood">Flood</option><option value="filter" data-i18n="stp_bh_filter">Filter</option></select></label>
           <label><span class="small mut" data-i18n="stp_prio">Bridge priority</span><br><select class="in" id="stpprio"></select></label>
-          <label><span class="small mut" data-i18n="stp_hello">Hello [s]</span><br><input class="in sm" id="stphello" type="number" min="1" max="10"></label>
+          <label><span class="small mut" data-f="stp.hello_s" data-ft="stp.hello_s"></span><br><input class="in sm" id="stphello" type="number" min="1" max="10"></label>
           <label><span class="small mut" data-i18n="stp_maxage">Max age [s]</span><br><input class="in sm" id="stpmaxage" type="number" min="6" max="40"></label>
           <label><span class="small mut" data-i18n="stp_fwd">Forward delay [s]</span><br><input class="in sm" id="stpfwd" type="number" min="4" max="30"></label>
           <label><span class="small mut" data-i18n="stp_txhold">TX hold</span><br><input class="in sm" id="stptxhold" type="number" min="1" max="10"></label>
@@ -304,13 +304,13 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
       </div>
       <div class="card"><h2 data-i18n="stp_portcfg">Port configuration</h2>
         <div class="scrollx"><table class="t" id="stpcfg">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_enabled">Enabled</th><th data-i18n="stp_edge">Edge</th><th data-i18n="stp_pcost">Path cost</th><th data-i18n="stp_pprio">Priority</th><th data-i18n="stp_guard">Guard</th><th data-i18n="stp_filter">BPDU filter</th><th data-i18n="stp_p2p">Point-to-point</th><th></th></tr></thead>
+          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_enabled">Enabled</th><th data-f="stp.port.edge" data-ft="stp.port.edge"></th><th data-i18n="stp_pcost">Path cost</th><th data-f="stp.port.priority" data-ft="stp.port.priority"></th><th data-f="stp.port.guard" data-ft="stp.port.guard"></th><th data-i18n="stp_filter">BPDU filter</th><th data-i18n="stp_p2p">Point-to-point</th><th></th></tr></thead>
           <tbody></tbody></table></div>
         <p class="small mut" style="margin-top:8px" data-i18n="stp_port_note">Edge ports forward immediately and cause no topology change; Auto treats a port as edge after 3 s without BPDUs, and any received BPDU revokes it. Path cost 0 = automatic.</p>
       </div>
       <div class="card"><h2 data-i18n="stp_status">Port status</h2>
         <div class="scrollx"><table class="t" id="stpstat">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="stp_role">Role</th><th data-i18n="c_state">State</th><th data-i18n="stp_db">Designated bridge</th><th data-i18n="stp_dp">Designated port</th><th data-i18n="stp_dc">Designated cost</th><th data-i18n="stp_oedge">Oper. edge</th><th data-i18n="stp_op2p">Oper. P2P</th><th data-i18n="stp_proto">Protocol</th><th></th></tr></thead>
+          <thead><tr><th data-i18n="c_port">Port</th><th data-f="state.stp.port.role" data-ft="state.stp.port.role"></th><th data-i18n="c_state">State</th><th data-i18n="stp_db">Designated bridge</th><th data-i18n="stp_dp">Designated port</th><th data-i18n="stp_dc">Designated cost</th><th data-i18n="stp_oedge">Oper. edge</th><th data-i18n="stp_op2p">Oper. P2P</th><th data-i18n="stp_proto">Protocol</th><th></th></tr></thead>
           <tbody></tbody></table></div>
       </div>
       <div class="card"><h2><span data-i18n="loop_title">Loop detection</span> <span class="hint">RLDP</span></h2>
@@ -329,7 +329,7 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
     <section class="tab" id="tab-stats">
       <div class="card"><h2><span data-i18n="st_title">Port statistics</span> <span class="hint" data-i18n="st_h">totals since boot</span></h2>
         <div class="scrollx"><table class="t" id="stable">
-          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_name">Name</th><th data-i18n="c_link">Link</th><th class="num" data-i18n="st_txg">TX good</th><th class="num" data-i18n="st_txb">TX bad</th><th class="num" data-i18n="st_rxg">RX good</th><th class="num" data-i18n="st_rxb">RX bad</th><th></th></tr></thead>
+          <thead><tr><th data-i18n="c_port">Port</th><th data-i18n="c_name">Name</th><th data-i18n="c_link">Link</th><th class="num" data-f="state.port.tx_good" data-ft="state.port.tx_good"></th><th class="num" data-f="state.port.tx_bad" data-ft="state.port.tx_bad"></th><th class="num" data-f="state.port.rx_good" data-ft="state.port.rx_good"></th><th class="num" data-f="state.port.rx_bad" data-ft="state.port.rx_bad"></th><th></th></tr></thead>
           <tbody></tbody></table></div>
       </div>
     </section>
@@ -337,7 +337,7 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
     <section class="tab" id="tab-vlan">
       <div class="card"><h2><span data-i18n="v_title">VLANs</span><span id="vmgmtcur"></span></h2>
         <div class="scrollx"><table class="t" id="vtable">
-          <thead><tr><th data-i18n="v_vid">VID</th><th data-i18n="c_name">Name</th><th data-i18n="v_members">Members</th><th data-i18n="v_tagged">Tagged</th><th data-i18n="v_untagged">Untagged</th><th data-i18n="v_pvid_on">PVID on</th><th></th></tr></thead>
+          <thead><tr><th data-i18n="v_vid">VID</th><th data-i18n="c_name">Name</th><th data-f="vlan.members" data-ft="vlan.members"></th><th data-f="vlan.tagged" data-ft="vlan.tagged"></th><th data-i18n="v_untagged">Untagged</th><th data-i18n="v_pvid_on">PVID on</th><th></th></tr></thead>
           <tbody></tbody></table></div>
         <p class="small mut" id="vempty" style="display:none;margin-top:6px" data-i18n="v_empty">No VLANs configured.</p>
         <button class="ctl pri" id="vlan_add" data-i18n="v_add">Add a new VLAN</button>
@@ -394,7 +394,7 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
       <div id="lagwrap" class="grid2"></div>
       <div class="card" style="margin-top:14px"><h2 data-i18n="lacp_heading">LACP (802.3ad)</h2>
         <div class="scrollx"><table class="t" id="lacptbl">
-          <thead><tr><th data-i18n="c_port">Port</th><th>LAG</th><th data-i18n="lacp_actor">Actor</th><th data-i18n="lacp_partner">Partner</th><th data-i18n="lacp_rxstate">RX state</th><th data-i18n="lacp_rx">LACPDUs received</th><th data-i18n="lacp_psys">Partner system</th></tr></thead>
+          <thead><tr><th data-i18n="c_port">Port</th><th>LAG</th><th data-f="state.lacp.port.actor" data-ft="state.lacp.port.actor"></th><th data-i18n="lacp_partner">Partner</th><th data-i18n="lacp_rxstate">RX state</th><th data-i18n="lacp_rx">LACPDUs received</th><th data-i18n="lacp_psys">Partner system</th></tr></thead>
           <tbody></tbody></table></div>
       </div>
     </section>
