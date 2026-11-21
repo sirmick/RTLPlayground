@@ -129,6 +129,13 @@ extern __xdata uint8_t om_val[], om_fid;
 extern __xdata uint8_t om_apply_st, om_confirm_s, om_confirmed, om_dirty;
 extern __xdata uint8_t om_full;	/* the boot's apply: what the hardware has is unknown */
 extern __xdata uint8_t om_cut;		/* the get or diff's next line says a rollback cut it */
+/* what om_line()'s next call may cost (the cli's web step reserves for it):
+ * OM_CHEAP another field of this instance, OM_INST the next instance (its
+ * getter), OM_WALK the walk to the next path's object, or not a get's line */
+#define OM_CHEAP	0
+#define OM_INST		1
+#define OM_WALK		2
+extern __xdata uint8_t om_dear;
 uint8_t om_apply_next(void) __banked;	/* the next changed instance: OM_A_* */
 void om_undo(void) __banked;		/* running back to the rollback copy; walk again */
 void om_settle(uint8_t r) __banked;	/* the walk is over (r: its last result): its copies queued */

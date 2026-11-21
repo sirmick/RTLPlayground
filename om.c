@@ -1488,9 +1488,12 @@ static void job_inst(void)		/* entering an instance */
 #endif
 }
 
+__xdata uint8_t om_dear;
+
 static void job_start(uint8_t mode)
 {
 	j_mode = mode;
+	om_dear = OM_WALK;
 	cli_job = mode >= J_SAVE ? CLI_JOB_OMAPPLY : CLI_JOB_OM;
 	om_cut = 0;
 	j_new = 1;
@@ -1897,6 +1900,7 @@ uint8_t om_line(void) __banked
 				}
 			}
 			cur_f++;
+			om_dear = next_field() ? OM_CHEAP : OM_INST;	/* free: the next call starts here */
 			return 1;
 		}
 #if OM_USE_KEY
@@ -1913,6 +1917,7 @@ uint8_t om_line(void) __banked
 		}
 #endif
 		next_instance();
+		om_dear = cur_ok ? OM_CHEAP : OM_WALK;	/* its first field, or the walk */
 		if (j_mode != J_APPLY)
 			return 1;		/* an instance a step: a keyed one is a pass over the slots */
 	}
