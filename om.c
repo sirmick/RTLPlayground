@@ -2657,9 +2657,12 @@ static void rd_head(void)
 }
 
 /* the CRC over the next CRC_N B of records (a byte is a read and a banked
- * CRC call: 16 us): 1 while there are more; then b_fmt ok (rd() at the first
- * record again) or bad */
+ * CRC call: 16 us in rtlsim, 4-5x that on silicon), or fewer: it stops at a
+ * 16 B boundary once the step is past E_FINE, as the encoder does (a load,
+ * get -s and a save's FL_VERIFY share it): 1 while there are more; then
+ * b_fmt ok (rd() at the first record again) or bad */
 #define CRC_N	128
+#define CRC_CHECK	15	/* the step's time read every 16 B */
 static __xdata uint16_t l_kept;		/* crc_value as crc_step found it: an upload's verify carries it */
 
 static uint8_t crc_step(void)
@@ -2669,6 +2672,8 @@ static uint8_t crc_step(void)
 	for (i = 0; i < CRC_N && rd_left; i++) {
 		rd();
 		crc16_bank1(&e_b);	/* only here, and crc_value as it was after */
+		if ((i & CRC_CHECK) == CRC_CHECK && sched_step_fine() >= E_FINE)
+			break;
 	}
 	l_crc = crc_value;
 	crc_value = l_kept;

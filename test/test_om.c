@@ -677,6 +677,7 @@ static const char *run(const char *line)
 		job_step();		/* the cfg job and the cli take turns */
 		if (fl_kind)
 			fl_run();	/* and the flash job */
+		t_fine = 0;		/* the cli's step */
 		if (!om_line())
 			cli_job = 0;
 	}
@@ -1779,6 +1780,13 @@ static void binary(void)
 		boot();
 		CHECK(cfg_is(&big) && !strstr(out_buf, "not applied"), "boot loads the several-chunk save");
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 0\nok\n");
+		static char gs[8192];
+		snprintf(gs, sizeof gs, "%s", run("get -s"));
+		t_fine_inc = 326 / 2 + 1;	/* the CRC stops past E_FINE: every 32 B */
+		CHECK(!strcmp(run("get -s"), gs), "get -s whose CRC runs out of time: the same lines");
+		expect("load saved", "ok\n");
+		CHECK(cfg_is(&big), "load saved whose CRC runs out of time: the same config");
+		t_fine_inc = 0;
 	}
 
 	printf("unknown records, values out of range\n");
