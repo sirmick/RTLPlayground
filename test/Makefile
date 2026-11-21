@@ -64,8 +64,7 @@ TESTS = $(BUILDDIR)/test_cmd_editor \
 # The table tests link the register mock and one environment file; stub/
 # stands in for the two headers a firmware build generates.
 TABLE_ENV = support.c hw_mock.c env_tables.c $(SRCROOT)/cmd_editor.c \
-            $(SRCROOT)/rtl837x_port.c $(SRCROOT)/httpd/page_impl.c \
-            $(SRCROOT)/httpd/html_out.c
+            $(SRCROOT)/rtl837x_port.c
 
 all: run
 
@@ -138,7 +137,7 @@ $(BUILDDIR)/test_cmd_editor: test_cmd_editor.c support.c $(SRCROOT)/cmd_editor.c
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)
 
-# rtl837x_port.c and httpd/page_impl.c are compiled UNMODIFIED from the firmware tree.
+# rtl837x_port.c is compiled UNMODIFIED from the firmware tree.
 $(BUILDDIR)/test_port_tables: test_port_tables.c $(TABLE_ENV) hw_mock.h | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(filter %.c,$^) -o $@ $(LDFLAGS)
 	$(DEPEND)

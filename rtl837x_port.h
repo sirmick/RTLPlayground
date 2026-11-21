@@ -64,7 +64,6 @@ void port_eee_enable_all(__xdata uint8_t speed) __banked;
 void port_eee_enable(__xdata uint8_t port, __xdata uint8_t speed) __banked;
 bool port_ingress_vlan_filter_set(uint8_t port, __xdata bool enabled) __banked;
 void port_isolate(uint8_t port, __xdata uint16_t pmask) __banked;
-uint16_t port_isolation_get(uint8_t port) __banked;
 void port_l2_static_mgmt(__xdata uint8_t *mac, __xdata uint16_t vlan, __xdata bool remove_entry) __banked;
 
 #endif

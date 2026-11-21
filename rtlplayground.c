@@ -424,7 +424,7 @@ char strcmp(__xdata const uint8_t *a, __code const uint8_t *b)
 
 /*
  * True when b is a prefix of a. Unlike strcmp() the byte after the match is not
- * compared, and unlike is_word_x() it need not be a separator.
+ * compared, and unlike is_word() it need not be a separator.
  */
 bool strstart(__xdata const uint8_t *a, __code const uint8_t *b)
 {
@@ -436,16 +436,6 @@ bool strstart(__xdata const uint8_t *a, __code const uint8_t *b)
 	return !b[i];
 }
 
-
-bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b)
-{
-	uint8_t i = 0;
-
-	while (b[i] && (b[i] == a[i]))
-		i++;
-
-	return !b[i];
-}
 
 
 void print_short(uint16_t a)
@@ -685,21 +675,6 @@ void reg_bit_clear(uint16_t reg_addr, char bit)
 }
 
 
-/*
- * This tests a bit in the 32bit wide switch register reg_addr
- */
-uint8_t reg_bit_test(uint16_t reg_addr, char bit)
-{
-	uint8_t bit_mask = 1 << (bit & 0x7);
-
-	bit >>= 3;
-	reg_read_m(reg_addr);
-	bit_mask = bit_mask;
-	if (sfr_data[3-bit] & bit_mask)
-		return 1;
-	return 0;
-}
-
 
 /*
  * This masks the sfr data fields, first &-ing with ~mask, then setting the bits in set
@@ -734,23 +709,6 @@ void get_random_32(void)
 	reg_read_m(RTL837X_RAND_NUM0);
 }
 
-
-/* Read flash using the MMIO capabilities of the DW8051 core
- * Bank is < 0x3f and is the MSB
- * addr gives the address in the bank
- * Note that the address in the flash memory is not simply 0xbbaddr, because
- * the size of a bank is merely 0xc000.
- */
-uint8_t read_flash(uint8_t bank, __code const uint8_t *addr)
-{
-	uint8_t v;
-	uint8_t current_bank = PSBANK;
-
-	PSBANK = bank;
-	v = *addr;
-	PSBANK = current_bank;
-	return v;
-}
 
 /*
  * Read a SerDes register in the SoC

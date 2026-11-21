@@ -35,6 +35,8 @@ extern __code const char * __code const mime_strings[];
 extern __xdata struct flash_region_t flash_region;
 extern __xdata uint32_t flash_size;
 
+__code const uint8_t * __code const HTTP_RESPONSE_TXT = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n";
+
 // Flash buffer to optimize flash writing speed, write_len is the current filling position
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 __xdata uint32_t uptr; // Current flash write position
@@ -228,27 +230,6 @@ bool is_url_word_x(__xdata uint8_t *uri_str_p, __xdata uint8_t *src_str_p)
 }
 
 
-bool is_word_x(__xdata uint8_t * lhs_str_p, __xdata uint8_t * rhs_str_p)
-{
-	uint8_t u, c;
-
-	while (1) {
-		u = *lhs_str_p++;
-		c = *rhs_str_p++;
-
-		if (c == NUL) {
-			/* ';' separates cookies in a Cookie header, so it ends a value too. */
-			if (u != NUL && u != ' ' && u != '\t' && u != ':' && u != '?' && u != '=' && u != '\n' && u != '\r' && u != ';')
-				return false;
-			return true;
-		}
-
-		if (c != u) {
-			return false;
-		}
-	}
-}
-
 
 uint8_t parse_short(__xdata uint8_t *p)
 {
@@ -301,11 +282,6 @@ void send_length_required(void)
 	slen = strtox(outbuf, "HTTP/1.1 411 Length Required\r\nConnection: close\r\n\r\n");
 }
 
-
-void send_ok(void)
-{
-	slen = strtox(outbuf, "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
-}
 
 
 __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)

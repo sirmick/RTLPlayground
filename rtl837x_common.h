@@ -167,7 +167,6 @@ bool sfp_read_block(uint8_t slot, uint8_t reg, uint8_t len) __banked __reentrant
 extern __xdata uint8_t sfp_buf[16];
 void reg_bit_set(uint16_t reg_addr, char bit);
 void reg_bit_clear(uint16_t reg_addr, char bit);
-uint8_t reg_bit_test(uint16_t reg_addr, char bit);
 void sfr_mask_data(uint8_t n, uint8_t mask, uint8_t set);
 void sfr_set_zero(void);
 void reset_chip(uint8_t cause);	/* crash.h's CRASH_*: recorded, then the reset */
@@ -187,7 +186,6 @@ void memcpyc(__xdata uint8_t *dst, __code const uint8_t *src, uint16_t len);
 uint16_t strlen_x(__xdata const char *s);
 uint16_t strtox(__xdata uint8_t *dst, __code const char *s);
 bool strstart(__xdata const uint8_t *a, __code const uint8_t *b);
-bool strstart_x(__xdata const uint8_t *a, __xdata const uint8_t *b);
 void tcpip_output(void) __banked;
 /* Control frames (STP, LACP, LLDP) are built at ctl_buf + RTL_FRAME_DESC_SIZE
  * and sent with ctl_output(), ctl_len long (net.md): not in uip_buf */
@@ -196,7 +194,6 @@ void tcpip_output(void) __banked;
 extern __xdata uint8_t ctl_buf[CTL_BUF_SIZE];
 extern __xdata uint16_t ctl_len;
 void ctl_output(void) __banked;
-uint8_t read_flash(uint8_t bank, __code const uint8_t *addr);
 void get_random_32(void);
 void read_reg_timer(__xdata uint32_t * tmr);
 bool gpio_pin_test(uint8_t pin);

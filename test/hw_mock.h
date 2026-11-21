@@ -10,7 +10,7 @@
  * polling loop in the firmware runs exactly once.
  *
  * The VLAN and L2 entry layouts mirror what rtl837x_port.c writes and what
- * httpd/page_impl.c reads; the decoders below are an independent statement
+ * the firmware reads; the decoders below are an independent statement
  * of that layout, so a test can compare the firmware's two ends against it.
  */
 #ifndef TEST_HW_MOCK_H

@@ -81,7 +81,7 @@ static inline uint8_t sfp_rate_to_sds_config(uint8_t rate)
  * as read, not the speed setting's) and options (92, before the quirks) */
 static __xdata uint8_t sfp_raw[2][3];
 static __xdata uint8_t * __xdata sp;
-static __xdata uint8_t si, so;
+static __xdata uint8_t si;
 
 /* `sfp`'s lines for a present module, from the caches (E2 review): the
  * read's bytes and the DDM cache (refreshed every 2 s), no I2C */

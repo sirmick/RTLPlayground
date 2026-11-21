@@ -1,7 +1,7 @@
 /*
- * env_tables.c - what rtl837x_port.c and httpd/page_impl.c link against
- * besides the register mock: the console, the buffers page_impl writes into,
- * the machine description and leaf calls into subsystems not under test.
+ * env_tables.c - what rtl837x_port.c links against besides the register
+ * mock: the console, the buffers, the machine description and leaf calls
+ * into subsystems not under test.
  * Buffers keep their firmware sizes so AddressSanitizer sees the same bounds
  * the 8051 has.
  */
@@ -107,10 +107,7 @@ uint8_t  sfp_read_reg(uint8_t slot, uint8_t reg) { (void)slot; (void)reg; return
 bool     gpio_pin_test(uint8_t pin) { (void)pin; return false; }
 void     phy_read(uint8_t phy_id, uint8_t dev_id, uint16_t reg) { (void)phy_id; (void)dev_id; (void)reg; }
 void     phy_write(uint8_t phy_id, uint8_t dev_id, uint16_t reg, uint16_t val) { (void)phy_id; (void)dev_id; (void)reg; (void)val; }
-uint8_t  phy_off(uint8_t port) { (void)port; return 1; }
-void     phy_on(uint8_t port) { (void)port; }
 uint8_t  stp_port_role(uint8_t port) { (void)port; return 0; }
-uint8_t  stp_port_state(uint8_t port) { (void)port; return 3; }
 
 /* ---- SFP: no module present, reads fail ---- */
 uint8_t sfp_buf[16];

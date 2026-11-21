@@ -76,7 +76,6 @@ uint8_t cmd_capture;
 uint8_t err_status;
 const uint8_t * const hex = (const uint8_t *)"0123456789abcdef";
 uint16_t crc_value;
-const uint8_t * const HTTP_RESPONSE_TXT = (const uint8_t *)"HTTP/1.1 200 OK\r\n\r\n";
 uint32_t flash_size = 0x80000;
 uint8_t flash_buf[FLASH_BUF_SIZE];
 uint8_t rx_headers[16];
@@ -284,7 +283,6 @@ bool strstart(const uint8_t *a, const uint8_t *b)
 	return true;
 }
 
-bool strstart_x(const uint8_t *a, const uint8_t *b) { return strstart(a, b); }
 
 void send_bandwidth(void) { }
 void send_storm(void) { }

@@ -814,8 +814,6 @@ void cmd_parser(void) __banked
 #endif
 	if (cmd_words_len >= 1) {
 		if (om_cmd()) {
-		} else if (cmd_compare(0, "sfp")) {
-			cmd_error("\nUsage: get state.sfp; a cage's speed: port.N.speed\n");
 		} else if (cmd_compare(0, "dns")) {
 			dns_parse();
 		} else if (cmd_compare(0, "mac")) {
@@ -905,8 +903,7 @@ void execute_config(void) __banked
  * Dumps as jobs (E1, console.md "Chunked output"). A command whose output
  * grows with a table sets cli_job and its cursor instead of printing it all;
  * cli_job_more() prints the next line. The cli task calls it one line a
- * step (CLI_MORE); any other caller runs the job to its end at once
- * (cmd_finish), as before.
+ * step (CLI_MORE).
  */
 static __xdata uint8_t job_more;
 
@@ -922,17 +919,6 @@ void cli_job_more(void) __banked
 	}
 	if (!job_more)
 		cli_job = 0;
-}
-
-void cmd_finish(void) __banked
-{
-	while (cli_job) {
-		cli_job_more();
-		if (cli_job_sleep) {
-			cli_job_sleep = 0;
-			delay(2);
-		}
-	}
 }
 
 /*

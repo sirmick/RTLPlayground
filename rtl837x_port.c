@@ -24,7 +24,6 @@ extern __code const struct machine machine;
 extern __xdata uint8_t sfr_data[4];
 extern __xdata struct machine_runtime machine_detected;
 
-__xdata	uint32_t l2_head;
 
 __xdata struct vlan_settings vlan_settings;
 
@@ -358,15 +357,6 @@ void port_isolate(uint8_t port, __xdata uint16_t pmask) __banked
 }
 
 
-uint16_t port_isolation_get(uint8_t port) __banked
-{
-	if (port > MACHINE_MAX_PORT)
-		return 0;
-
-	reg_read_m(RTL837X_PORT_ISOLATION_BASE + (port << 2));
-	return ((uint16_t)sfr_data[2]) << 8 | sfr_data[3];
-}
-
 
 void port_eee_enable(__xdata uint8_t port,__xdata uint8_t speed) __banked
 {
@@ -431,17 +421,6 @@ void port_eee_enable_all(__xdata uint8_t speed) __banked
 		port_eee_enable(i, eee_port_speed(i));
 }
 
-
-/*
- * Enable RLDP, Realtek's version of LLDP
- */
-void port_rldp_on(__xdata uint16_t p_ms)
-{
-	REG_WRITE(RTL8373_RLDP_TIMER, p_ms >> 8, p_ms, p_ms >> 8, p_ms);
-
-	REG_SET(RTL837X_RMA0_CONF, 0x00000000); // R4ecc
-	REG_SET(RTL837X_RMA_CONF, 0x00000000); // R4ecc
-}
 
 
 /*
