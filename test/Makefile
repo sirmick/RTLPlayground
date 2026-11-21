@@ -15,7 +15,7 @@ CFLAGS   = -std=gnu11 -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-un
            -Wno-pointer-sign \
            -DRTLP_HOST_TEST \
            -fsanitize=address,undefined -fno-omit-frame-pointer \
-           -include sdcc_shim.h -Istub -I$(SRCROOT) -I$(SRCROOT)/httpd -I$(SRCROOT)/uip -I$(BUILDDIR)/om
+           -include sdcc_shim.h -Istub -I$(SRCROOT) -I$(SRCROOT)/om -I$(SRCROOT)/httpd -I$(SRCROOT)/uip -I$(BUILDDIR)/om
 ifeq ($(findstring clang,$(shell $(CC) --version 2>/dev/null)),)
 CFLAGS  += -Wno-builtin-declaration-mismatch
 endif
@@ -96,7 +96,7 @@ $(BUILDDIR)/om_t/om_gen.c $(BUILDDIR)/om_t/om_gen.h $(BUILDDIR)/om_t/help.bin &:
 	python3 $(SRCROOT)/tools/om_gen.py -s $(SRCROOT)/schema -s $(SCHED_T)/om -s om_schema --no-sector -o $(BUILDDIR)/om_t \
 		--help-blob $(BUILDDIR)/om_t/help.bin --help-room 8192 > /dev/null
 $(BUILDDIR)/test_om $(BUILDDIR)/nohelp/test_om: CFLAGS := $(subst -I$(BUILDDIR)/om,-I$(BUILDDIR)/om_t,$(CFLAGS)) -DLAYOUT_COMPACT
-OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om.c $(SRCROOT)/om_vlan.c $(SRCROOT)/om_lag.c $(SRCROOT)/om_stp.c $(BUILDDIR)/om_t/om_gen.c
+OM_T_SRCS = test_om.c support.c flash_dev.c crc16_host.c $(SRCROOT)/cmd_editor.c $(SRCROOT)/om/om.c $(SRCROOT)/om/om_vlan.c $(SRCROOT)/om/om_lag.c $(SRCROOT)/om/om_stp.c $(BUILDDIR)/om_t/om_gen.c
 $(BUILDDIR)/test_om: $(OM_T_SRCS) $(BUILDDIR)/om_t/help.bin | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(OM_T_SRCS) -o $@ $(LDFLAGS)
 	$(CC) $(CFLAGS) -MM -MP -MT $@ $(OM_T_SRCS) > $@.d

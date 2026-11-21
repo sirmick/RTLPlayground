@@ -1175,7 +1175,7 @@ E_ROOM = 256             # om.c: a save step's records at most
 
 # om.h's OM_TXT: om_txt, the text a load's val_ok() prints a value into
 OM_TXT = int(re.search(r"#define OM_TXT\s+(\d+)",
-                       open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "om.h")).read())[1])
+                       open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "om", "om.h")).read())[1])
 # tasks.c's: outbuf's room a web step starts with, which a line must fit
 CLI_WEB_ROOM = int(re.search(r"#define CLI_WEB_ROOM\s+(\d+)",
                              open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tasks.c")).read())[1])
