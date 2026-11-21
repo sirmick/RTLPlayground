@@ -314,13 +314,13 @@ def convert():
     warn = []
     lines, legacy, bad = legacy_map.convert(OLD.encode(), sch.board, warn, sch)
     mine = [ln for ln in WANT if not ln.split()[1 if ln.startswith("del ") else 0].startswith(
-        ("vlan.", "lag.", "stp.", "mirror.", "sys.mac"))]
+        ("vlan.", "lag.", "stp.", "mirror."))]
     check(lines == mine, "the schema's paths are path lines (%d)" % len(lines), "\n".join(lines))
     check(rc.txt2bin(sch, lines)[:4] == b"\0RC1", "and txt2bin takes them all")
     want = [("vlan 100 lab 1 2t 9t", "P4-2"), ("vlan 200 3 4", "P4-2"), ("vlan 200 d", "P4-2"),
             ("lag 1 lacp 7 8", "P4-3"), ("lag 2 lacp 8", "P4-3"), ("laghash 1 sip dip", "P4-3"),
             ("stp on", "P4-4"), ("stp prio 8", "P4-4"), ("stp port 3 cost 20000", "P4-4"),
-            ("stp lag 1 edge on", "P4-4"), ("mirror 1 2r 3t 4", "P4-5"), ("mac 02:11:22:33:44:55", "sys.mac (deferred in P4-1)")]
+            ("stp lag 1 edge on", "P4-4"), ("mirror 1 2r 3t 4", "P4-5")]
     check(legacy == want, "the rest is legacy, in order, each with the node that migrates it", legacy)
     check(bad == ["a typo here"] and warn == ["bw in 3 1f4: 500 kbit/s rounded down to 496, a multiple of 16"],
           "the typo is still reported; bw 1f4 rounded down, warned", (bad, warn))

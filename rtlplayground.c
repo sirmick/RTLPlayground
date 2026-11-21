@@ -98,6 +98,7 @@ __code const uint8_t gatewayIP[] = { 192, 168, 2, 22};
 __code const uint8_t netmask[] = { 255, 255, 255, 0};
 
 __xdata struct uip_eth_addr uip_ethaddr;
+__xdata uint8_t board_mac[6];		/* the boot's MAC (flash, else from the chip): sys.mac auto */
 
 volatile __xdata uint32_t ticks;
 __xdata uint8_t arp_age_secs;
@@ -1464,6 +1465,7 @@ static void firmware_init(void)
 		uip_ethaddr.addr[1] = sfr_data[0] ^ sfr_data[2];
 		uip_ethaddr.addr[2] = sfr_data[1] ^ sfr_data[3];
 	}
+	memcpy(board_mac, uip_ethaddr.addr, 6);
 	print_string("Setting MAC to: ");
 	print_byte(uip_ethaddr.addr[0]); write_char(':'); print_byte(uip_ethaddr.addr[1]); write_char(':');
 	print_byte(uip_ethaddr.addr[2]); write_char(':'); print_byte(uip_ethaddr.addr[3]); write_char(':');

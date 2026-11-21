@@ -1042,7 +1042,7 @@ static void kinds(void)
 	expect("do sys.factory_reset", "err sys.factory_reset: the flash is busy\n");
 	CHECK(sys_rnd == 1 && sys_factory == 1, "do sys.rnd, sys.factory_reset: their handlers");
 	expect("set sys.reset on", "err sys.reset: an action: do it\n");
-	expect("do sys", "err sys: hostname led reset factory_reset rnd\n");
+	expect("do sys", "err sys: hostname led mac reset factory_reset rnd\n");
 	expect("get state.sys.version state.sys.chip state.sys.ports state.sys.sfp_ports state.sys.ports_10g",
 	       "state.sys.version v0.1.0-test\nstate.sys.chip rtl8373\nstate.sys.ports 1-9\n"
 	       "state.sys.sfp_ports 9\nstate.sys.ports_10g none\nok\n");
@@ -2346,7 +2346,7 @@ static void services(void)
 {
 	printf("services\n");
 	om_init();
-	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nok\n");
+	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nsys.mac auto\nok\n");
 	expect("set sys.led ports_off", "ok\n");
 	expect("set sys.hostname lab 1", "ok\n");
 	expect("apply", "err sys: sys.hostname: no space\n");

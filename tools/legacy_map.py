@@ -325,8 +325,7 @@ row(r"mirror (\d)((?: \S+)*)", _mirror)
 
 # the plan node that moves a path's object to the object model (plan.toml)
 OWNER = [(r"vlan\.", "P4-2"), (r"lag\.", "P4-3"), (r"stp\.", "P4-4"),
-         (r"(igmp|lldp|loop|mirror)\.", "P4-5"), (r"port\.\d+\.(bw_|storm\.)", "P4-6"),
-         (r"sys\.mac$", "sys.mac (deferred in P4-1)")]
+         (r"(igmp|lldp|loop|mirror)\.", "P4-5"), (r"port\.\d+\.(bw_|storm\.)", "P4-6")]
 
 
 def owner(path):

@@ -39,7 +39,8 @@ Every address is checked to be the same switch (state.sys.mac against the
 old switch's MAC, kept in the plan) before set and before confirm: another
 switch answering there is skipped.  An old `mac` line makes the old
 switch report that MAC while the new firmware boots on the hardware one:
-it refuses unless --expect-mac gives the hardware MAC.  With DHCP the new lease is looked for
+it refuses unless --expect-mac gives the hardware MAC; the line carries
+over as sys.mac, and after step 4's apply the switch is looked for by it.  With DHCP the new lease is looked for
 by the MAC in this host's neighbour table only; if it isn't found, the
 window rolls back, and `--plan HOST.plan <the lease's address>` redoes
 step 4 once you know it.
@@ -604,7 +605,7 @@ class Plan:
         self.lines, self.legacy, self.bad = legacy_map.convert(
             text, self.sch.board, self.warn, self.sch, self.vlans, getattr(args, "fit_vlans", False))
         # a `mac` line: the old switch reports that MAC, the new firmware
-        # boots on the hardware one (sys.mac isn't on the model)
+        # boots on the hardware one until step 4 applies it (sys.mac)
         m = re.search(r"(?m)^[ \t]*(mac[ \t]+\S+)", legacy_map.text_of(legacy_map.undump(text or b"")))
         self.mac_line = m.group(1) if m else None
         self.empty = not (self.lines or self.legacy or self.bad)
@@ -690,6 +691,12 @@ class Plan:
         """The address the lines give the switch, or None (DHCP)."""
         v = dict(ln.split(" ", 1) for ln in self.lines if " " in ln and not ln.startswith("del "))
         return None if v.get("mgmt.mode") == "dhcp" else v.get("mgmt.ip")
+
+    def sys_mac(self):
+        """The MAC the lines set (an old `mac` line's), lower case, or None (auto)."""
+        v = dict(ln.split(" ", 1) for ln in self.lines if " " in ln and not ln.startswith("del "))
+        m = v.get("sys.mac", "auto").lower()
+        return None if m == "auto" else m
 
     def saved(self):
         """What get -s will print once the lines are saved: the factory
@@ -825,6 +832,7 @@ def carry_over(args, plan, host, port, password, at, cookie):
         if error.status == 5:
             raise
         pass		# the address moved under the reply
+    plan.mac = plan.sys_mac() or plan.mac	# applied: the plan's sys.mac, if it sets one
     targets = [(host, port)]
     ip = plan.mgmt_ip()
     if ip:

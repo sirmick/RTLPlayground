@@ -42,9 +42,8 @@ ok
 - **One connection at a time** (uIP with one connection): another is refused until the
   first closes, so a client retries. Closing the connection mid-reply stops the rest of
   the run.
-- **Commands not on the model** (`mac`, and in OM_DBG builds the
-  debugging tools: `regget`, `phyget`, `sdsget`, `flash` ...) take their own syntax
-  here too.
+- **Commands not on the model**: in OM_DBG builds only, the debugging tools
+  (`regget`, `phyget`, `sdsget`, `flash` ...), which take their own syntax here too.
 - `POST /cmd` is the same endpoint under its old name (the UI's console box uses it).
 
 ## The other endpoints

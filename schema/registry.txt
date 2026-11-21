@@ -93,3 +93,4 @@ obj 18 port.storm
 field 18.1 port.storm.rate U32
 field 18.2 port.storm.unit Enum(sunit)
 obj 19 l2
+field 2.3 sys.mac MAC

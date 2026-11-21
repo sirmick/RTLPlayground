@@ -21,12 +21,17 @@
 #include "om_gen.h"
 #include "rtl837x_leds.h"
 #include "boot.h"
+#include "rtl837x_port.h"
 
 extern __code const struct machine machine;
 extern __xdata struct machine_runtime machine_detected;
 extern __xdata struct uip_eth_addr uip_ethaddr;
 extern __xdata uint8_t sfr_data[4];
 extern __xdata uint32_t flash_size;
+extern __xdata uint8_t board_mac[6];	/* rtlplayground.c: the boot's, sys.mac auto */
+extern __xdata uint16_t management_vlan;
+extern __xdata uint8_t om_booting;
+static __xdata uint8_t * __xdata m;
 extern __xdata bool button_last;
 extern __xdata uint8_t cmd_capture;	/* a web command's output is being captured */
 extern __xdata char hostname[24];
@@ -56,12 +61,29 @@ uint8_t om_check_sys(uint8_t idx) __banked
 			om_fail(OM_E_HOSTNAME_SPACE);
 			return OM_ERR;
 		}
+	m = cfg_cand.sys.mac;			/* all 0: auto */
+	if ((m[0] | m[1] | m[2] | m[3] | m[4] | m[5]) && ((m[0] & 1) || !(m[0] | m[1] | m[2]))) {
+		om_fail(OM_E_MAC_BAD);
+		return OM_ERR;
+	}
 	return OM_OK;
 }
 
 uint8_t om_apply_sys(uint8_t idx) __banked
 {
 	(void)idx;
+	m = cfg_run.sys.mac;
+	if (!(m[0] | m[1] | m[2] | m[3] | m[4] | m[5]))
+		m = board_mac;
+	if (memcmp(m, uip_ethaddr.addr, 6)) {
+		/* the management entry moves to the new MAC; at boot it is
+		 * written after the config, with this one (rtlplayground.c) */
+		if (!om_booting)
+			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
+		memcpy(uip_ethaddr.addr, m, 6);
+		if (!om_booting)
+			port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
+	}
 	memcpy(hostname, cfg_run.sys.hostname, sizeof(hostname));
 	set_hostname_default();		/* empty: from the MAC */
 	l = cfg_run.sys.led;
