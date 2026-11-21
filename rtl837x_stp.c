@@ -62,8 +62,6 @@ __xdata uint16_t stp_alt;		/* bit per port: blocked, a better bridge owns the se
 __xdata struct bridge stp_self;
 __xdata uint8_t  stp_j;
 __xdata uint8_t  stp_best;
-__xdata uint32_t stp_cost_cand;
-__xdata uint32_t stp_cost_best;
 __xdata int8_t   stp_cmp;
 __xdata uint8_t  stp_rxage[STP_ENTITIES];		/* message age heard on the port, seconds */
 __xdata uint8_t  stp_rxmaxage[STP_ENTITIES];
@@ -494,11 +492,6 @@ static uint8_t stp_state_get(uint8_t port) __reentrant
 	return (sfr_data[3 - (stp_ss_i >> 2)] >> ((stp_ss_i << 1) & 0x7)) & 0b11;
 }
 
-
-uint8_t stp_port_state(uint8_t port) __banked
-{
-	return stp_state_get(port);
-}
 
 
 static void stp_forget(uint8_t e) __reentrant

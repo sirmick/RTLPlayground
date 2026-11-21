@@ -8,14 +8,14 @@ get dns                              # dns.server1, dns.server2
 set dns.server1 192.168.10.53        # 0.0.0.0: none
 set dns.server2 0.0.0.0
 apply
-dns lookup <name>                    # resolve a name (an old command, kept)
+do dns.lookup <name>                 # start a lookup
 get state.dns                        # DHCP's server, the last lookup and its answer
 ```
 
-The answer to a lookup arrives after the command has returned, so it is
-printed on the serial console and in the syslog. In the console of the web
-interface, run `get state.dns.lookup` afterwards to see it
-(`state.dns.lookup.status`: none, pending, done or failed).
+The answer to a lookup arrives after the command has returned: run
+`get state.dns.lookup` afterwards (`state.dns.lookup.status`: none, pending,
+done or failed; `.ip` the address). One lookup runs at a time: another is
+refused while one is pending.
 
 Without a configured server the resolver uses the one handed out by DHCP.
 Only address records are looked up; a query goes to the servers in turn,

@@ -18,7 +18,6 @@ struct dns_state {
 	char name[DNS_NAME_LEN];	/* name of the current or last lookup */
 	uint8_t addr[4];	/* address found by the last lookup */
 	uint8_t status;		/* DNS_* */
-	uint8_t verbose;	/* print the result of the lookup */
 	uint8_t tries;		/* queries sent for the current lookup */
 	uint8_t send;		/* a query is due on the connection */
 	uint16_t id;
@@ -31,6 +30,5 @@ extern __xdata struct dns_state dns_state;
 void dns_init(void) __banked;
 void dns_lookup(void) __banked;
 void dns_callback(uint16_t lport) __banked __reentrant;
-void dns_parse(void) __banked __reentrant;
 
 #endif

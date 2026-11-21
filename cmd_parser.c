@@ -65,7 +65,6 @@ __xdata uint8_t cmd_buffer[CMD_BUF_SIZE];
 
 __xdata	char save_cmd;
 
-__xdata uint8_t mac_parse_result[6];
 
 // These variables combined create a Fixed-capacity vector/bounded buffer.
 // `N_WORDS`: The total number of command arguments that can be tracked.
@@ -262,22 +261,6 @@ void print_ip(__xdata uint8_t * ptr) __banked
 	}
 }
 
-// Prints a MAC address.
-void print_mac(__xdata uint8_t *ptr) __banked
-{
-	uint8_t idx = 0;
-	uint8_t num;
-
-	while (1) {
-		num = *ptr++;
-		print_byte(num);
-		if (++idx == 6)
-			break;
-
-		write_char(':');
-	}
-}
-
 static void cmd_error(__code const char *msg)
 {
 	err_status = ERR_INVALID_ARGUMENT;
@@ -285,93 +268,6 @@ static void cmd_error(__code const char *msg)
 	print_string(msg);
 }
 
-
-// Parses a MAC address "aa:bb:cc:dd:ee:ff" (":" or "-" separators) from
-// cmd_buffer starting at idx into the global mac_parse_result[6]. Each octet
-// must be exactly two hex digits with a separator between octets and nothing
-// trailing, so repeated separators, missing digits or a trailing hex digit are
-// rejected. Returns the number of bytes consumed, or 0 on error.
-uint8_t parse_mac(uint8_t idx)
-{
-	uint8_t b = 0;
-	uint8_t c = ':';
-
-	do {
-		if (c != ':' && c != '-')
-			goto err;
-
-		__bit again = true;
-		uint8_t v = 0;
-
-		while(1) {
-			c = cmd_buffer[idx++];
-			c -= '0';
-			if (c > 9) {
-				c |= 0x20;
-				c += '0' - 'a';
-				if (c > 5)
-					goto err;
-				c += 10;
-			}
-			// force swap-instr.
-			v = (v << 4) | (v >> 4);
-			v |= c;
-
-			if (again)
-				again = false;
-			else
-				break;
-		}
-		mac_parse_result[b++] = v;
-
-		c = cmd_buffer[idx++];
-	} while(b < 6);
-
-	if (c == ' ' || c == NUL)
-		return idx;
-
-err:
-	return 0;
-}
-
-// Sets the management MAC from a "mac <aa:bb:cc:dd:ee:ff>" command (or prints
-// the current one with a bare "mac"). Refuses blank/multicast/all-zero-OUI
-// addresses so the running MAC stays reachable, and
-// re-registers the static L2 management entry so the change applies without a
-// reboot. As a regular command a "mac ..." line in the startup config applies
-// on every boot (execute_config runs before the final static L2 entry).
-void parse_mac_cmd(void)
-{
-	if (cmd_words_len == 1) {
-		print_string("Current MAC: ");
-		print_mac(uip_ethaddr.addr);
-		write_char('\n');
-		return;
-	}
-	if (cmd_words_len != 2 || !parse_mac(cmd_words_b[1])) {
-		cmd_error("mac [<aa:bb:cc:dd:ee:ff>]\n");
-		return;
-	}
-	if ((mac_parse_result[0] & 0x01) || ((mac_parse_result[0] | mac_parse_result[1] | mac_parse_result[2]) == 0)) {
-		cmd_error("the MAC must be unicast with a non-zero first three bytes\n");
-		return;
-	}
-	if (memcmp(mac_parse_result, uip_ethaddr.addr, 6) == 0) {
-		print_string("MAC unchanged\n");
-		return;
-	}
-
-	// Swap the static management entry over to the new address: remove the
-	// old one (still in uip_ethaddr) before overwriting it.
-	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, true);
-	memcpy(uip_ethaddr.addr, mac_parse_result, 6);
-	port_l2_static_mgmt(uip_ethaddr.addr, management_vlan, false);
-
-	print_string("MAC set to: ");
-	print_mac(uip_ethaddr.addr);
-	write_char('\n');
-	print_string("Save the startup config to keep it across reboots\n");
-}
 
 #if OM_DBG
 void parse_regget(void)
@@ -814,12 +710,6 @@ void cmd_parser(void) __banked
 #endif
 	if (cmd_words_len >= 1) {
 		if (om_cmd()) {
-		} else if (cmd_compare(0, "sfp")) {
-			cmd_error("\nUsage: get state.sfp; a cage's speed: port.N.speed\n");
-		} else if (cmd_compare(0, "dns")) {
-			dns_parse();
-		} else if (cmd_compare(0, "mac")) {
-			parse_mac_cmd();
 #if OM_DBG
 		} else if (cmd_compare(0, "flash")) {
 			parse_flash();
@@ -905,8 +795,7 @@ void execute_config(void) __banked
  * Dumps as jobs (E1, console.md "Chunked output"). A command whose output
  * grows with a table sets cli_job and its cursor instead of printing it all;
  * cli_job_more() prints the next line. The cli task calls it one line a
- * step (CLI_MORE); any other caller runs the job to its end at once
- * (cmd_finish), as before.
+ * step (CLI_MORE).
  */
 static __xdata uint8_t job_more;
 
@@ -922,17 +811,6 @@ void cli_job_more(void) __banked
 	}
 	if (!job_more)
 		cli_job = 0;
-}
-
-void cmd_finish(void) __banked
-{
-	while (cli_job) {
-		cli_job_more();
-		if (cli_job_sleep) {
-			cli_job_sleep = 0;
-			delay(2);
-		}
-	}
 }
 
 /*

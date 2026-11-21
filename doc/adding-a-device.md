@@ -282,8 +282,9 @@ request, alongside full builds for a 4+2 and an 8+1 board.
 
 A successful compile only proves the definition is syntactically valid. The
 actual behaviour — port numbering, SFP detection, LEDs — has to be confirmed on
-hardware, and the console commands (`port`, `stat`, `sfp`, `leds`) are the
-tools for that.
+hardware: `get state.port` (each port's link and speed), `get state.sfp` (the
+cages), `set port.N.speed ...` and `apply`, and in a build with
+`OM_DBG_LEDS=1` the `leds` dump (doc/howto_leds.md).
 
 ## Step 4: documentation
 

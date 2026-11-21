@@ -30,7 +30,7 @@ uint8_t                  err_status;
 uint8_t                  cli_job;        /* cmd_parser.c: a dump as the cli's job (E1) */
 uint8_t                  cmd_history[CMD_HISTORY_SIZE];
 uint8_t                  cmd_history_ptr;	/* 8 bits: CMD_HISTORY_SIZE is 256 */
-__xdata uint16_t         session_timeout = 200;   /* httpd global, referenced by page_impl.c */
+__xdata uint16_t         session_timeout = 200;   /* httpd global */
 
 
 /* the editor entry points under test */

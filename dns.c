@@ -10,6 +10,7 @@
 #include "dhcp.h"
 #include "dns.h"
 #include "om_gen.h"
+#include "om.h"
 
 
 #define DNS_PORT	53
@@ -69,8 +70,6 @@ static void dns_next(void) __reentrant
 		dns_cand[k++] = dhcp_state.dns;
 	if (!k || dns_state.tries >= DNS_TRIES) {
 		dns_state.status = DNS_FAILED;
-		if (dns_state.verbose)
-			print_string(k ? "DNS: no answer\n" : "DNS: no server\n");
 		return;
 	}
 	k = dns_state.tries % k;
@@ -152,13 +151,6 @@ static void dns_answer(void) __reentrant
 			dns_state.status = DNS_DONE;
 			uip_udp_remove(dns_state.conn);
 			dns_state.conn = 0;
-			if (dns_state.verbose) {
-				print_string("DNS: ");
-				print_string_x(dns_state.name);
-				print_string(" is ");
-				print_ip(dns_state.addr);
-				write_char('\n');
-			}
 			return;
 		}
 		i += 10 + (((uint16_t)p[i + 8] << 8) | p[i + 9]);
@@ -194,6 +186,32 @@ void dns_lookup(void) __banked
 /* state.dns.lookup.status's words are the DNS_* states (a negative size if not) */
 typedef char dnsst_is_status[E_DNSST_NONE == DNS_IDLE && E_DNSST_PENDING == DNS_PENDING &&
 			     E_DNSST_DONE == DNS_DONE && E_DNSST_FAILED == DNS_FAILED ? 1 : -1];
+
+/* do dns.lookup NAME (schema/dns.py): its first word; the answer comes into
+ * state.dns.lookup */
+static __xdata uint8_t dn;
+
+uint8_t om_do_dns_lookup(uint8_t idx) __banked
+{
+	(void)idx;
+	if (dns_state.status == DNS_PENDING) {
+		om_fail(OM_E_DNS_BUSY);
+		return OM_ERR;
+	}
+	if (!om_arg || !*om_arg)
+		goto bad;
+	for (dn = 0; om_arg[dn] && om_arg[dn] != ' '; dn++) {
+		if (dn == DNS_NAME_LEN - 1)
+			goto bad;
+		dns_state.name[dn] = om_arg[dn];
+	}
+	dns_state.name[dn] = 0;
+	dns_lookup();
+	return OM_OK;
+bad:
+	om_fail(OM_E_DNS_NAME);
+	return OM_ERR;
+}
 
 uint8_t om_get_dns(uint8_t idx) __banked
 {

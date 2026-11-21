@@ -321,6 +321,14 @@ uint8_t om_do_mgmt_dhcp_renew(uint8_t idx)
 	}
 	return OM_OK;
 }
+static char t_dns_arg[64];		/* do dns.lookup's text argument, as the handler saw it */
+static int t_dns;
+uint8_t om_do_dns_lookup(uint8_t idx)
+{
+	t_dns++;
+	snprintf(t_dns_arg, sizeof t_dns_arg, "%s", om_arg ? (const char *)om_arg : "(none)");
+	return OM_OK;
+}
 uint8_t om_apply_web(uint8_t idx) { t_web++; return OM_OK; }
 uint8_t om_apply_ntp(uint8_t idx) { t_ntp++; return OM_OK; }
 uint8_t om_do_ntp_sync(uint8_t idx) { if (!cfg_run.ntp.enabled) { om_fail(OM_E_NTP_OFF); return OM_ERR; } return OM_OK; }
@@ -1034,7 +1042,7 @@ static void kinds(void)
 	expect("do sys.factory_reset", "err sys.factory_reset: the flash is busy\n");
 	CHECK(sys_rnd == 1 && sys_factory == 1, "do sys.rnd, sys.factory_reset: their handlers");
 	expect("set sys.reset on", "err sys.reset: an action: do it\n");
-	expect("do sys", "err sys: hostname led reset factory_reset rnd\n");
+	expect("do sys", "err sys: hostname led mac reset factory_reset rnd\n");
 	expect("get state.sys.version state.sys.chip state.sys.ports state.sys.sfp_ports state.sys.ports_10g",
 	       "state.sys.version v0.1.0-test\nstate.sys.chip rtl8373\nstate.sys.ports 1-9\n"
 	       "state.sys.sfp_ports 9\nstate.sys.ports_10g none\nok\n");
@@ -2338,7 +2346,7 @@ static void services(void)
 {
 	printf("services\n");
 	om_init();
-	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nok\n");
+	expect("get sys", "sys.hostname RTLPlayground-0a0b0c\nsys.led on\nsys.mac auto\nok\n");
 	expect("set sys.led ports_off", "ok\n");
 	expect("set sys.hostname lab 1", "ok\n");
 	expect("apply", "err sys: sys.hostname: no space\n");
@@ -2361,6 +2369,11 @@ static void services(void)
 	expect("apply", "ok\n");
 	CHECK(t_mgmt == 1 && cfg_run.mgmt.mode == E_MGMTMODE_DHCP && cfg_run.mgmt.ip[3] == 5, "mgmt: one apply, dhcp, the static address kept");
 	expect("do mgmt.dhcp_renew", "ok\n");
+	expect("do dns.lookup example.org", "ok\n");
+	CHECK(t_dns == 1 && !strcmp(t_dns_arg, "example.org"), "do dns.lookup NAME: the handler gets the text");
+	expect("do dns.lookup", "ok\n");
+	CHECK(t_dns == 2 && !strcmp(t_dns_arg, "(none)"), "do dns.lookup alone: om_arg 0 (the handler says)");
+	expect("do l2.delete x", "err l2.delete: a number\n");	/* a number's action: as before */
 	expect("get dns", "dns.server1 0.0.0.0\ndns.server2 0.0.0.0\nok\n");
 	expect("set dns.server2 9.9.9.9", "ok\n");
 	t_dns = 0;

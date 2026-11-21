@@ -1,23 +1,9 @@
 #ifndef __PAGE_IMPL_H__
 #define __PAGE_IMPL_H__
 
-#include <stdbool.h>
+#include <stdint.h>
 
-#define JSONQUOTE(x) #x
-
-extern __code const uint8_t * __code const HTTP_RESPONSE_TXT;
-extern __code const uint8_t * __code const HTTP_RESPONSE_JSON;
-
-void bool_to_html(char c);
-void byte_to_html(uint8_t val);
-void itoa_html(uint8_t v);
-
-void str_code_to_html(__code const char *s);
-void bool_to_json(char c);
-void json_add_array_uint_item(uint8_t x);
-void char_to_html(char c);
-
-void itoa16_html(uint16_t v);
+extern __code const uint8_t * __code const HTTP_RESPONSE_TXT;	/* httpd.c */
 
 
 /*  Convert only the lower nibble to ascii HEX char.

@@ -27,11 +27,9 @@ extern __xdata uint8_t cli_job_sleep;
 /* set by a job's line: no more of its lines in this step (a web step's several) */
 extern __xdata uint8_t cli_job_one;
 void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after its last */
-void cmd_finish(void) __banked;		/* the job to its end, at once */
 void exec_begin(__xdata uint8_t *p) __banked;	/* several commands, from p */
 uint8_t exec_line(void) __banked;	/* the next one; 0 when done (err_status) */
 void print_ip(__xdata uint8_t *ptr) __banked;
-void print_mac(__xdata uint8_t *ptr) __banked;
 void print_sw_version(void) __banked;
 void clear_command_history(void) __banked;
 

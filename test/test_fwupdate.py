@@ -99,8 +99,9 @@ class Fake:
             self.log.append(ln)
             w = ln.split()
             if ln.startswith("get state.sys"):
+                mac = [x.split()[2] for x in self.run if x.startswith("set sys.mac ")]	# sys.mac, once applied
                 out += ["state.sys.version v-new", "state.sys.machine " + M, "state.sys.pcb " + PCB,
-                        "state.sys.mac " + MAC, "sys.hostname x"]
+                        "state.sys.mac " + (mac[-1] if mac else MAC), "sys.hostname x"]
             elif w[0] in ("set", "del"):
                 if any(r in ln for r in self.refuse):
                     out.append("err %s: refused" % ln)	# echoes the line, a password too
@@ -279,23 +280,23 @@ def main():
     f.close()
 
     print("legacy lines: refused, then --drop-legacy")
-    f = Fake(CLEAN + "mac %s\nfrobnicate\n" % MAC)	# sys.mac's: still the old command
+    f = Fake(CLEAN + "mac %s\nfrobnicate\n" % MAC)	# mac: sys.mac now; frobnicate: lost
     st, out, err = run(f, img)
     check(st == 5 and f.uploads == 0, "refused before the upload (5)", err)
-    check("legacy (sys.mac (deferred in P4-1)): mac %s" % MAC in out and "untranslated: frobnicate" in out
-          and "2 config lines would be lost" in err, "each listed, with its node", out + err)
+    check("untranslated: frobnicate" in out and "set sys.mac %s" % MAC in out
+          and "1 config lines would be lost" in err, "each listed; the mac line is sys.mac's", out + err)
     st, out, err = run(f, img, "--drop-legacy", "--expect-mac", MAC)	# the mac line: its own check
-    check(st == 0 and f.uploads == 1 and "Dropping 2 config lines" in err, "--drop-legacy updates", err)
+    check(st == 0 and f.uploads == 1 and "Dropping 1 config lines" in err, "--drop-legacy updates", err)
     check(f.saved == ["set " + ln for ln in ["mgmt.mode static", "mgmt.ip 127.0.0.1", "mgmt.gateway 192.168.10.1",
                                              "sys.hostname old-one", "web.password secret9", "port.3.mtu 9000",
-                                             "port.5.enabled off", "mgmt.netmask 255.255.255.0"]]
-          and "Saved: get -s is the plan (5 lines)" in err,
+                                             "port.5.enabled off", "sys.mac " + MAC, "mgmt.netmask 255.255.255.0"]]
+          and "Saved: get -s is the plan (6 lines)" in err,
           "the path lines set, applied and saved; get -s compared", (f.saved, err))
     check(f.log.index("apply 120") < f.log.index("confirm") < f.log.index("save") and f.at == "old"
           and f.pw == "secret9", "apply 120, back at its address with its password, confirm, save", f.log)
     text = open(PLAN).read()
     check(os.stat(PLAN).st_mode & 0o777 == 0o600 and text.startswith("# fwupdate plan: 127.0.0.1:")
-          and "# dropped, legacy (sys.mac (deferred in P4-1)): mac %s\n" % MAC in text and "# dropped, untranslated: frobnicate\n" in text
+          and "\nsys.mac %s\n" % MAC in text and "# dropped, untranslated: frobnicate\n" in text
           and "\nmgmt.ip 127.0.0.1\n" in text and "\nweb.password *\n" in text and "secret9" not in text
           and text.split("\n")[0].endswith(", mac " + MAC)
           and err.find("Plan written to") < err.find("Uploading"),

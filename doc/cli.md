@@ -30,7 +30,7 @@ err port.3.pvid: 0-4094
 | `discard` | Candidate back to running. |
 | `load saved\|default` | The saved config, or the factory default, into the candidate; then `diff`, `apply`. |
 | `save` | Running to flash. Refused while the candidate differs (`err save: apply or discard first`) or a window is open. |
-| `do path [arg]` | An action, now: `do sys.reset`, `do sys.factory_reset`, `do port.3.cabletest`, `do mgmt.dhcp_renew`, `do ntp.sync`, `do sched.clear`. |
+| `do path [arg]` | An action, now: `do sys.reset`, `do sys.factory_reset`, `do port.3.cabletest`, `do mgmt.dhcp_renew`, `do ntp.sync`, `do sched.clear`, `do l2.delete K`, `do dns.lookup NAME`. |
 
 A `set` changes nothing on the switch until `apply`, and nothing survives a
 restart until `save`. The prompt shows the state: `*>` while the candidate has
@@ -109,17 +109,20 @@ in flash outside the banks, 0.9 KB of code): `help` answers
 
 ## What is on the model
 
-Everything you configure: `sys` (hostname, LEDs), `mgmt` (address, mode,
+Everything you configure: `sys` (hostname, LEDs, MAC), `mgmt` (address, mode,
 VLAN), `dns`, `ntp`, `syslog`, `web` (password, session timeout), `vlan.V`
 (name, members, tagged), `lag.L` (mode off/static/lacp, members, hash), `stp`
 with `stp.port.N` and `stp.lag.L`, `igmp`, `lldp`, `loop`, `mirror`, `port.N`
 (name, enabled, speed (an SFP cage's too), duplex, mtu, pvid, ingress, ingress
 filter, LLDP, EEE and its speeds, isolation, bandwidth limits) and
 `port.N.storm.T` (storm control); and every `state.*` path, `state.sched`'s
-runs a second (`.rate`) and `state.sched.load` among them. Only the switch's
-MAC keeps its old command, `mac` (`sys.mac` is deferred).
+runs a second (`.rate`) and `state.sched.load` among them. The switch's MAC
+is `sys.mac` (`auto`: the board's own; `state.sys.mac` the one in use): set
+it with a confirm window (`apply 60`), since your host's ARP entry for the
+switch goes stale.
 
-`dns lookup <name>` stays a command. `l2 forget` is `do l2.flush` (it flushes the
+`dns lookup <name>` is `do dns.lookup <name>` (the answer in `get
+state.dns.lookup`). `l2 forget` is `do l2.flush` (it flushes the
 learned MAC entries; the table itself is `get state.l2`), and `do l2.delete K` deletes entry K. The debugging
 tools stay: `regget`, `regset`, `phyget`, `physet`, `sdsget`, `sdsset`,
 `leds`, `flash`; `sds`, `gpio` and `igmp show` are `get state.dbg` (the SerDes

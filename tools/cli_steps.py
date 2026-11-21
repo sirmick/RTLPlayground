@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 cli_steps.py - each console command's longest step, in rtlsim (E1): the
-CLI tour of ovs-rtlpg's old-vs-new scenarios, and the dumps E1 chunks, each
+CLI tour (every object's get, the dumps), each
 between `do sched.clear` and `get state.sched` (health clear and health tasks
 before P5-2), on one firmware image.
 
@@ -13,6 +13,11 @@ Prints each command's longest step per state over the limit (default
 5000 us); exit status 1 if any cli state is over it.
 """
 import argparse, os, re, struct, sys
+
+# every object's get and the whole-tree dumps (doc/cli.md)
+OM_TOUR = ["get", "get sys", "get mgmt", "get port", "get vlan", "get lag", "get stp", "get state",
+           "get state.port", "get state.stp", "get state.sched", "get state.l2", "get -s", "get -d",
+           "diff", "help", "help -a"]
 
 FINE = re.compile(r"^([A-Z][A-Z0-9_]*)\t(\d+)\t(\S+)$", re.M)
 
@@ -51,7 +56,6 @@ def main(argv):
     sys.path.insert(0, os.path.join(a.ovs, "tests", "oldnew"))
     sys.path.insert(0, os.path.join(a.ovs, "tests"))
     from oldnew import Run
-    from scenarios import CLI_TOUR
 
     r = Run(a.image, board, os.path.join(a.ovs, "build", "rtlsim"), None)
     b = r.b
@@ -60,7 +64,8 @@ def main(argv):
     for i in (1, 2):
         r.link(P[i], True)
     r.wait(1000)
-    setup = ["stp on", f"vlan 10 office {F[1]} {F[2]}t", f"vlan 20 lab {F[2]}", "get state.lag"]
+    setup = ["set stp.enabled on", f"set vlan.10.name office", f"set vlan.10.members {F[1]},{F[2]}",
+             f"set vlan.10.tagged {F[2]}", "set vlan.20.name lab", f"set vlan.20.members {F[2]}", "apply"]
     for c in setup:
         r.cli(c)
     if a.macs:
@@ -71,7 +76,7 @@ def main(argv):
             if n % 32 == 31:
                 b.advance(b.now + 20000)
         r.wait(2000)
-    cmds = list(CLI_TOUR) + [f"port {F[1]}", f"port {F[2]}", "get state.stp", "get state.sched", "get state.l2"]
+    cmds = list(OM_TOUR) + [f"get port.{F[1]}", f"get state.port.{F[2]}"]
     if a.only:
         cmds = a.only
     worst = {}

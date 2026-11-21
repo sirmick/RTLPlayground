@@ -13,7 +13,6 @@ void stp_prio_apply(void) __banked;
 void stp_port_mcheck(uint8_t port) __banked;
 void stp_ent_restart(uint8_t e) __banked;	/* stp_ent_reset(): from listening, or forwarding as its flags say */
 uint8_t stp_port_role(uint8_t port) __banked;
-uint8_t stp_port_state(uint8_t port) __banked;
 uint8_t stp_ent_id(uint8_t e) __banked;
 void stp_lag_map(void) __banked;
 void stp_counters_clear(void) __banked __reentrant;

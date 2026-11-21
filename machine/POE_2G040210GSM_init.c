@@ -312,7 +312,7 @@ static bool pse_write_image(uint8_t img)
 	return true;
 }
 
-/* How the boot's load went, for information.json (page_impl.c) */
+/* How the boot's load went (state.sys) */
 __xdata uint8_t poe_state;
 
 static void pse_load(void)

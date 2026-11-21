@@ -369,10 +369,6 @@ var LANG = {
         cw_verify_fail: "Verification failed: flash content differs from what was sent. Command log NOT cleared.",
         cw_saved: "Startup configuration saved and verified",
         cw_collect: "Collecting running changes...",
-        t_applied: "Applied: {c}",
-        t_cmds: "{n} command(s) applied",
-        t_rejected: "command rejected: {c}",
-        t_failed: "failed: {c}",
         fw_title: "Firmware update",
         fw_intro: "The application: the -install image (the application with the loader; a switch without the loader gets it on the way), or a plain application image. It is staged to flash and CRC-checked; on success the switch reboots and installs it. The startup configuration is kept.",
         sy_download: "Download",
@@ -674,10 +670,6 @@ var LANG = {
         cw_verify_fail: "検証失敗: フラッシュの内容が送信内容と異なります。コマンドログは消去されていません。",
         cw_saved: "起動設定を保存し検証しました",
         cw_collect: "実行中の変更を収集中...",
-        t_applied: "適用: {c}",
-        t_cmds: "{n} 件のコマンドを適用しました",
-        t_rejected: "コマンドが拒否されました: {c}",
-        t_failed: "失敗: {c}",
         fw_title: "ファームウェア更新",
         fw_upload: "アップロード",
         fw_checking: "{f}: {n} バイト。確認中...",
@@ -1021,10 +1013,6 @@ var LANG = {
         cw_verify_fail: "校验失败: Flash 内容与发送内容不一致。命令日志未清除。",
         cw_saved: "启动配置已保存并校验",
         cw_collect: "正在收集运行中的更改...",
-        t_applied: "已应用: {c}",
-        t_cmds: "已应用 {n} 条命令",
-        t_rejected: "命令被拒绝: {c}",
-        t_failed: "失败: {c}",
         fw_title: "固件升级",
         fw_upload: "上传",
         fw_checking: "{f}: {n} 字节。正在检查...",
@@ -1300,10 +1288,6 @@ var LANG = {
         cw_verify_fail: "Verificación fallida: el contenido de la flash difiere de lo enviado. El registro de comandos NO se ha borrado.",
         cw_saved: "Configuración de inicio guardada y verificada",
         cw_collect: "Recopilando cambios en ejecución...",
-        t_applied: "Aplicado: {c}",
-        t_cmds: "{n} comando(s) aplicado(s)",
-        t_rejected: "comando rechazado: {c}",
-        t_failed: "fallo: {c}",
         fw_title: "Actualización de firmware",
         fw_upload: "Subir",
         fw_checking: "{f}: {n} bytes. Comprobando...",
@@ -1687,10 +1671,6 @@ var LANG = {
         cw_verify_fail: "Verification erronée: La mémoire flash présente des différences par rapport à ce qui a été transmis. Le log de commande ne sera pas éffacé.",
         cw_saved: "Configuration de démarrage sauvegardée et vérifiée",
         cw_collect: "Récolement des modification des paramètres courants...",
-        t_applied: "Appliqué: {c}",
-        t_cmds: "{n} commande(s) appliquée(s)",
-        t_rejected: "commandes rejetées: {c}",
-        t_failed: "échecs: {c}",
         fw_title: "Mise à jour du micro-logiciel",
         fw_upload: "Charger",
         fw_checking: "{f}: {n} bytes. Vérification...",
@@ -2037,10 +2017,6 @@ var LANG = {
         cw_verify_fail: "Prüfung fehlgeschlagen: Der Flash-Inhalt weicht vom Gesendeten ab. Befehlsprotokoll wurde NICHT gelöscht.",
         cw_saved: "Startkonfiguration gespeichert und geprüft",
         cw_collect: "Laufende Änderungen werden gesammelt...",
-        t_applied: "Übernommen: {c}",
-        t_cmds: "{n} Befehl(e) übernommen",
-        t_rejected: "Befehl abgelehnt: {c}",
-        t_failed: "fehlgeschlagen: {c}",
         fw_title: "Firmware-Update",
         fw_upload: "Hochladen",
         fw_checking: "{f}: {n} Bytes. Wird geprüft...",
@@ -2562,6 +2538,9 @@ function stgRefresh() {
             n: c.pending
         }) : "";
         $("stgSave").classList.toggle("show", c.dirty === "on");
+        S.dirty = c.dirty === "on";	/* running differs from saved */
+        $("dirty").classList.toggle("show", S.dirty);
+        $("saveBtn").classList.toggle("pri", S.dirty);
     });
 }
 
@@ -2739,77 +2718,6 @@ $("stgApply").addEventListener("click", function() {
 });
 $("stgSave").addEventListener("click", stgSave);
 stgRefresh().then(stgAsk).catch(function() {});
-
-var CONF_CMDS = [
-    /^ip\s+(\d{1,3}\.){3}\d{1,3}$/,
-    /^ip\s+dhcp$/,
-    /^gw\s+(\d{1,3}\.){3}\d{1,3}$/,
-    /^netmask\s+(\d{1,3}\.){3}\d{1,3}$/,
-    /^syslog\s+(on|off)$/,
-    /^syslog\s+ip\s+(\d{1,3}\.){3}\d{1,3}$/,
-    /^syslog\s+port\s+\d{1,5}$/,
-    /^session\s+\d{1,5}$/,
-    /^dns\s+server\s+(\d{1,3}\.){3}\d{1,3}(\s+(\d{1,3}\.){3}\d{1,3})?$/,
-    /^ntp\s+(on|off)$/,
-    /^ntp\s+server\s+[A-Za-z0-9.-]{1,47}$/,
-    /^ntp\s+interval\s+\d{1,4}$/,
-    /^ntp\s+timezone\s+[+-]?\d{1,2}(:\d{2})?$/,
-    /^ntp\s+dst\s+(off|eu|us)$/,
-    /^passwd\s+\S+$/, /^hostname\s+\S{1,23}$/,
-    /^ingress(\s+\d+[tua])+$/, /^ingress\s+[tua]$/,
-    /^port\s+\d+\s+(10m|100m|1g|2g5|5g|10g|auto|on|off)(\s+(half|full))?$/,
-    /^port\s+\d+\s+name(\s+\S+)?$/,
-    /^isolate\s+\d+(\s+(off|\d+))+$/,
-    /^mtu\s+\d+\s+\d+$/,
-    /^led\s+(on|off)(\s+ports)?$/,
-];
-
-function isConfCmd(line) {
-    for (var i = 0; i < CONF_CMDS.length; i++)
-        if (CONF_CMDS[i].test(line)) return true;
-    return false;
-}
-
-function setDirty(d) {
-    S.dirty = d;
-    $("dirty").classList.toggle("show", d);
-    $("saveBtn").classList.toggle("pri", d);
-}
-
-function postCmd(cmd, quiet) {
-    return api("/cmd", {
-        method: "POST",
-        body: cmd
-    }).then(function(r) {
-        if (!r.ok) throw new Error(((r.body || "").split("\n")[0]) || t("t_rejected", {
-            c: cmd
-        }));
-        if (isConfCmd(cmd.trim())) setDirty(true);
-        if (!quiet) toast(t("t_applied", {
-            c: cmd
-        }), "ok");
-        return r;
-    }, function(e) {
-        toast(e.message || t("t_failed", {
-            c: cmd
-        }), "err");
-        throw e;
-    });
-}
-
-function postCmds(list) {
-    var p = Promise.resolve();
-    list.forEach(function(c) {
-        p = p.then(function() {
-            return postCmd(c, true)
-        })
-    });
-    return p.then(function() {
-        toast(t("t_cmds", {
-            n: list.length
-        }), "ok")
-    });
-}
 
 function toast(msg, cls) {
     var el = h("div", {
@@ -5245,7 +5153,7 @@ function sysConsole() {
         else out.textContent += (r.ok ? "OK" : "ERROR " + r.status) + "\n";
         if (out.textContent.length > 20000) out.textContent = out.textContent.slice(-16000);
         out.scrollTop = out.scrollHeight;
-        if (r.ok && isConfCmd(c)) setDirty(true);
+        stgRefresh().catch(function() {});	/* a set, apply or save there moves the bar */
     }).catch(function(e) {
         out.textContent += "> " + c + "\n" + e + "\n"
     });

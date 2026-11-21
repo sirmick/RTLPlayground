@@ -356,27 +356,6 @@ void phy_set_speed(void) __banked
 }
 
 
-/* A PHY reset in two (E4: the eee job sleeps between, no delay()):
- * phy_off() turns it off, if it was on (1); phy_on() back on. */
-static __xdata uint16_t phy_v;
-
-uint8_t phy_off(uint8_t port) __banked
-{
-	phy_read(port, PHY_MMD31, 0xa610);
-	phy_v = SFR_DATA_U16;
-	// If PHY off, do nothing
-	if (phy_v & 0x0800)
-		return 0;
-
-	// Disable PHY
-	phy_write(port, PHY_MMD31, 0xa610, phy_v | 0x0800);
-	return 1;
-}
-
-void phy_on(uint8_t port) __banked
-{
-	phy_write(port, PHY_MMD31, 0xa610, phy_v & 0xf7ff);
-}
 
 // Read RTL8224 register.
 // Registers names are the same as on the RTL837x.

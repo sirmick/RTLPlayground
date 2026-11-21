@@ -15,12 +15,15 @@ is booted twice from a power cut, both with an RTL8373N and an 8224 faked
   plain  the 8224's SDS_INDACS_CMD reads ready
   early  it reads busy (phy hold 0 30 3f8 8000): rtl8224_sds_write times
          out twice, before vlan_setup and the config's replay
-The VLAN table, /vlanlist.json and `vlan show` must be the same after
-both boots, and neither may drop a table command. Exit status 1 if not.
+The VLAN table and `get vlan` must be the same after both boots, and
+neither may drop a table command. Exit status 1 if not.
 """
 import argparse, os, re, sys
 
-CFG = "vlan 10 ten 2 3t\nvlan 20 twenty 3\nvlan 300 4t\nvlan 20 d\nvlan 4000 top 2\n"
+# the saved config: VLANs 10 (2, 3 tagged), 300 (4 tagged), 4000 (2); 20 made and deleted
+CFG = ["set vlan.10.name ten", "set vlan.10.members 2,3", "set vlan.10.tagged 3",
+       "set vlan.20.name twenty", "set vlan.20.members 3", "set vlan.300.members 4", "set vlan.300.tagged 4",
+       "del vlan.20", "set vlan.4000.name top", "set vlan.4000.members 2", "apply", "save"]
 
 
 def main(argv):
@@ -49,8 +52,8 @@ def main(argv):
         b, sim = r.b, r.b.sim
         try:
             r.boot()
-            r.login()
-            r.post_config(CFG, slot=8000)
+            for l in CFG:
+                r.cli(l, slot=8000)
             r.wait(2000)
             r._now()
             sim.cmd("reg hold 4 7000")		# CHIP_ID: an RTL8373N, its 8224 SerDes setting
@@ -62,19 +65,16 @@ def main(argv):
             r.powercut()
             r.boot(slot=60000)
             r.wait(3000)
-            r.cli("version")		# the first reply after this boot is link lines only
+            r.cli("get state.sys.version")	# the first reply after this boot is link lines only
             text = health_text(lambda l: (r.cli(l, slot=10000),	# P5-2 deleted health tasks
                                           r.results[max(k for k in r.results if k.endswith("cli " + l))])[1])
             m = re.search(r"hw timeouts (\d+)(?: last 0x([0-9a-f]{4}))?", text)
-            r.login()
-            r.get("/vlanlist.json")
-            vl = r.results[max(r.results)]
-            r.cli("vlan show")
-            vs = r.results[max(r.results)]
+            r.cli("get vlan", slot=10000)
+            vl = r.results[max(k for k in r.results if k.endswith("cli get vlan"))]
             r._now()
             table = "\n".join(b.table("vlan"))
             drops = [c[2] for c in sim.checks() if c[1] == "table-busy"][n0:]
-            out[name] = (vl, vs, table)
+            out[name] = (vl, table)
             print(f"{name}: hw timeouts {m.group(1) if m else '?'} last {m.group(2) if m else '-'}; "
                   f"{len(drops)} table commands dropped", flush=True)
             for d in drops[:5]:
@@ -82,12 +82,12 @@ def main(argv):
             check(not drops, f"{name}: no table command dropped")
             if name == "early":
                 check(m and int(m.group(1)) > 0 and m.group(2) == "03f8", "early: the 8224 SDS wait timed out")
-            check('"id":10' in vl and '"id":4000' in vl and '"id":20' not in vl, f"{name}: /vlanlist.json has the config's VLANs")
+            check("vlan.10.members" in vl and "vlan.4000.name top" in vl and "vlan.20." not in vl,
+                  f"{name}: get vlan has the config's VLANs")
         finally:
             b.close()
-    check(out["plain"][2] == out["early"][2], "the VLAN table the same after both boots")
-    check(out["plain"][0] == out["early"][0], "/vlanlist.json the same")
-    check(out["plain"][1] == out["early"][1], "`vlan show` the same")
+    check(out["plain"][1] == out["early"][1], "the VLAN table the same after both boots")
+    check(out["plain"][0] == out["early"][0], "get vlan the same")
     print(f"boot_stuck: {len(fails)} failed")
     return 1 if fails else 0
 

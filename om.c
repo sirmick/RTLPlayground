@@ -79,6 +79,7 @@ static __xdata uint8_t ce;		/* level 0's element: logical port, number, slot */
 __xdata uint8_t om_ix1;		/* level 1: number from 0, word */
 static __xdata uint8_t r_v1;		/* as given */
 __xdata uint16_t om_key;		/* a streamed object's instance (om.h) */
+__xdata uint8_t *__xdata om_arg;	/* do's text argument (om.h) */
 #if OM_USE_STREAM
 static __xdata uint8_t r_open;		/* K: instances left, + 1 (K 1, K- OM_PAGE); 0 every one */
 static __xdata uint8_t r_land;		/* K: the instance found must be K */
@@ -100,6 +101,7 @@ static __xdata uint8_t e_star;		/* emit_obj: '*' for the indices (and help's for
 #define J_CHECK	8	/* apply's checks, CHECK_N instances a step; then J_APPLY */
 #define J_SET	9	/* set and del, SET_N instances a step (a get's cli job: a window waits) */
 #define J_HELP	10	/* help <path>: a line a step (a get's cli job), in bin_line() */
+#define J_NAMES	11	/* get alone: an object's name a step, in bin_line() */
 static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 #define O_START	0xfe		/* j_o: the path's first object next (obj_first()) */
 static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
@@ -1970,15 +1972,10 @@ static void om_get(void)
 #if OM_USE_KEY
 	j_copies = (c_cand ? 2 : 1) | K_SORT;
 #endif
-	if (cmd_words_len <= c_pw) {
-		e_star = 1;
-		for (r_o = 0; r_o < OM_N_OBJ; r_o++) {
-			sel_obj(r_o);
-			emit_obj();
-			write_char('\n');
-		}
-		e_star = 0;
-		ok();
+	if (cmd_words_len <= c_pw) {	/* the names, a line a step (5.9 ms at once in rtlsim) */
+		job_start(J_NAMES);
+		cli_job = CLI_JOB_OM;
+		j_o = 0;
 		return;
 	}
 	job_start(J_GET);
@@ -2243,7 +2240,10 @@ static void om_do(void)
 		return;
 	}
 	om_key = 0xffff;			/* the argument (om.h): none */
-	if (cmd_words_len > 2) {
+	om_arg = 0;
+	if (cmd_words_len > 2 && fdx.off) {	/* a text argument: the rest of the line */
+		om_arg = &cmd_buffer[cmd_words_b[2]];
+	} else if (cmd_words_len > 2) {
 		word(2);
 		if (!parse_dec() || num[2] || num[3] || !at_end()) {
 			fail("a number");
@@ -3267,6 +3267,14 @@ uint8_t om_boot_load(uint8_t dflt) __banked
 /* the cli's wait for the save, the load's steps, get -s, help: 1 while there are more */
 static uint8_t bin_line(void)
 {
+	if (j_mode == J_NAMES) {
+		sel_obj(j_o);
+		e_star = 1;
+		emit_obj();
+		e_star = 0;
+		write_char('\n');
+		return ++j_o < OM_N_OBJ;
+	}
 #if OM_HELP
 	if (j_mode == J_HELP)
 		return h_line();
