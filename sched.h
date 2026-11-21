@@ -70,7 +70,7 @@ extern __xdata uint8_t  sched_ev;	/* this pass's hardware events */
 
 /* Measurement (health). Durations are in fine units of 64 Timer 2 counts,
  * 6.144 us; 16 bits saturate at ~400 ms. */
-#define SCHED_FINE_NS		6144
+#include "step_time.h"		/* SCHED_FINE_NS, STEP_US, STEP_PAST */
 #define SCHED_OVERRUN_FINE	8138	/* 50 ms, the step limit (decision 25) */
 extern __xdata uint16_t sched_st_max[S_COUNT];	/* longest step per state */
 extern __xdata uint16_t sched_st_runs[S_COUNT];	/* runs per state, saturating */
@@ -137,7 +137,6 @@ void sched_clear_stats(void) __banked;
 /* measurement around each step and pass (sched_bank.c) */
 void sched_fine_read(void) __banked;	/* now, into sched_f_tick/sched_f_cnt */
 void sched_m_pass_start(void) __banked;
-uint16_t sched_step_fine(void) __banked;	/* the step so far, fine units (a step that budgets its time) */
 void sched_m_step_start(void) __banked;
 void sched_m_step_end(void) __banked;
 void sched_m_pass_end(void) __banked;

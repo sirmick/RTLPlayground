@@ -25,10 +25,10 @@
 
 #define FL_CHUNK	512	/* bytes a config/factory FL_PROG chunk holds */
 /* a chunk is programmed an op at a time (to the next 4 B boundary) while
- * the step is under FL_W_FINE, the rest at the next step: an op is ~1 ms on
+ * the step is under FL_W_US, the rest at the next step: an op is ~1 ms on
  * the 4+2's W25Q40CL (the bench, 2026-11-21: a save's FL_PROG step grew
  * ~210 us a byte), ~50 us on the 8x's W25Q16JV */
-#define FL_W_FINE	((uint16_t)(7000000UL / SCHED_FINE_NS))
+#define FL_W_US		7000
 
 extern __xdata struct flash_region_t flash_region;
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
@@ -115,7 +115,7 @@ STEP(fl, prog)
 		FL_ADVANCE(fl_addr, fl_p);
 		fl_wp += fl_p;
 		fl_wn -= fl_p;
-		if (fl_wn && sched_step_fine() >= FL_W_FINE)
+		if (fl_wn && STEP_PAST(FL_W_US))
 			return STEP_STAY;
 	}
 	if (fl_len)

@@ -28,3 +28,8 @@ field 205.1 port.tstorm.rate U32
 field 205.2 port.tstorm.unit Enum(tsunit)
 retired 205.1 port.tstorm.rate
 retired 205.2 port.tstorm.unit
+sobj 1 state.tsys
+sfield 1.1 state.tsys.bridge
+sfield 1.2 state.tsys.ip
+sfield 1.3 state.tsys.offset
+sfield 1.4 state.tsys.lp

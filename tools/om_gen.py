@@ -159,6 +159,7 @@ class Field:
         if self.cname in ("static", "default", "auto", "register", "char", "int"):
             self.cname += "_"           # a C keyword
         self.id = 0
+        self.sid = 0          # a state field's ID (sfield), the UI's strings only
         self.derived = derived
 
 
@@ -178,6 +179,7 @@ class Obj:
         self.order, self.tip, self.names = order, tip, names
         self.fields, self.entries = [], []
         self.id = 0
+        self.sid = 0          # a state object's ID (sobj)
         self.dir = SCHEMA["dir"]
         self.parent = None
         lv = []
@@ -435,7 +437,8 @@ def mac_bytes(where, d, auto):
 # ---- the registry ----------------------------------------------------------
 
 def read_registry(path):
-    reg = {"obj": {}, "field": {}, "lines": [], "base": 1, "path": path}
+    reg = {"obj": {}, "field": {}, "sobj": {}, "sfield": {}, "lines": [], "base": 1, "path": path,
+           "exists": os.path.exists(path)}
     if not os.path.exists(path):
         return reg
     for n, line in enumerate(open(path), 1):
@@ -451,12 +454,17 @@ def read_registry(path):
         elif s[0] in ("field", "retired") and len(s) >= 3:
             oid, fid = (int(x) for x in s[1].split("."))
             reg["field"][s[2]] = (oid, fid, s[0] == "retired", s[3] if len(s) > 3 else "")
+        elif s[0] == "sobj" and len(s) == 3:
+            reg["sobj"][s[2]] = int(s[1])
+        elif s[0] in ("sfield", "sretired") and len(s) == 3:
+            oid, fid = (int(x) for x in s[1].split("."))
+            reg["sfield"][s[2]] = (oid, fid, s[0] == "sretired")
         else:
             raise SystemExit("%s:%d: bad registry line" % (path, n))
     return reg
 
 
-def apply_registry(objs, regs, register):
+def apply_registry(objs, regs, register, state_ids=False):
     """Give every config object and field its ID (from its directory's registry);
     with register, add new ones."""
     added = {d: [] for d in regs}
@@ -505,6 +513,57 @@ def apply_registry(objs, regs, register):
                 raise SystemExit("schema: %s changed type %s -> %s: retire it and add a new field"
                                  % (path_, sig, f.typ.sig()))
             f.id = fid
+    # state objects and fields: IDs of their own (sobj, sfield), for the web
+    # UI's strings only (never saved); paths "state.<object>.<field>". A
+    # directory without a registry (the build's generated rows) has none.
+    cfg_dirs = {o.dir for o in objs if not o.state}
+    for o in objs:
+        if not o.state:
+            continue
+        reg = regs[o.dir]
+        o.sid = 0
+        # no registry and no config objects: the build's generated rows
+        # (sched_gen --om), with no IDs and no strings
+        if not reg["exists"] and not (register and o.dir in cfg_dirs):
+            continue
+        name = "state." + o.regname
+        if name not in reg["sobj"]:
+            if not register and not state_ids:	# the tables don't need it, schema.js does
+                continue
+            if not register:
+                raise SystemExit("schema: state object %s has no ID: run tools/om_gen.py --register" % name)
+            oid = max(set(reg["sobj"].values()) | {0}) + 1
+            reg["sobj"][name] = oid
+            added[o.dir].append("sobj %d %s" % (oid, name))
+        o.sid = reg["sobj"][name]
+        used = {fid for (oid, fid, _) in reg["sfield"].values() if oid == o.sid}
+        for f in o.fields:
+            path_ = "%s.%s" % (name, f.name) if f.name else name
+            r = reg["sfield"].get(path_)
+            if r is None:
+                if not register and not state_ids:
+                    continue
+                if not register:
+                    raise SystemExit("schema: %s has no ID: run tools/om_gen.py --register" % path_)
+                fid = max(used | {0}) + 1
+                used.add(fid)
+                reg["sfield"][path_] = (o.sid, fid, False)
+                added[o.dir].append("sfield %d.%d %s" % (o.sid, fid, path_))
+                r = reg["sfield"][path_]
+            if r[2]:
+                raise SystemExit("schema: %s was retired; a new field needs a new name" % path_)
+            f.sid = r[1]
+    # a state field gone: checked when registering (a build may leave a
+    # schema file out, -x state_dbg.py, and its fields with it)
+    for d, reg in regs.items():
+        if not (reg["exists"] or d in cfg_dirs) or not register:
+            continue
+        have = {("state.%s.%s" % (o.regname, f.name)) if f.name else "state." + o.regname
+                for o in objs if o.state and o.dir == d for f in o.fields}
+        for p_, (oid, fid, retired) in reg["sfield"].items():
+            if not retired and p_ not in have:
+                raise SystemExit("schema: %s (s%d.%d) is registered but gone: "
+                                 "mark it 'sretired' in %s" % (p_, oid, fid, reg["path"]))
     # every registered, unretired field must still exist
     for d, reg in regs.items():
         have = {"%s.%s" % (o.regname, f.name) for o in objs if not o.state and o.dir == d
@@ -519,7 +578,8 @@ def apply_registry(objs, regs, register):
                     fp.write("# The object model's stable IDs (DESIGN.md 10.5): appended by\n"
                              "# tools/om_gen.py --register, never edited or reused.\n"
                              "#   obj <id> <object>          field <obj>.<id> <path> <type>\n"
-                             "#   retired <obj>.<id> <path>  (its ID is never handed out again)\n")
+                             "#   retired <obj>.<id> <path>  (its ID is never handed out again)\n"
+                             "#   sobj, sfield, sretired: the same for state (the UI's strings; never saved)\n")
                 for a in added[d]:
                     fp.write(a + "\n")
                     print("registered:", a)
@@ -892,7 +952,8 @@ def js_field(f):
         a, b = t.lo, t.hi
     elif t.code in ("SCALED", "STR", "SECRET", "PMASK", "MAC", "PORT"):
         a = t.arg
-    v = [JS_T[t.code], a, b, js_default(f), f.when, f.tip, f.unit, f.label]
+    # no tip: the UI reads the tips from the switch's help (help -a), the one copy
+    v = [JS_T[t.code], a, b, js_default(f), f.when, "", f.unit, f.label]
     while v[-1] in (None, "", 0):
         v.pop()
     return v
@@ -908,11 +969,17 @@ def js(objs, path):
             w = [" ".join(t.words) for k, _, t, _ in o.levels if k == "WORD"]
             if w:
                 e["w"] = w       # a word index's words (the CLI page completes them)
-        if o.tip:
-            e["t"] = o.tip
         if o.names:
             e["n"] = o.names
         e["f"] = {f.name: js_field(f) for f in o.fields}
+        # the stable IDs, the UI's string keys: "<obj>.<field>" for config,
+        # "s<obj>.<field>" for state (registry.txt's obj/field, sobj/sfield)
+        oid = ("s%d" % o.sid if o.sid else "") if o.state else (str(o.id) if o.id else "")
+        if oid:
+            e["o"] = oid
+            k = {f.name: (f.sid if o.state else f.id) for f in o.fields if (f.sid if o.state else f.id)}
+            if k:
+                e["k"] = k
         out[("state." if o.state else "") + o.regname] = e
     text = ("// Generated by tools/om_gen.py --js from schema/: do not edit (DESIGN 14.3)\n"
             "var SCHEMA = " + json.dumps(out, separators=(",", ":")) + ";\n")
@@ -1179,7 +1246,7 @@ def main():
     dirs = a.schema or ["schema"]
     objs = load_schema(dirs, a.skip, js=a.js and not a.out)
     regs = {d: read_registry(os.path.join(d, "registry.txt")) for d in dirs}
-    apply_registry(objs, regs, a.register)
+    apply_registry(objs, regs, a.register, state_ids=bool(a.js))
     if a.out:
         gen(objs, a.out)
     if a.js:

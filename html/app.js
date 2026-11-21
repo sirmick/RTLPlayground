@@ -1,11 +1,6 @@
 "use strict";
 var LANG = {
     en: {
-        i_host: "Hostname",
-        i_ip: "IP address",
-        i_mask: "Netmask",
-        i_gw: "Gateway",
-        i_syslog: "Syslog",
         nav_dash: "Dashboard",
         nav_ports: "Ports",
         nav_stp: "Spanning tree",
@@ -96,8 +91,6 @@ var LANG = {
         d_traffic_h: "packets/s, live",
         d_txpps: "TX pps",
         d_rxpps: "RX pps",
-        d_txbad: "TX bad",
-        d_rxbad: "RX bad",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Built",
@@ -122,18 +115,7 @@ var LANG = {
         p_txdis: "TX disabled",
         p_rxlos: "RX LOS",
         pt_title: "Port configuration",
-        f_port_duplex: "Duplex",
-        f_port_ingress_filter: "Filter",
-        f_port_eee: "EEE",
-        f_port_isolate: "Sends to",
-        f_port_cabletest: "Cable test",
-        f_state_port_duplex: "Duplex",
-        f_state_port_media: "Media",
-        f_state_port_ms_role: "Role",
-        f_state_port_eee_active: "EEE active",
-        pt_conn: "Devices learned",
         pt_speed: "Speed",
-        pt_mtu: "MTU",
         stp_title: "Spanning tree",
         loop_title: "Loop detection",
         loop_d: "The switch sends a probe on every port and watches for its own probes coming back. While spanning tree is off it blocks one port of each loop it finds, until the loop is gone; with spanning tree on, loops are only reported.",
@@ -143,10 +125,8 @@ var LANG = {
         loop_blocked: "blocked: {p}",
         loop_stp: "spanning tree is on: reported only",
         stp_h: "RSTP, 802.1w",
-        stp_version: "Version",
         stp_v_stp: "STP compatible",
         stp_prio: "Bridge priority",
-        stp_hello: "Hello [s]",
         stp_maxage: "Max age [s]",
         stp_fwd: "Forward delay [s]",
         stp_txhold: "TX hold",
@@ -160,15 +140,11 @@ var LANG = {
         stp_tc: "topology changes",
         stp_prio_note: "Lower priority wins the root election (default 8 = 32768).",
         stp_portcfg: "Port configuration",
-        stp_edge: "Edge",
         stp_pcost: "Path cost",
-        stp_pprio: "Priority",
-        stp_guard: "Guard",
         stp_filter: "BPDU filter",
         stp_p2p: "Point-to-point",
         stp_port_note: "Edge ports forward immediately and cause no topology change; Auto treats a port as edge after 3 s without BPDUs, and any received BPDU revokes it. Path cost 0 = automatic.",
         stp_status: "Port status",
-        stp_role: "Role",
         stp_db: "Designated bridge",
         stp_dp: "Designated port",
         stp_dc: "Designated cost",
@@ -216,10 +192,6 @@ var LANG = {
         stp_cage: "Last BPDU [s]",
         st_title: "Port statistics",
         st_h: "totals since boot",
-        st_txg: "TX good",
-        st_txb: "TX bad",
-        st_rxg: "RX good",
-        st_rxb: "RX bad",
         st_details: "Details",
         st_counters: "MIB counters",
         st_nonzero: "non-zero only",
@@ -229,8 +201,6 @@ var LANG = {
         st_fail: "failed to load counters",
         v_title: "VLANs",
         v_vid: "VLAN ID",
-        v_members: "Members",
-        v_tagged: "Tagged",
         v_untagged: "Untagged",
         v_pvid_on: "PVID on",
         v_empty: "No VLANs configured.",
@@ -242,7 +212,6 @@ var LANG = {
         v_pvid: "PVID",
         v_add: "Add a new VLAN",
         v_legend: "U = untagged member, T = tagged member, - = not a member. An untagged member takes this VLAN as its PVID; a port whose PVID it was and that is no longer untagged here goes to PVID 0. Marked rows are staged, not yet running.",
-        v_accept: "Accept",
         v_del_t: "Delete VLAN",
         v_rename: "Rename",
         v_rename_t: "Rename VLAN",
@@ -277,12 +246,10 @@ var LANG = {
         lag_pvid_moved: "LAG ports {p} take one PVID: {v}",
         lag_other: "Port {p} is in another LAG: take it out there first",
         lacp_heading: "LACP (802.3ad)",
-        lag_mode: "Mode",
         lag_static: "Static",
         lacp_neg: "negotiating",
         lacp_agg: "aggregator",
         lacp_members: "active members",
-        lacp_actor: "Actor",
         lacp_partner: "Partner",
         lacp_rxstate: "RX state",
         lacp_rx: "LACPDUs received",
@@ -307,15 +274,10 @@ var LANG = {
         sc_err: "Storm limit must be 1-1048575 pps or 1-10000000 kbit/s",
         sc_note: "Frames of a type above its limit are dropped where they enter the switch.",
         sy_network: "Network",
-        sy_mode: "Addressing",
         sy_static: "Static",
         sy_dhcp_t: "Request address via DHCP",
         sy_services: "Services",
-        sy_igmp: "IGMP snooping",
         sy_sysip: "server IP",
-        sy_server: "Server",
-        sy_port: "Port",
-        sy_sesstmo: "Session timeout (s)",
         sy_sesstmo_err: "Session timeout must be 1-65535 s",
         sy_services_note: "Service state reflects the startup config; runtime state is not readable.",
         sy_password: "Admin password",
@@ -334,17 +296,10 @@ var LANG = {
         sy_ip_changed: "IP changed, reconnect at http://{ip}/",
         sy_dhcp_q: "Switch to DHCP?",
         sy_sysip_err: "Invalid syslog server IP",
-        sy_dns1: "DNS server",
-        sy_dns2: "Second DNS",
         sy_dns_err: "Invalid DNS server IP",
         sy_dns_dhcp: "from DHCP: {ip}",
         sy_time: "Time",
-        sy_ntp: "NTP",
-        sy_ntpsrv: "NTP server",
         sy_ntpsrv_p: "host name or IPv4 address",
-        sy_ntpint: "Poll interval [min]",
-        sy_tz: "Time zone",
-        sy_dst: "Daylight saving",
         sy_dst_eu: "Europe",
         sy_dst_us: "United States",
         sy_now: "Local time",
@@ -418,11 +373,41 @@ var LANG = {
         fw_timeout: "switch has not come back after 150 s: check power / serial console"
     },
     ja: {
-        i_host: "ホスト名",
-        i_ip: "IP アドレス",
-        i_mask: "ネットマスク",
-        i_gw: "ゲートウェイ",
-        i_syslog: "Syslog",
+        f: {	/* the schema's fields, by ID: overrides of its English */
+            "11.4": {l: "Hello"},
+            "11.2": {l: "バージョン"},
+            "13.2": {l: "エッジ"},
+            "13.4": {l: "優先度"},
+            "13.5": {l: "ガード"},
+            "s14.2": {l: "ロール"},
+            "s1.9": {l: "TX 正常"},
+            "s1.11": {l: "TX 異常"},
+            "s1.10": {l: "RX 正常"},
+            "s1.12": {l: "RX 異常"},
+            "9.2": {l: "メンバー"},
+            "9.3": {l: "タグ付き"},
+            "1.1": {l: "名前"},
+            "1.13": {l: "入力制限"},
+            "1.15": {l: "出力制限"},
+            "1.2": {l: "有効"},
+            "1.3": {l: "速度"},
+            "1.5": {l: "MTU"},
+            "1.6": {l: "PVID"},
+            "1.7": {l: "受け入れ"},
+            "14.1": {l: "IGMP スヌーピング"},
+            "2.1": {l: "ホスト名"},
+            "4.1": {l: "Syslog"},
+            "4.2": {l: "サーバー"},
+            "4.3": {l: "ポート"},
+            "7.2": {l: "セッションタイムアウト"},
+            "8.1": {l: "アドレス設定"},
+            "8.2": {l: "IP アドレス"},
+            "8.3": {l: "ネットマスク"},
+            "8.4": {l: "ゲートウェイ"},
+            "s1.1": {l: "リンク"},
+            "s1.2": {l: "速度"},
+            "s1.8": {l: "学習済みデバイス"}
+        },
         nav_dash: "ダッシュボード",
         nav_ports: "ポート",
         nav_stp: "スパニングツリー",
@@ -473,8 +458,6 @@ var LANG = {
         d_traffic_h: "パケット/秒、リアルタイム",
         d_txpps: "TX pps",
         d_rxpps: "RX pps",
-        d_txbad: "TX 異常",
-        d_rxbad: "RX 異常",
         i_mac: "MAC",
         i_fw: "ファームウェア",
         i_built: "ビルド日",
@@ -498,15 +481,11 @@ var LANG = {
         p_txdis: "TX 無効",
         p_rxlos: "RX 信号ロス",
         pt_title: "ポート設定",
-        pt_conn: "学習済みデバイス",
         pt_speed: "速度",
-        pt_mtu: "MTU",
         stp_title: "スパニングツリー",
         stp_h: "RSTP, 802.1w",
-        stp_version: "バージョン",
         stp_v_stp: "STP 互換",
         stp_prio: "ブリッジ優先度",
-        stp_hello: "Hello [秒]",
         stp_maxage: "Max age [秒]",
         stp_fwd: "Forward delay [秒]",
         stp_txhold: "TX hold",
@@ -519,15 +498,11 @@ var LANG = {
         stp_cost: "パスコスト",
         stp_tc: "トポロジ変更回数",
         stp_portcfg: "ポート設定",
-        stp_edge: "エッジ",
         stp_pcost: "パスコスト",
-        stp_pprio: "優先度",
-        stp_guard: "ガード",
         stp_filter: "BPDU フィルタ",
         stp_p2p: "ポイントツーポイント",
         stp_port_note: "エッジポートは即時に転送を開始し、トポロジ変更を発生させません。自動では BPDU を 3 秒間受信しないとエッジと見なし、BPDU を受信すると解除されます。パスコスト 0 = 自動。",
         stp_status: "ポート状態",
-        stp_role: "ロール",
         stp_db: "指定ブリッジ",
         stp_dp: "指定ポート",
         stp_dc: "指定コスト",
@@ -551,10 +526,6 @@ var LANG = {
         stp_cost_err: "パスコストは 0〜200000000 の範囲で指定してください",
         st_title: "ポート統計",
         st_h: "起動からの累計",
-        st_txg: "TX 正常",
-        st_txb: "TX 異常",
-        st_rxg: "RX 正常",
-        st_rxb: "RX 異常",
         st_details: "詳細",
         st_counters: "MIB カウンタ",
         st_nonzero: "0 以外のみ",
@@ -564,8 +535,6 @@ var LANG = {
         st_fail: "カウンタの取得に失敗しました",
         v_title: "VLAN",
         v_vid: "VID",
-        v_members: "メンバー",
-        v_tagged: "タグ付き",
         v_untagged: "タグ無し",
         v_pvid_on: "PVID",
         v_empty: "VLAN は設定されていません。",
@@ -577,7 +546,6 @@ var LANG = {
         v_member: "メンバー",
         v_pvid: "PVID",
         v_legend: "U = タグ無しメンバー、T = タグ付きメンバー、- = 非メンバー。PVID はタグ無し受信トラフィックをこの VLAN に割り当てます。",
-        v_accept: "受け入れ",
         v_ing_apply: "受信モードを適用",
         v_del_t: "VLAN を削除",
         v_del_q: "VLAN {n} を削除しますか?",
@@ -616,15 +584,10 @@ var LANG = {
         bw_in_err: "入力制限は 0.016〜10000 Mbit/s の範囲で指定してください",
         bw_out_err: "出力制限は 0.016〜10000 Mbit/s の範囲で指定してください",
         sy_network: "ネットワーク",
-        sy_mode: "アドレス設定",
         sy_static: "静的",
         sy_dhcp_t: "DHCP でアドレスを取得",
         sy_services: "サービス",
-        sy_igmp: "IGMP スヌーピング",
         sy_sysip: "サーバー IP",
-        sy_server: "サーバー",
-        sy_port: "ポート",
-        sy_sesstmo: "セッションタイムアウト (秒)",
         sy_sesstmo_err: "セッションタイムアウトは 1〜65535 秒で指定してください",
         sy_services_note: "サービスの状態は起動設定を反映しています。実行時の状態は読み取れません。",
         sy_password: "管理者パスワード",
@@ -680,11 +643,51 @@ var LANG = {
         fw_timeout: "150 秒経ってもスイッチが復帰しません。電源 / シリアルコンソールを確認してください"
     },
     zh: {
-        i_host: "主机名",
-        i_ip: "IP 地址",
-        i_mask: "子网掩码",
-        i_gw: "网关",
-        i_syslog: "Syslog",
+        f: {	/* the schema's fields, by ID: overrides of its English */
+            "11.4": {l: "Hello"},
+            "11.2": {l: "版本"},
+            "13.2": {l: "边缘端口"},
+            "13.4": {l: "优先级"},
+            "13.5": {l: "保护"},
+            "s14.2": {l: "角色"},
+            "s1.9": {l: "TX 正常"},
+            "s1.11": {l: "TX 错误"},
+            "s1.10": {l: "RX 正常"},
+            "s1.12": {l: "RX 错误"},
+            "9.2": {l: "成员"},
+            "9.3": {l: "Tagged"},
+            "s9.2": {l: "本端"},
+            "10.1": {l: "模式"},
+            "1.1": {l: "名称"},
+            "1.13": {l: "入方向限速"},
+            "1.15": {l: "出方向限速"},
+            "1.2": {l: "启用"},
+            "1.3": {l: "速率"},
+            "1.5": {l: "MTU"},
+            "1.6": {l: "PVID"},
+            "1.7": {l: "接受"},
+            "1.9": {l: "LLDP"},
+            "14.1": {l: "IGMP 侦听"},
+            "2.1": {l: "主机名"},
+            "4.1": {l: "Syslog"},
+            "4.2": {l: "服务器"},
+            "4.3": {l: "端口"},
+            "5.1": {l: "DNS 服务器"},
+            "5.2": {l: "备用 DNS 服务器"},
+            "6.1": {l: "NTP"},
+            "6.2": {l: "NTP 服务器"},
+            "6.3": {l: "轮询间隔"},
+            "6.4": {l: "时区"},
+            "6.5": {l: "夏令时"},
+            "7.2": {l: "会话超时（秒）"},
+            "8.1": {l: "地址分配"},
+            "8.2": {l: "IP 地址"},
+            "8.3": {l: "子网掩码"},
+            "8.4": {l: "网关"},
+            "s1.1": {l: "链路"},
+            "s1.2": {l: "速率"},
+            "s1.8": {l: "已学习设备"}
+        },
         nav_dash: "仪表盘",
         nav_ports: "端口",
         nav_stp: "生成树",
@@ -736,8 +739,6 @@ var LANG = {
         d_traffic_h: "包/秒，实时",
         d_txpps: "TX pps",
         d_rxpps: "RX pps",
-        d_txbad: "TX 错误",
-        d_rxbad: "RX 错误",
         i_mac: "MAC",
         i_fw: "固件",
         i_built: "构建日期",
@@ -761,15 +762,11 @@ var LANG = {
         p_txdis: "TX 禁用",
         p_rxlos: "RX 信号丢失",
         pt_title: "端口配置",
-        pt_conn: "已学习设备",
         pt_speed: "速率",
-        pt_mtu: "MTU",
         stp_title: "生成树",
         stp_h: "RSTP, 802.1w",
-        stp_version: "版本",
         stp_v_stp: "STP 兼容",
         stp_prio: "网桥优先级",
-        stp_hello: "Hello [秒]",
         stp_maxage: "Max age [秒]",
         stp_fwd: "Forward delay [秒]",
         stp_txhold: "TX hold",
@@ -782,15 +779,11 @@ var LANG = {
         stp_cost: "路径开销",
         stp_tc: "拓扑变更次数",
         stp_portcfg: "端口配置",
-        stp_edge: "边缘端口",
         stp_pcost: "路径开销",
-        stp_pprio: "优先级",
-        stp_guard: "保护",
         stp_filter: "BPDU 过滤",
         stp_p2p: "点对点",
         stp_port_note: "边缘端口立即转发且不触发拓扑变更；自动模式下 3 秒未收到 BPDU 即视为边缘端口，收到 BPDU 后立即撤销。路径开销 0 = 自动。",
         stp_status: "端口状态",
-        stp_role: "角色",
         stp_db: "指定网桥",
         stp_dp: "指定端口",
         stp_dc: "指定开销",
@@ -837,10 +830,6 @@ var LANG = {
         stp_cage: "上次收到 BPDU [秒]",
         st_title: "端口统计",
         st_h: "自启动以来的累计值",
-        st_txg: "TX 正常",
-        st_txb: "TX 错误",
-        st_rxg: "RX 正常",
-        st_rxb: "RX 错误",
         st_details: "详情",
         st_counters: "MIB 计数器",
         st_nonzero: "仅显示非零",
@@ -850,8 +839,6 @@ var LANG = {
         st_fail: "读取计数器失败",
         v_title: "VLAN",
         v_vid: "VID",
-        v_members: "成员",
-        v_tagged: "Tagged",
         v_untagged: "Untagged",
         v_pvid_on: "PVID",
         v_empty: "尚未配置 VLAN。",
@@ -863,7 +850,6 @@ var LANG = {
         v_pvid: "PVID",
         v_add: "添加新 VLAN",
         v_legend: "U = untagged 成员，T = tagged 成员，- = 非成员。PVID 将入方向的未标记流量归入此 VLAN。",
-        v_accept: "接受",
         v_del_t: "删除 VLAN",
         v_rename: "重命名",
         v_rename_t: "重命名 VLAN",
@@ -893,12 +879,10 @@ var LANG = {
         m_none: "请至少选择一个被镜像端口",
         lag_hash: "哈希:",
         lacp_heading: "LACP (802.3ad)",
-        lag_mode: "模式",
         lag_static: "静态",
         lacp_neg: "协商中",
         lacp_agg: "聚合器",
         lacp_members: "活动成员",
-        lacp_actor: "本端",
         lacp_partner: "对端",
         lacp_rxstate: "接收状态",
         lacp_rx: "已接收的 LACPDU",
@@ -923,15 +907,10 @@ var LANG = {
         sc_err: "风暴控制阈值必须为 1-1048575 pps 或  1-10000000 kbit/s",
         sc_note: "超过对应类型限值的数据帧会在进入交换机时被丢弃。",
         sy_network: "网络",
-        sy_mode: "地址分配",
         sy_static: "静态",
         sy_dhcp_t: "通过 DHCP 获取地址",
         sy_services: "服务",
-        sy_igmp: "IGMP 侦听",
         sy_sysip: "服务器 IP",
-        sy_server: "服务器",
-        sy_port: "端口",
-        sy_sesstmo: "会话超时（秒）",
         sy_sesstmo_err: "会话超时必须为 1-65535 秒",
         sy_services_note: "服务状态反映启动配置；运行时状态无法读取。",
         sy_password: "管理员密码",
@@ -950,17 +929,10 @@ var LANG = {
         sy_ip_changed: "IP 已更改，请访问 http://{ip}/ 重新连接",
         sy_dhcp_q: "切换到 DHCP?",
         sy_sysip_err: "syslog 服务器 IP 无效",
-        sy_dns1: "DNS 服务器",
-        sy_dns2: "备用 DNS 服务器",
         sy_dns_err: "DNS 服务器 IP 地址无效",
         sy_dns_dhcp: "DHCP 下发：{ip}",
         sy_time: "时间",
-        sy_ntp: "NTP",
-        sy_ntpsrv: "NTP 服务器",
         sy_ntpsrv_p: "主机名或 IPv4 地址",
-        sy_ntpint: "轮询间隔 [分钟]",
-        sy_tz: "时区",
-        sy_dst: "夏令时",
         sy_dst_eu: "欧洲",
         sy_dst_us: "美国",
         sy_now: "本地时间",
@@ -1010,11 +982,51 @@ var LANG = {
         fw_timeout: "150 秒后交换机仍未恢复: 请检查电源 / 串口控制台"
     },
     es: {
-        i_host: "Nombre de host",
-        i_ip: "Dirección IP",
-        i_mask: "Máscara de red",
-        i_gw: "Puerta de enlace",
-        i_syslog: "Syslog",
+        f: {	/* the schema's fields, by ID: overrides of its English */
+            "11.4": {l: "Hello"},
+            "11.2": {l: "Versión"},
+            "13.2": {l: "Borde"},
+            "13.4": {l: "Prioridad"},
+            "13.5": {l: "Protección"},
+            "s14.2": {l: "Rol"},
+            "s1.9": {l: "TX correctos"},
+            "s1.11": {l: "TX erróneos"},
+            "s1.10": {l: "RX correctos"},
+            "s1.12": {l: "RX erróneos"},
+            "9.2": {l: "Miembros"},
+            "9.3": {l: "Etiquetados"},
+            "s9.2": {l: "Local"},
+            "10.1": {l: "Modo"},
+            "1.1": {l: "Nombre"},
+            "1.13": {l: "Límite de entrada"},
+            "1.15": {l: "Límite de salida"},
+            "1.2": {l: "Habilitado"},
+            "1.3": {l: "Velocidad"},
+            "1.5": {l: "MTU"},
+            "1.6": {l: "PVID"},
+            "1.7": {l: "Aceptar"},
+            "1.9": {l: "LLDP"},
+            "14.1": {l: "IGMP snooping"},
+            "2.1": {l: "Nombre de host"},
+            "4.1": {l: "Syslog"},
+            "4.2": {l: "Servidor"},
+            "4.3": {l: "Puerto"},
+            "5.1": {l: "Servidor DNS"},
+            "5.2": {l: "DNS secundario"},
+            "6.1": {l: "NTP"},
+            "6.2": {l: "Servidor NTP"},
+            "6.3": {l: "Intervalo de consulta"},
+            "6.4": {l: "Zona horaria"},
+            "6.5": {l: "Horario de verano"},
+            "7.2": {l: "Tiempo de sesión"},
+            "8.1": {l: "Direccionamiento"},
+            "8.2": {l: "Dirección IP"},
+            "8.3": {l: "Máscara de red"},
+            "8.4": {l: "Puerta de enlace"},
+            "s1.1": {l: "Enlace"},
+            "s1.2": {l: "Velocidad"},
+            "s1.8": {l: "Dispositivos aprendidos"}
+        },
         nav_dash: "Panel",
         nav_ports: "Puertos",
         nav_stp: "Árbol de expansión",
@@ -1065,8 +1077,6 @@ var LANG = {
         d_traffic_h: "paquetes/s, en vivo",
         d_txpps: "TX pps",
         d_rxpps: "RX pps",
-        d_txbad: "TX erróneos",
-        d_rxbad: "RX erróneos",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Compilado",
@@ -1089,15 +1099,11 @@ var LANG = {
         p_txdis: "TX deshabilitado",
         p_rxlos: "Pérdida RX (LOS)",
         pt_title: "Configuración de puerto",
-        pt_conn: "Dispositivos aprendidos",
         pt_speed: "Velocidad",
-        pt_mtu: "MTU",
         stp_title: "Árbol de expansión",
         stp_h: "RSTP, 802.1w",
-        stp_version: "Versión",
         stp_v_stp: "STP compatible",
         stp_prio: "Prioridad del puente",
-        stp_hello: "Hello [s]",
         stp_maxage: "Edad máxima [s]",
         stp_fwd: "Retardo de reenvío [s]",
         stp_txhold: "Retención TX",
@@ -1110,15 +1116,11 @@ var LANG = {
         stp_cost: "coste de ruta",
         stp_tc: "cambios de topología",
         stp_portcfg: "Configuración de puertos",
-        stp_edge: "Borde",
         stp_pcost: "Coste de ruta",
-        stp_pprio: "Prioridad",
-        stp_guard: "Protección",
         stp_filter: "Filtro BPDU",
         stp_p2p: "Punto a punto",
         stp_port_note: "Los puertos de borde reenvían inmediatamente y no causan cambios de topología; Auto trata un puerto como de borde tras 3 s sin BPDUs, y cualquier BPDU recibido lo revoca. Coste de ruta 0 = automático.",
         stp_status: "Estado de puertos",
-        stp_role: "Rol",
         stp_db: "Puente designado",
         stp_dp: "Puerto designado",
         stp_dc: "Coste designado",
@@ -1142,10 +1144,6 @@ var LANG = {
         stp_cost_err: "El coste de ruta debe estar entre 0 y 200000000",
         st_title: "Estadísticas de puertos",
         st_h: "totales desde el arranque",
-        st_txg: "TX correctos",
-        st_txb: "TX erróneos",
-        st_rxg: "RX correctos",
-        st_rxb: "RX erróneos",
         st_details: "Detalles",
         st_counters: "Contadores MIB",
         st_nonzero: "solo no nulos",
@@ -1155,8 +1153,6 @@ var LANG = {
         st_fail: "error al cargar contadores",
         v_title: "VLANs",
         v_vid: "VID",
-        v_members: "Miembros",
-        v_tagged: "Etiquetados",
         v_untagged: "Sin etiquetar",
         v_pvid_on: "PVID activo",
         v_empty: "No hay VLANs configuradas.",
@@ -1168,7 +1164,6 @@ var LANG = {
         v_member: "Miembro",
         v_pvid: "PVID",
         v_legend: "U = miembro sin etiquetar, T = miembro etiquetado, - = no miembro. PVID asigna esta VLAN al tráfico entrante sin etiquetar.",
-        v_accept: "Aceptar",
         v_ing_apply: "Aplicar modos de entrada",
         v_del_t: "Eliminar VLAN",
         v_del_q: "¿Eliminar VLAN {n}?",
@@ -1207,15 +1202,10 @@ var LANG = {
         bw_in_err: "El límite de entrada debe estar entre 0.016 y 10000 Mbit/s",
         bw_out_err: "El límite de salida debe estar entre 0.016 y 10000 Mbit/s",
         sy_network: "Red",
-        sy_mode: "Direccionamiento",
         sy_static: "Estática",
         sy_dhcp_t: "Solicitar dirección mediante DHCP",
         sy_services: "Servicios",
-        sy_igmp: "IGMP snooping",
         sy_sysip: "IP del servidor",
-        sy_server: "Servidor",
-        sy_port: "Puerto",
-        sy_sesstmo: "Tiempo de sesión (s)",
         sy_sesstmo_err: "El tiempo de sesión debe estar entre 1 y 65535 s",
         sy_services_note: "El estado del servicio refleja la configuración de inicio; el estado en ejecución no es legible.",
         sy_password: "Contraseña de administrador",
@@ -1299,12 +1289,10 @@ var LANG = {
         v_rename_t: "Renombrar VLAN",
         v_mgmt_tt: "La VLAN de gestión no se puede borrar, primero hay que asignar la gestión a otra VLAN.",
         lacp_heading: "LACP (802.3ad)",
-        lag_mode: "Modo",
         lag_static: "Estático",
         lacp_neg: "negociando",
         lacp_agg: "agregador",
         lacp_members: "miembros activos",
-        lacp_actor: "Local",
         lacp_partner: "Remoto",
         lacp_rxstate: "Estado RX",
         lacp_rx: "LACPDUs recibidas",
@@ -1317,17 +1305,10 @@ var LANG = {
         sc_umcast: "Multidifusión desconocida",
         sc_err: "El límite de tormenta debe ser 1-1048575 pps o 1-10000000 kbit/s",
         sc_note: "Las tramas de un tipo por encima de su límite se descartan a la entrada del switch.",
-        sy_dns1: "Servidor DNS",
-        sy_dns2: "DNS secundario",
         sy_dns_err: "IP del servidor DNS no válida",
         sy_dns_dhcp: "desde DHCP: {ip}",
         sy_time: "Hora",
-        sy_ntp: "NTP",
-        sy_ntpsrv: "Servidor NTP",
         sy_ntpsrv_p: "nombre de host o dirección IPv4",
-        sy_ntpint: "Intervalo de consulta [min]",
-        sy_tz: "Zona horaria",
-        sy_dst: "Horario de verano",
         sy_dst_eu: "Europa",
         sy_dst_us: "Estados Unidos",
         sy_now: "Hora local",
@@ -1342,11 +1323,49 @@ var LANG = {
         fw_other: "Esta imagen no se compiló para este switch ({m}): los pines de SFP, LEDs y botones pueden no coincidir. Súbela solo si estás seguro."
     },
     fr: {
-        i_host: "Nom d'hote",
-        i_ip: "Adresse IP",
-        i_mask: "Masque réseau",
-        i_gw: "Passerelle",
-        i_syslog: "Journal système",
+        f: {	/* the schema's fields, by ID: overrides of its English */
+            "11.4": {l: "Bonjour"},
+            "11.2": {l: "Protocole"},
+            "13.2": {l: "Port terminal"},
+            "13.4": {l: "Priorité"},
+            "13.5": {l: "Protection"},
+            "s14.2": {l: "Rôle"},
+            "s1.9": {l: "TX OK"},
+            "s1.11": {l: "TX KO"},
+            "s1.10": {l: "RX OK"},
+            "s1.12": {l: "RX KO"},
+            "9.2": {l: "Membres"},
+            "9.3": {l: "Tagué"},
+            "1.1": {l: "Nom"},
+            "1.13": {l: "Limite entrante"},
+            "1.15": {l: "Limite sortante"},
+            "1.2": {l: "Activé"},
+            "1.3": {l: "Vitesse"},
+            "1.5": {l: "MTU"},
+            "1.6": {l: "PVID"},
+            "1.7": {l: "Accepté"},
+            "1.9": {l: "Couche de Liaison"},
+            "14.1": {l: "Surveillance IGMP"},
+            "2.1": {l: "Nom d'hote"},
+            "4.1": {l: "Journal système"},
+            "4.2": {l: "Serveur"},
+            "4.3": {l: "Port"},
+            "5.1": {l: "DNS principal"},
+            "5.2": {l: "DNS secondaire"},
+            "6.1": {l: "NTP"},
+            "6.2": {l: "Serveur NTP"},
+            "6.3": {l: "intervalle de scrutation"},
+            "6.4": {l: "Fuseau horaire"},
+            "6.5": {l: "Heure d'été"},
+            "7.2": {l: "Temps mort de session"},
+            "8.1": {l: "Adressage"},
+            "8.2": {l: "Adresse IP"},
+            "8.3": {l: "Masque réseau"},
+            "8.4": {l: "Passerelle"},
+            "s1.1": {l: "Lien"},
+            "s1.2": {l: "Vitesse"},
+            "s1.8": {l: "Appareils appris"}
+        },
         nav_dash: "Tableau de bord",
         nav_ports: "Ports",
         nav_stp: "Arborescence",
@@ -1398,8 +1417,6 @@ var LANG = {
         d_traffic_h: "paquets/s (en direct)",
         d_txpps: "TX pps",
         d_rxpps: "RX pps",
-        d_txbad: "TX KO",
-        d_rxbad: "RX KO",
         i_mac: "Adresse MAC",
         i_fw: "Micro logiciel",
         i_built: "Compilé le",
@@ -1423,15 +1440,11 @@ var LANG = {
         p_txdis: "TX désactivé",
         p_rxlos: "RX pertes de signaux",
         pt_title: "Configuration du port",
-        pt_conn: "Appareils appris",
         pt_speed: "Vitesse",
-        pt_mtu: "MTU",
         stp_title: "Arborescence",
         stp_h: "RSTP, 802.1w",
-        stp_version: "Protocole",
         stp_v_stp: "Compatible STP",
         stp_prio: "Priorité",
-        stp_hello: "Bonjour [s]",
         stp_maxage: "Age max [s]",
         stp_fwd: "Délai de transmission [s]",
         stp_txhold: "TX en attente",
@@ -1444,15 +1457,11 @@ var LANG = {
         stp_cost: "coût du chemin",
         stp_tc: "changements de topologie",
         stp_portcfg: "Configuration du port",
-        stp_edge: "Port terminal",
         stp_pcost: "Coût du chemin",
-        stp_pprio: "Priorité",
-        stp_guard: "Protection",
         stp_filter: "Filtre BPDU",
         stp_p2p: "Point-à-point",
         stp_port_note: "Les ports en bordure sont transmis immediatemment et ne change pas la topologie; Auto traite le port comme une bordure après 3s sans BPDUs, et chaque BPDU reçu le révoque. Le coût du chemin  0 = automatique.",
         stp_status: "Statut du port",
-        stp_role: "Rôle",
         stp_db: "Pont désigné",
         stp_dp: "Port désigné",
         stp_dc: "Coût désigné",
@@ -1480,10 +1489,6 @@ var LANG = {
         lldp_enable: "Envoi de trames",
         st_title: "Statiqtique du port",
         st_h: "cumul depuis le démarrage",
-        st_txg: "TX OK",
-        st_txb: "TX KO",
-        st_rxg: "RX OK",
-        st_rxb: "RX KO",
         st_details: "Détails",
         st_counters: "Compteur MIB",
         st_nonzero: "non-zero seulement",
@@ -1493,8 +1498,6 @@ var LANG = {
         st_fail: "Erreur au chargement des compteurs",
         v_title: "VLANs",
         v_vid: "VID",
-        v_members: "Membres",
-        v_tagged: "Tagué",
         v_untagged: "Détagué",
         v_pvid_on: "PVID on",
         v_empty: "Aucun VLANs configuré.",
@@ -1506,7 +1509,6 @@ var LANG = {
         v_member: "Membre",
         v_pvid: "PVID",
         v_legend: "U = Membre détagué (UnTagged), T = membre tagué (Tagged), - = non membre. PVID (Port VLan ID) assigne ce VLAN au trafic entrant non tagué.",
-        v_accept: "Accepté",
         v_ing_apply: "Appliquer les filtes",
         v_del_t: "Supprimer le VLAN",
         v_del_q: "Supprimer le VLAN {n}?",
@@ -1553,15 +1555,10 @@ var LANG = {
         sc_err: " La limite de tempête doit être comprise entre 1 à 1048575 pps ou 1 à 10000000 kbit/s",
         sc_note: "Les trames de chacun des types ci-dessus dépassant les limites sont abandonnées lorsqu'elles arrivent sur le communtateur.",
         sy_network: "Réseau",
-        sy_mode: "Adressage",
         sy_static: "Statique",
         sy_dhcp_t: "Aquérir l'adresse via le protocole DHCP",
         sy_services: "Services",
-        sy_igmp: "Surveillance IGMP",
         sy_sysip: "IP du serveur...",
-        sy_server: "Serveur",
-        sy_port: "Port",
-        sy_sesstmo: "Temps mort de session (s)",
         sy_sesstmo_err: "Le temps morts de session doit être compris en 1-65535 s",
         sy_services_note: "L'état de service dépend de la configuration de démarrage; Le temps de fonctionnement n'est pas consultable.",
         sy_password: "Gestion de l'accès",
@@ -1580,17 +1577,10 @@ var LANG = {
         sy_ip_changed: "L'adresse IP a changée, reconnectez-vous à http://{ip}/",
         sy_dhcp_q: "Passer en DHCP?",
         sy_sysip_err: "Adresse IP du serveur Syslog invalide",
-        sy_dns1: "DNS principal",
-        sy_dns2: "DNS secondaire",
         sy_dns_err: "Adresse IP du DNS invalide",
         sy_dns_dhcp: "émis par le DHCP: {ip}",
         sy_time: "Temps",
-        sy_ntp: "NTP",
-        sy_ntpsrv: "Serveur NTP",
         sy_ntpsrv_p: "Nom d'hôte ou adresse IPv4",
-        sy_ntpint: "intervalle de scrutation [min]",
-        sy_tz: "Fuseau horaire",
-        sy_dst: "Heure d'été",
         sy_dst_eu: "Europe",
         sy_dst_us: "Etats-Unis",
         sy_now: "Heure locale",
@@ -1640,11 +1630,51 @@ var LANG = {
         fw_timeout: "Le commutateur n'est plus joignable depuis 150 s: verifiez l'alimentation ou utilisez la console série"
     },
     de: {
-        i_host: "Hostname",
-        i_ip: "IP-Adresse",
-        i_mask: "Netzmaske",
-        i_gw: "Gateway",
-        i_syslog: "Syslog",
+        f: {	/* the schema's fields, by ID: overrides of its English */
+            "11.4": {l: "Hello"},
+            "11.2": {l: "Version"},
+            "13.2": {l: "Edge"},
+            "13.4": {l: "Priorität"},
+            "13.5": {l: "Guard"},
+            "s14.2": {l: "Rolle"},
+            "s1.9": {l: "TX gut"},
+            "s1.11": {l: "TX fehlerhaft"},
+            "s1.10": {l: "RX gut"},
+            "s1.12": {l: "RX fehlerhaft"},
+            "9.2": {l: "Mitglieder"},
+            "9.3": {l: "Tagged"},
+            "s9.2": {l: "Lokal"},
+            "10.1": {l: "Modus"},
+            "1.1": {l: "Name"},
+            "1.13": {l: "Eingangslimit"},
+            "1.15": {l: "Ausgangslimit"},
+            "1.2": {l: "Aktiviert"},
+            "1.3": {l: "Geschwindigkeit"},
+            "1.5": {l: "MTU"},
+            "1.6": {l: "PVID"},
+            "1.7": {l: "Annehmen"},
+            "1.9": {l: "LLDP"},
+            "14.1": {l: "IGMP Snooping"},
+            "2.1": {l: "Hostname"},
+            "4.1": {l: "Syslog"},
+            "4.2": {l: "Server"},
+            "4.3": {l: "Port"},
+            "5.1": {l: "DNS-Server"},
+            "5.2": {l: "Zweiter DNS-Server"},
+            "6.1": {l: "NTP"},
+            "6.2": {l: "NTP-Server"},
+            "6.3": {l: "Abfrageintervall"},
+            "6.4": {l: "Zeitzone"},
+            "6.5": {l: "Sommerzeit"},
+            "7.2": {l: "Sitzungs-Timeout"},
+            "8.1": {l: "Adressvergabe"},
+            "8.2": {l: "IP-Adresse"},
+            "8.3": {l: "Netzmaske"},
+            "8.4": {l: "Gateway"},
+            "s1.1": {l: "Link"},
+            "s1.2": {l: "Geschwindigkeit"},
+            "s1.8": {l: "Gelernte Geräte"}
+        },
         nav_dash: "Übersicht",
         nav_ports: "Ports",
         nav_stp: "Spanning Tree",
@@ -1695,8 +1725,6 @@ var LANG = {
         d_traffic_h: "Pakete/s, live",
         d_txpps: "TX Pakete/s",
         d_rxpps: "RX Pakete/s",
-        d_txbad: "TX fehlerhaft",
-        d_rxbad: "RX fehlerhaft",
         i_mac: "MAC",
         i_fw: "Firmware",
         i_built: "Erstellt",
@@ -1720,15 +1748,11 @@ var LANG = {
         p_txdis: "TX deaktiviert",
         p_rxlos: "RX LOS",
         pt_title: "Port-Konfiguration",
-        pt_conn: "Gelernte Geräte",
         pt_speed: "Geschwindigkeit",
-        pt_mtu: "MTU",
         stp_title: "Spanning Tree",
         stp_h: "RSTP, 802.1w",
-        stp_version: "Version",
         stp_v_stp: "STP-kompatibel",
         stp_prio: "Bridge-Priorität",
-        stp_hello: "Hello [s]",
         stp_maxage: "Max. Alter [s]",
         stp_fwd: "Forward Delay [s]",
         stp_txhold: "TX Hold",
@@ -1741,15 +1765,11 @@ var LANG = {
         stp_cost: "Pfadkosten",
         stp_tc: "Topologieänderungen",
         stp_portcfg: "Port-Konfiguration",
-        stp_edge: "Edge",
         stp_pcost: "Pfadkosten",
-        stp_pprio: "Priorität",
-        stp_guard: "Guard",
         stp_filter: "BPDU-Filter",
         stp_p2p: "Punkt-zu-Punkt",
         stp_port_note: "Edge-Ports leiten sofort weiter und lösen keine Topologieänderung aus; bei Auto gilt ein Port nach 3 s ohne BPDUs als Edge, jede empfangene BPDU hebt das wieder auf. Pfadkosten 0 = automatisch.",
         stp_status: "Port-Status",
-        stp_role: "Rolle",
         stp_db: "Designated Bridge",
         stp_dp: "Designated Port",
         stp_dc: "Designated Cost",
@@ -1797,10 +1817,6 @@ var LANG = {
         stp_cage: "Letzte BPDU [s]",
         st_title: "Port-Statistik",
         st_h: "Summen seit dem Start",
-        st_txg: "TX gut",
-        st_txb: "TX fehlerhaft",
-        st_rxg: "RX gut",
-        st_rxb: "RX fehlerhaft",
         st_details: "Details",
         st_counters: "MIB-Zähler",
         st_nonzero: "nur ungleich null",
@@ -1810,8 +1826,6 @@ var LANG = {
         st_fail: "Zähler konnten nicht geladen werden",
         v_title: "VLANs",
         v_vid: "VID",
-        v_members: "Mitglieder",
-        v_tagged: "Tagged",
         v_untagged: "Untagged",
         v_pvid_on: "PVID auf",
         v_empty: "Keine VLANs konfiguriert.",
@@ -1824,7 +1838,6 @@ var LANG = {
         v_member: "Mitglied",
         v_pvid: "PVID",
         v_legend: "U = Mitglied untagged, T = Mitglied tagged, - = kein Mitglied. PVID ordnet eingehenden Verkehr ohne Tag diesem VLAN zu.",
-        v_accept: "Annehmen",
         v_ing_apply: "Ingress-Modi übernehmen",
         v_del_t: "VLAN löschen",
         v_rename: "Umbenennen",
@@ -1857,12 +1870,10 @@ var LANG = {
         lag_clear_q: "LAG {n} auflösen?",
         lag_clear_d: "Alle Mitglieds-Ports kehren in den Normalbetrieb zurück.",
         lacp_heading: "LACP (802.3ad)",
-        lag_mode: "Modus",
         lag_static: "Statisch",
         lacp_neg: "wird ausgehandelt",
         lacp_agg: "Aggregator",
         lacp_members: "aktive Mitglieder",
-        lacp_actor: "Lokal",
         lacp_partner: "Partner",
         lacp_rxstate: "Empfangsstatus",
         lacp_rx: "Empfangene LACPDUs",
@@ -1885,15 +1896,10 @@ var LANG = {
         sc_err: "Grenzwert muss 1-1048575 pps oder 1-10000000 kbit/s betragen",
         sc_note: "Pakete einer Verkehrsart über ihrem Grenzwert werden beim Eintritt in den Switch verworfen.",
         sy_network: "Netzwerk",
-        sy_mode: "Adressvergabe",
         sy_static: "Statisch",
         sy_dhcp_t: "Adresse per DHCP beziehen",
         sy_services: "Dienste",
-        sy_igmp: "IGMP Snooping",
         sy_sysip: "Server-IP",
-        sy_server: "Server",
-        sy_port: "Port",
-        sy_sesstmo: "Sitzungs-Timeout (s)",
         sy_sesstmo_err: "Sitzungs-Timeout muss zwischen 1 und 65535 s liegen",
         sy_services_note: "Der Dienststatus entspricht der Startkonfiguration; der laufende Zustand ist nicht auslesbar.",
         sy_password: "Admin-Passwort",
@@ -1912,18 +1918,11 @@ var LANG = {
         sy_ip_changed: "IP geändert, neu verbinden unter http://{ip}/",
         sy_dhcp_q: "Auf DHCP umstellen?",
         sy_sysip_err: "Ungültige IP des Syslog-Servers",
-        sy_dns1: "DNS-Server",
-        sy_dns2: "Zweiter DNS-Server",
         sy_dns_err: "Ungültige IP des DNS-Servers",
         sy_dns_dhcp: "von DHCP: {ip}",
         sy_sysport_err: "Syslog-Port muss zwischen 1 und 65535 liegen",
         sy_time: "Uhrzeit",
-        sy_ntp: "NTP",
-        sy_ntpsrv: "NTP-Server",
         sy_ntpsrv_p: "Hostname oder IPv4-Adresse",
-        sy_ntpint: "Abfrageintervall [min]",
-        sy_tz: "Zeitzone",
-        sy_dst: "Sommerzeit",
         sy_dst_eu: "Europa",
         sy_dst_us: "USA",
         sy_now: "Lokale Zeit",
@@ -1989,9 +1988,112 @@ function t(k, v) {
     return s;
 }
 
+/* ---- a schema field's strings, by its stable ID (registry.txt) ---------
+ * One English source: the schema. Its label (or one made from the field's
+ * name), its type and unit come from schema.js; its tip from the switch's
+ * own help (help -a, the CLI's text, read once a session). A language other
+ * than English overrides them by ID: LANG.de.f["7.2"] = {l: ..., t: ...}.
+ * IDs: "<obj>.<field>" for config, "s<obj>.<field>" for state. */
+var FS = {
+    byId: {},
+    byPath: {},
+    tips: null
+};
+Object.keys(SCHEMA).forEach(function(k) {
+    var o = SCHEMA[k];
+    if (!o.o || !o.k) return;
+    Object.keys(o.k).forEach(function(f) {
+        var id = o.o + "." + o.k[f];
+        FS.byId[id] = {
+            o: k,
+            f: f
+        };
+        FS.byPath[k + "." + f] = id;
+    });
+});
+var FS_ACR = {
+    ip: "IP", mac: "MAC", dns: "DNS", ntp: "NTP", mtu: "MTU", pvid: "PVID", lldp: "LLDP", eee: "EEE", stp: "STP",
+    igmp: "IGMP", vlan: "VLAN", lag: "LAG", lacp: "LACP", id: "ID", tx: "TX", rx: "RX", sfp: "SFP", ddm: "DDM",
+    cpu: "CPU", bpdu: "BPDU", poe: "PoE", crc: "CRC", l2: "L2", dhcp: "DHCP", mib: "MIB", p2p: "P2P", dst: "DST",
+    tc: "TC", vcc: "VCC", lp: "LP", sds: "SerDes", fw: "Firmware", cfg: "Config"
+};
+var FS_UNIT = {
+    s: "s", ms: "ms", us: "µs", min: "min", kbps: "kbit/s", mw: "mW", v: "V", c: "°C", b: "B", pct: "%"
+};
+
+function fId(path) {
+    return FS.byPath[path] || ""
+}
+
+/* a label from the name: words, the acronyms in capitals, a unit suffix off */
+function fGen(name) {
+    var w = name.split(/[._]/);
+    if (w.length > 1 && FS_UNIT[w[w.length - 1]]) w.pop();
+    return w.map(function(x, i) {
+        return FS_ACR[x] || (i ? x : x.charAt(0).toUpperCase() + x.slice(1))
+    }).join(" ");
+}
+
+function fOver(id) {
+    return ((LANG[rtlLang] || {}).f || {})[id] || {}
+}
+
+/* the label; with unit, its unit after it in brackets */
+function fLabel(id, unit) {
+    var x = FS.byId[id];
+    if (!x) return id;
+    var v = SCHEMA[x.o].f[x.f],
+        w = x.f.split(/[._]/),
+        u = v[6] || (w.length > 1 && FS_UNIT[w[w.length - 1]]) || "";
+    return (fOver(id).l || v[7] || fGen(x.f)) + (unit && u ? " (" + u + ")" : "");
+}
+
+/* the tip, by path (the help's) or by ID's override; "" until help is read */
+function fTip(id) {
+    var x = FS.byId[id];
+    return fOver(id).t || (x && FS.tips && FS.tips[x.o + "." + x.f]) || "";
+}
+
+function fType(id) {
+    var x = FS.byId[id];
+    return x ? SCHEMA[x.o].f[x.f][0] : "";
+}
+
+/* the tips: help -a once a session ("<path> ... \"<tip>\"", '*' for the
+ * indices), kept in sessionStorage; then every [data-ft] element's title */
+function fsTips() {
+    var key = "rtlTips:" + JSON.stringify(SCHEMA).length;
+    try {
+        FS.tips = JSON.parse(sessionStorage.getItem(key) || "null");
+    } catch (e) {}
+    var done = function() {
+        document.querySelectorAll("[data-ft]").forEach(function(el) {
+            el.title = fTip(fId(el.getAttribute("data-ft")))
+        });
+    };
+    if (FS.tips) return Promise.resolve(done());
+    return cli(["help -a"]).then(function(r) {
+        var tips = {};
+        (r.out[0] || []).forEach(function(l) {
+            var m = /^(\S+) .*"(.*)"$/.exec(l);
+            if (m && m[2]) tips[m[1].split(".").filter(function(s) {
+                return s !== "*"
+            }).join(".")] = m[2];
+        });
+        FS.tips = tips;
+        try {
+            sessionStorage.setItem(key, JSON.stringify(tips));
+        } catch (e) {}
+        done();
+    }).catch(function() {});
+}
+
 function i18nApply() {
     document.querySelectorAll("[data-i18n]").forEach(function(el) {
         el.textContent = t(el.getAttribute("data-i18n"))
+    });
+    document.querySelectorAll("[data-f]").forEach(function(el) {	/* a field's label, by path */
+        el.textContent = fLabel(fId(el.getAttribute("data-f")), true)
     });
     document.querySelectorAll("[data-i18n-t]").forEach(function(el) {
         el.title = t(el.getAttribute("data-i18n-t"))
@@ -2245,12 +2347,14 @@ var OM_T = {
 
 function omField(obj, name) {
     var v = SCHEMA[obj].f[name],
+        id = fId(obj + "." + name),
         f = {
             t: OM_T[v[0]] || v[0],
-            tip: v[5] || "",
+            tip: fTip(id),
             u: v[6],
-            i: v[7] || ("f_" + obj + "_" + name).replace(/\./g, "_"),
-            l: name
+            i: id,
+            l: fLabel(id),
+            path: obj + "." + name
         };
     if (v[0] === "e") f.e = v[1];
     else if (v[0] === "n") {
@@ -2388,6 +2492,7 @@ function widget(path, f, nports) {
         });
     }
     el.title = f.tip || "";
+    el.setAttribute("data-ft", f.path);	/* the tip, once help is read (fsTips) */
     w.el = el;
     w.inp = inp;
     W[path] = w;
@@ -3106,10 +3211,10 @@ function portRows(p) {
     if (p.name) rows.push([t("c_name"), p.name]);
     rows.push([t("p_state"), !p.enabled ? t("p_disabled") : (p.link != "DOWN" ? t("p_up") + " " + p.link +
         (p.duplex === "half" ? " " + t("c_half") : "") : t("c_down"))]);
-    rows.push([t("st_txg"), BigInt(p.txG) + " " + t("p_pkts")]);
-    rows.push([t("st_txb"), BigInt(p.txB) + " " + t("p_pkts")]);
-    rows.push([t("st_rxg"), BigInt(p.rxG) + " " + t("p_pkts")]);
-    rows.push([t("st_rxb"), BigInt(p.rxB) + " " + t("p_pkts")]);
+    rows.push([fLabel(fId("state.port.tx_good")), BigInt(p.txG) + " " + t("p_pkts")]);
+    rows.push([fLabel(fId("state.port.tx_bad")), BigInt(p.txB) + " " + t("p_pkts")]);
+    rows.push([fLabel(fId("state.port.rx_good")), BigInt(p.rxG) + " " + t("p_pkts")]);
+    rows.push([fLabel(fId("state.port.rx_bad")), BigInt(p.rxB) + " " + t("p_pkts")]);
     if (p.isSFP) {
         /* state.sfp.S (detailShow) */
         var o = p.sfp || {},
@@ -3272,8 +3377,7 @@ tabHooks.dash = {
 /* ---- Tables bound to paths: rows the ports, columns an object's fields -- */
 
 function label(f) {
-    var s = t(f.i);
-    return (s === f.i ? f.l : s) + (f.u ? " (" + f.u + ")" : "")
+    return f.l + (f.u ? " (" + f.u + ")" : "")
 }
 
 function tHead(tbl, obj, cols) {
@@ -3285,7 +3389,8 @@ function tHead(tbl, obj, cols) {
         var f = omField(obj, c);
         hr.appendChild(h("th", {
             text: label(f),
-            title: f.tip
+            title: f.tip,
+            "data-ft": f.path
         }));
     });
 }
@@ -4539,7 +4644,7 @@ function buildLag() {
         var card = h("div", { class: "card" });
         card.appendChild(h("h2", { text: "LAG " + g }));
         var mr = h("div", { style: "display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px", class: "small" });
-        mr.appendChild(h("span", { class: "mut", text: t("lag_mode") }));
+        mr.appendChild(h("span", { class: "mut", text: fLabel(fId("lag.mode")) }));
         var ms = h("select", { class: "in", id: "lgm" + g });
         ms.appendChild(h("option", { value: "off", text: t("c_offc") }));
         ms.appendChild(h("option", { value: "static", text: t("lag_static") }));
@@ -5840,4 +5945,5 @@ window.addEventListener("hashchange", function() {
         })) id = "dash";
     hostLoad().catch(function() {});
     showTab(id);
+    setTimeout(fsTips, 2000);	/* the tips from help -a, behind the first tab's requests */
 })();
