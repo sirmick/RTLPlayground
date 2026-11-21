@@ -214,3 +214,40 @@ Findings:
 - Not covered: a failing I2C transaction on silicon (the sim's E4 tests
   cover the path); the 4+2 (after F2, with Michael's go).
 - The 8x is on fcf16cc again.
+
+## M4 bench: the 24 h soak (phase F3), 2026-11-19/20
+
+ca29f41 on the 8x for 24 h (20:10 to 20:10, the bench host's clock), driven
+by a script on the bench host (logs not published):
+- LACP with the Linux bond on fronts 7-8 (`lag 1 lacp 7 8` saved in the
+  config, so it came back after each reset);
+- a loop on fronts 5-6 through a bridge on the bench host, STP off, each
+  side policed to 5 Mbit/s so a boot-time storm stays bounded: loop
+  detection's job for the whole run;
+- a web page every 5 s (information, vlanlist, ports, lag, stp, loop), the
+  web `l2`, `stat`, `vlan show` and `lacp show` every 2 min, a console `l2`
+  every 3 min, 1000 new MACs on front 3 every 10 min, `health tasks` and
+  `loop` every 10 min, a config save every hour, a firmware upload at +6,
+  +12 and +18 h;
+- Michael pulled and re-inserted the DAC once (15:15).
+
+| Check | Result |
+|---|---|
+| LACP | 84,663 PDUs a member; the longest gap 1.063 s, except the 3 uploads' resets (16.5-17.2 s, then back without help); bond churn 0 |
+| `health tasks`, 144 samples | each: overruns 0, console RX overruns 0, hw timeouts 0; longest pass 57-62 ms (a 41 ms FL_ERASE and a step in one pass; no step over 50 ms) |
+| loop detection | port 6 blocked in all 144 samples, after each reset too |
+| resets | the 3 uploads only; no crash record, no watchdog reset |
+| web | 19,812 requests, 65 failed: 3 during an upload's reset, 62 web `/cmd`s waiting behind a console `l2` that didn't end |
+| config saves, uploads | 24 and 3, all OK |
+| DAC re-insert | link down 10 s, back at 10G, module re-read |
+
+Finding: **the `l2` dump didn't end** when its first entry aged out
+during the dump (the injected MACs age out 5 min after they're sent): it
+printed the remaining 7 entries ~300 lines a second, for up to 7 minutes, until
+the next console line stopped it. Fixed in FL (U11; upstream's one-shot
+loop has the same end test, and there it would freeze the switch). The
+rest of the firmware kept running through each case.
+
+Pass, against the F3 criteria: no watchdog reset or crash record, no LACP
+member lost, no overruns, no hw timeouts. Stack headroom wasn't sampled (it
+isn't in `health tasks`). After F3 the 8x went to feat/om (Michael).
