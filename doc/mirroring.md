@@ -1,7 +1,7 @@
 # Mirroring
 
-> On feat/om mirroring keeps the old `mirror` command until P4-5, which moves it to
-> `mirror.enabled`, `mirror.port`, `mirror.rx` and `mirror.tx` (doc/cli.md).
+> Mirroring is paths (doc/cli.md): `mirror.enabled`, `mirror.port`, `mirror.rx`,
+> `mirror.tx`. The old `mirror` command is gone.
 
 The RTL827x provides support to mirror packages from a number of ports to a mirroring
 ports. For each mirrored port it is possible to define whether received, transmitted

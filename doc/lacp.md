@@ -1,8 +1,8 @@
 # LACP (Link Aggregation Control Protocol, IEEE 802.3ad)
 
-> On feat/om the LAGs keep the old `lag`, `laghash` and `lacp` commands until P4-3,
-> which moves them to `lag.L.mode`, `lag.L.members` and `lag.L.hash` (doc/cli.md).
-> Their state is on the model already: `state.lag.L`, `state.lacp.port.N`.
+> LACP is a LAG's mode, `lag.L.mode lacp` (doc/cli.md); its state is
+> `state.lag.L` and `state.lacp.port.N`. The old `lag`, `laghash` and `lacp`
+> commands are gone.
 
 A static link aggregation group works only if both ends are configured for the
 same links, and nothing checks that they are. LACP lets the two ends agree on

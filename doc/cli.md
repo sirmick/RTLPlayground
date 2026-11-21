@@ -90,34 +90,34 @@ words (`load saved|default`). When several names fit, it completes what they
 share (`get sy` becomes `get sys`: sys and syslog), and a second Tab lists them
 and redraws the line. It beeps when nothing fits, or while a job runs.
 
-## Help (after P3D-c)
+## Help
 
-Not on feat/om yet. As DESIGN.md 13 has it: `h`, `help` and `?` are one command.
-Alone, one line per verb. With a path (`help port.2.speed`), the object's tip
-and one line per field, in a fixed format other tools parse:
+`h`, `help` and `?` are one command. Alone, one line per verb. With a path
+(`help port.2.speed`), the object's tip and one line per field; `help -a`,
+every path (the web UI's Schema page reads it). Tab completes after `help` as
+after `get`. The lines have a fixed format other tools parse, after a first
+`help 1` line naming its version:
 
 ```
-port.N.speed enum auto|10m|100m|1g|2g5|5g|10g default auto "Autonegotiate, or force one speed"
+<path> <type> <form> [default <v>] [unit <u>] "<tip>"
+port.*.speed enum auto|10m|100m|1g|2g5|5g|10g default auto "Auto, or forced; 5g/10g on 10G ports only"
 ```
 
-## What is on the model, and what still has its old command
+English only. An image built with `OM_HELP=0` has no help (3.5 KB of text
+in flash outside the banks, 0.9 KB of code): `help` answers
+`err help: not in this build`.
 
-On the model (get/set/apply/save): `sys` (hostname, LEDs), `mgmt` (address,
-mode, VLAN), `dns`, `ntp`, `syslog`, `web` (password, session timeout),
-`port.N` (name, enabled, speed (an SFP cage's too), duplex, mtu, pvid, ingress,
-ingress filter, LLDP, EEE and its speeds, isolation, bandwidth limits),
-`port.N.storm.T` (storm control), and every `state.*` path.
+## What is on the model
 
-Not yet. Their old commands still work, and their settings survive `save` only
-once they move:
-
-| Object | Old command, until | The paths after |
-|---|---|---|
-| VLANs | `vlan`, until P4-2 | `vlan.V.name`, `.members`, `.tagged` |
-| LAGs, LACP | `lag`, `laghash`, `lacp`, until P4-3 | `lag.L.mode`, `.members`, `.hash` |
-| STP | `stp ...`, until P4-4 | `stp.*`, `stp.port.N.*`, `stp.lag.L.*` |
-| IGMP snooping, LLDP, loop detection, mirroring | `igmp`, `lldp`, `loop`, `mirror`, until P4-5 | `igmp.*`, `lldp.*`, `loop.*`, `mirror.*` |
-| the switch's MAC | `mac` | `sys.mac` (deferred) |
+Everything you configure: `sys` (hostname, LEDs), `mgmt` (address, mode,
+VLAN), `dns`, `ntp`, `syslog`, `web` (password, session timeout), `vlan.V`
+(name, members, tagged), `lag.L` (mode off/static/lacp, members, hash), `stp`
+with `stp.port.N` and `stp.lag.L`, `igmp`, `lldp`, `loop`, `mirror`, `port.N`
+(name, enabled, speed (an SFP cage's too), duplex, mtu, pvid, ingress, ingress
+filter, LLDP, EEE and its speeds, isolation, bandwidth limits) and
+`port.N.storm.T` (storm control); and every `state.*` path, `state.sched`'s
+runs a second (`.rate`) and `state.sched.load` among them. Only the switch's
+MAC keeps its old command, `mac` (`sys.mac` is deferred).
 
 `dns lookup <name>` stays a command. `l2 forget` is `do l2.flush` (it flushes the
 learned MAC entries; the table itself is `get state.l2`), and `do l2.delete K` deletes entry K. The debugging

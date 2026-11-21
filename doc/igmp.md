@@ -1,7 +1,7 @@
 # IGMP (Internet Group Management Protocol) and MLD (Multicast Listener Discovery)
 
-> On feat/om IGMP snooping keeps the old `igmp` command until P4-5, which moves it to
-> `igmp.*` (doc/cli.md).
+> IGMP snooping is `igmp.enabled` (doc/cli.md). The old `igmp` command is gone;
+> `igmp show`'s per-port words are `get state.dbg.igmp.port` (OM_DBG builds).
 IGMP (for IPv4) and MLD (for IPv6) are protocols that control the distribution
 of Layer-3 Multicast packets on the LAN, which otherwise would be flooded across the
 entire network. For this to work, IGMP/MLD messages are sent, in particular

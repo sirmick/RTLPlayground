@@ -7,15 +7,17 @@ are gone.
 
 | Path | What |
 |---|---|
-| `state.sched` | passes, idle passes, the longest pass, overruns (steps of 50 ms or more) and the last one's state, the slot counts, fine units per tick |
+| `state.sched` | passes, idle passes, the longest pass, overruns (steps of 50 ms or more) and the last one's state, the slot counts, fine units per tick, and `load`: the % of the last second not asleep |
 | `state.sched.slot.<slot>.*` | each slot (`rx` .. `house`, `job0` ..): its task, state (`none`: free), wake mask, ticks to its wake, arg |
-| `state.sched.state.<STATE>.*` | each state: runs (saturating), the longest run in µs |
+| `state.sched.state.<STATE>.*` | each state: runs since `do sched.clear` (saturating), the longest run in µs, `rate`: its runs in the last second |
 | `state.sched.task.<task>.max_us` | the longest of a task's states |
 | `state.health` | hardware polls that gave up and the last one's register; the stack never used since the boot (`stack_headroom`, from the paint at boot) |
 | `state.con` | console RX overruns, RX bytes waiting, TX room |
 | `state.sys.reset.*` | the last reset (doc/sched/watchdog.md) |
 
-`do sched.clear` zeroes the step statistics, the console's overruns and the
+`load` is wall-clock time on Timer 2: everything outside the CPU's idle
+sleep counts as busy, every interrupt included but the one that wakes the
+sleep. `do sched.clear` zeroes the step statistics (the rates and load go on), the console's overruns and the
 hardware timeouts.
 
 ```

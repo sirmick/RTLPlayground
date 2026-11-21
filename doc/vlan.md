@@ -1,8 +1,8 @@
 # VLAN
 
-> On feat/om the VLANs keep the old `vlan` command until P4-2, which moves them to
-> `vlan.V.name`, `vlan.V.members` and `vlan.V.tagged` (doc/cli.md). A port's PVID and
-> ingress rule are paths already: `port.N.pvid`, `port.N.ingress`.
+> The VLANs are paths (doc/cli.md): `vlan.V.name`, `vlan.V.members`,
+> `vlan.V.tagged`, with a port's `port.N.pvid` and `port.N.ingress`. The old
+> `vlan` command is gone.
 
 The RTL827x provides support for up to 4096 802.1Q VLANs, each port can be
 assigend a PVID.
@@ -70,29 +70,37 @@ void vlan_delete(uint16_t vlan) __banked;
 
 ```
 
-# VLAN configuration on the Serial Console
-For testing the following commands are provided on the serial console:
-```
-vlan <VLAN-ID> p[t]...
-  create or set vlan with given ID and the list of ports as members, a `t`
-  behind a port defines the port as a tagged member.
-
-vlan <VLAN-ID> d
-  deletes the VLAN
-
-vlan show
-  Dumps the current ingress vlan settings.
+# VLAN configuration (the console and POST /cli)
+A VLAN is `vlan.V`, V 1-4094, made by its first `set` and removed by `del`:
 
 ```
+set vlan.<V>.members <ports>
+  its member ports, front-panel numbers: `1-4,9`, `none`.
 
-The management VLAN, a port's PVID and its ingress rule are paths (doc/cli.md):
+set vlan.<V>.tagged <ports>
+  the members that send it tagged; the others send it untagged.
+
+set vlan.<V>.name <text>
+  up to 15 characters, starting with a letter, no spaces.
+
+del vlan.<V>
+  removes it.
+
+get vlan
+  every VLAN; `get vlan.<V>` one.
+```
+
+`apply` checks the whole candidate first: a VLAN's tagged ports must be
+members, and every `port.N.pvid` and `mgmt.vlan` must name a VLAN that
+exists (or 0). So a VLAN still some port's PVID can't be deleted alone.
+
+The management VLAN, a port's PVID and its ingress rule:
 
 ```
 set mgmt.vlan <VLAN-ID>
   Restricts network access to the switch (web UI, syslog) to the given
   VLAN; 0 disables the filter. The default is 1. Apply it with a confirm
   window (`apply 60`): an unreachable VLAN would lock out the web UI.
-  (`vlan N mgmt` now says to use this.)
 
 set port.<N>.pvid <VLAN-ID>
   assigns the PVID to a port, numbered as on the casing.
@@ -102,5 +110,9 @@ set port.<N>.ingress tagged|untagged|all
   `set port.*.ingress all` sets every port. The CPU port can't be changed.
 
 get port.*.pvid port.*.ingress
-  shows them; `vlan show` still dumps the ingress settings too.
+  shows them.
 ```
+
+A saved config whose PVID or `mgmt.vlan` names a VLAN that is missing boots
+with that reference reset (a PVID to 1, `mgmt.vlan` to 0), and
+`state.cfg.boot_defaults` says so.
