@@ -30,7 +30,6 @@ void cli_job_more(void) __banked;	/* the job's next line; clears cli_job after i
 void exec_begin(__xdata uint8_t *p) __banked;	/* several commands, from p */
 uint8_t exec_line(void) __banked;	/* the next one; 0 when done (err_status) */
 void print_ip(__xdata uint8_t *ptr) __banked;
-void print_mac(__xdata uint8_t *ptr) __banked;
 void print_sw_version(void) __banked;
 void clear_command_history(void) __banked;
 

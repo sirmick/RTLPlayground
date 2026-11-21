@@ -261,22 +261,6 @@ void print_ip(__xdata uint8_t * ptr) __banked
 	}
 }
 
-// Prints a MAC address.
-void print_mac(__xdata uint8_t *ptr) __banked
-{
-	uint8_t idx = 0;
-	uint8_t num;
-
-	while (1) {
-		num = *ptr++;
-		print_byte(num);
-		if (++idx == 6)
-			break;
-
-		write_char(':');
-	}
-}
-
 static void cmd_error(__code const char *msg)
 {
 	err_status = ERR_INVALID_ARGUMENT;
