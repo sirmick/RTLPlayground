@@ -295,6 +295,7 @@ void reg_write(uint16_t reg)
 }
 /* the spanning tree (rtl837x_stp.c), under om_stp.c: its config, the calls as text */
 #include "rtl837x_stp.h"
+#include "step_time.h"
 bool stp_enabled;
 uint8_t stp_prio, stp_hello_s, stp_maxage_s, stp_fwddelay_s, stp_rstp, stp_txhold;
 uint8_t stp_pcost_short, stp_bpdu_filter;
@@ -1779,7 +1780,7 @@ static void binary(void)
 		static uint8_t whole[CONFIG_LEN];
 		int steps = fl_steps;
 		memcpy(whole, sec, sizeof whole);
-		t_fine_inc = 326 / 3 + 1;	/* E_FINE (2 ms) after 3 instances: the walk stops mid-object, mid-chunk */
+		t_fine_inc = STEP_US(2000) / 3 + 1;	/* E_US (2 ms) after 3 instances: the walk stops mid-object, mid-chunk */
 		expect("save", "ok\n");
 		t_fine_inc = 0;
 		sec_read();
@@ -1790,7 +1791,7 @@ static void binary(void)
 		expect("get state.cfg.format state.cfg.load.skipped", "state.cfg.format ok\nstate.cfg.load.skipped 0\nok\n");
 		static char gs[8192];
 		snprintf(gs, sizeof gs, "%s", run("get -s"));
-		t_fine_inc = 326 / 2 + 1;	/* the CRC stops past E_FINE: every 32 B */
+		t_fine_inc = STEP_US(2000) / 2 + 1;	/* the CRC stops past E_US: every 32 B */
 		CHECK(!strcmp(run("get -s"), gs), "get -s whose CRC runs out of time: the same lines");
 		expect("load saved", "ok\n");
 		CHECK(cfg_is(&big), "load saved whose CRC runs out of time: the same config");

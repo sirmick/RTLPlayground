@@ -46,7 +46,7 @@ extern __code const struct om_lim om_lim[];
 extern __code const char * __code const om_msg[];
 extern __xdata uint8_t flash_buf[FLASH_BUF_SIZE];
 extern __xdata struct flash_region_t flash_region;
-uint16_t sched_step_fine(void) __banked;	/* sched.h: the step so far, 6.144 us units */
+#include "step_time.h"
 extern __xdata uint16_t crc_value;
 extern __xdata uint8_t cmd_capture;	/* rtlplayground.c: write_char's capture (a web reply) */
 void crc16_bank1(__xdata uint8_t *v) __naked;	/* crc16.asm: *v into crc_value */
@@ -2518,12 +2518,12 @@ static uint8_t pend_step(void)
  * The next records into flash_buf (e_n bytes), whole instances, none
  * started past E_ROOM, at most E_KN of them (each two passes over its
  * fields: 1.9 ms a VLAN), from the cursor. An instance at its defaults is
- * one compare with the element default. The walk stops at E_FINE of the
+ * one compare with the element default. The walk stops at E_US of the
  * step too, by the timer (silicon runs it ~5x slower than rtlsim: 38.9 ms
  * for a 78 B save, P8): e_more then says the records go on, e_n may be 0.
  */
 #define E_KN	4
-#define E_FINE	326		/* 2 ms of sched_step_fine()'s 6.144 us: an instance started under it
+#define E_US	2000		/* us of the step: an instance started under it
 				 * (~1.2 ms here, ~6 on silicon) and the chunk's program stay
 				 * under FL_PROG's 10 */
 
@@ -2563,7 +2563,7 @@ static void enc_chunk(void)
 			e_st = 1;
 		}
 		for (; cur_ok; next_inst()) {
-			if (sched_step_fine() >= E_FINE) {	/* the next step's, from here */
+			if (STEP_PAST(E_US)) {	/* the next step's, from here */
 				e_more = 1;
 				e_cv = cv;
 				e_ce = ce;
@@ -2673,7 +2673,7 @@ static void rd_head(void)
 
 /* the CRC over the next CRC_N B of records (a byte is a read and a banked
  * CRC call: 16 us in rtlsim, 4-5x that on silicon), or fewer: it stops at a
- * 16 B boundary once the step is past E_FINE, as the encoder does (a load,
+ * 16 B boundary once the step is past E_US, as the encoder does (a load,
  * get -s and a save's FL_VERIFY share it): 1 while there are more; then
  * b_fmt ok (rd() at the first record again) or bad */
 #define CRC_N	128
@@ -2687,7 +2687,7 @@ static uint8_t crc_step(void)
 	for (i = 0; i < CRC_N && rd_left; i++) {
 		rd();
 		crc16_bank1(&e_b);	/* only here, and crc_value as it was after */
-		if ((i & CRC_CHECK) == CRC_CHECK && sched_step_fine() >= E_FINE)
+		if ((i & CRC_CHECK) == CRC_CHECK && STEP_PAST(E_US))
 			break;
 	}
 	l_crc = crc_value;

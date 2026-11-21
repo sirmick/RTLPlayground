@@ -127,23 +127,23 @@ STEP(con, edit)
  * an object). sim_smoke's line_costs() fails when a probed line passes
  * CLI_LINE_MAX. A flat 3 ms held only by where path starts fell; a flat
  * 4.5 ms cost the dashboard poll 17% (pollcost.py) */
-#define CLI_LINE_MAX	4500000UL	/* ns */
+#define CLI_LINE_MAX	4500		/* us */
 /* a get's cheaper lines (om_dear): another field of its instance, the
  * next instance (its getter) */
-#define CLI_LINE_CHEAP	1500000UL	/* ns */
-#define CLI_LINE_INST	2500000UL	/* ns */
+#define CLI_LINE_CHEAP	1500		/* us */
+#define CLI_LINE_INST	2500		/* us */
 /* what a line of each class costs here, learned: the dearest seen, decaying
  * by 1/16 of its excess a line of its class, never under rtlsim's measured
- * dearest (the floor). Banked code runs 4-5x rtlsim's on silicon (bench
- * 2026-11-20), so the floor alone doesn't hold there: the reserve rises to
+ * dearest (the floor). Banked code runs ~2x rtlsim's on silicon (the 4+2,
+ * 2026-11-21), so the floor alone doesn't hold there: the reserve rises to
  * the hardware's. OM_WALK + 1: another job's line (help, l2 ...) */
-#define CLI_STEP_FINE	((uint16_t)(5000000UL / SCHED_FINE_NS))
+#define CLI_STEP_FINE	STEP_US(5000)
 #define CLI_CLASSES	(OM_WALK + 2)
 static __code const uint16_t cli_line_floor[CLI_CLASSES] = {
-	(uint16_t)(CLI_LINE_CHEAP / SCHED_FINE_NS),	/* OM_CHEAP */
-	(uint16_t)(CLI_LINE_INST / SCHED_FINE_NS),	/* OM_INST */
-	(uint16_t)(CLI_LINE_MAX / SCHED_FINE_NS),	/* OM_WALK */
-	(uint16_t)(CLI_LINE_MAX / SCHED_FINE_NS)	/* another job's */
+	STEP_US(CLI_LINE_CHEAP),	/* OM_CHEAP */
+	STEP_US(CLI_LINE_INST),		/* OM_INST */
+	STEP_US(CLI_LINE_MAX),		/* OM_WALK */
+	STEP_US(CLI_LINE_MAX)		/* another job's */
 };
 static __xdata uint16_t cli_line_fine[CLI_CLASSES];	/* 0: the floor */
 static __xdata uint8_t cli_cls;
