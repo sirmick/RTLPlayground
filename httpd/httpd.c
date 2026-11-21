@@ -317,11 +317,16 @@ __xdata uint8_t *scan_header(__xdata uint8_t * __xdata p)
 	session = 0;
 	authenticated = 0;
 
-	while (!strstart(p, "\r\n\r\n")) {
+	/* the names only after a '\n' (header_value() matches nothing else),
+	 * the end only at a '\r': a byte of the headers is a compare or two,
+	 * not three name compares (the 4+2 bench: ~57 us a byte before) */
+	while (*p != '\r' || !strstart(p, "\r\n\r\n")) {
 		dbg_char(*p);
 		if (!*p)
 			break;
 		p++;
+		if (*p != '\n')
+			continue;
 		if ((v = header_value(p, "\ncontent-type:")))
 			content_type = v;
 		else if ((v = header_value(p, "\ncontent-length:"))) {
