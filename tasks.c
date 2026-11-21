@@ -105,7 +105,7 @@ STEP(con, edit)
 
 /* cli: one command at a time, a console line or a web /cmd (console.md).
  * The prompt only from CLI_PROMPT. A dump runs as a job in CLI_MORE (E1), a
- * line a step for the console, lines up to CLI_WEB_FINE for the web; a web
+ * line a step for the console, lines while the next fits the step for the web; a web
  * /cmd a line a step in CLI_NEXT; a web step with the capture on, so only
  * cli's own output goes into the reply (and not to the UART or syslog). A reply that
  * outgrows outbuf isn't cut: cli waits (webcmd_wait) while httpd sends what
@@ -128,16 +128,50 @@ STEP(con, edit)
  * CLI_LINE_MAX. A flat 3 ms held only by where path starts fell; a flat
  * 4.5 ms cost the dashboard poll 17% (pollcost.py) */
 #define CLI_LINE_MAX	4500000UL	/* ns */
-#define CLI_WEB_FINE	((uint16_t)((5000000UL - CLI_LINE_MAX) / SCHED_FINE_NS))
 /* a get's cheaper lines (om_dear): another field of its instance, the
  * next instance (its getter) */
 #define CLI_LINE_CHEAP	1500000UL	/* ns */
 #define CLI_LINE_INST	2500000UL	/* ns */
-static __code const uint16_t cli_web_fine[3] = {
-	(uint16_t)((5000000UL - CLI_LINE_CHEAP) / SCHED_FINE_NS),	/* OM_CHEAP */
-	(uint16_t)((5000000UL - CLI_LINE_INST) / SCHED_FINE_NS),	/* OM_INST */
-	CLI_WEB_FINE							/* OM_WALK */
+/* what a line of each class costs here, learned: the dearest seen, decaying
+ * by 1/16 of its excess a line of its class, never under rtlsim's measured
+ * dearest (the floor). Banked code runs 4-5x rtlsim's on silicon (bench
+ * 2026-11-20), so the floor alone doesn't hold there: the reserve rises to
+ * the hardware's. OM_WALK + 1: another job's line (help, l2 ...) */
+#define CLI_STEP_FINE	((uint16_t)(5000000UL / SCHED_FINE_NS))
+#define CLI_CLASSES	(OM_WALK + 2)
+static __code const uint16_t cli_line_floor[CLI_CLASSES] = {
+	(uint16_t)(CLI_LINE_CHEAP / SCHED_FINE_NS),	/* OM_CHEAP */
+	(uint16_t)(CLI_LINE_INST / SCHED_FINE_NS),	/* OM_INST */
+	(uint16_t)(CLI_LINE_MAX / SCHED_FINE_NS),	/* OM_WALK */
+	(uint16_t)(CLI_LINE_MAX / SCHED_FINE_NS)	/* another job's */
 };
+static __xdata uint16_t cli_line_fine[CLI_CLASSES];	/* 0: the floor */
+static __xdata uint8_t cli_cls;
+static __xdata uint16_t cli_t0, cli_dt;
+
+static void cli_web_line(void)		/* a line, and what it cost to its class */
+{
+	cli_cls = cli_job == CLI_JOB_OM ? om_dear : OM_WALK + 1;
+	cli_t0 = sched_step_fine();
+	cli_job_more();
+	cli_dt = sched_step_fine() - cli_t0;
+	cli_t0 = cli_line_floor[cli_cls];
+	if (cli_dt < cli_t0)
+		cli_dt = cli_t0;
+	if (cli_dt >= cli_line_fine[cli_cls])
+		cli_line_fine[cli_cls] = cli_dt;
+	else
+		cli_line_fine[cli_cls] -= (cli_line_fine[cli_cls] - cli_dt) >> 4;
+}
+
+static uint8_t cli_web_room(void)	/* the next line fits the step */
+{
+	cli_cls = cli_job == CLI_JOB_OM ? om_dear : OM_WALK + 1;
+	cli_t0 = cli_line_fine[cli_cls];
+	if (!cli_t0)
+		cli_t0 = cli_line_floor[cli_cls];
+	return sched_step_fine() + cli_t0 < CLI_STEP_FINE;
+}
 /* outbuf's room a web step starts with: more than a command or a job's
  * line prints (CLI_ROOM's bound is the ring's, not the commands') */
 #define CLI_WEB_ROOM	640
@@ -256,10 +290,10 @@ STEP(cli, more)
 		if (cli_web_full())
 			return S_CLI_MORE;
 		WEBCMD_CAPTURE_ON();
-		do				/* lines while outbuf has room, to CLI_WEB_FINE */
-			cli_job_more();
+		do				/* lines while outbuf has room and the next fits */
+			cli_web_line();
 		while (cli_job && !cli_job_sleep && !cli_job_one && WEBCMD_ROOM(CLI_WEB_ROOM)
-		       && sched_step_fine() < (cli_job == CLI_JOB_OM ? cli_web_fine[om_dear] : CLI_WEB_FINE));
+		       && cli_web_room());
 		WEBCMD_CAPTURE_OFF();
 		cli_job_one = 0;
 	} else {				/* the console's: a line a step, the UART paces it */
