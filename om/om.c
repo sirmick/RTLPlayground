@@ -3637,6 +3637,7 @@ not_applied:				/* state.cfg.apply keeps rolled_back or failed */
 /* state.cfg (schema/state_cfg.py) */
 uint8_t om_get_cfg(uint8_t idx) __banked
 {
+	(void)idx;
 	om_st.cfg.pending = om_pend;
 	om_st.cfg.dirty = om_dirty;
 	om_st.cfg.apply = om_apply_st;
