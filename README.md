@@ -119,6 +119,10 @@ A Playground for Firmware development for advanced user of RTL8372/RTL8373 based
 > the loop need porting. Start at [doc/sched/howto.md](doc/sched/howto.md): five small
 > examples, the rules, the common mistakes. The design, the measurements and the bench runs
 > are in [doc/sched/](doc/sched/README.md).
+>
+> **Trimmed to fit:** this branch fills the code banks (826 B free on the 4+2's compact build).
+> A `DEBUG=1` build didn't fit at all, so it leaves out the `leds` register dump to make room
+> for its debug prints; `leds` is an unknown command there. `main` has room again (10.6 KB free).
 
 For each hardware configuration of these devices, there is usually a managed and an
 unmanaged version sold, with mostly identical hardware. The aim is to provide management
