@@ -29,13 +29,34 @@ static int tests_run, tests_failed;
 
 /* ---- the hardware edge ---- */
 volatile bool EA = 1, ES = 1, TI, RI;
-volatile uint8_t PCON, SP = 0x60, SBUF;
+volatile uint8_t SP = 0x60, SBUF;
 volatile uint8_t TL2, TH2, T2CON, RCAP2L = 0xad, RCAP2H = 0x34, PSBANK = 2;
 volatile uint32_t ticks;
 volatile bool link_irq, rx_irq;
 uint8_t host_idata[256];
 uint16_t hw_timeouts, hw_timeout_reg;	/* rtlplayground.c's poll bounds (E4) */
 uint8_t hw_stuck;
+/* Timer 2 at `units` fine units into the tick */
+static void t2_at(uint16_t units)
+{
+	uint16_t v = ((RCAP2H << 8) | RCAP2L) + units * 64;
+	TH2 = v >> 8;
+	TL2 = v;
+}
+
+/* A sleep (PCON |= 1), with host_sleep set, lasts sleep_ticks ticks on, to
+ * sleep_to units into that tick: by default to the next tick's start. */
+static volatile uint8_t pcon;
+static int host_sleep;
+static uint16_t sleep_ticks = 1, sleep_to;
+volatile uint8_t *host_pcon(void)
+{
+	if (host_sleep) {
+		ticks += sleep_ticks;
+		t2_at(sleep_to);
+	}
+	return &pcon;
+}
 static jmp_buf reset_jmp;
 static int resets;
 void host_reset(void) { resets++; longjmp(reset_jmp, 1); }
@@ -103,6 +124,10 @@ static void reset_all(uint32_t t)
 	ticks = t;
 	TH2 = 0x34; TL2 = 0xad; T2CON = 0;
 	link_irq = rx_irq = 0;
+	host_sleep = 0;
+	memset(sched_st_sec, 0, sizeof(sched_st_sec));	/* XSEG's clear, on the 8051 */
+	memset(sched_st_rate, 0, sizeof(sched_st_rate));
+	sched_load = 0;
 	con_ring_init();
 	sched_init();
 	ntrace = 0;
@@ -367,6 +392,124 @@ static void test_idle(void)
 	CHECK(sched_idle_lo == 3, "idle passes counted");
 }
 
+static void test_rates(void)
+{
+	printf("rates: a second's runs, rolled on a 200-tick grid\n");
+	reset_all(100);				/* the first second ends at 200 */
+	pass();
+	pass();
+	CHECK(sched_st_sec[S_A_STEP] == 4 && sched_st_rate[S_A_STEP] == 0, "runs count up within the second, no rate yet");
+	ticks = 199;
+	pass();
+	CHECK(sched_st_rate[S_A_STEP] == 0, "199: not yet");
+	ticks = 200;
+	pass();
+	CHECK(sched_st_rate[S_A_STEP] == 8 && sched_st_rate[S_B_STEP] == 4 && sched_st_rate[S_W_STEP] == 4,
+	      "200: the pass's runs count, then the second rolls (a 8, b 4, w 4)");
+	CHECK(sched_st_sec[S_A_STEP] == 0 && sched_st_sec[S_B_STEP] == 0, "and the second's counts start again");
+	CHECK(sched_st_runs[S_A_STEP] == 8 && sched_st_runs[S_B_STEP] == 4, "the runs since the clear go on");
+	sched_health_clear();
+	CHECK(sched_st_rate[S_A_STEP] == 8 && sched_st_runs[S_A_STEP] == 0, "health clear keeps the rates, clears the runs");
+	for (int i = 0; i < 300; i++)
+		pass();			/* more than 255 runs a second: 16 bits, no saturation */
+	ticks = 400;
+	pass();
+	CHECK(sched_st_rate[S_A_STEP] == 602 && sched_st_rate[S_W_STEP] == 301, "the next second: 301 passes, a 602");
+	CHECK(sched_st_runs[S_A_STEP] == 602, "and the runs since the clear the same");
+	ticks = 650;				/* a pass ran 50 ticks past 600 */
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 1, "a late roll");
+	ticks = 799;
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 1, "the grid holds: no roll at 799 ...");
+	ticks = 800;
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 2, "... but at 800");
+	ticks = 1250;				/* a pass of more than a second */
+	pass();
+	ticks = 1449;
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 1, "after a pass over a second, the grid starts again from it (no roll at 1449)");
+	ticks = 1450;
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 2, "1450 rolls");
+	reset_all(0xff00);			/* first roll at 0xff64 */
+	ticks = 0xff64;
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 1, "a roll across nothing: at 0xff64");
+	ticks = 0x1002c;			/* 0xff64 + 200, wrapped */
+	pass();
+	CHECK(sched_st_rate[S_W_STEP] == 1 && sched_st_sec[S_W_STEP] == 0, "and the next at 0x002c, across the 16-bit wrap");
+	sched_st_runs[S_A_STEP] = 0xfffe;
+	pass();
+	CHECK(sched_st_runs[S_A_STEP] == 0xffff && sched_st_sec[S_A_STEP] == 2, "the runs saturate, the second's count does not");
+}
+
+/* n idle rounds: a pass, busy until `busy` units into the tick, then a sleep
+ * to the next tick */
+static void idle_rounds(int n, uint16_t busy)
+{
+	for (int i = 0; i < n; i++) {
+		pass();
+		t2_at(busy);
+		sched_idle();
+	}
+}
+
+static void test_load(void)
+{
+	printf("load: the time asleep, summed per second\n");
+	reset_all(100);
+	host_sleep = 1;
+	idle_rounds(100, 0);			/* to tick 200, asleep throughout */
+	pass();					/* the first second: half a one */
+	CHECK(sched_load == 50, "the first second is half of one: 50 %");
+	idle_rounds(200, 163);			/* 650 of 813 units asleep a tick: each sleep wraps a tick */
+	pass();
+	CHECK(sched_load == 21, "163 of 813 units busy a tick, the sleep across each tick: load 21 % (20.05, rounded up)");
+	idle_rounds(200, 0);
+	pass();
+	CHECK(sched_load == 0, "asleep all the second: 0 %");
+	host_sleep = 0;
+	for (int i = 0; i < 200; i++) {		/* busy: the sleeps take no time */
+		ticks++;
+		pass();
+		sched_idle();
+	}
+	CHECK(sched_load == 100, "never asleep: 100 %");
+	/* sleeps inside one tick: 100 -> 507 units, then busy to the tick's end */
+	host_sleep = 1; sleep_ticks = 0; sleep_to = 507;
+	for (int i = 0; i < 200; i++) {
+		pass();
+		t2_at(100);
+		sched_idle();
+		ticks++;
+		t2_at(0);
+	}
+	pass();
+	CHECK(sched_load == 49, "407 of 813 units asleep inside each tick: 50.06 %, and the 0.95 % carried from before: load 49 %");
+	/* a sleep across a tick, mid-tick to mid-tick: 700 -> the next tick's 100 */
+	sleep_ticks = 1; sleep_to = 100;
+	for (int i = 0; i < 200; i++) {
+		pass();
+		t2_at(700);
+		sched_idle();
+	}
+	pass();
+	CHECK(sched_load == 74, "213 of 813 units asleep, across each tick: 74 % (26.2 asleep)");
+	sleep_ticks = 1; sleep_to = 0;
+	host_sleep = 0;
+	link_irq = 1;
+	for (int i = 0; i < 200; i++) {
+		ticks++;
+		pass();
+		link_irq = 1;
+		sched_idle();			/* pending: no sleep, nothing summed */
+	}
+	link_irq = 0;
+	CHECK(sched_load == 100, "an idle that does not sleep adds nothing");
+}
+
 static void test_rings(void)
 {
 	printf("console rings\n");
@@ -544,15 +687,20 @@ static void test_health(void)
 	act[S_B_STEP].kind = A_BURN; act[S_B_STEP].a = 11;	/* 55 ms: an overrun (decision 25) */
 	act[S_W_STEP].kind = A_WAIT; act[S_W_STEP].a = HW_LINK; act[S_W_STEP].b = SCHED_FOREVER;
 	pass();
+	act[S_B_STEP].kind = A_NONE;
+	ticks = 200;				/* the second rolls: a 4, b 2 */
+	pass();
 	out_reset();
 	sched_health_tasks();
 	CHECK(strstr(out, "slot\ttask\tstate\tmask\twake\n0\ta\tA_STEP\t0x0000\tnow\n") != NULL, "a slot line");
-	CHECK(strstr(out, "2\tw\tW_STEP\t0x0082\t+32767\n") != NULL, "a waiting slot: mask and horizon");
+	CHECK(strstr(out, "2\tw\tW_STEP\t0x0082\t+32678\n") != NULL, "a waiting slot: mask and horizon (set at 111, now 200)");
 	CHECK(strstr(out, "1\tb\tB_STEP\t0x0000\tnow\n") != NULL, "a slot that is due");
 	CHECK(strstr(out, "7\tjob4\tfree\n") != NULL, "a free job slot");
-	CHECK(strstr(out, "passes 0x000000001 idle 0x000000000") == NULL && strstr(out, "passes 0x00000001 idle 0x00000000") != NULL, "32-bit counts as one hex number");
-	CHECK(strstr(out, "B_STEP\t1\t") != NULL && strstr(out, "overruns 1 last B_STEP") != NULL, "per-state runs, the overrun");
-	CHECK(strstr(out, "A_STEP\t2\t0us") != NULL, "a short step in us");
+	CHECK(strstr(out, "passes 0x000000002 idle 0x000000000") == NULL && strstr(out, "passes 0x00000002 idle 0x00000000") != NULL, "32-bit counts as one hex number");
+	CHECK(strstr(out, "state\truns/s\tmax\n") != NULL, "the states' header");
+	CHECK(strstr(out, "B_STEP\t2\t") != NULL && strstr(out, "overruns 1 last B_STEP") != NULL, "per-state runs in the last second, the overrun");
+	CHECK(strstr(out, "A_STEP\t4\t0us") != NULL, "a short step in us");
+	CHECK(strstr(out, " idle 0x00000000 load 100% longest ") != NULL, "the load, never asleep");
 	CHECK(strstr(out, "last reset: reset command in") == NULL, "no reset record after a bad sum");
 
 	/* state.sched: the getters the object model prints */
@@ -566,17 +714,17 @@ static void test_health(void)
 	CHECK(om_st.sched_slot.state == E_SSTATE_NONE && om_st.sched_slot.task == E_STASK_NONE &&
 	      om_st.sched_slot.mask == 0, "state.sched.slot.job4: free, none");
 	om_get_sched_state(S_B_STEP - 1);
-	CHECK(om_st.sched_state.runs == 1 && om_st.sched_state.max_us > 50000 &&
+	CHECK(om_st.sched_state.runs == 2 && om_st.sched_state.rate == 2 && om_st.sched_state.max_us > 50000 &&
 	      om_st.sched_state.max_us <= sched_st_max[S_B_STEP] * 6.144 + 3 &&
 	      om_st.sched_state.max_us + 1 >= sched_st_max[S_B_STEP] * 6.144,
-	      "state.sched.state.B_STEP: runs, max in us");
+	      "state.sched.state.B_STEP: runs, the last second's, max in us");
 	om_get_sched_task(E_STASK_B - 1);
 	CHECK(om_st.sched_task.max_us == om_st.sched_state.max_us && om_st.sched_task.max_us > 50000,
 	      "state.sched.task.b: its state's longest");
 	om_get_sched(0);
-	CHECK(om_st.sched.passes == 1 && om_st.sched.idle == 0 && om_st.sched.overruns == 1 &&
+	CHECK(om_st.sched.passes == 2 && om_st.sched.idle == 0 && om_st.sched.overruns == 1 && om_st.sched.load == 100 &&
 	      om_st.sched.overrun_last == E_SSTATE_B_STEP && om_st.sched.slots == SCHED_SLOTS &&
-	      om_st.sched.fixed == T_FIXED, "state.sched: passes, idle, the overrun");
+	      om_st.sched.fixed == T_FIXED, "state.sched: passes, idle, the overrun, the load");
 	n = 0;
 	for (uint32_t f = 0; f <= 0xffff; f++) {	/* max_us: x 6.144, 3 us at the top, under 1 to 7281 */
 		sched_st_max[S_A_STEP] = f;
@@ -594,6 +742,7 @@ static void test_health(void)
 	out_reset();
 	sched_health_tasks();
 	CHECK(strstr(out, "overruns 0") != NULL, "health clear");
+	CHECK(strstr(out, "A_STEP\t4\t0us") != NULL && strstr(out, " load 100% ") != NULL, "health clear keeps the rates and the load");
 	printf("%s", out);
 }
 
@@ -607,6 +756,8 @@ int main(void)
 	test_next_and_overrun();
 	test_step_macros();
 	test_idle();
+	test_rates();
+	test_load();
 	test_rings();
 	test_crash();
 	test_health();

@@ -63,13 +63,14 @@ HEALTH_CLEAR = "do sched.clear"
 
 def health(out):
     """state -> (runs, longest µs) from get state.sched.state (max_us, 402640
-    and more: saturated), or an older image's `health tasks`"""
+    and more: saturated), or an older image's `health tasks` (runs/s on
+    feat/sched's)"""
     res = {}
     for m in re.finditer(r"^state\.sched\.state\.(\w+)\.runs (\d+)\nstate\.sched\.state\.\1\.max_us (\d+)$", out, re.M):
         res[m[1]] = (int(m[2]), int(m[3]))
     if res:
         return res
-    for l in out.split("state\truns\tmax", 1)[-1].splitlines():
+    for l in re.split(r"state\truns(?:/s)?\tmax", out, maxsplit=1)[-1].splitlines():
         m = re.match(r"(\w+)\t(\d+)\t(>?)(\d+)(us|ms)$", l)
         if m:
             st, runs, over, v, unit = m.groups()

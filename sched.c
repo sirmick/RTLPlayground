@@ -25,6 +25,9 @@ __xdata uint8_t  sched_ev;
 
 __xdata uint16_t sched_st_max[S_COUNT];
 __xdata uint16_t sched_st_runs[S_COUNT];
+__xdata uint16_t sched_st_sec[S_COUNT];
+__xdata uint16_t sched_st_rate[S_COUNT];
+__xdata uint8_t  sched_load;
 __xdata uint16_t sched_passes_lo, sched_passes_hi;
 __xdata uint16_t sched_idle_lo, sched_idle_hi;
 __xdata uint16_t sched_overruns;
