@@ -369,7 +369,9 @@ a verb and a path into one tree of the configuration (`port.3.speed`), the
 state (`state.port.3.link`) and the actions (`do sys.reset`). A change goes to
 the candidate (`set`), takes effect with `apply` (`apply 60`: kept only if you
 `confirm` within 60 s) and survives a restart with `save`. Tab completes,
-`help <path>` explains a field. The whole reference is [doc/cli.md](doc/cli.md).
+`help <path>` explains a field. The whole reference is [doc/cli.md](doc/cli.md);
+how the object model behind it is built, and how to add to it, is
+[om/README.md](om/README.md).
 
 ```
 > get port.5

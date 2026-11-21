@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""om_gen.py - the object model's generator (doc/om/, ~/rtlpg-bench/object-model/DESIGN.md).
+"""om_gen.py - the object model's generator (om/README.md, om/DESIGN.md).
 
 Reads the schema (schema/*.py, the declarations in section 10 of the design)
 and the committed ID registry (schema/registry.txt), and writes:
 
   om_gen.h   structs (struct cfg_<obj>, struct cfg, struct st_<obj>, union
-             om_st), object and enum constants, handler prototypes, and an
-             OM_USE_<kind> for each index kind and type the schema uses (om.c
-             compiles the others out)
+             om_st), object and enum constants, handler prototypes, and
+             OM_USE_CHIPDEF / OM_SET_BRID (om.c compiles those two out when
+             the schema has neither)
   om_gen.c   the tables the engine reads: one string pool (names and enum
              words, each string shared where it already occurs), limits,
              field and object descriptors, per-object defaults, the banked
@@ -700,12 +700,11 @@ def gen(objs, outdir):
     H("#define OM_H_UNIT (0x80 + %d)\t/* help: the blob's unit tokens (help_blob()) */" % (len(T) + 1))
     H("#define OM_H_UNITS %d" % len(help_units(objs)))
     H("#define OM_H_LINE %d\t/* help's longest line, at most */" % help_line_max(objs))
-    for u in ("NUM KEY WORD IDX STREAM IX2 CHIPDEF DERIVE IPV4 MAC FLAGS SECRET I16 TZ PORT BRID HEX32").split():
-        H("#define OM_USE_%s %d" % (u, u in use))
-    # OM_SET_<type>: a config field has it, so om.c parses it (a state-only
-    # type is printed, never parsed)
-    for u in ("IPV4 MAC FLAGS I16 TZ PORT BRID").split():
-        H("#define OM_SET_%s %d" % (u, u in sets))
+    # om.c compiles out the two things the firmware's schema doesn't have:
+    # per-chip defaults, and parsing a bridge ID (state.stp prints them, no
+    # config field takes one). Every other kind and type is compiled in.
+    H("#define OM_USE_CHIPDEF %d" % ("CHIPDEF" in use))
+    H("#define OM_SET_BRID %d" % ("BRID" in sets))
     for i, o in enumerate(objs):
         H("#define O_%s %d" % (o.cname.upper(), i))
     H("")
@@ -1176,7 +1175,7 @@ E_ROOM = 256             # om.c: a save step's records at most
 
 # om.h's OM_TXT: om_txt, the text a load's val_ok() prints a value into
 OM_TXT = int(re.search(r"#define OM_TXT\s+(\d+)",
-                       open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "om.h")).read())[1])
+                       open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "om", "om.h")).read())[1])
 # tasks.c's: outbuf's room a web step starts with, which a line must fit
 CLI_WEB_ROOM = int(re.search(r"#define CLI_WEB_ROOM\s+(\d+)",
                              open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tasks.c")).read())[1])

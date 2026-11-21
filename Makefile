@@ -51,7 +51,7 @@ SDCC_BANNER = $(if $(SDCC_REV),sdcc/ at $(SDCC_REV),$(SDCC_TOOLCHAIN)) ($(words 
 else
 SDCC_BANNER = system
 endif
-CC_FLAGS = -mmcs51 -I. -Imachine -Ihttpd -Iuip
+CC_FLAGS = -mmcs51 -I. -Iom -Imachine -Ihttpd -Iuip
 ASM ?= sdas8051
 AFLAGS= -plosgff
 
@@ -295,7 +295,7 @@ ifneq ($(SCHEDTEST),)
 include schedtest/schedtest.mk
 endif
 include sched.mk
-include om.mk
+include om/om.mk
 include loopflags.mk
 BANKED_SRCS = $(filter-out $(RESIDENT_SRCS),$(SRCS))
 BANKED_OBJS = $(BANKED_SRCS:%.c=$(BUILDDIR)/%.rel)

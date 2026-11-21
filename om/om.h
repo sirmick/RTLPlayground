@@ -1,7 +1,7 @@
 #ifndef _OM_H_
 #define _OM_H_
 /*
- * The object model (~/rtlpg-bench/object-model/DESIGN.md): one tree of
+ * The object model (om/README.md, om/DESIGN.md): one tree of
  * config, state and actions, described in schema/ and turned into tables
  * (om_gen.h/.c in the build directory) that this engine reads. Text form,
  * everywhere: one line per field, "path value".
