@@ -197,16 +197,15 @@ for t in ("U64", "Scaled(1)"):
     rc, out, _ = gen('obj("s")\ncfg("x", %s, 0)\n' % t)
     check(rc != 0 and "no parser" in out, "a config field of a type om.c doesn't parse (%s): fails the build" % t, out)
 
-print("a type only state has: printed, not parsed (OM_SET_)")
+print("the two things om.c compiles out: per-chip defaults, a settable bridge ID")
 d = tempfile.mkdtemp()
 with open(os.path.join(d, "a.py"), "w") as f:
     f.write('obj("s")\ncfg("ip", IPv4, "10.0.0.1")\nstate("s")\nst("gw", IPv4)\nst("off", I16())\n')
 subprocess.run([sys.executable, GEN, "-s", d, "--register"], capture_output=True)
 p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o")], capture_output=True, text=True)
 hh = open(os.path.join(d, "o", "om_gen.h")).read() if p.returncode == 0 else ""
-check("#define OM_USE_IPV4 1" in hh and "#define OM_SET_IPV4 1" in hh and
-      "#define OM_USE_I16 1" in hh and "#define OM_SET_I16 0" in hh,
-      "OM_USE_ for every type, OM_SET_ for a config field's", p.stdout + p.stderr)
+check("#define OM_USE_CHIPDEF 0" in hh and "#define OM_SET_BRID 0" in hh and "OM_USE_IPV4" not in hh
+      and "OM_SET_I16" not in hh, "OM_USE_CHIPDEF and OM_SET_BRID only, 0 without them", p.stdout + p.stderr)
 
 print("the web UI's schema (--js)")
 d = tempfile.mkdtemp()

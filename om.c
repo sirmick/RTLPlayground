@@ -77,16 +77,12 @@ static __xdata uint8_t ft;		/* fdx's type */
 /* the cursor: an instance of obx */
 static __xdata uint16_t cv;		/* level 0: front-panel number, number from 0, key, word */
 static __xdata uint8_t ce;		/* level 0's element: logical port, number, slot */
-#if OM_USE_IX2
 __xdata uint8_t om_ix1;		/* level 1: number from 0, word */
 static __xdata uint8_t r_v1;		/* as given */
 __xdata uint16_t om_key;		/* a streamed object's instance (om.h) */
 __xdata uint8_t *__xdata om_arg;	/* do's text argument (om.h) */
-#if OM_USE_STREAM
 static __xdata uint8_t r_open;		/* K: instances left, + 1 (K 1, K- OM_PAGE); 0 every one */
 static __xdata uint8_t r_land;		/* K: the instance found must be K */
-#endif
-#endif
 static __xdata uint8_t lv, lk, ln, la;	/* a level, its kind, count, arg */
 static __xdata uint8_t cur_e, cur_l, cur_f, cur_ok;	/* element, logical port, field, valid */
 static __xdata uint8_t * __xdata vp;	/* the current value */
@@ -349,19 +345,15 @@ static void emit_obj(void)		/* the instance's path: "port.3", "vlan.10" */
 		}
 		lvl_load();
 		v16 = cv;
-#if OM_USE_IX2
 		if (lv)
 			v16 = om_ix1;
-#endif
 		if (e_star) {
 			write_char('*');
-#if OM_USE_WORD
 		} else if (lk == IX_WORD) {
 			words(la);
 			for (v8 = v16; v8; v8--)
 				skip1();
 			print_string((__code const char *)cp);
-#endif
 		} else {
 			itoa_short(v16 + (lk == IX_NUM));
 		}
@@ -538,7 +530,6 @@ static void emit_pmask(void)
 		print_string("none");
 }
 
-#if OM_USE_MAC || OM_USE_BRID
 static void emit_mac(void)		/* 6 bytes at vp */
 {
 	for (i = 0; i < 6; i++) {
@@ -547,15 +538,12 @@ static void emit_mac(void)		/* 6 bytes at vp */
 		print_byte(vp[i]);
 	}
 }
-#endif
 
-#if OM_USE_TZ
 static void two(void)			/* k as two digits */
 {
 	write_char('0' + k / 10);
 	write_char('0' + k % 10);
 }
-#endif
 
 static void emit_value(void)		/* fd's value at vp */
 {
@@ -569,13 +557,11 @@ static void emit_value(void)		/* fd's value at vp */
 			skip1();
 		print_string(*cp ? (__code const char *)cp : "?");	/* past the words: ? */
 		return;
-#if OM_USE_SECRET
 	case T_SECRET:
 		if (!c_def) {
 			write_char('*');
 			return;
 		}
-#endif
 		/* fall through - get -d prints a Secret as a Str */
 	case T_STR:
 		print_string_x((__xdata char *)vp);
@@ -583,7 +569,6 @@ static void emit_value(void)		/* fd's value at vp */
 	case T_PMASK:
 		emit_pmask();
 		return;
-#if OM_USE_IPV4
 	case T_IPV4: case T_MASK4:
 		for (i = 0; i < 4; i++) {
 			if (i)
@@ -591,8 +576,6 @@ static void emit_value(void)		/* fd's value at vp */
 			itoa_short(vp[i]);
 		}
 		return;
-#endif
-#if OM_USE_MAC
 	case T_MAC:
 		if (fdx.arg && !(vp[0] | vp[1] | vp[2] | vp[3] | vp[4] | vp[5])) {
 			print_string("auto");
@@ -600,8 +583,6 @@ static void emit_value(void)		/* fd's value at vp */
 		}
 		emit_mac();
 		return;
-#endif
-#if OM_USE_BRID
 	case T_BRID:			/* priority / 4096, the system ID extension, the MAC */
 		itoa_short(vp[0] >> 4);
 		write_char('.');
@@ -610,15 +591,11 @@ static void emit_value(void)		/* fd's value at vp */
 		vp += 2;
 		emit_mac();
 		return;
-#endif
-#if OM_USE_HEX32
 	case T_HEX32:
 		print_string("0x");
 		for (i = 4; i--; )
 			print_byte(vp[i]);
 		return;
-#endif
-#if OM_USE_FLAGS
 	case T_FLAGS: case T_FLAGS16:
 		v16 = vp[0];
 		if (ft == T_FLAGS16)
@@ -637,8 +614,6 @@ static void emit_value(void)		/* fd's value at vp */
 		if (!k)
 			print_string("none");
 		return;
-#endif
-#if OM_USE_PORT
 	case T_PORT:
 		if (*vp == 0xff)
 			print_string("none");
@@ -647,8 +622,6 @@ static void emit_value(void)		/* fd's value at vp */
 		else
 			itoa_short(machine.log_to_phys_port[*vp]);
 		return;
-#endif
-#if OM_USE_I16 || OM_USE_TZ
 	case T_I16: case T_TZ:
 		v16 = vp[0] | (uint16_t)vp[1] << 8;
 		if (v16 & 0x8000) {
@@ -657,7 +630,6 @@ static void emit_value(void)		/* fd's value at vp */
 		} else if (ft == T_TZ) {
 			write_char('+');
 		}
-#if OM_USE_TZ
 		if (ft == T_TZ) {
 			k = v16 / 60;
 			two();
@@ -666,10 +638,8 @@ static void emit_value(void)		/* fd's value at vp */
 			two();
 			return;
 		}
-#endif
 		itoa_short(v16);
 		return;
-#endif
 	}
 	/* numbers */
 	num_len = fsize();
@@ -699,13 +669,11 @@ static void emit_line(void)		/* "path value" */
 {
 	emit_path();
 	write_char(' ');
-#if OM_USE_DERIVE
 	if ((fdx.tw & T_DERIVED) && !*vp) {	/* empty: the derived value */
 		om_fid = fdx.id;
 		if (om_fns[obx.derive](cur_e) == OM_OK)
 			vp = om_val;
 	}
-#endif
 	emit_value();
 	write_char('\n');
 }
@@ -760,7 +728,6 @@ static uint8_t pmask_item(void)	/* one "n", "n-m", "cpu", "all", "none" at p, in
 	return 1;
 }
 
-#if OM_SET_MAC || OM_SET_BRID
 static uint8_t hexd(void)		/* a hex digit at p, or 0xff */
 {
 	uint8_t c = take();
@@ -789,7 +756,6 @@ static uint8_t parse_mac(void)
 	}
 	return 1;
 }
-#endif
 
 static uint8_t str_ch(void)		/* v8 may be in fdx's Str or Secret */
 {
@@ -801,12 +767,10 @@ static uint8_t str_ch(void)		/* v8 may be in fdx's Str or Secret */
 }
 
 /* signed limits: set parses them, help prints them */
-#define OM_LIM_SIGNED	(OM_SET_I16 || OM_SET_TZ || (OM_HELP && (OM_USE_I16 || OM_USE_TZ)))
 
 static void lim_form(void)		/* fdx's limits: "lo-hi"; I16 and TZ "lo..hi", as their values print */
 {
 	cp = (__code const uint8_t *)&om_lim[fdx.arg];
-#if OM_LIM_SIGNED
 	if (ft == T_I16 || ft == T_TZ) {
 		for (w = 0; w < 2; w++) {
 			om_val[0] = cp[0];
@@ -819,7 +783,6 @@ static void lim_form(void)		/* fdx's limits: "lo-hi"; I16 and TZ "lo..hi", as th
 		}
 		return;
 	}
-#endif
 	print_lim();
 }
 
@@ -846,9 +809,7 @@ static uint8_t parse_value(void)
 		}
 		goto bad_words;
 	case T_STR:
-#if OM_USE_SECRET
 	case T_SECRET:
-#endif
 		for (k = 0; (v8 = take()); k++) {
 			if (k >= fdx.arg || !str_ch()) {
 				fail(ft == T_SECRET ? "printable text without \" \\ or a space, at most its length" :
@@ -874,7 +835,6 @@ static uint8_t parse_value(void)
 		om_val[0] = pm;
 		om_val[1] = pm >> 8;
 		break;
-#if OM_SET_IPV4
 	case T_IPV4: case T_MASK4:
 		for (w = 0; w < 4; w++) {
 			if (w && take() != '.')
@@ -900,8 +860,6 @@ static uint8_t parse_value(void)
 bad_ip:
 		fail(ft == T_MASK4 ? "a.b.c.d, contiguous" : "a.b.c.d");
 		return 0;
-#endif
-#if OM_SET_MAC
 	case T_MAC:
 		if (fdx.arg && seg_is("auto")) {
 			memset(om_val, 0, 6);
@@ -911,7 +869,6 @@ bad_ip:
 		if (!parse_mac())
 			goto bad_mac;
 		break;
-#endif
 #if OM_SET_BRID
 	case T_BRID:
 		if (!byte_dec() || num[0] > 15 || take() != '.')
@@ -926,13 +883,10 @@ bad_ip:
 			goto bad_mac;
 		break;
 #endif
-#if OM_SET_MAC || OM_SET_BRID
 bad_mac:
 		fail(ft == T_BRID ? "0-15.0-4095.aa:bb:cc:dd:ee:ff" :
 			fdx.arg ? "aa:bb:cc:dd:ee:ff or auto" : "aa:bb:cc:dd:ee:ff");
 		return 0;
-#endif
-#if OM_SET_FLAGS
 	case T_FLAGS: case T_FLAGS16:
 		v16 = 0;
 		if (!seg_is("none")) {
@@ -954,8 +908,6 @@ bad_mac:
 		om_val[0] = v16;
 		om_val[1] = v16 >> 8;
 		break;
-#endif
-#if OM_SET_PORT
 	case T_PORT:
 		if (fdx.arg && seg_is("none")) {
 			om_val[0] = 0xff;
@@ -966,8 +918,6 @@ bad_mac:
 			return 0;
 		}
 		break;
-#endif
-#if OM_SET_I16 || OM_SET_TZ
 	case T_I16: case T_TZ:		/* a sign, then the number, offset binary as its limits */
 		sg = ch() == '-';
 		if (sg || ch() == '+')
@@ -975,7 +925,6 @@ bad_mac:
 		if (!parse_dec() || num[2] | num[3])
 			goto bad_range;
 		v16 = num[0] | (uint16_t)num[1] << 8;
-#if OM_SET_TZ
 		if (ft == T_TZ) {	/* hh:mm, mm 00, 30 or 45 */
 			k = num[0];
 			if (num[1] || take() != ':' || !byte_dec() ||
@@ -983,7 +932,6 @@ bad_mac:
 				goto bad_range;
 			v16 = k * 60 + num[0];
 		}
-#endif
 		if (v16 > 0x7fff + sg)
 			goto bad_range;
 		if (sg)
@@ -992,22 +940,17 @@ bad_mac:
 		num[0] = v16;
 		num[1] = v16 >> 8;
 		goto in_range;
-#endif
 	case T_U8: case T_U16: case T_U32:
 		if (!parse_dec())
 			goto bad_range;
-#if OM_SET_I16 || OM_SET_TZ
 in_range:
-#endif
 		cp = (__code const uint8_t *)&om_lim[fdx.arg];
 		if (!in_lim())
 			goto bad_range;
 		for (i = 0; i < 4; i++)
 			om_val[i] = num[i];
-#if OM_SET_I16 || OM_SET_TZ
 		if (ft == T_I16 || ft == T_TZ)
 			om_val[1] ^= 0x80;
-#endif
 		break;
 	default:
 		fail("read only");
@@ -1038,7 +981,6 @@ bad_range:
 
 /* ---- the cursor ---------------------------------------------------------- */
 
-#if OM_USE_KEY
 static __xdata uint8_t j_copies;	/* where entries are looked for: 1 running, 2 candidate, */
 #define K_RUN	1			/* j_copies: running's entries */
 #define K_CAND	2			/* the candidate's */
@@ -1120,7 +1062,6 @@ static uint8_t key_step(void)
 	ce = kb;
 	return 1;
 }
-#endif
 
 static uint8_t call(uint8_t fn)
 {
@@ -1131,11 +1072,8 @@ static uint8_t call(uint8_t fn)
 static uint8_t step0(void)
 {
 	lk = obx.k[0];
-#if OM_USE_KEY
 	if (lk == IX_KEY)
 		return key_step();
-#endif
-#if OM_USE_STREAM
 	/* a streamed level: the getter finds the instance at or after cv; K
 	 * must land on K, K- is a page of OM_PAGE from K on */
 	if (lk == IX_STREAM) {
@@ -1149,7 +1087,6 @@ static uint8_t step0(void)
 		cv = om_key;
 		return 1;
 	}
-#endif
 	if (r_fix & RF_L0) {
 		if (cv > r_v)
 			return 0;
@@ -1163,7 +1100,6 @@ static uint8_t step0(void)
 	return 0;
 }
 
-#if OM_USE_IX2
 static uint8_t step1(void)		/* level 1's, at or after om_ix1 */
 {
 	if (r_fix & RF_L1) {
@@ -1173,32 +1109,26 @@ static uint8_t step1(void)		/* level 1's, at or after om_ix1 */
 	}
 	return om_ix1 < obx.n[1];
 }
-#endif
 
 static void elem(void)			/* the cursor's element */
 {
 	cur_l = ce;
 	cur_e = ce;
-#if OM_USE_IX2
 	cur_e = ce * obx.n[1] + om_ix1;
-#endif
 }
 
 static void first_inst(void)		/* cur_ok: there is one */
 {
 	cv = 0;
 	cur_ok = step0();
-#if OM_USE_IX2
 	om_ix1 = 0;
 	if (!step1())		/* a loaded record's level 1 past this build's */
 		cur_ok = 0;
-#endif
 	elem();
 }
 
 static void next_inst(void)
 {
-#if OM_USE_IX2
 	om_ix1++;
 	if (step1()) {
 		cur_e++;
@@ -1206,7 +1136,6 @@ static void next_inst(void)
 	}
 	om_ix1 = 0;
 	step1();
-#endif
 	cv++;
 	cur_ok = step0();
 	elem();
@@ -1265,7 +1194,6 @@ static void ix_form(void);
 static uint8_t ix_parse(void)
 {
 	lvl_load();
-#if OM_USE_WORD
 	if (lk == IX_WORD) {
 		words(la);
 		for (v16 = 0; *cp; v16++) {
@@ -1275,10 +1203,8 @@ static uint8_t ix_parse(void)
 		}
 		goto bad;
 	}
-#endif
 	if (!parse_dec() || num[2] || num[3])
 		goto bad;
-#if OM_USE_STREAM
 	if (lk == IX_STREAM) {
 		r_open = 2;
 		r_land = 1;
@@ -1288,7 +1214,6 @@ static uint8_t ix_parse(void)
 			r_land = 0;
 		}
 	}
-#endif
 	if (!(ch() == '.' || at_end()))
 		goto bad;
 	v16 = num[0] | (uint16_t)num[1] << 8;
@@ -1296,30 +1221,22 @@ static uint8_t ix_parse(void)
 		if (num[1] || log_of(num[0]) == 0xff)
 			goto bad;
 	}
-#if OM_USE_NUM || OM_USE_IDX
 	else if (lk == IX_NUM || lk == IX_IDX) {
 		if (lk == IX_NUM)
 			v16--;		/* 0: past ln */
 		if (v16 >= ln)
 			goto bad;
 	}
-#endif
-#if OM_USE_KEY || OM_USE_STREAM
 	else {
 		cp = (__code const uint8_t *)&om_lim[la];
 		if (!in_lim())
 			goto bad;
 	}
-#endif
-#if OM_USE_WORD
 got:
-#endif
-#if OM_USE_IX2
 	if (lv) {
 		r_v1 = v16;
 		return 1;
 	}
-#endif
 	r_v = v16;
 	return 1;
 bad:
@@ -1345,26 +1262,18 @@ static void ix_form(void)		/* level lv's indices: "1-8", "0-15", "lo-hi", the wo
 		}
 #endif
 		print_string("no such port");
-#if OM_USE_NUM
 	} else if (lk == IX_NUM) {
 		print_string("1-");
 		itoa_short(ln);
-#endif
-#if OM_USE_IDX
 	} else if (lk == IX_IDX) {
 		print_string("0-");
 		itoa_short(ln - 1);
-#endif
-#if OM_USE_KEY || OM_USE_STREAM
 	} else if (lk == IX_KEY || lk == IX_STREAM) {
 		cp = (__code const uint8_t *)&om_lim[la];
 		print_lim();
-#endif
-#if OM_USE_WORD
 	} else {
 		words(la);
 		print_words();
-#endif
 	}
 }
 
@@ -1382,9 +1291,7 @@ static uint8_t match(void)
 	np = obx.name;
 	lv = 0;
 	r_fix = 0;
-#if OM_USE_STREAM
 	r_open = r_land = 0;
-#endif
 	while (nc()) {
 		if (at_end()) {
 			if (nc() == '.' || np == obx.name)
@@ -1400,7 +1307,7 @@ static uint8_t match(void)
 		np++;
 		if (ch() == '*') {
 			take();
-		} else if ((!OM_USE_WORD || obx.k[lv] != IX_WORD) && (ch() < '0' || ch() > '9')) {
+		} else if (obx.k[lv] != IX_WORD && (ch() < '0' || ch() > '9')) {
 			p--;			/* none ("port.pvid"): every one; back to the '.' */
 		} else {
 			if (!ix_parse())
@@ -1478,19 +1385,14 @@ static void path_err(void)
 static void job_inst(void)		/* entering an instance */
 {
 	if ((obx.flags & OM_STATE) && obx.get != 0xff
-#if OM_USE_STREAM
 	    && obx.k[0] != IX_STREAM		/* step0 has filled om_st */
-#endif
 	    ) {
-#if OM_USE_IX2
 		cur_e = cur_l;			/* level 0's element; level 1's is om_ix1 */
-#endif
 		call(obx.get);
 	}
 	cur_f = 0;
 	j_in = 3;
 	j_pr = 0;
-#if OM_USE_KEY
 	/* diff: an entry made or deleted is a line of its own */
 	if (j_mode == J_DIFF && obx.k[0] == IX_KEY) {
 		ks = ce;
@@ -1502,7 +1404,6 @@ static void job_inst(void)		/* entering an instance */
 			write_char('\n');
 		}
 	}
-#endif
 }
 
 __xdata uint8_t om_dear;
@@ -1516,19 +1417,15 @@ static void job_start(uint8_t mode)
 	j_new = 1;
 	j_hit = JH_NONE;
 	r_first = 0xff;
-#if OM_USE_KEY
 	if (mode == J_DIFF)
 		j_copies = K_BOTH | K_SORT;
 	if (mode == J_APPLY)
 		j_copies = K_BOTH;
-#endif
 }
 
 static uint8_t f_diff(void);
 static void inst_def(void);
-#if OM_USE_KEY
 static void key_dels(void);
-#endif
 
 /* the next field to print, or 0 at the end of the instance */
 static uint8_t next_field(void)
@@ -1576,10 +1473,8 @@ static uint8_t next_obj(void)
 				j_hit |= JH_FIELD;
 				if (c_def) {
 					j_hit = JH_DONE;	/* -d: a path may have nothing off its default */
-#if OM_USE_KEY
 					if (obx.k[0] == IX_KEY)
 						key_dels();
-#endif
 				}
 			} else if (obx.flags & OM_STATE) {
 				continue;
@@ -1592,9 +1487,7 @@ static uint8_t next_obj(void)
 				return 1;
 			}
 			if ((r_fix & RF_L0)
-#if OM_USE_STREAM
 			    && (r_land || !r_open)	/* an empty page: nothing to print */
-#endif
 			    ) {
 				fail("no such entry");
 				goto fail;
@@ -1650,21 +1543,17 @@ static __xdata uint8_t a_o, a_e, a_n, a_fo, a_fe, a_timeout;
 static void cv_of_e(void)		/* cur_e's indices, for its path in a message */
 {
 	ce = cur_e;
-#if OM_USE_IX2
 	om_ix1 = cur_e % obx.n[1];
 	ce = cur_e / obx.n[1];
-#endif
 	cv = ce;
 	if (obx.k[0] == IX_PORT)
 		cv = machine.log_to_phys_port[ce];
-#if OM_USE_KEY
 	if (obx.k[0] == IX_KEY) {
 		ks = ce;
 		cv = key_at(RUN);
 		if (!cv)
 			cv = key_at(ROLL);	/* a deleted entry */
 	}
-#endif
 }
 
 static void walk_start(void)
@@ -1920,7 +1809,6 @@ uint8_t om_line(void) __banked
 			om_dear = next_field() ? OM_CHEAP : OM_INST;	/* free: the next call starts here */
 			return 1;
 		}
-#if OM_USE_KEY
 		/* get -d: an entry with nothing off its default is one line that
 		 * makes it, its first field; a default entry is just there */
 		if (c_def && !j_pr && j_mode == J_GET && obx.k[0] == IX_KEY) {
@@ -1932,7 +1820,6 @@ uint8_t om_line(void) __banked
 				emit_line();
 			}
 		}
-#endif
 		next_instance();
 		om_dear = cur_ok ? OM_CHEAP : OM_WALK;	/* its first field, or the walk */
 		if (j_mode != J_APPLY)
@@ -1984,9 +1871,7 @@ static void om_get(void)
 			cmd_words_len = 3;
 		}
 	}
-#if OM_USE_KEY
 	j_copies = (c_cand ? K_CAND : K_RUN) | K_SORT;
-#endif
 	if (cmd_words_len <= c_pw) {	/* the names, a line a step (5.9 ms at once in rtlsim) */
 		job_start(J_NAMES);
 		cli_job = CLI_JOB_OM;
@@ -2035,13 +1920,10 @@ found:
 		fail("read only");
 		return 0;
 	}
-#if OM_USE_KEY
 	j_copies = K_CAND;
-#endif
 	return 1;
 }
 
-#if OM_USE_KEY
 /*
  * set on a keyed entry the candidate lacks: make it, in running's slot for
  * the key, else in a slot free in both: so a key never moves between
@@ -2088,9 +1970,7 @@ static uint8_t key_new(void)
 	pend_post();
 	return 1;
 }
-#endif
 
-#if OM_USE_KEY
 /* get -d: "del <path>" for each default entry the copy lacks, before the
  * object's other lines (a replay of them can't make it again) */
 static __code const uint8_t * __xdata kdp;
@@ -2141,7 +2021,6 @@ static uint8_t key_defs(void)
 	}
 	return 1;
 }
-#endif
 
 /*
  * set and del's instances from the cursor, SET_N a step (each two compares
@@ -2154,7 +2033,6 @@ static __xdata uint8_t j_del, j_any;
 static uint8_t set_step(void)
 {
 	a_left = SET_N;
-#if OM_USE_KEY
 	if (j_del == 2) {
 		for (; ks < obx.n[0]; ks++) {
 			if (!a_left--)
@@ -2168,7 +2046,6 @@ static uint8_t set_step(void)
 		j_any = key_defs();
 		return 0;
 	}
-#endif
 	for (; cur_ok; next_inst()) {
 		if (cur_f != 0xff && !om_when())
 			continue;
@@ -2215,15 +2092,12 @@ static void om_set(uint8_t del)
 	}
 	j_del = del;
 	j_any = 0;
-#if OM_USE_KEY
 	if (cur_f == 0xff && obx.k[0] == IX_KEY && !(r_fix & RF_L0)) {
 		j_del = 2;
 		ks = 0;
 		goto step;
 	}
-#endif
 	first_inst();
-#if OM_USE_KEY
 	if (!cur_ok && !del && (r_fix & RF_L0)) {
 		if (!key_new()) {
 			fail("table full");
@@ -2231,7 +2105,6 @@ static void om_set(uint8_t del)
 		}
 		first_inst();
 	}
-#endif
 	if (!cur_ok) {
 		fail("no such entry");
 		return;
@@ -2294,9 +2167,7 @@ static void check_start(void)
 static uint8_t check_step(void)
 {
 	c_inst = 1;
-#if OM_USE_KEY
 	j_copies = K_BOTH;		/* entries deleted in the candidate too: a check may refuse it */
-#endif
 	r_fix = 0;
 	a_left = CHECK_N;
 	for (; r_o < OM_N_OBJ; r_o++, c_go = 0) {
@@ -2355,9 +2226,7 @@ static __xdata uint8_t e_b, e_nf, l_phase;
 /* the save's cursor: the next object, and (e_st) the instance to go on at */
 static __xdata uint8_t e_o, e_st, e_ce, e_k, e_more;
 static __xdata uint16_t e_cv;
-#if OM_USE_IX2
 static __xdata uint8_t e_cv1;
-#endif
 static __xdata uint8_t b_fmt;		/* rd_open()'s: E_CFGFORMAT_* */
 /* state.cfg.format, save, saved_bytes, load.skipped, skip_ix, skip_id, boot_defaults: om_get_cfg() copies them */
 static __xdata struct {
@@ -2398,7 +2267,6 @@ static uint8_t code_differs(void)
 static void inst_def(void)
 {
 	cp = def_ptr();
-#if OM_USE_KEY
 	if (!c_def || obx.k[0] != IX_KEY)
 		return;
 	kdp = obx.def;
@@ -2407,7 +2275,6 @@ static void inst_def(void)
 		if (kbest == cv)
 			cp = kdp;
 	}
-#endif
 }
 
 /* fdx's value in running (get -c -d: the candidate) is off its default (vp at
@@ -2479,13 +2346,11 @@ static uint8_t def_step(void)
 			cur_e = d_e++;
 			memcpyc(inst(d_base), def_ptr(), obx.size);
 		}
-#if OM_USE_KEY
 		cp = obx.def;
 		for (cur_e = 0; cur_e < obx.ndef; cur_e++) {
 			cp += obx.size;
 			memcpyc(inst(d_base), cp, obx.size);
 		}
-#endif
 	}
 	return 0;
 }
@@ -2538,19 +2403,14 @@ static void enc_chunk(void)
 		if (obx.flags & OM_STATE)
 			continue;
 		r_fix = 0;
-#if OM_USE_KEY
 		j_copies = K_RUN | K_SORT;	/* entries in key order: the bytes don't hang on slots */
-#endif
 		if (e_st) {		/* where the last step stopped */
 			cv = e_cv;
 			ce = e_ce;
-#if OM_USE_IX2
 			om_ix1 = e_cv1;
-#endif
 			elem();
 			cur_ok = 1;
 		} else {
-#if OM_USE_KEY
 			if (obx.k[0] == IX_KEY) {	/* a reset: the entries follow */
 				if (e_n + 4 > E_ROOM)
 					goto full;
@@ -2558,7 +2418,6 @@ static void enc_chunk(void)
 				put16(0);
 				put(0);
 			}
-#endif
 			first_inst();
 			e_st = 1;
 		}
@@ -2567,9 +2426,7 @@ static void enc_chunk(void)
 				e_more = 1;
 				e_cv = cv;
 				e_ce = ce;
-#if OM_USE_IX2
 				e_cv1 = om_ix1;
-#endif
 				goto full;
 			}
 			vp = inst(RUN);
@@ -2584,18 +2441,14 @@ static void enc_chunk(void)
 			if (e_n >= E_ROOM || e_k == E_KN) {	/* the next step's */
 				e_cv = cv;
 				e_ce = ce;
-#if OM_USE_IX2
 				e_cv1 = om_ix1;
-#endif
 				goto full;
 			}
 			v16 = cv;
 			if (obx.k[0] == IX_NUM && obx.n[0] > 1)
 				v16++;
-#if OM_USE_IX2
 			if (obx.n[1] > 1)
 				v16 = v16 << 8 | om_ix1;
-#endif
 			put(obx.id);
 			put16(v16);
 			put(e_nf);
@@ -2799,28 +2652,20 @@ static void h_form(void)
 {
 	switch (ft) {
 	case T_ENUM:
-#if OM_USE_FLAGS
 	case T_FLAGS: case T_FLAGS16:
-#endif
 		words(fdx.arg);
 		print_words();
 		break;
 	case T_U8: case T_U16: case T_U32:
-#if OM_USE_I16 || OM_USE_TZ
 	case T_I16: case T_TZ:
-#endif
 		lim_form();
 		break;
 	case T_STR:
-#if OM_USE_SECRET
 	case T_SECRET:
-#endif
 		itoa_short(fdx.arg);
 		break;
 	case T_PMASK:
-#if OM_USE_PORT
 	case T_PORT:
-#endif
 		pm = 0;
 		all_ports();
 		if (ft == T_PMASK && fdx.arg)
@@ -2971,13 +2816,11 @@ found:
 	d_lo = r_o;
 	r_fix = RF_L0;
 	r_v = d_ix;
-#if OM_USE_IX2
 	if (obx.n[1] > 1) {
 		r_v1 = d_ix;
 		r_v = d_ix >> 8;
 		r_fix = RF_L0 | RF_L1;
 	}
-#endif
 	if (obx.k[0] == IX_NUM && obx.n[0] > 1)
 		r_v--;			/* 0: 0xffff, no such number */
 	return 1;
@@ -3047,9 +2890,7 @@ static void load_begin(void)
 	bs.skip_id = 0;
 	d_nf = 0;
 	d_lo = 0xff;
-#if OM_USE_KEY
 	j_copies = K_CAND;
-#endif
 }
 
 /* the record's instance in the candidate (a keyed entry made if need be): 0
@@ -3058,7 +2899,6 @@ static uint8_t d_inst(void)
 {
 	if (!d_obj())
 		return 0;
-#if OM_USE_KEY
 	if (obx.k[0] == IX_KEY) {
 		num[0] = r_v;
 		num[1] = r_v >> 8;
@@ -3070,7 +2910,6 @@ static uint8_t d_inst(void)
 		if (!cur_ok && !key_new())
 			return 0;
 	}
-#endif
 	first_inst();
 	return cur_ok;
 }
@@ -3104,7 +2943,6 @@ static uint8_t load_step(void)
 			return 0;
 		l_u++;
 		if (v8 == D_INST) {
-#if OM_USE_KEY
 			if (d_obj() && obx.k[0] == IX_KEY && !d_ix) {
 				/* a keyed object: its entries follow. The candidate is
 				 * at the defaults: only the default entries to clear */
@@ -3113,14 +2951,11 @@ static uint8_t load_step(void)
 				d_ok = 0;
 				continue;
 			}
-#endif
 			d_ok = d_inst();
 			if (!d_ok)
 				skip();
-#if OM_USE_KEY
 			if (obx.k[0] == IX_KEY)
 				l_u += LOAD_KU - 1;
-#endif
 			continue;
 		}
 		if (!d_ok)
@@ -3262,13 +3097,9 @@ uint8_t om_boot_load(uint8_t dflt) __banked
 		return b_fmt;
 	load_begin();
 	while (def_step());
-#if OM_USE_KEY
 	k_boot = 1;
-#endif
 	while (load_step());
-#if OM_USE_KEY
 	k_boot = 0;
-#endif
 	pend_start();
 	while (pend_step());
 	l_saved = 0;			/* the default isn't what is saved */
@@ -3341,9 +3172,7 @@ static uint8_t bin_line(void)
 		j_hit = JH_NONE;
 		j_mode = J_GET;
 		j_new = 1;
-#if OM_USE_KEY
 		j_copies = K_CAND | K_SORT;
-#endif
 		return 1;
 	}
 	if (fl_kind == FL_SAVE)
@@ -3540,7 +3369,6 @@ static void t_num(void)			/* v16 and '.' */
 static void t_ix(void)			/* level lv's indices */
 {
 	lvl_load();
-#if OM_USE_WORD
 	if (lk == IX_WORD) {
 		words(la);
 		while (*cp) {
@@ -3549,17 +3377,14 @@ static void t_ix(void)			/* level lv's indices */
 		}
 		return;
 	}
-#endif
 	for (w = 1; w <= ln; w++) {
 		v16 = w;
-#if OM_USE_KEY
 		if (lk == IX_KEY) {
 			ks = w - 1;
 			v16 = key_at(CAND);
 			if (!v16)
 				continue;
 		}
-#endif
 		if (lk != IX_PORT || log_of(w) != 0xff)
 			t_num();
 	}
