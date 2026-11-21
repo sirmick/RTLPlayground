@@ -1,4 +1,4 @@
-# om.mk - the object model (~/rtlpg-bench/object-model/DESIGN.md): its
+# om.mk - the object model (om/README.md, om/DESIGN.md): its
 # engine and handlers, and the tables generated from schema/. Included by the
 # Makefile after sched.mk. The generator needs no SDCC: it reads the schema
 # and the ID registry (schema/registry.txt) and fails while an object or

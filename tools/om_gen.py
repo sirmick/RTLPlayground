@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""om_gen.py - the object model's generator (doc/om/, ~/rtlpg-bench/object-model/DESIGN.md).
+"""om_gen.py - the object model's generator (om/README.md, om/DESIGN.md).
 
 Reads the schema (schema/*.py, the declarations in section 10 of the design)
 and the committed ID registry (schema/registry.txt), and writes:

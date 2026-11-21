@@ -9,7 +9,7 @@ default password, POST /cli taking set, apply (which moves it back to the
 first port, and its password to web.password), save and get -s (through
 rtlpg_client's codec). Checks: the images fwupdate takes, the dry run, the
 refusal over legacy lines, --drop-legacy, the whole flow, a line the switch
-refuses. The flow on the real firmware is ~/rtlpg-bench/object-model/sim_upgrade.py's.
+refuses. The flow on the real firmware is tested in rtlsim (ovs-rtlpg), outside this repo.
 """
 import contextlib
 import http.server
