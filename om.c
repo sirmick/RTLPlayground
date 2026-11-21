@@ -63,7 +63,9 @@ static __xdata uint8_t c_def;		/* get -d: only fields off their default, Secrets
 /* a resolved path */
 static __xdata uint8_t r_o;		/* object */
 static __xdata uint8_t r_st;		/* the path is in the state tree */
-static __xdata uint8_t r_fix;		/* bit 0, 1: level 0, 1's index is given (else all) */
+static __xdata uint8_t r_fix;		/* RF_*: which levels' index the path gives (else all) */
+#define RF_L0	1
+#define RF_L1	2
 static __xdata uint16_t r_v;		/* level 0's index given, as cv holds it */
 static __xdata uint8_t * __xdata r_path;	/* the path, past "state." */
 static __xdata uint8_t * __xdata r_rest;	/* the rest of the path: the field part */
@@ -107,8 +109,18 @@ static __xdata uint8_t j_mode, j_o, j_new, j_quiet, j_in;
 static __xdata uint8_t j_pr;		/* get -d: a field of this instance printed */
 static __xdata uint8_t kd;		/* a default entry */
 static __xdata uint8_t j_sv;		/* get -s: printing the loaded sector (bin_line()) */
-static __xdata uint8_t j_hit;		/* get, this path: 1 a field matched, 2 done, 3 failed */
+static __xdata uint8_t j_hit;		/* get, this path: JH_* */
+#define JH_NONE		0	/* nothing matched yet */
+#define JH_FIELD	1	/* a field matched */
+#define JH_DONE		2	/* printed (or nothing to print) */
+#define JH_ERR		3	/* failed: an err line said why; no ok */
 /* numbers */
+/* Scratch registers, as SDCC wants them (doc/sched/memory.md: locals of a
+ * non-leaf function in static xdata cost less than on the stack): i, k, v8
+ * and w hold a value only until the next call. Any om.c function may
+ * change them, so one never keeps a value in them across a call it makes;
+ * a value that must live across calls gets a named static of its own. num[]
+ * is parse_dec()'s result, dig[] emit_dec()'s digits. */
 static __xdata uint8_t num[8], num_len, dig[21], k, i, v8, w;
 static __xdata uint8_t pn, sg, pf;	/* a port mask's front number; a sign; path_err's separator */
 static __xdata uint8_t r_first;	/* the first object a get or set path matched */
@@ -1028,6 +1040,9 @@ bad_range:
 
 #if OM_USE_KEY
 static __xdata uint8_t j_copies;	/* where entries are looked for: 1 running, 2 candidate, */
+#define K_RUN	1			/* j_copies: running's entries */
+#define K_CAND	2			/* the candidate's */
+#define K_BOTH	3			/* K_RUN | K_CAND */
 #define K_SORT	4			/* and in key order (get, diff); else in slot order */
 static __xdata uint8_t ks, kb;
 static __xdata uint16_t kv, kbest;
@@ -1049,14 +1064,14 @@ static __xdata uint16_t kv2;
 static void slot_key(void)
 {
 	kv = 0;
-	if (j_copies & 1)
+	if (j_copies & K_RUN)
 		kv = key_at(RUN);
-	if (j_copies & 2) {
+	if (j_copies & K_CAND) {
 		kv2 = key_at(CAND);
-		if (kv2 && (!(r_fix & 1) || kv2 == r_v))
+		if (kv2 && (!(r_fix & RF_L0) || kv2 == r_v))
 			kv = kv2;
 	}
-	if ((r_fix & 1) && kv != r_v)
+	if ((r_fix & RF_L0) && kv != r_v)
 		kv = 0;
 }
 
@@ -1093,9 +1108,9 @@ static uint8_t key_step(void)
 	for (ks = 0; ks < obx.n[0]; ks++) {
 		slot_key();
 		key_best();
-		if ((j_copies & 3) == 3 && kv == kv2) {	/* running's, if the candidate's differs */
+		if ((j_copies & K_BOTH) == K_BOTH && kv == kv2) {	/* running's, if the candidate's differs */
 			kv = key_at(RUN);
-			if (!(r_fix & 1) || kv == r_v)
+			if (!(r_fix & RF_L0) || kv == r_v)
 				key_best();
 		}
 	}
@@ -1124,7 +1139,7 @@ static uint8_t step0(void)
 	/* a streamed level: the getter finds the instance at or after cv; K
 	 * must land on K, K- is a page of OM_PAGE from K on */
 	if (lk == IX_STREAM) {
-		if ((r_fix & 1) && cv < r_v)
+		if ((r_fix & RF_L0) && cv < r_v)
 			cv = r_v;
 		if (r_open && !--r_open)
 			return 0;
@@ -1135,7 +1150,7 @@ static uint8_t step0(void)
 		return 1;
 	}
 #endif
-	if (r_fix & 1) {
+	if (r_fix & RF_L0) {
 		if (cv > r_v)
 			return 0;
 		cv = r_v;
@@ -1151,7 +1166,7 @@ static uint8_t step0(void)
 #if OM_USE_IX2
 static uint8_t step1(void)		/* level 1's, at or after om_ix1 */
 {
-	if (r_fix & 2) {
+	if (r_fix & RF_L1) {
 		if (om_ix1 > r_v1)
 			return 0;
 		om_ix1 = r_v1;
@@ -1499,13 +1514,13 @@ static void job_start(uint8_t mode)
 	cli_job = mode >= J_SAVE ? CLI_JOB_OMAPPLY : CLI_JOB_OM;
 	om_cut = 0;
 	j_new = 1;
-	j_hit = 0;
+	j_hit = JH_NONE;
 	r_first = 0xff;
 #if OM_USE_KEY
 	if (mode == J_DIFF)
-		j_copies = 3 | K_SORT;
+		j_copies = K_BOTH | K_SORT;
 	if (mode == J_APPLY)
-		j_copies = 3;
+		j_copies = K_BOTH;
 #endif
 }
 
@@ -1558,9 +1573,9 @@ static uint8_t next_obj(void)
 					r_first = j_o;
 				if (!has_field())
 					continue;
-				j_hit |= 1;
+				j_hit |= JH_FIELD;
 				if (c_def) {
-					j_hit = 2;	/* -d: a path may have nothing off its default */
+					j_hit = JH_DONE;	/* -d: a path may have nothing off its default */
 #if OM_USE_KEY
 					if (obx.k[0] == IX_KEY)
 						key_dels();
@@ -1576,7 +1591,7 @@ static uint8_t next_obj(void)
 				job_inst();
 				return 1;
 			}
-			if ((r_fix & 1)
+			if ((r_fix & RF_L0)
 #if OM_USE_STREAM
 			    && (r_land || !r_open)	/* an empty page: nothing to print */
 #endif
@@ -1584,11 +1599,11 @@ static uint8_t next_obj(void)
 				fail("no such entry");
 				goto fail;
 			}
-			j_hit = 2;		/* no entries: nothing to print */
+			j_hit = JH_DONE;		/* no entries: nothing to print */
 		}
 		if (j_mode != J_GET)
 			return 0;
-		if (j_hit != 2) {
+		if (j_hit != JH_DONE) {
 			if (j_hit)
 				fail("not on this port");
 			else
@@ -1599,11 +1614,11 @@ static uint8_t next_obj(void)
 			return 0;
 		j_o = O_START;
 		o_all = 0;
-		j_hit = 0;
+		j_hit = JH_NONE;
 		r_first = 0xff;
 	}
 fail:
-	j_hit = 3;
+	j_hit = JH_ERR;
 	return 0;
 }
 
@@ -1803,7 +1818,7 @@ static void apply_go(void)		/* the checks passed: hand the candidate to the cfg 
 {
 	if (!om_job_start()) {
 		err_line("err apply: busy\n");
-		j_hit = 3;
+		j_hit = JH_ERR;
 		return;
 	}
 	apply_begin();
@@ -1822,7 +1837,7 @@ static uint8_t apply_wait(void)
 		cv_of_e();
 		c_inst = 1;
 		fail(om_apply_st == E_CFGAPPLY_FAILED ? "failed, and its rollback" : "failed, rolled back");
-		j_hit = 3;
+		j_hit = JH_ERR;
 	}
 	return 0;
 }
@@ -1849,7 +1864,7 @@ uint8_t om_line(void) __banked
 		if (set_step())
 			return 1;
 		set_end();
-		j_hit = 3;		/* set_end() said it */
+		j_hit = JH_ERR;		/* set_end() said it */
 		goto done;
 	}
 	if (j_mode == J_CHECK) {
@@ -1857,11 +1872,11 @@ uint8_t om_line(void) __banked
 		if (v8 == 1)
 			return 1;
 		if (v8) {
-			j_hit = 3;		/* refused: the check said why */
+			j_hit = JH_ERR;		/* refused: the check said why */
 			goto done;
 		}
 		apply_go();
-		if (j_hit == 3)
+		if (j_hit == JH_ERR)
 			goto done;
 		return 1;
 	}
@@ -1888,7 +1903,7 @@ uint8_t om_line(void) __banked
 			if (j_mode == J_GET) {
 				vp = inst(c_cand ? CAND : RUN) + fdx.off;
 				emit_line();
-				j_hit = 2;
+				j_hit = JH_DONE;
 				j_pr = 1;
 			} else {
 				if (j_in & 1) {
@@ -1931,7 +1946,7 @@ done:
 		j_mode = J_COPY;
 		return 1;
 	}
-	if (!j_quiet && j_hit != 3)
+	if (!j_quiet && j_hit != JH_ERR)
 		ok();
 	return 0;
 }
@@ -1970,7 +1985,7 @@ static void om_get(void)
 		}
 	}
 #if OM_USE_KEY
-	j_copies = (c_cand ? 2 : 1) | K_SORT;
+	j_copies = (c_cand ? K_CAND : K_RUN) | K_SORT;
 #endif
 	if (cmd_words_len <= c_pw) {	/* the names, a line a step (5.9 ms at once in rtlsim) */
 		job_start(J_NAMES);
@@ -2021,7 +2036,7 @@ found:
 		return 0;
 	}
 #if OM_USE_KEY
-	j_copies = 2;
+	j_copies = K_CAND;
 #endif
 	return 1;
 }
@@ -2097,7 +2112,7 @@ static void key_dels(void)
 	for (kd = 0; kd < obx.ndef; kd++) {
 		def_next();
 		kk = kbest;		/* first_inst() uses kbest */
-		r_fix = 1;		/* the entry, looked up as a path naming it */
+		r_fix = RF_L0;		/* the entry, looked up as a path naming it */
 		r_v = kk;
 		first_inst();
 		if (cur_ok)
@@ -2201,7 +2216,7 @@ static void om_set(uint8_t del)
 	j_del = del;
 	j_any = 0;
 #if OM_USE_KEY
-	if (cur_f == 0xff && obx.k[0] == IX_KEY && !(r_fix & 1)) {
+	if (cur_f == 0xff && obx.k[0] == IX_KEY && !(r_fix & RF_L0)) {
 		j_del = 2;
 		ks = 0;
 		goto step;
@@ -2209,7 +2224,7 @@ static void om_set(uint8_t del)
 #endif
 	first_inst();
 #if OM_USE_KEY
-	if (!cur_ok && !del && (r_fix & 1)) {
+	if (!cur_ok && !del && (r_fix & RF_L0)) {
 		if (!key_new()) {
 			fail("table full");
 			return;
@@ -2253,7 +2268,7 @@ static void om_do(void)
 	}
 	for (first_inst(); cur_ok; next_inst()) {
 		if (!om_when()) {
-			if (r_fix & 1) {
+			if (r_fix & RF_L0) {
 				fail("not on this port");
 				return;
 			}
@@ -2280,7 +2295,7 @@ static uint8_t check_step(void)
 {
 	c_inst = 1;
 #if OM_USE_KEY
-	j_copies = 3;		/* entries deleted in the candidate too: a check may refuse it */
+	j_copies = K_BOTH;		/* entries deleted in the candidate too: a check may refuse it */
 #endif
 	r_fix = 0;
 	a_left = CHECK_N;
@@ -2524,7 +2539,7 @@ static void enc_chunk(void)
 			continue;
 		r_fix = 0;
 #if OM_USE_KEY
-		j_copies = 1 | K_SORT;	/* entries in key order: the bytes don't hang on slots */
+		j_copies = K_RUN | K_SORT;	/* entries in key order: the bytes don't hang on slots */
 #endif
 		if (e_st) {		/* where the last step stopped */
 			cv = e_cv;
@@ -2891,7 +2906,7 @@ static uint8_t h_line(void)		/* help's next line: 0 at the end */
 	}
 	h_tip();
 	e_star = 0;
-	j_hit = 1;
+	j_hit = JH_FIELD;
 	cli_job_one = 1;			/* a line costs up to ~4 ms: one a web step */
 	return 1;
 end:
@@ -2899,7 +2914,7 @@ end:
 		return 0;
 	path_err();				/* it named nothing */
 bad:
-	j_hit = 3;
+	j_hit = JH_ERR;
 	return 0;
 }
 #endif
@@ -2954,13 +2969,13 @@ static uint8_t d_obj(void)
 	return 0;
 found:
 	d_lo = r_o;
-	r_fix = 1;
+	r_fix = RF_L0;
 	r_v = d_ix;
 #if OM_USE_IX2
 	if (obx.n[1] > 1) {
 		r_v1 = d_ix;
 		r_v = d_ix >> 8;
-		r_fix = 3;
+		r_fix = RF_L0 | RF_L1;
 	}
 #endif
 	if (obx.k[0] == IX_NUM && obx.n[0] > 1)
@@ -3033,7 +3048,7 @@ static void load_begin(void)
 	d_nf = 0;
 	d_lo = 0xff;
 #if OM_USE_KEY
-	j_copies = 2;
+	j_copies = K_CAND;
 #endif
 }
 
@@ -3286,7 +3301,7 @@ static uint8_t bin_line(void)
 		if (b_fmt != E_CFGFORMAT_OK) {
 			c_pw = 0;
 			fail("bad");
-			j_hit = 3;
+			j_hit = JH_ERR;
 			return 0;
 		}
 		if (j_mode == J_SAVED)		/* the candidate aside, into the rollback copy */
@@ -3323,11 +3338,11 @@ static uint8_t bin_line(void)
 		cmd_words_len = 3;
 		c_pw = 2;
 		r_first = 0xff;
-		j_hit = 0;
+		j_hit = JH_NONE;
 		j_mode = J_GET;
 		j_new = 1;
 #if OM_USE_KEY
-		j_copies = 2 | K_SORT;
+		j_copies = K_CAND | K_SORT;
 #endif
 		return 1;
 	}
@@ -3336,7 +3351,7 @@ static uint8_t bin_line(void)
 	if (bs.save != E_CFGSAVE_DONE) {
 		c_pw = 0;
 		fail("failed");
-		j_hit = 3;
+		j_hit = JH_ERR;
 	}
 	return 0;
 }
