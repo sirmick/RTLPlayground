@@ -115,7 +115,10 @@ $(BUILDDIR)/test_om_codec: test_om_codec.py $(SRCROOT)/tools/rtlpg_client.py $(S
 # The generator: broken schemas fail with their message, the registry holds.
 # tools/fwupdate.py's upgrade flow against a fake switch (old firmware, then
 # the object model)
-$(BUILDDIR)/test_ui_keys: test_ui_keys.py $(SRCROOT)/html/app.js $(SRCROOT)/html/index.html | $(BUILDDIR)
+# html/schema.js is generated (top Makefile): a fresh checkout has none
+$(SRCROOT)/html/schema.js: $(OM_SCHEMA) $(SRCROOT)/tools/om_gen.py
+	$(MAKE) -C $(SRCROOT) html/schema.js > /dev/null
+$(BUILDDIR)/test_ui_keys: test_ui_keys.py $(SRCROOT)/html/app.js $(SRCROOT)/html/index.html $(SRCROOT)/html/schema.js | $(BUILDDIR)
 	printf '#!/bin/sh\nexec python3 "%s/test_ui_keys.py"\n' "$(CURDIR)" > $@ && chmod +x $@
 
 $(BUILDDIR)/test_fwupdate: test_fwupdate.py $(SRCROOT)/tools/fwupdate.py $(SRCROOT)/tools/rtlpg_client.py \
