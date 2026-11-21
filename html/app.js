@@ -1,6 +1,11 @@
 "use strict";
 var LANG = {
     en: {
+        i_host: "Hostname",
+        i_ip: "IP address",
+        i_mask: "Netmask",
+        i_gw: "Gateway",
+        i_syslog: "Syslog",
         nav_dash: "Dashboard",
         nav_ports: "Ports",
         nav_stp: "Spanning tree",
@@ -423,6 +428,11 @@ var LANG = {
         fw_timeout: "switch has not come back after 150 s: check power / serial console"
     },
     ja: {
+        i_host: "ホスト名",
+        i_ip: "IP アドレス",
+        i_mask: "ネットマスク",
+        i_gw: "ゲートウェイ",
+        i_syslog: "Syslog",
         nav_dash: "ダッシュボード",
         nav_ports: "ポート",
         nav_stp: "スパニングツリー",
@@ -699,6 +709,11 @@ var LANG = {
         fw_timeout: "150 秒経ってもスイッチが復帰しません。電源 / シリアルコンソールを確認してください"
     },
     zh: {
+        i_host: "主机名",
+        i_ip: "IP 地址",
+        i_mask: "子网掩码",
+        i_gw: "网关",
+        i_syslog: "Syslog",
         nav_dash: "仪表盘",
         nav_ports: "端口",
         nav_stp: "生成树",
@@ -1043,6 +1058,11 @@ var LANG = {
         fw_timeout: "150 秒后交换机仍未恢复: 请检查电源 / 串口控制台"
     },
     es: {
+        i_host: "Nombre de host",
+        i_ip: "Dirección IP",
+        i_mask: "Máscara de red",
+        i_gw: "Puerta de enlace",
+        i_syslog: "Syslog",
         nav_dash: "Panel",
         nav_ports: "Puertos",
         nav_stp: "Árbol de expansión",
@@ -1389,6 +1409,11 @@ var LANG = {
         fw_other: "Esta imagen no se compiló para este switch ({m}): los pines de SFP, LEDs y botones pueden no coincidir. Súbela solo si estás seguro."
     },
     fr: {
+        i_host: "Nom d'hote",
+        i_ip: "Adresse IP",
+        i_mask: "Masque réseau",
+        i_gw: "Passerelle",
+        i_syslog: "Journal système",
         nav_dash: "Tableau de bord",
         nav_ports: "Ports",
         nav_stp: "Arborescence",
@@ -1701,6 +1726,11 @@ var LANG = {
         fw_timeout: "Le commutateur n'est plus joignable depuis 150 s: verifiez l'alimentation ou utilisez la console série"
     },
     de: {
+        i_host: "Hostname",
+        i_ip: "IP-Adresse",
+        i_mask: "Netzmaske",
+        i_gw: "Gateway",
+        i_syslog: "Syslog",
         nav_dash: "Übersicht",
         nav_ports: "Ports",
         nav_stp: "Spanning Tree",
