@@ -144,10 +144,10 @@ def main(argv):
         C = a.cases
         if "table" in C:
           case("table", "5cac", "reg hold 5cac 1", "reg release 5cac",
-               lambda: cli(f"vlan 30 {F[1]}", "get state.l2")(), lambda x: prompt(x) and "Error" not in x,
-               after=lambda: cli(f"vlan 31 {F[1]}", "get state.l2")() + web("/vlanlist.json")())
-          vl = [v for k, v in r.results.items() if k.endswith("GET /vlanlist.json")][-1]
-          check('"id":30' in vl and '"id":31' in vl, "table: VLANs 30 and 31 listed after the release")
+               lambda: cli(f"set vlan.30.members {F[1]}", "apply", "get state.l2")(), lambda x: prompt(x) and "Error" not in x,
+               after=lambda: cli(f"set vlan.31.members {F[1]}", "apply", "get state.l2", "get vlan")())
+          vl = [v for k, v in r.results.items() if k.endswith("cli get vlan")][-1]
+          check("vlan.30.members" in vl and "vlan.31.members" in vl, "table: VLANs 30 and 31 listed after the release")
         if "stat" in C:
           case("stat", "0f60", "reg hold f60 1", "reg release f60",
                cli("get state.port.1.mib"), prompt)
@@ -186,10 +186,9 @@ def main(argv):
             r.wait(1000)
 
         def save():
-            r.post_config(f"vlan 40 {F[1]}\n", slot=8000)
-            return [last()]
+            return cli(f"set vlan.40.members {F[1]}", "apply", "save")()
         if "wel" in C:
-          case("wel", "ff01", "flash wp on", "flash wp off", save, lambda x: x != "<timeout>" and "HTTP" in x)
+          case("wel", "ff01", "flash wp on", "flash wp off", save, prompt)
 
         # the 8224's SerDes writes are boot work: hold before a power cut
         if "boot" in C:

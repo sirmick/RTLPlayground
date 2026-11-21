@@ -9,14 +9,13 @@ Since D3 a /cmd waits in config_buf for the cli task, and its reply goes out
 on a later poll (net.md item 2). uIP has one connection, so no other request
 can reach config_buf meanwhile, unless the /cmd's own connection ends first.
 
-W1: a config upload (POST /config, staged in config_buf), a /cmd, another
-    upload, another /cmd: each /cmd's reply is its commands' output and each
-    upload is in flash.
+W1: a restore (the UI's: set lines, apply and save in one POST /cli), a
+    /cmd, another restore, another /cmd: each /cmd's reply is its commands'
+    output and each restore is saved (get -s).
 W2: a /cmd ("set sys.hostname aborted", apply) and the client's RST in the same instant,
-    then a POST /config (its body "set sys.hostname cfgbody ...") on a new
-    connection: the cancelled command runs nothing, the upload's body isn't
-    run as commands (hostname unchanged, the console silent), and the upload
-    is in flash. The order is forced by the sim: the /cmd segment and the RST
+    then a restore ("set sys.hostname cfgbody ...") on a new connection: the
+    cancelled command runs nothing (the hostname is the restore's, the
+    console silent), and the restore is saved. The order is forced by the sim: the /cmd segment and the RST
     are in the NIC ring together, and the rx task takes up to RX_BUDGET (4)
     frames a step, so the RST is handled before cli's next step.
 W3: a /cmd ("set sys.hostname tail3", apply, "get mgmt.ip") followed, in a segment of its own in the
@@ -29,19 +28,18 @@ W5: a web /cmd "get state.l2\nhostname oldbody" over 300 learned MACs, its conne
     gets its own reply (mgmt.ip's, no state.l2 lines), the hostname is w5, and the old
     body's second line never runs (E1: the run checks its command's
     generation at every step).
-W6: STP off, "stp bpdu filter" (the BPDU entries CPU-only), VLAN 4000
-    configured; a web /cmd "stp bpdu flood" (stp_off()'s VLAN walk, VLAN
-    4000's entry near its end), its connection reset at the walk's first
-    step: the walk still runs to its end, so the L2 table equals the one a
-    whole console "stp bpdu flood" leaves (E1: a job with side effects isn't
-    dropped). W5 and W6 stop the sim on cli's functions: the image's
+W6: STP off, stp.bpdu filter (the BPDU entries CPU-only), VLAN 4000
+    configured; a web /cmd "set stp.bpdu flood", apply (stp_off()'s VLAN
+    walk, VLAN 4000's entry near its end), its connection reset at the
+    walk's first step: the walk still runs to its end, so the L2 table
+    equals the one a whole console apply leaves (E1: a job with side
+    effects isn't dropped). W5 and W6 stop the sim on cli's functions: the image's
     rtlplayground.map, next to it.
 Exit status 1 if any fails.
 """
 import argparse, os, re, struct, sys
 
 CMD = "get mgmt.ip\nget state.sys.version"
-CONFIG_START = 0x7f000
 
 
 def cmd_ok(resp):
@@ -175,18 +173,20 @@ def main(argv):
         k = Client(r)
         # W6's VLAN, while the console is quiet (a line typed while a link
         # change prints is lost)
-        k.b.console(f"vlan 4000 {r.F[1]} {r.F[2]}t", k.b.now + 3000000)
+        for l in (f"set vlan.4000.members {r.F[1]},{r.F[2]}", f"set vlan.4000.tagged {r.F[2]}", "apply"):
+            k.b.console(l, k.b.now + 3000000)
 
-        def upload(text):
-            bnd = "----wcmd0123456789"
-            body = (f"--{bnd}\r\nContent-Disposition: form-data; name=\"configuration\"; filename=\"config.txt\"\r\n"
-                    f"Content-Type: application/octet-stream\r\n\r\n").encode() + text.encode() + f"\r\n--{bnd}--\r\n".encode()
+        def upload(text):		# a restore: POST /cli of the lines, save; get -s has them
             c = k.open()
-            k.send(c, post(r.cookie, "/config", f"multipart/form-data; boundary={bnd}", body))
-            k.run(5000000, lambda: k.done(c))
+            k.send(c, post(r.cookie, "/cli", "text/plain;charset=UTF-8", (text + "save\n").encode()))
+            k.run(8000000, lambda: k.done(c))
             k.close(c)
-            saved = r.b.flash(CONFIG_START, 512).split(b"\0")[0].split(b"\xff")[0].decode("latin-1")
-            return c.resp.startswith(b"HTTP/1.1 200") and saved.startswith(text.rstrip("\n")), saved
+            k.b.pending()
+            _, saved = k.b.console("get -s", k.b.now + 5000000)
+            saved = saved or ""
+            name = re.search(r"set sys\.hostname (\S+)", text).group(1)
+            return (c.resp.startswith(b"HTTP/1.1 200") and b"err" not in c.resp
+                    and f"sys.hostname {name}" in saved), saved.replace("\r", "")
 
         def webcmd(text):
             c = k.open()
@@ -202,7 +202,8 @@ def main(argv):
             return m.group(1) if m else ""
 
         F = r.F
-        cfg = lambda name: f"set sys.hostname {name}\napply\nvlan 10 {F[1]} {F[2]}t\npvid {F[1]} 10\n"
+        cfg = lambda name: (f"set sys.hostname {name}\nset vlan.10.members {F[1]},{F[2]}\n"
+                            f"set vlan.10.tagged {F[2]}\nset port.{F[1]}.pvid 10\napply\n")
 
         # W1
         res = []
@@ -210,10 +211,10 @@ def main(argv):
             ok_up, saved = upload(cfg(f"up{i}"))
             resp = webcmd(CMD)
             res.append((ok_up, cmd_ok(resp)))
-            print(f"   upload {i}: {'PASS' if ok_up else 'FAIL'} (flash {saved[:40]!r}); "
+            print(f"   restore {i}: {'PASS' if ok_up else 'FAIL'} ({saved[:40]!r}); "
                   f"/cmd: {'PASS' if cmd_ok(resp) else 'FAIL'} {resp.partition(b'\r\n\r\n')[2][:60]!r}")
         ok = all(a and b for a, b in res)
-        print(f"W1 /cmd with a config upload before and after: {'PASS' if ok else 'FAIL'}")
+        print(f"W1 /cmd with a restore before and after: {'PASS' if ok else 'FAIL'}")
         if not ok:
             fails.append("W1")
 
@@ -228,9 +229,9 @@ def main(argv):
         k.run(1000000)
         con = k.b.pending()
         name1 = hostname()
-        ok_run = name1 == name0
+        ok_run = name1 == "cfgbody"		# the restore's; never "aborted"
         ok_quiet = "Unknown command" not in con and "Error" not in con and "aborted" not in con
-        print(f"W2 /cmd aborted before cli runs, then POST /config: hostname {name0!r} -> {name1!r} "
+        print(f"W2 /cmd aborted before cli runs, then a restore: hostname {name0!r} -> {name1!r} "
               f"{'PASS' if ok_run else 'FAIL'}, console {'PASS' if ok_quiet else 'FAIL'}, "
               f"upload {'PASS' if ok_up else 'FAIL'}")
         if con.strip():
@@ -258,25 +259,28 @@ def main(argv):
             if not ok:
                 print(f"   reply: {c.resp[:160]!r}\n   console: {con.strip()[:200]!r}")
                 fails.append(name)
-        # W6: stp off's VLAN walk survives its connection. "stp bpdu filter"
+        # W6: stp off's VLAN walk survives its connection. stp.bpdu filter
         # leaves the BPDU entries CPU-only (STP off: at once, a whole walk);
-        # a web "stp bpdu flood" rewrites them, VLAN 4000's near the walk's end.
-        k.b.console("stp bpdu filter", k.b.now + 3000000)
+        # a web stp.bpdu flood rewrites them, VLAN 4000's near the walk's end.
+        def con(*ls):
+            for l in ls:
+                k.b.console(l, k.b.now + 3000000)
+        con("set stp.bpdu filter", "apply")
         k.run(1000000)
         k.b.pending()
         c = k.open()
-        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"stp bpdu flood"))
+        k.send(c, post(r.cookie, "/cmd", "text/plain;charset=UTF-8", b"set stp.bpdu flood\napply"))
         until_step(r, "_stp_fdb_line")	# the walk's first step
         c.tcp(0x04)				# while the walk runs
         k.run(2000000)
         cut = r.b.table("l2")
-        k.b.console("stp bpdu filter", k.b.now + 3000000)
+        con("set stp.bpdu filter", "apply")
         k.run(1000000)
-        k.b.console("stp bpdu flood", k.b.now + 3000000)
+        con("set stp.bpdu flood", "apply")
         k.run(1000000)
         whole = r.b.table("l2")
         ok = cut == whole and any("fa00180 " in l for l in whole)	# VLAN 4000's entry is there
-        print(f"W6 web stp bpdu flood reset mid-walk: L2 table {'the same as' if ok else 'NOT the same as'} "
+        print(f"W6 web stp.bpdu flood reset mid-walk: L2 table {'the same as' if ok else 'NOT the same as'} "
               f"a whole one's: {'PASS' if ok else 'FAIL'}")
         if a.verbose:
             print("   whole's BPDU entries: " + " | ".join(l for l in whole if "c2000000" in l)[:300])
