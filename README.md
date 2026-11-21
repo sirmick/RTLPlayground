@@ -1,10 +1,32 @@
 # RTLPlayground
 A Playground for Firmware development for advanced user of RTL8372/RTL8373 based 2.5GBit Switches.
 
-> **This is an experimental branch** (`dev` of the [sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground)
-> fork of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground)). It changes the flash
-> layout and the update path. Keep a flash programmer at hand for any switch you put it on. The
-> intent is to merge the pieces back upstream once they have proven themselves.
+> **This is an experimental fork** ([sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground))
+> of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground). It is three large
+> changes, each built on the one before and each breaking what came before it:
+>
+> | Branch | Adds | Breaks |
+> |---|---|---|
+> | [`compact-layout`](https://github.com/sirmick/RTLPlayground/tree/compact-layout) | a 232 KiB flash layout, the loader on every switch, automatic bank placement | the flash layout and the update path |
+> | [`feat/sched`](https://github.com/sirmick/RTLPlayground/tree/feat/sched) | a cooperative scheduler in place of the main loop | how firmware code is written: every task is a step |
+> | [`main`](https://github.com/sirmick/RTLPlayground/tree/main) | one object model for the CLI, the config, the web UI and the API | every CLI command, the saved config format, the web API |
+>
+> **You are on `compact-layout`.** Keep a flash programmer at hand for any switch you put it on.
+> The intent is to bring the pieces back upstream once they have proven themselves.
+>
+> ### 1. Compact layout, the loader, automatic bank placement (`compact-layout`)
+>
+> **Why:** a 512 KiB switch couldn't be updated through the web UI, a failed update needed a
+> flash programmer, and every code change meant moving files between code banks by hand.
+> Now:
+> - **Every switch updates over the web, 512 KiB ones included,** and survives a bad update:
+>   the loader checks every image before it installs it, and recovers a switch whose
+>   application fails.
+> - **No programmer to get there:** the loader comes with a web update, or a bridge image for
+>   a standard-layout switch. The config moves with it.
+> - **No more bank bookkeeping:** the build places code in the banks itself, and checks every
+>   link for what used to crash at run time.
+> - **Every push runs on a simulated switch** in CI.
 >
 > What it adds:
 > - **Compact flash layout** (`make LAYOUT=compact`): a 232 KiB image, defined once in `layout.h`,
