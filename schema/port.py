@@ -3,31 +3,31 @@
 
 obj("port", count=PORTS, apply="om_apply_port", check="om_check_port", order=40,
     tip="A front-panel port")
-cfg("name", Str(31), "", tip="Shown in the UI and sent as the LLDP port description", label="c_name")
-cfg("enabled", Bool, True, when="copper", tip="Administrative state", label="c_enabled")
+cfg("name", Str(31), "", tip="Shown in the UI and sent as the LLDP port description")
+cfg("enabled", Bool, True, when="copper", tip="Administrative state")
 cfg("speed", Enum("speed", "auto 10m 100m 1g 2g5 5g 10g"), "auto",
-    tip="Auto, or forced; 5g/10g on 10G ports only", label="pt_speed")
+    tip="Auto, or forced; 5g/10g on 10G ports only")
 cfg("duplex", Enum("duplex", "auto full half"), "auto", when="copper",
     tip="Duplex for a forced 10m or 100m")
-cfg("mtu", U16(64, 16383), 16383, tip="Largest frame accepted, in bytes", unit="B", label="pt_mtu")
-cfg("pvid", U16(0, 4094), 1, tip="VLAN for untagged frames; 0 parks a tagged-only port", label="v_pvid")
+cfg("mtu", U16(64, 16383), 16383, tip="Largest frame accepted, in bytes", unit="B")
+cfg("pvid", U16(0, 4094), 1, tip="VLAN for untagged frames; 0 parks a tagged-only port")
 cfg("ingress", Enum("ingress", "all tagged untagged"), "all",
-    tip="Acceptable frame types", label="v_accept")
-cfg("ingress_filter", Bool, True, tip="Drop frames of VLANs the port is not a member of")
-cfg("lldp", Enum("lldp", "permit block"), "permit", tip="Send LLDP on this port", label="nav_lldp")
+    tip="Acceptable frame types", label="Accept")
+cfg("ingress_filter", Bool, True, tip="Drop frames of VLANs the port is not a member of", label="Filter")
+cfg("lldp", Enum("lldp", "permit block"), "permit", tip="Send LLDP on this port")
 cfg("eee", Bool, True, when="copper", tip="Energy-efficient Ethernet")
 cfg("eee_speeds", Flags("eee", "100m 1g 2g5 5g 10g"), "100m,1g,2g5,5g,10g", when="copper",
     tip="Capped by the port's speed")
 cfg("isolate", PortMask(cpu=True), "OM_ISOLATE_DEFAULT",
-    tip="Ports this port may send to")
-cfg("bw_in_kbps", U32(0, 10000000), 0, unit="kbit/s", label="bw_in",
+    tip="Ports this port may send to", label="Sends to")
+cfg("bw_in_kbps", U32(0, 10000000), 0, unit="kbit/s", label="Ingress limit",
     tip="Ingress limit, 16 kbit/s steps, 0 none")
 cfg("bw_in_mode", Enum("bwmode", "fc drop"), "drop",
     tip="Pause the sender, or drop")
-cfg("bw_out_kbps", U32(0, 10000000), 0, unit="kbit/s", label="bw_out",
+cfg("bw_out_kbps", U32(0, 10000000), 0, unit="kbit/s", label="Egress limit",
     tip="Egress limit, as bw_in_kbps")
 action("cabletest", "om_do_port_cabletest", when="copper",
-       tip="Time-domain reflectometry on the four pairs")
+       tip="Time-domain reflectometry on the four pairs", label="Cable test")
 message("duplex", "duplex full or half needs speed 10m or 100m")
 message("speed_10g", "speed 5g and 10g only on a 10G port")
 message("ct_running", "a cable test is running")
@@ -45,14 +45,14 @@ cfg("unit", Enum("sunit", "pps kbps"), "pps")
 message("storm_pps", "pps at most 1048575")
 
 state("port", count=PORTS, get="om_get_port")
-st("link", Enum("link", "down up"), label="c_link")
-st("speed", Enum("lspeed", "10m 100m 1g 500m 10g 2g5 5g unknown"), label="pt_speed")
+st("link", Enum("link", "down up"))
+st("speed", Enum("lspeed", "10m 100m 1g 500m 10g 2g5 5g unknown"))
 st("duplex", Enum("lduplex", "half full"), when="copper")
 st("media", Enum("media", "copper sfp"))
-st("ms_role", Enum("role", "slave master"), when="copper")
+st("ms_role", Enum("role", "slave master"), when="copper", label="Role")
 st("pause_tx", Bool)
 st("pause_rx", Bool)
-st("macs", U16(), label="pt_conn")
+st("macs", U16(), label="Devices learned")
 st("tx_good", U64)
 st("rx_good", U64)
 st("tx_bad", U32())

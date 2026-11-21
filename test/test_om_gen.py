@@ -236,14 +236,16 @@ txt = open(js_path).read() if os.path.exists(js_path) else ""
 m = re.search(r"var SCHEMA = (\{.*\});", txt)
 sch = json.loads(m.group(1)) if m else {}
 pf = sch.get("port", {}).get("f", {})
-check(sch.get("port", {}).get("i") == "P" and sch["port"].get("t") == "A port" and "sys" in sch
-      and "i" not in sch["sys"] and "state.port" in sch, "objects: index kind, tip, state ones by \"state.\"",
+check(sch.get("port", {}).get("i") == "P" and "t" not in sch["port"] and "sys" in sch
+      and "i" not in sch["sys"] and "state.port" in sch and sch["port"].get("o") and sch["state.port"].get("o", "")[:1] == "s",
+      "objects: index kind, no tip (the UI reads help), IDs (state's s<n>), state ones by \"state.\"",
       json.dumps(sch)[:300])
 check(list(pf) == ["name", "on", "speed", "mtu", "iso", "test"], "fields in schema order", str(list(pf)))
-check(pf.get("name") == ["s", 7, None, "", 0, "Its name", "", "c_name"] and pf.get("on") == ["b", None, None, "on", 1]
+check(pf.get("name") == ["s", 7, None, "", 0, "", "", "c_name"] and pf.get("on") == ["b", None, None, "on", 1]
       and pf.get("speed") == ["e", "auto 1g", None, "auto"]
-      and pf.get("mtu") == ["n", 64, 9000, "1500", 0, "Largest frame", "B"],
-      "type, limits or words, default, when, tip, unit, label", json.dumps(pf))
+      and pf.get("mtu") == ["n", 64, 9000, "1500", 0, "", "B"]
+      and set(sch["port"].get("k", {})) == {"name", "on", "speed", "mtu", "iso"},
+      "type, limits or words, default, when, no tip, unit, label; field IDs (not the action's)", json.dumps(pf))
 check(pf.get("iso") == ["m", 1] and pf.get("test") == ["a"],
       "a C-expression default is null and trailing empties go", json.dumps(pf))
 check(sch["sys"]["f"]["ip"] == ["ip", None, None, "192.168.1.1"] and
@@ -256,9 +258,10 @@ check(os.path.getmtime(js_path) == mt, "an unchanged schema.js is not rewritten"
 # takes it without them, the tables don't
 with open(os.path.join(d, "b.py"), "w") as f:
     f.write('state("sys")\nst("slot", Enum("sslotn"))\n')
+subprocess.run([sys.executable, GEN, "-s", d, "--register", "--js", js_path], capture_output=True)	# its state IDs
 p = subprocess.run([sys.executable, GEN, "-s", d, "--js", js_path], capture_output=True, text=True)
 txt = open(js_path).read()
-check(p.returncode == 0 and '"state.sys":{"f":{"slot":["e"]}}' in txt, "--js: a state Enum the build declares, no words",
+check(p.returncode == 0 and '"state.sys":{"f":{"slot":["e"]}' in txt, "--js: a state Enum the build declares, no words",
       p.stdout + p.stderr + txt[-200:])
 p = subprocess.run([sys.executable, GEN, "-s", d, "-o", os.path.join(d, "o3")], capture_output=True, text=True)
 check(p.returncode != 0 and "declared nowhere" in p.stdout + p.stderr, "-o: it is declared nowhere", p.stdout + p.stderr)

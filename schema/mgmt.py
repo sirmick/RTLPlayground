@@ -3,8 +3,8 @@
 # documented 192.168.10.247. In dhcp mode the address fields are kept, unused.
 
 obj("mgmt", apply="om_apply_mgmt", check="om_check_mgmt", order=10, tip="The switch's own IPv4 interface")
-cfg("mode", Enum("mgmtmode", "static dhcp"), "static", tip="A fixed address, or one from DHCP")
-cfg("ip", IPv4, "192.168.2.2", tip="The address, in static mode")
+cfg("mode", Enum("mgmtmode", "static dhcp"), "static", tip="A fixed address, or one from DHCP", label="Addressing")
+cfg("ip", IPv4, "192.168.2.2", tip="The address, in static mode", label="IP address")
 cfg("netmask", Mask4, "255.255.255.0", tip="The subnet mask, in static mode")
 cfg("gateway", IPv4, "192.168.2.22", tip="The default gateway, in static mode")
 # mgmt.vlan: the VLAN exists (the CPU is in every VLAN: vlan.py)

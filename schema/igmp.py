@@ -4,4 +4,4 @@
 # until then `igmp show` prints it.
 
 obj("igmp", apply="om_apply_igmp", order=60, tip="IGMP snooping")
-cfg("enabled", Bool, False, tip="Send IP multicast only to the ports that joined its group")
+cfg("enabled", Bool, False, tip="Send IP multicast only to the ports that joined its group", label="IGMP snooping")
