@@ -1,10 +1,32 @@
 # RTLPlayground
 A Playground for Firmware development for advanced user of RTL8372/RTL8373 based 2.5GBit Switches.
 
-> **This is an experimental branch** (`dev` of the [sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground)
-> fork of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground)). It changes the flash
-> layout and the update path. Keep a flash programmer at hand for any switch you put it on. The
-> intent is to merge the pieces back upstream once they have proven themselves.
+> **This is an experimental fork** ([sirmick/RTLPlayground](https://github.com/sirmick/RTLPlayground))
+> of [logicog/RTLPlayground](https://github.com/logicog/RTLPlayground). It is three large
+> changes, each built on the one before and each breaking what came before it:
+>
+> | Branch | Adds | Breaks |
+> |---|---|---|
+> | [`compact-layout`](https://github.com/sirmick/RTLPlayground/tree/compact-layout) | a 232 KiB flash layout, the loader on every switch, automatic bank placement | the flash layout and the update path |
+> | [`feat/sched`](https://github.com/sirmick/RTLPlayground/tree/feat/sched) | a cooperative scheduler in place of the main loop | how firmware code is written: every task is a step |
+> | [`main`](https://github.com/sirmick/RTLPlayground/tree/main) | one object model for the CLI, the config, the web UI and the API | every CLI command, the saved config format, the web API |
+>
+> **You are on `main`.** Keep a flash programmer at hand for any switch you put it on.
+> The intent is to bring the pieces back upstream once they have proven themselves.
+>
+> ### 1. Compact layout, the loader, automatic bank placement (`compact-layout`)
+>
+> **Why:** a 512 KiB switch couldn't be updated through the web UI, a failed update needed a
+> flash programmer, and every code change meant moving files between code banks by hand.
+> Now:
+> - **Every switch updates over the web, 512 KiB ones included,** and survives a bad update:
+>   the loader checks every image before it installs it, and recovers a switch whose
+>   application fails.
+> - **No programmer to get there:** the loader comes with a web update, or a bridge image for
+>   a standard-layout switch. The config moves with it.
+> - **No more bank bookkeeping:** the build places code in the banks itself, and checks every
+>   link for what used to crash at run time.
+> - **Every push runs on a simulated switch** in CI.
 >
 > What it adds:
 > - **Compact flash layout** (`make LAYOUT=compact`): a 232 KiB image, defined once in `layout.h`,
@@ -58,6 +80,107 @@ A Playground for Firmware development for advanced user of RTL8372/RTL8373 based
 > One known silicon quirk: a chip reset issued early in the boot (before the clock set-up) can
 > hang a switch until a power cycle. The cause isn't known. Installs and the loader conversion
 > reset late in the boot, where it has never happened.
+
+> ### 2. The cooperative scheduler (`feat/sched`, on `compact-layout`)
+>
+> **Why:** the firmware was one loop that called every piece of work in turn, each to the
+> end. Any long piece stalled the rest: a 1000-entry `l2` dump held the loop for 3.2 s, a
+> firmware upload for 1.9 s. That is long enough for a fast LACP partner to drop the link and
+> for STP to miss its hellos, and loop detection waited too, while a storm ran.
+>
+> Now the work is split into **steps**: short functions that do a bounded piece of work and
+> return the step they want next. The main loop runs whichever steps are due, at a tick or on
+> a hardware event. It is cooperative: one stack, nothing preemptive, and no internal RAM
+> used, which on this chip is full.
+>
+> What it gives:
+> - **Nothing starves anything else.** Measured in rtlsim: LACPDUs 1.01-1.03 s apart while
+>   `l2` prints 1000 entries (the old loop: 3.86 s without one); STP hellos 1.97-2.04 s apart
+>   during a firmware upload (the old loop: silent for 2.84 s). On the 8x, `l2` with 1000 MACs
+>   ran as 1966 steps, the longest 429 µs, with loop detection polling throughout.
+> - **Latency set by design.** No step over 50 ms; the target is 5 ms, and all but a few are
+>   under it. Receive, link, loop detection and the console are checked every few steps, so
+>   their worst-case delay is known in advance, not whatever the slowest command takes.
+> - **A watchdog.** The chip has none (no hardware one was found). A software watchdog on the
+>   timer interrupt resets a hung switch, and a crash record of what it was doing survives the
+>   reset.
+> - **Visibility.** `health tasks`, in every build, shows each task's state, each step's
+>   longest run, overruns and hardware-poll timeouts, and the last reset's cause.
+> - **The build checks the rules.** A step that can fall off its end fails the build; a step
+>   that spills into internal RAM, or code that grows the common area past its gate, fails
+>   the resource gate (`tools/resource_gate.py`).
+> - **Proved before silicon:** every mechanism in rtlsim, deterministically, against the old
+>   firmware scenario by scenario (the same results, the differences listed and explained);
+>   then on the 8x bench switch, including a 24-hour soak.
+>
+> **What breaks:** code, not behaviour. A switch does what it did, a little faster. But the
+> main loop is gone: new work is a `TASK` with `STEP`s, waits return a wake time instead of
+> calling `delay()`, and long console output goes a line a step. Upstream patches that add to
+> the loop need porting. Start at [doc/sched/howto.md](doc/sched/howto.md): five small
+> examples, the rules, the common mistakes. The design, the measurements and the bench runs
+> are in [doc/sched/](doc/sched/README.md).
+
+> ### 3. The object model: one CLI, config, API and web UI (`main`)
+>
+> Built on the two above: the object model runs as scheduler steps (`feat/sched`) and its
+> saved config lives in the compact layout's config sector (`compact-layout`).
+>
+> **Why:** every setting was handled several times over: a console command and its parser, a
+> line in the saved text config, a JSON page for the web, the web UI's own decoding and
+> command builders, and a hand-written print for its status. Each new feature meant writing
+> all of them, and they drifted apart. A change took effect the moment it was typed, so a
+> wrong management address cut you off with nothing to bring it back. And the code banks were
+> full (826 B free across the three on the 4+2 compact build, measured).
+>
+> Now everything you can set, see or do is **one tree of paths**, described once in a Python
+> schema (`schema/`):
+>
+> ```
+> port.3.speed 1g          config: set, applied, saved
+> state.port.3.link up     state: read only
+> do port.3.cabletest      an action
+> ```
+>
+> A generator builds the firmware's tables, the help text, and the web UI's schema from it.
+> One engine (`om/om.c`) reads, writes, checks, prints, saves and completes the whole tree,
+> without naming a single object.
+>
+> What it gives:
+> - **One language everywhere.** The serial console and the web's `POST /cli` take the same
+>   lines; `get` output can be replayed, diffed and saved as is. Scripts talk to the switch
+>   the same way people do ([doc/cli.md](doc/cli.md), [doc/api.md](doc/api.md)).
+> - **Safe changes.** `set` edits a candidate; `apply` checks it as a whole, then applies it
+>   object by object; `diff` shows what will change, `discard` drops it. `apply 60` rolls back
+>   by itself unless you `confirm` within 60 s: a wrong management IP or VLAN undoes itself.
+>   Nothing is saved until `save`.
+> - **Tab completion and help for every field**, from the schema: `help port.3.speed` gives
+>   the field's text, type and range; a wrong value's error gives the range or the words.
+>   Wildcards set every instance: `set port.*.eee off`.
+> - **A saved config that survives renames and upgrades.** On flash it is binary, keyed by
+>   stable IDs (`schema/registry.txt`), defaults left out, so a full config fits one sector
+>   and a renamed field keeps its value. Outside the firmware it is always text: `get -s`,
+>   the web download, backups and restores.
+> - **A new field is a line of schema.** Add a `cfg()` line, write what the hardware does
+>   with it in the object's `apply` handler; the CLI, help, Tab, saving, the API and the web
+>   UI's field come with it ([om/README.md](om/README.md)).
+> - **Room to grow.** The hand-written parsers, printers and JSON pages are gone
+>   (`cmd_parser.c` from 63 KB of source to 17 KB; `rtl837x_stp_cli.c`, `ntp_cli.c`,
+>   `dns_cli.c`, `httpd/page_impl.c`, `httpd/page_stp.c` deleted). Free code space on the 4+2
+>   compact build went from 826 B to 10,601 B (measured), with help and the debug commands
+>   built in.
+> - **Tested on the host and in the simulator.** `make -C test` runs the engine itself
+>   against the real schema at its largest table sizes; rtlsim runs the whole firmware, and
+>   `tools/ui_sim.py` serves its web UI from a simulated switch.
+>
+> **What breaks:** everything a user or a script typed.
+> - **The CLI:** the old commands are gone. `port 5 1g` is `set port.5.speed 1g` then
+>   `apply`; `reset` is `do sys.reset`. [doc/cli.md](doc/cli.md) has the whole reference.
+> - **The saved config:** a switch on older firmware keeps its config across the update only
+>   through `tools/fwupdate.py`, which converts it on the host. A plain web upload starts
+>   from the factory default.
+> - **The web API:** the JSON pages are `POST /cli` now ([doc/api.md](doc/api.md)); a few
+>   remain, for objects not migrated yet.
+> - **`config.txt`** is `set` lines now (section 10).
 
 For each hardware configuration of these devices, there is usually a managed and an
 unmanaged version sold, with mostly identical hardware. The aim is to provide management
