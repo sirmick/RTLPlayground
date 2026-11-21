@@ -99,6 +99,7 @@ typedef uint8_t (*om_fn)(uint8_t) __banked;
  */
 extern __xdata uint8_t om_ix1;
 extern __xdata uint16_t om_key;
+extern __xdata uint8_t *__xdata om_arg;	/* do's text argument (action(arg="text")), 0: none */
 #define OM_PAGE	25	/* get <stream>.K-: at most this many instances from K on */
 
 /*

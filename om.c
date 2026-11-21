@@ -79,6 +79,7 @@ static __xdata uint8_t ce;		/* level 0's element: logical port, number, slot */
 __xdata uint8_t om_ix1;		/* level 1: number from 0, word */
 static __xdata uint8_t r_v1;		/* as given */
 __xdata uint16_t om_key;		/* a streamed object's instance (om.h) */
+__xdata uint8_t *__xdata om_arg;	/* do's text argument (om.h) */
 #if OM_USE_STREAM
 static __xdata uint8_t r_open;		/* K: instances left, + 1 (K 1, K- OM_PAGE); 0 every one */
 static __xdata uint8_t r_land;		/* K: the instance found must be K */
@@ -2239,7 +2240,10 @@ static void om_do(void)
 		return;
 	}
 	om_key = 0xffff;			/* the argument (om.h): none */
-	if (cmd_words_len > 2) {
+	om_arg = 0;
+	if (cmd_words_len > 2 && fdx.off) {	/* a text argument: the rest of the line */
+		om_arg = &cmd_buffer[cmd_words_b[2]];
+	} else if (cmd_words_len > 2) {
 		word(2);
 		if (!parse_dec() || num[2] || num[3] || !at_end()) {
 			fail("a number");

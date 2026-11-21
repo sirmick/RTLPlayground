@@ -238,7 +238,6 @@ SRCS = \
 	boot.c \
 	sfp.c \
 	dns.c \
-	dns_cli.c \
 	sessions.c \
 	ntp.c \
 	syslog.c \

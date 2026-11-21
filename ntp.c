@@ -259,7 +259,6 @@ void ntp_callback(uint16_t lport) __banked __reentrant
 		if (ntp_uptime() < ntp_state.next || dns_state.status == DNS_PENDING)
 			return;
 		memcpy(dns_state.name, ntp_state.server, DNS_NAME_LEN);
-		dns_state.verbose = 0;
 		dns_lookup();
 		ntp_state.phase = NTP_RESOLVE;
 		return;

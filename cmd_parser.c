@@ -814,8 +814,6 @@ void cmd_parser(void) __banked
 #endif
 	if (cmd_words_len >= 1) {
 		if (om_cmd()) {
-		} else if (cmd_compare(0, "dns")) {
-			dns_parse();
 		} else if (cmd_compare(0, "mac")) {
 			parse_mac_cmd();
 #if OM_DBG

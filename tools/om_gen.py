@@ -262,10 +262,17 @@ def st(name, typ, when="always", tip="", unit="", label=""):
     o.fields.append(Field(name, typ, "state", None, when, tip, unit=unit, label=label))
 
 
-def action(name, fn, when="always", tip="", label=""):
+def action(name, fn, when="always", tip="", label="", arg="number"):
+    """arg: what `do path ARG` passes the handler: "number" (om_key, 0xffff
+    without one; err "a number" else), or "text" (om_arg: the rest of the
+    line, 0 without one). The field's off byte says which (an action has
+    no storage)."""
     o = SCHEMA["cur"]
     assert not o.state, "action() belongs to a config object"
-    o.fields.append(Field(name, Action, "action", None, when, tip, fn=fn, label=label))
+    assert arg in ("number", "text"), "action(arg=): number or text"
+    f = Field(name, Action, "action", None, when, tip, fn=fn, label=label)
+    f.arg_text = arg == "text"
+    o.fields.append(f)
 
 
 def default_entry(key, **values):
@@ -730,7 +737,7 @@ def gen(objs, outdir):
         for f in o.fields:
             t = f.typ
             if t.code == "ACT":
-                off, arg = "0", str(fns.index(f.fn))
+                off, arg = "1" if f.arg_text else "0", str(fns.index(f.fn))
             else:
                 off = "offsetof(struct %s, %s)" % (o.cname, f.cname)
                 if t.code in ("ENUM", "FLAGS", "FLAGS16"):
