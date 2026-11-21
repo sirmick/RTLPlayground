@@ -371,9 +371,11 @@ $(OUTPUT): $(BUILDDIR)/rtlplayground.img $(CONFIG) $(CONFIG_STAMP) | tools
 	tools/$(BUILDDIR)/imagebuilder -i $(BUILDDIR)/rtlplayground.img "$@"
 	python3 tools/check_layout.py --code "$@" --html-defs html_data.h --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
+	# the web data first: fileadder reads it raw (past the default config's
+	# sector, on the compact layout) and zeroes that tail after compressing
+	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
 	tools/$(BUILDDIR)/fileadder -a $(DEFAULT_CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@"
 	$(if $(CONFIG_IN_IMAGE),tools/$(BUILDDIR)/fileadder -a $(CONFIG_LOCATION) -s $(IMAGESIZE) -d "$(CONFIG)" "$@")
-	tools/$(BUILDDIR)/fileadder -a $(HTML_LOCATION) -s $(IMAGESIZE) -z -d $(HTML_MIN) -b BANK1 "$@"
 	tools/$(BUILDDIR)/crc_calculator -u "$@"
 	python3 tools/check_layout.py --image "$@" --html $(HTML_LOCATION) \
 		--default-config $(DEFAULT_CONFIG_LOCATION) --size $(IMAGESIZE)
