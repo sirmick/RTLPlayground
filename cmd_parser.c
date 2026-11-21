@@ -2153,8 +2153,10 @@ void cmd_parser(void) __banked
 			write_char('\n');
 		} else if (cmd_compare(0, "gpio")) {
 			print_gpio_status();
+#ifndef DEBUG	/* a DEBUG build leaves the dump out: its prints take the room */
 		} else if (cmd_compare(0, "leds")) {
 			leds_dump();
+#endif
 		} else if (cmd_compare(0, "led")) {
 			parse_led();
 		} else if (cmd_compare(0, "loop")) {

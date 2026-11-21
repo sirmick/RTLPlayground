@@ -249,7 +249,7 @@ SRCS += \
 	rtl837x_init.c \
 	rtl837x_nic.c \
 	rtl837x_leds.c \
-	rtl837x_leds_dump.c \
+	$(if $(DEBUG),,rtl837x_leds_dump.c) \
 	rtl837x_phy.c \
 	rtl837x_pins.c\
 	rtl837x_port.c \
