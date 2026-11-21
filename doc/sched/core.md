@@ -32,8 +32,8 @@ __xdata uint16_t sched_now;			/* tick snapshot, renewed after each step */
 __xdata uint8_t  sched_ev;			/* this pass's hardware events */
 ```
 
-For `health`: per state the longest step, this second's runs and the last
-second's (16 bits each); globals: passes and idle passes (32 bits, as two
+For `health`: per state the longest step, the runs since the clear
+(saturating), this second's runs and the last second's (16 bits each); globals: passes and idle passes (32 bits, as two
 halves), overruns and the last overrun's state, the longest pass, the last
 second's load (8 bits). Decision 26.
 
@@ -214,15 +214,17 @@ built from one-parameter calls.
   `RCAP2` at `sched_init`).
 - Around each step (`sched_m_step_start`, `sched_m_step_end`): the step's
   length, saturating at 80 ticks (400 ms, shown as `>400ms`); per state the
-  longest, and a run counted in `sched_st_runs[]`, this second's (16 bits:
-  a state runs at most a few hundred times a second; nothing saturates). A
+  longest, and a run counted twice: in `sched_st_runs[]`, since the clear
+  (16 bits, saturating; `state.sched.state.<S>.runs`), and in
+  `sched_st_sec[]`, this second's (16 bits: a state runs at most a few
+  hundred times a second; nothing saturates). A
   step of 50 ms or more (8138 units,
   decision 25; 20 ms, 3255, until F1b) is an overrun: counted, with its
   state. The step start also clears `hw_stuck`
   (chapter 9).
 - Around each pass: the longest pass, the pass count.
 - **The second** (decision 26): at the first pass end at or past the
-  second's tick, each state's count is published into `sched_st_rate[]`
+  second's tick, each state's `sched_st_sec[]` is published into `sched_st_rate[]`
   and zeroed, and the time asleep becomes `sched_load`. The seconds keep to
   a fixed 200-tick grid, half a second off the grid of the 1 s tasks
   (`house`, `loop` start theirs at their first step, just after

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-sched_rates.py - `health tasks`' rates and load (decision 26) on the real
+sched_rates.py - state.sched's rates and load (decision 26) on the real
 firmware in rtlsim: the periodic states run as often as their periods say,
-and the load is low when the switch idles and high while `l2` dumps 1000
-learned hosts.
+and the load is low when the switch idles and high while `get state.l2`
+dumps 1000 learned hosts.
 
   tools/sched_rates.py BOOT_IMAGE [--ovs DIR] [--board FILE]
 
@@ -14,10 +14,11 @@ idle 5 s after the boot:
     once a tick, 200/s (+-1: a second rolls at a pass end, late by up to a
     pass, on a fixed 200-tick grid);
   - the load at most IDLE_MAX %.
-`health tasks` prints the same: the `runs/s` header, each state's rate as
-the xdata has it, and `load N%` on the totals line.
-Then 1000 hosts are learned behind a front port and `l2` is typed: sampled
-every 250 ms until its prompt, the load reaches at least BUSY_MIN %.
+`get state.sched.state state.sched.load` prints the same: each state's
+.rate as the xdata has it, after its .runs and .max_us, and the load.
+Then 1000 hosts are learned behind a front port and `get state.l2` is
+typed: sampled every 250 ms until its prompt, the load reaches at least
+BUSY_MIN %.
 
 The load against rtlsim's own count: rtlsim run alone (--stats, no control
 socket) to 20 s and to 30 s of firmware time gives the CPU's busy machine
@@ -112,16 +113,14 @@ def main(argv):
     print("idle, other states running: " + ", ".join(
         f"{n} {v}" for n, v in sorted(idle[-1][0].items()) if v and n not in PER_SEC and n not in PER_TICK))
 
-    r.cli("health tasks")
-    text = r.results[max(k for k in r.results if k.endswith("cli health tasks"))]
-    print(text)
-    rates, load = sample()
-    check("state\truns/s\tmax\n" in text, "health tasks: the runs/s header")
-    lines = dict(re.findall(r"^([A-Z][A-Z0-9_]*)\t(\d+)\t\S+$", text, re.M))
+    get = "get state.sched.state state.sched.load"
+    r.cli(get)
+    text = r.results[max(k for k in r.results if k.endswith("cli " + get))]
+    lines = dict(re.findall(r"^state\.sched\.state\.(\w+)\.max_us \d+\nstate\.sched\.state\.\1\.rate (\d+)$", text, re.M))
     check(lines.get("HOUSE_SEC") == "1" and len(lines) == len(names) - 1,
-          f"health tasks: a line per state ({len(lines)} of {len(names) - 1}), HOUSE_SEC {lines.get('HOUSE_SEC')}/s")
-    m = re.search(r"^passes \S+ idle \S+ load (\d+)% longest ", text, re.M)
-    check(m is not None and int(m.group(1)) <= 100, f"health tasks: the load on the totals line ({m and m.group(1)} %)")
+          f"get: a .rate per state, after its max_us ({len(lines)} of {len(names) - 1}), HOUSE_SEC {lines.get('HOUSE_SEC')}/s")
+    m = re.search(r"^state\.sched\.load (\d+)$", text, re.M)
+    check(m is not None and int(m.group(1)) <= 100, f"get: state.sched.load ({m and m.group(1)} %)")
 
     P = r.P
     r.link(P[1], True)
@@ -130,7 +129,7 @@ def main(argv):
     r.wait(1000)
     r._now()
     r.b.pending()
-    sim.uart_write("l2\r")
+    sim.uart_write("get state.l2\r")
     t0, busy, done = r.b.now, [], False
     while r.b.now < t0 + 60_000_000:
         r.b.advance(r.b.now + 250_000)
@@ -142,13 +141,13 @@ def main(argv):
     r.t = r.b.now
     out = r.b.pending()
     took = (r.b.now - t0) / 1e6
-    print(f"l2: {out.count(chr(10))} lines in {took:.2f} s; every 250 ms (load %, CLI_MORE/s): {busy}")
-    check(done, "l2: the prompt came back")
-    check(max(l for l, _ in busy) >= BUSY_MIN, f"l2: the load reached {max(l for l, _ in busy)} %, want >= {BUSY_MIN}")
+    print(f"get state.l2: {out.count(chr(10))} lines in {took:.2f} s; every 250 ms (load %, CLI_MORE/s): {busy}")
+    check(done, "get state.l2: the prompt came back")
+    check(max(l for l, _ in busy) >= BUSY_MIN, f"get state.l2: the load reached {max(l for l, _ in busy)} %, want >= {BUSY_MIN}")
     r.wait(2500)
     r._now()
     rates, load = sample()
-    check(load <= IDLE_MAX, f"after l2: load {load} %, idle again")
+    check(load <= IDLE_MAX, f"after get state.l2: load {load} %, idle again")
     r.b.close()
 
     for f in fails:
