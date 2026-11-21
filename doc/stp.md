@@ -1,8 +1,8 @@
 # Spanning Tree (STP / RSTP)
 
-> On feat/om STP keeps the old `stp` commands until P4-4, which moves them to
-> `stp.*`, `stp.port.N.*` and `stp.lag.L.*` (doc/cli.md). The state is on the model
-> already: `get state.stp`, `state.stp.port.N`, `state.stp.lag.L`.
+> STP is paths (doc/cli.md): `stp.*`, `stp.port.N.*`, `stp.lag.L.*`; its state
+> `get state.stp` (with `state.stp.port.N`, `state.stp.lag.L`). The old `stp`
+> commands and `/stp.json` are gone.
 
 The switch can take part in a spanning tree (IEEE 802.1D / 802.1w) so that
 redundant links between bridges are blocked instead of forming a loop. The

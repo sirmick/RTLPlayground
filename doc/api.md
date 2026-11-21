@@ -42,10 +42,10 @@ ok
 - **One connection at a time** (uIP with one connection): another is refused until the
   first closes, so a client retries. Closing the connection mid-reply stops the rest of
   the run.
-- **Commands not on the model** (`stp`, ...) take their old syntax here too,
-  until they move.
-- `POST /cmd` is the old endpoint for the old commands. It streams the same way, and is
-  kept for the old UI's tabs until P6.
+- **Commands not on the model** (`mac`, `dns lookup`, and in OM_DBG builds the
+  debugging tools: `regget`, `phyget`, `sdsget`, `flash` ...) take their own syntax
+  here too.
+- `POST /cmd` is the same endpoint under its old name (the UI's console box uses it).
 
 ## The other endpoints
 
@@ -69,47 +69,4 @@ Gone, onto paths: `/status.json`, `/ports.json`, `/traffic.json` (`get state.por
 
 ## The JSON pages left
 
-Each is a GET, needs the cookie, and goes when its object moves:
-
-| Page | Until | Then |
-|---|---|---|
-| `/vlan.json?vid=V`, `/vlanlist.json` | P4-2 | `vlan.V.*` |
-
-## vlan (until P4-2)
-
-`/vlan.json?vid=V`: one VLAN.
-```json
-{
-    "untagged_members":[1,2,3,4,5,8,9],
-    "tagged_members":[],
-    "name":"",
-    "pvid":[1,2,3,4,5,8,9]
-}
-```
-| Property | Description
-|----------|------------
-| `untagged_members` | Ports that will send participate in this VLAN by transmitting untagged frames
-| `tagged_members` | Ports that will send participate in this VLAN by transmitting and receiving tagged frames
-| `name` | The name of the VLAN
-| `pvid` | List of physical ports that have their Port VLAN ID set to this VLAN
-
-## vlanlist (until P4-2)
-```json
-{
-    "vlan":[
-        {"id":1,"name":""},
-        {"id":2,"name":"vlanTwo"},
-        ...
-    ]
-}
-```
-| Property | Description
-|----------|------------
-| `vlan` | Array of VLAN objects
-
-### VLAN Objects
-
-| Property | Description
-|----------|------------
-| `id` | The VLAN id
-| `name` | The VLAN name
+None: every page's data is a path now (the list above).
