@@ -93,10 +93,12 @@ STEP(fl, prog)
 		flash_read_bulk(flash_buf);
 		FL_ADVANCE(fl_from);
 	}
-	flash_region.addr = fl_addr;
-	flash_region.len = fl_n;
-	flash_write_bytes(flash_buf);
-	FL_ADVANCE(fl_addr);
+	if (fl_n) {		/* a save's step whose walk ran out of time first: none */
+		flash_region.addr = fl_addr;
+		flash_region.len = fl_n;
+		flash_write_bytes(flash_buf);
+		FL_ADVANCE(fl_addr);
+	}
 	fl_len -= fl_n;
 	if (fl_len)
 		return STEP_STAY;

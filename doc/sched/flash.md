@@ -26,6 +26,18 @@ exception to the 20 ms limit): 40 ms in the sim,
 35.5-41.6 ms on the 8x. The waits run with interrupts on: ISRs keep filling
 rings and setting bits.
 
+**The flash job's other steps aim at 10 ms; `FL_ERASE` is the exception.**
+One sector erase is one command and can't be split: its time is the part's
+(rtlsim's flash timing, by JEDEC id: 30 ms for the SWGT024's W25Q40CL, 45 ms
+for the 8x's W25Q16JV, their datasheets' typical; the 4+2 on the bench
+erases in 6.2 ms). Everything else is bounded by the step's own time: a
+config save's `FL_PROG` encodes until 2 ms of the step (`om.c` `E_FINE`,
+`sched_step_fine()`), then programs what it has. Silicon runs banked code
+~5x slower than rtlsim (P8: a 78 B save's `FL_PROG` 38.9 ms on the 4+2
+before the deadline, 7.8 ms of encoding in the sim), so a bound in
+instructions or bytes measured in the sim isn't one on silicon; a bound on
+the timer is.
+
 Why not start and return: the next task in the sequence is most likely
 banked. A "flash busy" mode where the loop runs only common-area steps is
 possible, but those are few, and it complicates the loop for ~40 ms per
@@ -46,7 +58,7 @@ once (chapter 8).
 | State | Does |
 |---|---|
 | `FL_ERASE` | erases the sector at `fl_addr`; then `FL_PROG` (`FL_DONE` for the boot count) |
-| `FL_PROG` | an upload: `upload_prog()`; a config or factory reset: programs `FL_CHUNK` (512 B) from the source |
+| `FL_PROG` | an upload: `upload_prog()`; a factory reset: programs `FL_CHUNK` (512 B) from the source; a config save: `om_save_chunk()`'s records, encoded until 2 ms of the step (a step may encode none) |
 | `FL_VERIFY` | an upload: `upload_verify()`, the read-back CRC |
 | `FL_DONE` | goes back to `FL_PROG` if the stage holds unwritten upload bytes; a factory reset prints and resets; else ends the job, `fl_poll`, wakes net |
 
