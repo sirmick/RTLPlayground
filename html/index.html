@@ -195,6 +195,17 @@ textarea.cfg{
   padding:10px 12px;font:12px/1.5 ui-monospace,Consolas,monospace;resize:vertical;outline:none;
 }
 .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#tab-cli.act{display:flex;flex-direction:column;height:calc(100vh - 120px);max-width:none}
+#tab-cli .subt{display:flex;gap:6px;margin-bottom:10px}
+#tab-cli .subt button.act{background:var(--ac);color:var(--acfg);border-color:transparent}
+.clpane{flex:1;min-height:0;display:flex;flex-direction:column}
+#cl-out{flex:1;min-height:0;overflow:auto;margin:0;background:#0d1117;color:#d6dde6;border-radius:8px 8px 0 0;
+  padding:10px 12px;font:13px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+#cl-out .e{color:#ff7b72}#cl-out .p{color:#79c0ff}#cl-out .m{color:#8b949e}
+.clin{display:flex;align-items:center;gap:6px;background:#0d1117;border-top:1px solid #30363d;border-radius:0 0 8px 8px;padding:6px 12px}
+.clin span{color:#79c0ff;font:13px ui-monospace,Consolas,monospace;white-space:nowrap}
+.clin input{flex:1;min-width:0;background:transparent;border:0;outline:none;color:#e6edf3;font:13px ui-monospace,Consolas,monospace}
+#cfgedit{flex:1;min-height:120px;resize:none}
 .mut{color:var(--fg2)}
 .small{font-size:12px}
 .dangerzone{border-color:color-mix(in srgb,var(--bad) 40%,var(--bd))}
@@ -453,13 +464,6 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <button class="ctl pri" id="sy-pwapply" style="margin-top:8px" data-i18n="sy_pwapply">Change password</button>
           <p class="small mut" style="margin-top:8px" data-i18n="sy_pw_note">Takes effect immediately; save to flash to keep it after reboot.</p>
         </div>
-        <div class="card"><h2 data-i18n="sy_console">Console</h2>
-          <div style="display:flex;gap:8px">
-            <input class="in" id="sy-cmd" style="flex:1" data-i18n-p="sy_cmd" spellcheck="false">
-            <button class="ctl pri" id="sy-send" data-i18n="sy_send">Send</button>
-          </div>
-          <pre class="cfg" id="sy-cout" style="margin-top:10px;min-height:70px;max-height:180px;overflow:auto"></pre>
-        </div>
         <div class="card"><h2 data-i18n="sy_display">Display</h2>
           <label class="row"><span class="lb" data-i18n="sy_lang">Language</span>
             <select class="in" id="langSel">
@@ -492,23 +496,35 @@ button.danger{background:var(--bad);color:#fff;border-color:transparent}
           <p class="small mut" data-i18n="sy_leds_note">Applies at once; Save to flash keeps it across restarts.</p>
         </div>
       </div>
-      <div class="card" style="margin-top:16px"><h2><span data-i18n="sy_startup">Startup configuration</span>
-        <span class="hint"><span id="cfgbytes"></span>, <span data-i18n="sy_replayed">replayed on every boot</span></span></h2>
-        <textarea class="cfg" id="cfgedit" spellcheck="false"></textarea>
-        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-          <button class="ctl" id="cfgreload" data-i18n="sy_reload">Reload from flash</button>
-          <button class="ctl pri" id="cfgwrite" data-i18n="sy_write">Write to flash</button>
-          <button class="ctl" id="cfgdl" data-i18n="sy_download">Download</button>
-          <button class="ctl" id="cfgload" data-i18n="sy_loadfile">Load file...</button>
-          <input type="file" id="cfgfile" accept=".txt,text/plain" style="display:none">
-          <span class="small mut" style="align-self:center" data-i18n="sy_unknown_note">Unknown lines are highlighted before writing.</span>
-        </div>
-      </div>
       <div class="card dangerzone" style="margin-top:16px"><h2 data-i18n="sy_maint">Maintenance</h2>
         <button class="ctl danger" id="sy-reboot" data-i18n="sy_reboot">Reboot switch</button>
       </div>
     </section>
 
+    <section class="tab" id="tab-cli">
+      <div class="subt">
+        <button class="ctl act" id="cl-t-con" data-i18n="cl_console">Console</button>
+        <button class="ctl" id="cl-t-cfg" data-i18n="sy_startup">Startup configuration</button>
+        <span style="flex:1"></span>
+        <button class="ctl" id="cl-clear" data-i18n="cl_clear">Clear</button>
+      </div>
+      <div class="clpane" id="cl-con">
+        <pre id="cl-out"></pre>
+        <div class="clin"><span id="cl-prompt">&gt;</span><input id="cl-in" spellcheck="false" autocomplete="off" autocapitalize="off"></div>
+      </div>
+      <div class="clpane" id="cl-cfg" style="display:none">
+        <p class="small mut" style="margin-bottom:8px"><span id="cfgbytes"></span> <span data-i18n="cl_cfg_note">The saved configuration: what differs from the factory default, as path lines. Load it into the candidate, then Apply and Save in the bar above.</span></p>
+        <textarea class="cfg" id="cfgedit" spellcheck="false"></textarea>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <button class="ctl" id="cfgreload" data-i18n="sy_reload">Reload from flash</button>
+          <button class="ctl pri" id="cfgcand" data-i18n="cl_cand">Load into candidate</button>
+          <button class="ctl" id="cfgdl" data-i18n="sy_download">Download</button>
+          <button class="ctl" id="cfgload" data-i18n="sy_loadfile">Load file...</button>
+          <input type="file" id="cfgfile" accept=".txt,text/plain" style="display:none">
+        </div>
+        <pre class="cfg" id="cfgres" style="margin-top:10px;max-height:30%;overflow:auto;display:none"></pre>
+      </div>
+    </section>
     <section class="tab" id="tab-schema">
       <div class="card"><input class="in" id="schf" placeholder="filter">
         <div class="scrollx"><table class="t mono small" id="scht"><tbody></tbody></table></div>

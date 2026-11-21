@@ -82,6 +82,17 @@ and `save`.
   config across the update only through `tools/fwupdate.py`, which converts
   it (doc/automation.md).
 
+## The web UI's CLI page
+
+The CLI page is this console in the browser: the same lines over `POST /cli`,
+the same prompt (`*>`, `[confirm N]`), Up and Down for the history, and Tab
+completion done in the page from the schema the UI carries (the verbs, paths
+a segment at a time, ports, VLANs, an enum's words after `set`; a second Tab
+lists the choices). Its Startup configuration tab shows `get -s`: edit it,
+load a file, or download it; Load into candidate sends `load default` and
+each line as a `set`, shows what was refused and the `diff`, and Apply and
+Save in the top bar make it running and saved.
+
 ## Tab completion
 
 Tab at the end of a console line completes the verb, then the path a segment
