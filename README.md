@@ -364,140 +364,67 @@ specified an IP address in the config.txt before compilation.
 
 ## (9) The command line
 
-The command line is very rudimentary and mostly for testing purposes.
-The following is a boot-log with some examples:
+The serial console (115200 8N1) and the web's `POST /cli` take the same lines:
+a verb and a path into one tree of the configuration (`port.3.speed`), the
+state (`state.port.3.link`) and the actions (`do sys.reset`). A change goes to
+the candidate (`set`), takes effect with `apply` (`apply 60`: kept only if you
+`confirm` within 60 s) and survives a restart with `save`. Tab completes,
+`help <path>` explains a field. The whole reference is [doc/cli.md](doc/cli.md).
+
 ```
-Detecting CPU
-RTL8373 detected
-Starting up...
-  Flash controller
-
-NIC reset
-rtl8372_init called
-
-RTL837X_REG_SDS_MODES: 0x00000bed
-
-phy_config_8224 called
-
-phy_config_8224 done
-
-rtl8224_phy_enable called
-
-rtl8224_phy_enable done
-
-rtl8372_init done
-
-A minimal prompt to explore the RTL8372:
-
-CPU detected: RTL8373
-Clock register: 0x00001101
-Register 0x7b20/RTL837X_REG_SDS_MODES: 0x00000bed
-Verifying PHY settings:
-
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      2.5G    0x00000008      0x00000000      0x00000000      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       NO SFP  Down    0x00000000      0x00000000      0x00000000      0x00000000
-
-> port 5 1g
-  CMD: port 5 1g
-PORT 04 1G
-
-> stat
-  CMD: stat
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      1000M   0x00000035      0x00000000      0x00000017      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       NO SFP  Down    0x00000000      0x00000000      0x00000000      0x00000000
-
->
-<SFP-RX OK>
-
-<MODULE INSERTED>  Rate: 67  Encoding: 01
-Lightron Inc.   WSPXG-ES3LC-IHA 0000
-
-> stat
-  CMD: stat
- Port   State   Link    TxGood          TxBad           RxGood          RxBad
-1       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-2       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-3       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-4       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-5       On      1000M   0x00000065      0x00000000      0x0000003b      0x00000000
-6       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-7       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-8       On      Down    0x00000000      0x00000000      0x00000000      0x00000000
-9       SFP OK  10G     0x00000000      0x00000000      0x0000001c      0x00000000
-
-> sfp
-  CMD: sfp
-Rate: 67  Encoding: 01
-Lightron Inc.   WSPXG-ES3LC-IHA 0000
+> get port.5
+port.5.name
+port.5.enabled on
+port.5.speed auto
+...
+ok
+> set port.5.speed 1g
+ok
+*> apply
+ok
+> get port.5.speed
+port.5.speed 1g
+ok
+> save
+ok
 ```
 
 ## (10) Advanced configuration
 
-You can configure more deeply the switch without the need of the console mode.
-
-While in compilation part, you might write directly to config.txt file before making the binary firmware
-
-```
-nano config.txt
-```
-
-If you want to modify settings after the flash is done, go to the System tab and find the Startup Configuration.
-
-<img width="1673" height="978" alt="ADVANCED SETTINGS" src="doc/images/advanced_settings.png" />
+The factory default is `config.txt` at build time: `set` lines over the
+schema's defaults (`make CONFIG=myconfig.txt` takes another file).
 
 ```
-ip xxx.xxx.xxx.xxx      = IP address of the switch
-gw yyy.yyy.yyy.yyy      = IP address of the gateway
-netmask zzz.zzz.zzz.zzz = Network mask of the switch 
-port x name xxx         = Name xxx the port number x
-port z 1g               = Set 1g speed for port z
-igmp on/off             = Turn IGMP on or off
-led off [ports]         = Turn all LEDs off, or only the port LEDs; "led on" restores them
-session xxxx            = Web session timeout in seconds (default 3600)
-```
-[To be continue]
-
-Enjoy playing!
-
-## (13) HTTP Simulator for front-end development
-
-The simulator is available in tools as `./httpd_sim.py`
-By default it will serve the content in the current working directory so the easiest way to run this is to:
-```
-cd ./html
-../tools/httpd_sim.py
-```
-And the simulator will be available on http://127.0.0.1:8081
-
-There are commandline options available:
-```
-usage: httpd_sim.py [-h] [--machine MACHINE] [--port PORT] [--bindaddr BINDADDR] [--verbose]
-
-options:
-  -h, --help           show this help message and exit
-  --machine MACHINE    path to machine.c or .h file to parse (optional)
-  --port PORT          port to bind to (default 8081)
-  --bindaddr BINDADDR  address to bind (default 127.0.0.1)
-  --verbose            enable verbose output
+set mgmt.ip 192.168.10.247
+set mgmt.gateway 192.168.10.1
+set mgmt.netmask 255.255.255.0
+set sys.hostname lab-switch
+set port.1.name uplink
+set port.5.speed 1g
+set igmp.enabled on
 ```
 
-The machine parsing is somewhat experimental.
+On a running switch, the same lines go to the console or `POST /cli`, then
+`apply` and `save`. `GET /config` (the web UI's System tab) gives the saved
+config as such lines; loading that file back is a restore. A switch on
+firmware from before the object model keeps its config across the update
+only through `tools/fwupdate.py`, which converts it (doc/automation.md).
+
+## (13) The web UI from the simulator, for front-end work
+
+`tools/ui_sim.py` boots a firmware build in rtlsim
+([ovs-rtlpg](https://github.com/sirmick/ovs-rtlpg), its `build/rtlsim` built)
+and serves the switch's own web UI on localhost, every request answered by
+the firmware:
+
+```
+make MACHINE=KEEPLINK_KP_9000_9XHPML_V1_2 LAYOUT=compact
+tools/ui_sim.py output/KEEPLINK_KP_9000_9XHPML_V1_2-compact --ovs ~/src/ovs-rtlpg
+```
+
+It prints `ready http://127.0.0.1:8899` once the switch has booted (the
+password is `1234`). The UI is the one built into the image: rebuild after a
+change to `html/`. `--board` picks another of ovs-rtlpg's `boards/`.
 
 ## Testing and CI
 

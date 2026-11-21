@@ -482,7 +482,7 @@ used, because our device does not customize the LED muxes.
 
 Compile and flash onto your device.
 
-Now, boot the switch and issue the `leds`command, which will print out:
+Now build with `OM_DBG_LEDS=1` (the dump is off by default), boot the switch and issue the `leds` command, which will print out:
 ```
 RTL837X_PIN_MUX_0: 0x38000000
 RTL837X_REG_LED_GLB_IO_EN: 0x77ffff00
